@@ -1,0 +1,2712 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Design and implement production-grade ML training pipelines
+    \item Choose appropriate orchestration frameworks (Airflow, Kubeflow, MLflow)
+    \item Implement comprehensive experiment tracking for reproducibility
+    \item Apply hyperparameter optimization strategies at scale
+    \item Build robust model validation and evaluation frameworks
+    \item Design and execute A/B tests for ML model deployment
+    \item Use BigQuery ML for scalable time series forecasting
+    \item Implement failure handling and retry mechanisms in pipelines
+    \item Apply pipeline-as-code principles for maintainability
+    \item Optimize training pipelines for cost and performance
+\end{itemize}
+
+\section{Introduction: From Notebooks to Production Pipelines}
+
+The transition from experimental notebooks to production training pipelines represents one of the most significant challenges in ML engineering. While a data scientist can train a model in a Jupyter notebook in hours, building a reliable, scalable, and maintainable training pipeline often takes weeks.
+
+\subsection{The Training Pipeline Challenge}
+
+Production training pipelines must address challenges that rarely appear in experimental code:
+
+\begin{itemize}
+    \item \textbf{Reproducibility:} Exact replication of experiments months or years later
+    \item \textbf{Scalability:} Training on datasets that don't fit in memory
+    \item \textbf{Reliability:} Handling failures, retries, and partial progress
+    \item \textbf{Observability:} Tracking metrics, logs, and artifacts across runs
+    \item \textbf{Cost Management:} Optimizing compute resources and storage
+    \item \textbf{Version Control:} Tracking code, data, models, and configurations
+    \item \textbf{Orchestration:} Coordinating multi-step workflows with dependencies
+\end{itemize}
+
+\begin{example}[The Cost of Poor Pipeline Design]
+A fintech company's credit risk model degraded silently over 6 months:
+
+\begin{itemize}
+    \item Training pipeline used hardcoded dates instead of dynamic lookback
+    \item Model trained on increasingly stale data as time passed
+    \item No monitoring detected the data freshness issue
+    \item Default rates increased 40\% before the issue was discovered
+    \item Root cause: pipeline scheduled daily but used fixed date range from January
+    \item Impact: \$15M in additional credit losses
+\end{itemize}
+
+The failure wasn't in the model—it was in the training pipeline design.
+\end{example}
+
+\subsection{Training Pipeline Architecture}
+
+A production training pipeline consists of several coordinated components:
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=1.8cm,
+    box/.style={rectangle, draw, fill=blue!20, text width=2.3cm, text centered, minimum height=0.9cm, font=\small},
+    storage/.style={cylinder, draw, fill=green!20, text width=1.8cm, text centered, minimum height=0.8cm, aspect=0.3, font=\small},
+    arrow/.style={->, >=stealth, thick}
+]
+    % Pipeline stages
+    \node[box] (data) {Data Extraction};
+    \node[box, right of=data, xshift=2cm] (validate) {Validation};
+    \node[box, right of=validate, xshift=2cm] (features) {Feature Engineering};
+    \node[box, below of=features, yshift=-0.5cm] (train) {Model Training};
+    \node[box, left of=train, xshift=-2cm] (evaluate) {Evaluation};
+    \node[box, left of=evaluate, xshift=-2cm] (register) {Model Registry};
+
+    % Storage
+    \node[storage, above of=validate, yshift=0.8cm] (feature_store) {Feature Store};
+    \node[storage, above of=train, yshift=0.8cm] (experiment) {Experiment Tracker};
+    \node[storage, below of=register, yshift=-0.8cm] (model_store) {Model Store};
+
+    % Orchestrator
+    \node[box, below of=data, yshift=-2cm, fill=orange!30] (orchestrator) {Orchestrator};
+
+    % Arrows - pipeline flow
+    \draw[arrow] (data) -- (validate);
+    \draw[arrow] (validate) -- (features);
+    \draw[arrow] (features) -- (train);
+    \draw[arrow] (train) -- (evaluate);
+    \draw[arrow] (evaluate) -- (register);
+
+    % Arrows - storage
+    \draw[arrow, dashed] (features) -- (feature_store);
+    \draw[arrow, dashed] (train) -- (experiment);
+    \draw[arrow, dashed] (register) -- (model_store);
+
+    % Orchestrator connections
+    \draw[arrow, dashed] (orchestrator) -- (data);
+    \draw[arrow, dashed] (orchestrator) -- (evaluate);
+
+    % Labels
+    \node[above, font=\tiny] at ($(data)!0.5!(validate)$) {Quality Gates};
+    \node[above, font=\tiny] at ($(train)!0.5!(evaluate)$) {Metrics};
+\end{tikzpicture}
+\caption{Production Training Pipeline Architecture}
+\label{fig:training_pipeline}
+\end{figure}
+
+\subsection{Pipeline Design Principles}
+
+Effective training pipelines follow these principles:
+
+\begin{enumerate}
+    \item \textbf{Idempotency:} Running the pipeline multiple times with same inputs produces same outputs
+    \item \textbf{Atomicity:} Each step either completes fully or fails cleanly
+    \item \textbf{Observability:} All pipeline state, metrics, and artifacts are tracked
+    \item \textbf{Configurability:} Behavior controlled by versioned configuration files
+    \item \textbf{Testability:} Each component can be tested independently
+    \item \textbf{Incrementality:} Only recompute what changed, reuse cached results
+    \item \textbf{Fault Tolerance:} Graceful handling of failures with retry logic
+\end{enumerate}
+
+\begin{bestpractice}
+\textbf{Pipeline-as-Code:} Define pipelines as version-controlled code rather than UI clicks. This enables:
+\begin{itemize}
+    \item Code review for pipeline changes
+    \item Automated testing of pipeline logic
+    \item Easy rollback to previous versions
+    \item Clear audit trail of modifications
+    \item Reusability across projects
+\end{itemize}
+\end{bestpractice}
+
+\section{Pipeline Orchestration Frameworks}
+
+Orchestration frameworks coordinate the execution of multi-step ML workflows, handling dependencies, scheduling, and failure recovery.
+
+\subsection{Framework Comparison}
+
+\begin{table}[h]
+\centering
+\caption{ML Orchestration Framework Comparison}
+\label{tab:orchestration_comparison}
+\small
+\begin{tabular}{@{}lp{3cm}p{3cm}p{3cm}@{}}
+\toprule
+\textbf{Framework} & \textbf{Best For} & \textbf{Strengths} & \textbf{Limitations} \\
+\midrule
+Airflow & General workflows, batch jobs & Mature, flexible, UI & Not ML-specific, complex setup \\
+Kubeflow & K8s-native ML & End-to-end ML, scalable & K8s required, steep learning curve \\
+MLflow & Experiment tracking & Simple, lightweight & Limited orchestration features \\
+Prefect & Modern workflows & Python-native, dynamic & Newer ecosystem \\
+Metaflow & Netflix-style workflows & Data science focused & Opinionated \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Apache Airflow for ML Pipelines}
+
+Airflow remains the most widely adopted orchestration framework. Here's a production-grade ML training pipeline:
+
+\begin{lstlisting}[style=python, caption=Production ML Training Pipeline with Airflow]
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobOperator
+from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQueryOperator
+from airflow.utils.dates import days_ago
+from datetime import datetime, timedelta
+import mlflow
+import pandas as pd
+from typing import Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
+
+# DAG configuration
+default_args = {
+    'owner': 'ml-team',
+    'depends_on_past': False,
+    'email_on_failure': True,
+    'email_on_retry': False,
+    'email': ['ml-alerts@company.com'],
+    'retries': 2,
+    'retry_delay': timedelta(minutes=5),
+    'execution_timeout': timedelta(hours=2)
+}
+
+dag = DAG(
+    'ml_training_pipeline',
+    default_args=default_args,
+    description='End-to-end ML model training pipeline',
+    schedule_interval='0 2 * * *',  # Daily at 2 AM
+    start_date=days_ago(1),
+    catchup=False,
+    max_active_runs=1,
+    tags=['ml', 'training', 'production']
+)
+
+# Configuration
+FEATURE_LOOKBACK_DAYS = 90
+MIN_TRAINING_SAMPLES = 10000
+MODEL_PERFORMANCE_THRESHOLD = 0.75
+MLFLOW_TRACKING_URI = 'http://mlflow-server:5000'
+EXPERIMENT_NAME = 'customer_churn_prediction'
+
+def validate_data_quality(**context) -> Dict[str, Any]:
+    """Validate data quality before training"""
+    from great_expectations.data_context import DataContext
+
+    execution_date = context['ds']
+    logger.info(f"Validating data for {execution_date}")
+
+    # Initialize Great Expectations
+    ge_context = DataContext('./great_expectations')
+
+    # Load data
+    query = f"""
+        SELECT *
+        FROM `project.dataset.training_data`
+        WHERE DATE(event_timestamp) BETWEEN
+            DATE_SUB('{execution_date}', INTERVAL {FEATURE_LOOKBACK_DAYS} DAY)
+            AND '{execution_date}'
+    """
+
+    from google.cloud import bigquery
+    client = bigquery.Client()
+    df = client.query(query).to_dataframe()
+
+    # Check minimum sample size
+    if len(df) < MIN_TRAINING_SAMPLES:
+        raise ValueError(
+            f"Insufficient training data: {len(df)} samples "
+            f"(minimum: {MIN_TRAINING_SAMPLES})"
+        )
+
+    # Run Great Expectations validation
+    batch = ge_context.get_batch({
+        'datasource_name': 'pandas',
+        'data_asset_name': 'training_data',
+        'data': df
+    }, 'training_data_expectations')
+
+    results = batch.validate()
+
+    if not results.success:
+        failed_expectations = [
+            r.expectation_config.expectation_type
+            for r in results.results if not r.success
+        ]
+        raise ValueError(
+            f"Data validation failed: {len(failed_expectations)} "
+            f"expectations failed: {failed_expectations[:5]}"
+        )
+
+    # Store validation results
+    validation_summary = {
+        'sample_count': len(df),
+        'feature_count': len(df.columns),
+        'validation_success': results.success,
+        'success_percent': results.statistics['success_percent']
+    }
+
+    context['task_instance'].xcom_push(
+        key='validation_summary',
+        value=validation_summary
+    )
+
+    logger.info(f"Validation passed: {validation_summary}")
+    return validation_summary
+
+def engineer_features(**context) -> str:
+    """Feature engineering with versioning"""
+    from feature_engineering import FeatureEngineer
+    from feature_store import FeatureRegistry
+
+    execution_date = context['ds']
+    logger.info(f"Engineering features for {execution_date}")
+
+    # Load raw data
+    from google.cloud import bigquery
+    client = bigquery.Client()
+
+    query = f"""
+        SELECT user_id, event_timestamp, event_type, value
+        FROM `project.dataset.events`
+        WHERE DATE(event_timestamp) BETWEEN
+            DATE_SUB('{execution_date}', INTERVAL {FEATURE_LOOKBACK_DAYS} DAY)
+            AND '{execution_date}'
+    """
+
+    df = client.query(query).to_dataframe()
+
+    # Apply feature engineering
+    engineer = FeatureEngineer(version='v2.1.0')
+    features_df = engineer.transform(df)
+
+    # Save features
+    output_path = f'gs://ml-features/training/{execution_date}/features.parquet'
+    features_df.to_parquet(output_path)
+
+    # Update feature store
+    registry = FeatureRegistry(repo_path='feature_repo/')
+    registry.materialize_features(
+        start_date=execution_date,
+        end_date=execution_date,
+        feature_views=['user_behavior_features']
+    )
+
+    logger.info(f"Engineered {len(features_df)} feature rows")
+
+    context['task_instance'].xcom_push(
+        key='features_path',
+        value=output_path
+    )
+
+    return output_path
+
+def train_model(**context) -> str:
+    """Train model with MLflow tracking"""
+    import mlflow
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.model_selection import train_test_split
+    import pandas as pd
+
+    execution_date = context['ds']
+    features_path = context['task_instance'].xcom_pull(
+        task_ids='feature_engineering',
+        key='features_path'
+    )
+
+    logger.info(f"Training model for {execution_date}")
+
+    # Set MLflow tracking
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    mlflow.set_experiment(EXPERIMENT_NAME)
+
+    # Load features
+    df = pd.read_parquet(features_path)
+
+    # Prepare data
+    feature_cols = [c for c in df.columns if c not in ['user_id', 'label']]
+    X = df[feature_cols]
+    y = df['label']
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    # Start MLflow run
+    with mlflow.start_run(run_name=f'training_{execution_date}') as run:
+
+        # Log parameters
+        params = {
+            'n_estimators': 100,
+            'max_depth': 10,
+            'min_samples_split': 100,
+            'class_weight': 'balanced',
+            'n_jobs': -1
+        }
+        mlflow.log_params(params)
+
+        # Log data info
+        mlflow.log_param('training_samples', len(X_train))
+        mlflow.log_param('test_samples', len(X_test))
+        mlflow.log_param('feature_count', len(feature_cols))
+        mlflow.log_param('execution_date', execution_date)
+
+        # Train model
+        model = RandomForestClassifier(**params)
+        model.fit(X_train, y_train)
+
+        # Evaluate
+        from sklearn.metrics import (
+            accuracy_score, precision_score, recall_score,
+            f1_score, roc_auc_score
+        )
+
+        y_pred = model.predict(X_test)
+        y_proba = model.predict_proba(X_test)[:, 1]
+
+        metrics = {
+            'accuracy': accuracy_score(y_test, y_pred),
+            'precision': precision_score(y_test, y_pred),
+            'recall': recall_score(y_test, y_pred),
+            'f1': f1_score(y_test, y_pred),
+            'roc_auc': roc_auc_score(y_test, y_proba)
+        }
+
+        mlflow.log_metrics(metrics)
+
+        # Log feature importance
+        feature_importance = pd.DataFrame({
+            'feature': feature_cols,
+            'importance': model.feature_importances_
+        }).sort_values('importance', ascending=False)
+
+        mlflow.log_table(
+            feature_importance.head(20),
+            'top_features.json'
+        )
+
+        # Log model
+        mlflow.sklearn.log_model(
+            model,
+            'model',
+            registered_model_name='churn_prediction_model'
+        )
+
+        # Check performance threshold
+        if metrics['roc_auc'] < MODEL_PERFORMANCE_THRESHOLD:
+            logger.warning(
+                f"Model performance below threshold: "
+                f"{metrics['roc_auc']:.3f} < {MODEL_PERFORMANCE_THRESHOLD}"
+            )
+
+        logger.info(f"Training complete. Metrics: {metrics}")
+
+        # Store run info
+        context['task_instance'].xcom_push(
+            key='mlflow_run_id',
+            value=run.info.run_id
+        )
+        context['task_instance'].xcom_push(
+            key='model_metrics',
+            value=metrics
+        )
+
+        return run.info.run_id
+
+def evaluate_model(**context) -> Dict[str, Any]:
+    """Evaluate model on holdout set"""
+    import mlflow
+    import pandas as pd
+    from sklearn.metrics import classification_report, confusion_matrix
+
+    run_id = context['task_instance'].xcom_pull(
+        task_ids='train_model',
+        key='mlflow_run_id'
+    )
+
+    logger.info(f"Evaluating model from run {run_id}")
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+    # Load model
+    model_uri = f'runs:/{run_id}/model'
+    model = mlflow.sklearn.load_model(model_uri)
+
+    # Load holdout data (last week)
+    from google.cloud import bigquery
+    client = bigquery.Client()
+
+    execution_date = context['ds']
+    query = f"""
+        SELECT *
+        FROM `project.dataset.holdout_features`
+        WHERE DATE(event_timestamp) = '{execution_date}'
+    """
+
+    df = client.query(query).to_dataframe()
+
+    feature_cols = [c for c in df.columns if c not in ['user_id', 'label']]
+    X_holdout = df[feature_cols]
+    y_holdout = df['label']
+
+    # Predictions
+    y_pred = model.predict(X_holdout)
+    y_proba = model.predict_proba(X_holdout)[:, 1]
+
+    # Detailed evaluation
+    from sklearn.metrics import roc_auc_score, average_precision_score
+
+    evaluation_results = {
+        'holdout_roc_auc': roc_auc_score(y_holdout, y_proba),
+        'holdout_avg_precision': average_precision_score(y_holdout, y_proba),
+        'holdout_samples': len(X_holdout),
+        'positive_rate': y_holdout.mean()
+    }
+
+    # Log to MLflow
+    with mlflow.start_run(run_id=run_id):
+        mlflow.log_metrics({
+            f'holdout_{k}': v for k, v in evaluation_results.items()
+        })
+
+        # Log classification report
+        report = classification_report(
+            y_holdout, y_pred, output_dict=True
+        )
+        mlflow.log_dict(report, 'classification_report.json')
+
+        # Log confusion matrix
+        cm = confusion_matrix(y_holdout, y_pred)
+        mlflow.log_dict({
+            'confusion_matrix': cm.tolist()
+        }, 'confusion_matrix.json')
+
+    logger.info(f"Evaluation complete: {evaluation_results}")
+
+    # Decision: promote to staging or reject
+    if evaluation_results['holdout_roc_auc'] >= MODEL_PERFORMANCE_THRESHOLD:
+        context['task_instance'].xcom_push(
+            key='promotion_decision',
+            value='promote'
+        )
+    else:
+        context['task_instance'].xcom_push(
+            key='promotion_decision',
+            value='reject'
+        )
+        logger.warning(
+            f"Model rejected: holdout_roc_auc "
+            f"{evaluation_results['holdout_roc_auc']:.3f} "
+            f"< {MODEL_PERFORMANCE_THRESHOLD}"
+        )
+
+    return evaluation_results
+
+def register_model(**context):
+    """Register model to model registry if approved"""
+    import mlflow
+    from mlflow.tracking import MlflowClient
+
+    promotion_decision = context['task_instance'].xcom_pull(
+        task_ids='evaluate_model',
+        key='promotion_decision'
+    )
+
+    if promotion_decision != 'promote':
+        logger.info("Model not promoted - skipping registration")
+        return
+
+    run_id = context['task_instance'].xcom_pull(
+        task_ids='train_model',
+        key='mlflow_run_id'
+    )
+
+    logger.info(f"Registering model from run {run_id}")
+
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    client = MlflowClient()
+
+    # Get model version
+    model_name = 'churn_prediction_model'
+    model_uri = f'runs:/{run_id}/model'
+
+    # Register
+    model_version = mlflow.register_model(model_uri, model_name)
+
+    # Transition to staging
+    client.transition_model_version_stage(
+        name=model_name,
+        version=model_version.version,
+        stage='Staging',
+        archive_existing_versions=False
+    )
+
+    # Add description
+    execution_date = context['ds']
+    client.update_model_version(
+        name=model_name,
+        version=model_version.version,
+        description=f"Trained on {execution_date}. "
+                   f"Automated training pipeline run."
+    )
+
+    logger.info(
+        f"Model registered: {model_name} v{model_version.version} "
+        f"-> Staging"
+    )
+
+# Define tasks
+validate_task = PythonOperator(
+    task_id='validate_data',
+    python_callable=validate_data_quality,
+    dag=dag
+)
+
+feature_task = PythonOperator(
+    task_id='feature_engineering',
+    python_callable=engineer_features,
+    dag=dag
+)
+
+train_task = PythonOperator(
+    task_id='train_model',
+    python_callable=train_model,
+    dag=dag
+)
+
+evaluate_task = PythonOperator(
+    task_id='evaluate_model',
+    python_callable=evaluate_model,
+    dag=dag
+)
+
+register_task = PythonOperator(
+    task_id='register_model',
+    python_callable=register_model,
+    dag=dag
+)
+
+# Define dependencies
+validate_task >> feature_task >> train_task >> evaluate_task >> register_task
+\end{lstlisting}
+
+This production pipeline demonstrates:
+\begin{itemize}
+    \item Data quality validation with Great Expectations
+    \item Feature engineering with versioning
+    \item MLflow experiment tracking
+    \item Comprehensive model evaluation
+    \item Conditional model promotion
+    \item Error handling with retries
+    \item Observable metrics at each stage
+\end{itemize}
+
+\subsection{Kubeflow Pipelines for ML}
+
+Kubeflow Pipelines provides Kubernetes-native orchestration with first-class ML support. It excels at distributed training and GPU workloads.
+
+\begin{lstlisting}[style=python, caption=Kubeflow Pipeline for Distributed Training]
+from kfp import dsl, compiler
+from kfp.v2.dsl import component, Output, Input, Dataset, Model, Metrics
+from typing import NamedTuple
+
+# Define reusable components
+@component(
+    base_image='python:3.9',
+    packages_to_install=['pandas', 'google-cloud-bigquery', 'pyarrow']
+)
+def extract_data(
+    project_id: str,
+    dataset_id: str,
+    table_id: str,
+    execution_date: str,
+    output_data: Output[Dataset]
+) -> NamedTuple('Outputs', [('row_count', int)]):
+    """Extract training data from BigQuery"""
+    from google.cloud import bigquery
+    import pandas as pd
+    from collections import namedtuple
+
+    client = bigquery.Client(project=project_id)
+
+    query = f"""
+        SELECT *
+        FROM `{project_id}.{dataset_id}.{table_id}`
+        WHERE DATE(event_timestamp) = '{execution_date}'
+    """
+
+    df = client.query(query).to_dataframe()
+
+    # Save to component output
+    df.to_parquet(output_data.path)
+
+    outputs = namedtuple('Outputs', ['row_count'])
+    return outputs(len(df))
+
+@component(
+    base_image='python:3.9',
+    packages_to_install=['pandas', 'scikit-learn', 'pyarrow']
+)
+def preprocess_data(
+    input_data: Input[Dataset],
+    output_features: Output[Dataset],
+    test_size: float = 0.2
+) -> NamedTuple('Outputs', [('feature_count', int)]):
+    """Preprocess and split data"""
+    import pandas as pd
+    from sklearn.model_selection import train_test_split
+    from collections import namedtuple
+
+    # Load data
+    df = pd.read_parquet(input_data.path)
+
+    # Feature engineering
+    feature_cols = [c for c in df.columns if c not in ['user_id', 'label']]
+    X = df[feature_cols]
+    y = df['label']
+
+    # Save processed features
+    result_df = pd.DataFrame(X)
+    result_df['label'] = y
+    result_df.to_parquet(output_features.path)
+
+    outputs = namedtuple('Outputs', ['feature_count'])
+    return outputs(len(feature_cols))
+
+@component(
+    base_image='pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime',
+    packages_to_install=['mlflow', 'pandas', 'scikit-learn']
+)
+def train_model(
+    input_features: Input[Dataset],
+    output_model: Output[Model],
+    metrics: Output[Metrics],
+    n_estimators: int = 100,
+    max_depth: int = 10,
+    mlflow_tracking_uri: str = ''
+) -> NamedTuple('Outputs', [('accuracy', float), ('roc_auc', float)]):
+    """Train model with GPU support"""
+    import pandas as pd
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import accuracy_score, roc_auc_score
+    import mlflow
+    import pickle
+    from collections import namedtuple
+
+    # Load data
+    df = pd.read_parquet(input_features.path)
+
+    # Prepare data
+    X = df.drop('label', axis=1)
+    y = df['label']
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    # Set MLflow tracking
+    if mlflow_tracking_uri:
+        mlflow.set_tracking_uri(mlflow_tracking_uri)
+
+    with mlflow.start_run():
+        # Train
+        model = RandomForestClassifier(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            n_jobs=-1
+        )
+        model.fit(X_train, y_train)
+
+        # Evaluate
+        y_pred = model.predict(X_test)
+        y_proba = model.predict_proba(X_test)[:, 1]
+
+        acc = accuracy_score(y_test, y_pred)
+        auc = roc_auc_score(y_test, y_proba)
+
+        # Log metrics
+        mlflow.log_metrics({
+            'accuracy': acc,
+            'roc_auc': auc
+        })
+
+        # Save model
+        with open(output_model.path, 'wb') as f:
+            pickle.dump(model, f)
+
+        # Log metrics to Kubeflow
+        metrics.log_metric('accuracy', acc)
+        metrics.log_metric('roc_auc', auc)
+
+    outputs = namedtuple('Outputs', ['accuracy', 'roc_auc'])
+    return outputs(acc, auc)
+
+@component(
+    base_image='python:3.9',
+    packages_to_install=['mlflow']
+)
+def deploy_model(
+    input_model: Input[Model],
+    model_accuracy: float,
+    accuracy_threshold: float = 0.75
+) -> str:
+    """Deploy model if it meets threshold"""
+    import mlflow
+    from mlflow.tracking import MlflowClient
+
+    if model_accuracy < accuracy_threshold:
+        return f"Model rejected: accuracy {model_accuracy:.3f} < {accuracy_threshold}"
+
+    # Transition to production
+    client = MlflowClient()
+
+    # In production, you'd actually deploy here
+    # For demo, just log the decision
+    return f"Model approved for deployment: accuracy {model_accuracy:.3f}"
+
+# Define pipeline
+@dsl.pipeline(
+    name='ml-training-pipeline',
+    description='End-to-end ML training pipeline on Kubeflow'
+)
+def ml_training_pipeline(
+    project_id: str = 'my-project',
+    dataset_id: str = 'ml_data',
+    table_id: str = 'training_data',
+    execution_date: str = '2024-01-15',
+    n_estimators: int = 100,
+    max_depth: int = 10,
+    mlflow_tracking_uri: str = 'http://mlflow:5000'
+):
+    """Complete ML training pipeline"""
+
+    # Extract data
+    extract_task = extract_data(
+        project_id=project_id,
+        dataset_id=dataset_id,
+        table_id=table_id,
+        execution_date=execution_date
+    )
+
+    # Preprocess
+    preprocess_task = preprocess_data(
+        input_data=extract_task.outputs['output_data']
+    )
+
+    # Train
+    train_task = train_model(
+        input_features=preprocess_task.outputs['output_features'],
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        mlflow_tracking_uri=mlflow_tracking_uri
+    )
+
+    # Deploy (conditional)
+    deploy_task = deploy_model(
+        input_model=train_task.outputs['output_model'],
+        model_accuracy=train_task.outputs['accuracy']
+    )
+
+# Compile pipeline
+if __name__ == '__main__':
+    compiler.Compiler().compile(
+        pipeline_func=ml_training_pipeline,
+        package_path='ml_training_pipeline.yaml'
+    )
+\end{lstlisting}
+
+Key advantages of Kubeflow:
+\begin{itemize}
+    \item \textbf{Containerization:} Each component runs in isolated container
+    \item \textbf{Scalability:} Native Kubernetes scaling and GPU support
+    \item \textbf{Reproducibility:} Pipeline defined as code with versioned containers
+    \item \textbf{ML-Native:} Built-in support for models, datasets, and metrics
+    \item \textbf{Experimentation:} Easy parameter sweeping and parallel runs
+\end{itemize}
+
+\section{Experiment Tracking and Reproducibility}
+
+Reproducibility is fundamental to ML engineering. Every experiment must be completely reproducible months or years later.
+
+\subsection{The Reproducibility Challenge}
+
+Reproducing an ML experiment requires tracking:
+\begin{itemize}
+    \item Code version (git commit)
+    \item Data version (DVC hash or timestamp)
+    \item Model architecture and hyperparameters
+    \item Library versions (requirements.txt)
+    \item Random seeds
+    \item Hardware configuration (CPU/GPU)
+    \item Feature transformations
+    \item Training procedure (epochs, batch size, etc.)
+\end{itemize}
+
+\subsection{MLflow for Comprehensive Tracking}
+
+MLflow provides a complete experiment tracking solution:
+
+\begin{lstlisting}[style=python, caption=Comprehensive Experiment Tracking with MLflow]
+import mlflow
+import mlflow.pytorch
+from mlflow.models.signature import infer_signature
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+import pandas as pd
+import numpy as np
+from typing import Dict, Any
+import json
+import git
+import os
+
+class ExperimentTracker:
+    """Comprehensive experiment tracking wrapper"""
+
+    def __init__(
+        self,
+        tracking_uri: str,
+        experiment_name: str,
+        artifact_location: str = None
+    ):
+        mlflow.set_tracking_uri(tracking_uri)
+
+        # Create or get experiment
+        experiment = mlflow.get_experiment_by_name(experiment_name)
+        if experiment is None:
+            experiment_id = mlflow.create_experiment(
+                experiment_name,
+                artifact_location=artifact_location
+            )
+        else:
+            experiment_id = experiment.experiment_id
+
+        mlflow.set_experiment(experiment_name)
+        self.experiment_id = experiment_id
+
+    def start_run(
+        self,
+        run_name: str,
+        description: str = None,
+        tags: Dict[str, str] = None
+    ):
+        """Start a new MLflow run with comprehensive metadata"""
+
+        # Get git info
+        repo = git.Repo(search_parent_directories=True)
+        git_commit = repo.head.object.hexsha
+        git_branch = repo.active_branch.name
+
+        # Combine tags
+        all_tags = {
+            'git_commit': git_commit,
+            'git_branch': git_branch,
+            'python_version': f"{os.sys.version_info.major}.{os.sys.version_info.minor}",
+            'mlflow_version': mlflow.__version__,
+        }
+
+        if tags:
+            all_tags.update(tags)
+
+        # Start run
+        run = mlflow.start_run(
+            run_name=run_name,
+            description=description,
+            tags=all_tags
+        )
+
+        return run
+
+    def log_dataset_info(
+        self,
+        train_df: pd.DataFrame,
+        val_df: pd.DataFrame,
+        test_df: pd.DataFrame
+    ):
+        """Log comprehensive dataset information"""
+
+        # Dataset sizes
+        mlflow.log_param('train_samples', len(train_df))
+        mlflow.log_param('val_samples', len(val_df))
+        mlflow.log_param('test_samples', len(test_df))
+
+        # Feature info
+        mlflow.log_param('feature_count', len(train_df.columns))
+        mlflow.log_param('features', list(train_df.columns))
+
+        # Class distribution
+        if 'label' in train_df.columns:
+            class_dist = train_df['label'].value_counts().to_dict()
+            mlflow.log_param('class_distribution', class_dist)
+
+            # Class imbalance ratio
+            if len(class_dist) == 2:
+                imbalance = max(class_dist.values()) / min(class_dist.values())
+                mlflow.log_metric('class_imbalance_ratio', imbalance)
+
+        # Statistical summary
+        summary = train_df.describe().to_dict()
+        mlflow.log_dict(summary, 'dataset_summary.json')
+
+    def log_model_architecture(
+        self,
+        model: nn.Module,
+        input_example: torch.Tensor
+    ):
+        """Log model architecture and complexity"""
+
+        # Count parameters
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(
+            p.numel() for p in model.parameters() if p.requires_grad
+        )
+
+        mlflow.log_param('total_parameters', total_params)
+        mlflow.log_param('trainable_parameters', trainable_params)
+
+        # Model summary
+        mlflow.log_text(str(model), 'model_architecture.txt')
+
+        # Log computational graph (requires torchviz)
+        try:
+            from torchviz import make_dot
+            output = model(input_example)
+            dot = make_dot(output, params=dict(model.named_parameters()))
+            dot.render('model_graph', format='png')
+            mlflow.log_artifact('model_graph.png')
+        except ImportError:
+            pass
+
+    def log_training_config(
+        self,
+        config: Dict[str, Any]
+    ):
+        """Log all training hyperparameters"""
+
+        # Flatten nested config
+        def flatten_dict(d, parent_key='', sep='_'):
+            items = []
+            for k, v in d.items():
+                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                if isinstance(v, dict):
+                    items.extend(flatten_dict(v, new_key, sep=sep).items())
+                else:
+                    items.append((new_key, v))
+            return dict(items)
+
+        flat_config = flatten_dict(config)
+
+        # Log as parameters
+        for key, value in flat_config.items():
+            mlflow.log_param(key, value)
+
+        # Also save full config as artifact
+        mlflow.log_dict(config, 'full_config.json')
+
+    def log_training_metrics(
+        self,
+        epoch: int,
+        train_metrics: Dict[str, float],
+        val_metrics: Dict[str, float]
+    ):
+        """Log metrics for each epoch"""
+
+        # Log train metrics
+        for name, value in train_metrics.items():
+            mlflow.log_metric(f'train_{name}', value, step=epoch)
+
+        # Log validation metrics
+        for name, value in val_metrics.items():
+            mlflow.log_metric(f'val_{name}', value, step=epoch)
+
+    def log_system_metrics(self):
+        """Log system and hardware metrics"""
+        import psutil
+        import platform
+
+        system_info = {
+            'cpu_count': psutil.cpu_count(),
+            'memory_gb': psutil.virtual_memory().total / (1024**3),
+            'platform': platform.platform(),
+            'processor': platform.processor()
+        }
+
+        # GPU info
+        if torch.cuda.is_available():
+            system_info.update({
+                'gpu_count': torch.cuda.device_count(),
+                'gpu_name': torch.cuda.get_device_name(0),
+                'cuda_version': torch.version.cuda
+            })
+
+        mlflow.log_dict(system_info, 'system_info.json')
+
+    def log_model_artifacts(
+        self,
+        model: nn.Module,
+        signature: mlflow.models.signature.ModelSignature = None,
+        input_example: np.ndarray = None,
+        requirements_file: str = 'requirements.txt'
+    ):
+        """Log model with all necessary artifacts"""
+
+        # Log PyTorch model
+        mlflow.pytorch.log_model(
+            model,
+            'model',
+            signature=signature,
+            input_example=input_example,
+            pip_requirements=requirements_file
+        )
+
+        # Log state dict separately for flexibility
+        torch.save(model.state_dict(), 'model_state.pth')
+        mlflow.log_artifact('model_state.pth')
+
+    def log_feature_importance(
+        self,
+        feature_names: list,
+        importances: np.ndarray
+    ):
+        """Log feature importance analysis"""
+
+        importance_df = pd.DataFrame({
+            'feature': feature_names,
+            'importance': importances
+        }).sort_values('importance', ascending=False)
+
+        # Log as table
+        mlflow.log_table(importance_df, 'feature_importance.json')
+
+        # Create and log plot
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=(10, 8))
+        plt.barh(
+            importance_df['feature'].head(20),
+            importance_df['importance'].head(20)
+        )
+        plt.xlabel('Importance')
+        plt.title('Top 20 Features by Importance')
+        plt.tight_layout()
+        plt.savefig('feature_importance.png')
+        mlflow.log_artifact('feature_importance.png')
+        plt.close()
+
+# Usage example
+def train_with_tracking():
+    """Example: Complete training with comprehensive tracking"""
+
+    # Initialize tracker
+    tracker = ExperimentTracker(
+        tracking_uri='http://mlflow-server:5000',
+        experiment_name='customer_churn_prediction'
+    )
+
+    # Start run
+    with tracker.start_run(
+        run_name='rf_baseline',
+        description='Random Forest baseline model',
+        tags={'model_type': 'random_forest', 'version': 'v1.0'}
+    ):
+
+        # Load data
+        train_df = pd.read_csv('data/train.csv')
+        val_df = pd.read_csv('data/val.csv')
+        test_df = pd.read_csv('data/test.csv')
+
+        # Log dataset info
+        tracker.log_dataset_info(train_df, val_df, test_df)
+
+        # Configuration
+        config = {
+            'model': {
+                'type': 'RandomForest',
+                'n_estimators': 100,
+                'max_depth': 10,
+                'min_samples_split': 100
+            },
+            'training': {
+                'batch_size': 256,
+                'epochs': 10,
+                'optimizer': 'adam',
+                'learning_rate': 0.001
+            },
+            'data': {
+                'feature_engineering_version': 'v2.1',
+                'normalization': 'standard'
+            }
+        }
+
+        tracker.log_training_config(config)
+
+        # Log system info
+        tracker.log_system_metrics()
+
+        # Train model (simplified)
+        from sklearn.ensemble import RandomForestClassifier
+
+        X_train = train_df.drop('label', axis=1)
+        y_train = train_df['label']
+
+        model = RandomForestClassifier(**config['model'])
+        model.fit(X_train, y_train)
+
+        # Log model artifacts
+        tracker.log_model_artifacts(
+            model,
+            input_example=X_train.head(5).to_numpy()
+        )
+
+        # Log feature importance
+        tracker.log_feature_importance(
+            list(X_train.columns),
+            model.feature_importances_
+        )
+
+        print("Training complete with comprehensive tracking")
+
+# Compare experiments
+def compare_experiments(experiment_name: str, metric: str = 'val_roc_auc'):
+    """Compare all runs in an experiment"""
+
+    mlflow.set_tracking_uri('http://mlflow-server:5000')
+
+    # Get all runs
+    runs = mlflow.search_runs(
+        experiment_names=[experiment_name],
+        order_by=[f"metrics.{metric} DESC"]
+    )
+
+    # Display top runs
+    print(f"Top runs by {metric}:")
+    print(runs[['run_id', f'metrics.{metric}', 'params.model_type']].head(10))
+
+    return runs
+\end{lstlisting}
+
+This tracking system ensures complete reproducibility by capturing all aspects of the experiment.
+
+\section{Hyperparameter Optimization at Scale}
+
+Hyperparameter optimization (HPO) is critical for model performance but computationally expensive. Production systems require efficient, scalable HPO strategies.
+
+\subsection{HPO Strategies Comparison}
+
+\begin{table}[h]
+\centering
+\caption{Hyperparameter Optimization Strategies}
+\label{tab:hpo_strategies}
+\small
+\begin{tabular}{@{}lp{3.5cm}p{2.5cm}p{3cm}@{}}
+\toprule
+\textbf{Method} & \textbf{Best For} & \textbf{Convergence} & \textbf{Compute Cost} \\
+\midrule
+Grid Search & Small parameter spaces & Guaranteed coverage & Very high \\
+Random Search & Medium spaces, quick results & Better than grid & Medium \\
+Bayesian Optimization & Expensive evaluations & Sample efficient & Low \\
+Hyperband & Large-scale search & Fast early stopping & Medium-Low \\
+Optuna & Modern, flexible & Adaptive & Medium \\
+Ray Tune & Distributed, scalable & Parallel efficient & Low (amortized) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Bayesian Optimization with Optuna}
+
+Optuna provides an efficient, Pythonic HPO framework:
+
+\begin{lstlisting}[style=python, caption=Hyperparameter Optimization with Optuna]
+import optuna
+from optuna.integration.mlflow import MLflowCallback
+import mlflow
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score
+import pandas as pd
+import numpy as np
+from typing import Dict, Any
+import logging
+
+logger = logging.getLogger(__name__)
+
+class HyperparameterOptimizer:
+    """Production-grade hyperparameter optimization"""
+
+    def __init__(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series,
+        mlflow_tracking_uri: str,
+        experiment_name: str
+    ):
+        self.X_train = X_train
+        self.y_train = y_train
+        self.X_val = X_val
+        self.y_val = y_val
+
+        mlflow.set_tracking_uri(mlflow_tracking_uri)
+        mlflow.set_experiment(experiment_name)
+
+    def objective(self, trial: optuna.Trial) -> float:
+        """Optuna objective function"""
+
+        # Suggest hyperparameters
+        params = {
+            'n_estimators': trial.suggest_int('n_estimators', 50, 500),
+            'max_depth': trial.suggest_int('max_depth', 3, 20),
+            'min_samples_split': trial.suggest_int('min_samples_split', 2, 100),
+            'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 50),
+            'max_features': trial.suggest_categorical(
+                'max_features', ['sqrt', 'log2', None]
+            ),
+            'class_weight': trial.suggest_categorical(
+                'class_weight', ['balanced', 'balanced_subsample', None]
+            )
+        }
+
+        # Train model
+        model = RandomForestClassifier(**params, n_jobs=-1, random_state=42)
+        model.fit(self.X_train, self.y_train)
+
+        # Evaluate on validation set
+        from sklearn.metrics import roc_auc_score
+
+        y_proba = model.predict_proba(self.X_val)[:, 1]
+        score = roc_auc_score(self.y_val, y_proba)
+
+        # Log intermediate values for pruning
+        trial.report(score, step=0)
+
+        # Handle pruning based on the intermediate value
+        if trial.should_prune():
+            raise optuna.TrialPruned()
+
+        return score
+
+    def optimize(
+        self,
+        n_trials: int = 100,
+        timeout: int = 3600,
+        n_jobs: int = -1
+    ) -> optuna.Study:
+        """Run hyperparameter optimization"""
+
+        # Create study with pruning
+        study = optuna.create_study(
+            study_name=f'hpo_{pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")}',
+            direction='maximize',
+            pruner=optuna.pruners.MedianPruner(
+                n_startup_trials=5,
+                n_warmup_steps=0,
+                interval_steps=1
+            ),
+            sampler=optuna.samplers.TPESampler(seed=42)
+        )
+
+        # MLflow callback for tracking
+        mlflow_callback = MLflowCallback(
+            tracking_uri=mlflow.get_tracking_uri(),
+            metric_name='val_roc_auc'
+        )
+
+        # Optimize
+        study.optimize(
+            self.objective,
+            n_trials=n_trials,
+            timeout=timeout,
+            n_jobs=n_jobs,
+            callbacks=[mlflow_callback],
+            show_progress_bar=True
+        )
+
+        # Log best parameters
+        logger.info(f"Best trial: {study.best_trial.number}")
+        logger.info(f"Best value: {study.best_value:.4f}")
+        logger.info(f"Best params: {study.best_params}")
+
+        return study
+
+    def get_best_model(self, study: optuna.Study):
+        """Train final model with best parameters"""
+
+        best_params = study.best_params
+
+        # Train on full training set
+        model = RandomForestClassifier(
+            **best_params,
+            n_jobs=-1,
+            random_state=42
+        )
+
+        model.fit(self.X_train, self.y_train)
+
+        return model, best_params
+
+# Usage example
+def run_hyperparameter_optimization():
+    """Example: Complete HPO workflow"""
+
+    # Load data
+    train_df = pd.read_csv('data/train.csv')
+    val_df = pd.read_csv('data/val.csv')
+
+    X_train = train_df.drop('label', axis=1)
+    y_train = train_df['label']
+    X_val = val_df.drop('label', axis=1)
+    y_val = val_df['label']
+
+    # Initialize optimizer
+    optimizer = HyperparameterOptimizer(
+        X_train=X_train,
+        y_train=y_train,
+        X_val=X_val,
+        y_val=y_val,
+        mlflow_tracking_uri='http://mlflow-server:5000',
+        experiment_name='churn_prediction_hpo'
+    )
+
+    # Run optimization
+    study = optimizer.optimize(
+        n_trials=100,
+        timeout=3600,
+        n_jobs=4
+    )
+
+    # Get best model
+    best_model, best_params = optimizer.get_best_model(study)
+
+    # Log final model
+    with mlflow.start_run(run_name='best_model_from_hpo'):
+        mlflow.log_params(best_params)
+        mlflow.log_metric('val_roc_auc', study.best_value)
+        mlflow.sklearn.log_model(best_model, 'model')
+
+    # Visualization
+    optuna.visualization.plot_optimization_history(study).show()
+    optuna.visualization.plot_param_importances(study).show()
+
+    return best_model, study
+\end{lstlisting}
+
+\subsection{Distributed HPO with Ray Tune}
+
+For large-scale HPO, Ray Tune provides distributed, fault-tolerant optimization:
+
+\begin{lstlisting}[style=python, caption=Distributed Hyperparameter Optimization with Ray Tune]
+from ray import tune
+from ray.tune import CLIReporter
+from ray.tune.schedulers import ASHAScheduler
+from ray.tune.integration.mlflow import mlflow_mixin
+import mlflow
+from typing import Dict
+
+@mlflow_mixin
+def train_model_tune(config: Dict):
+    """Training function for Ray Tune"""
+    import pandas as pd
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.metrics import roc_auc_score
+
+    # Load data
+    train_df = pd.read_csv('data/train.csv')
+    val_df = pd.read_csv('data/val.csv')
+
+    X_train = train_df.drop('label', axis=1)
+    y_train = train_df['label']
+    X_val = val_df.drop('label', axis=1)
+    y_val = val_df['label']
+
+    # Train model
+    model = RandomForestClassifier(
+        n_estimators=config['n_estimators'],
+        max_depth=config['max_depth'],
+        min_samples_split=config['min_samples_split'],
+        min_samples_leaf=config['min_samples_leaf'],
+        n_jobs=1,  # Ray handles parallelism
+        random_state=42
+    )
+
+    model.fit(X_train, y_train)
+
+    # Evaluate
+    y_proba = model.predict_proba(X_val)[:, 1]
+    score = roc_auc_score(y_val, y_proba)
+
+    # Report to Ray Tune (and MLflow via mixin)
+    tune.report(val_roc_auc=score)
+
+def run_distributed_hpo():
+    """Run distributed HPO with Ray Tune"""
+
+    # Define search space
+    config = {
+        'n_estimators': tune.randint(50, 500),
+        'max_depth': tune.randint(3, 20),
+        'min_samples_split': tune.randint(2, 100),
+        'min_samples_leaf': tune.randint(1, 50)
+    }
+
+    # Configure ASHA scheduler for early stopping
+    scheduler = ASHAScheduler(
+        max_t=100,
+        grace_period=10,
+        reduction_factor=2
+    )
+
+    # Reporter for progress
+    reporter = CLIReporter(
+        parameter_columns=['n_estimators', 'max_depth'],
+        metric_columns=['val_roc_auc']
+    )
+
+    # Run tuning
+    analysis = tune.run(
+        train_model_tune,
+        config=config,
+        metric='val_roc_auc',
+        mode='max',
+        num_samples=100,
+        scheduler=scheduler,
+        progress_reporter=reporter,
+        resources_per_trial={'cpu': 4},
+        mlflow={'experiment_name': 'ray_tune_hpo'}
+    )
+
+    # Get best config
+    best_config = analysis.get_best_config(metric='val_roc_auc', mode='max')
+    print(f"Best config: {best_config}")
+
+    return analysis
+\end{lstlisting}
+
+\section{Model Validation and Evaluation Frameworks}
+
+Robust model validation goes beyond simple train/test splits. Production systems require comprehensive evaluation frameworks.
+
+\subsection{Comprehensive Validation Strategy}
+
+\begin{lstlisting}[style=python, caption=Production Model Validation Framework]
+from sklearn.model_selection import (
+    StratifiedKFold, TimeSeriesSplit, cross_validate
+)
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    roc_auc_score, average_precision_score, confusion_matrix,
+    classification_report
+)
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Any, Callable
+import matplotlib.pyplot as plt
+import seaborn as sns
+import logging
+
+logger = logging.getLogger(__name__)
+
+class ModelValidator:
+    """Comprehensive model validation framework"""
+
+    def __init__(self, model, X, y, is_time_series: bool = False):
+        self.model = model
+        self.X = X
+        self.y = y
+        self.is_time_series = is_time_series
+
+    def cross_validate_comprehensive(
+        self,
+        n_splits: int = 5
+    ) -> Dict[str, Any]:
+        """Comprehensive cross-validation with multiple metrics"""
+
+        # Choose appropriate CV strategy
+        if self.is_time_series:
+            cv = TimeSeriesSplit(n_splits=n_splits)
+            logger.info(f"Using TimeSeriesSplit with {n_splits} splits")
+        else:
+            cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+            logger.info(f"Using StratifiedKFold with {n_splits} splits")
+
+        # Define scoring metrics
+        scoring = {
+            'accuracy': 'accuracy',
+            'precision': 'precision',
+            'recall': 'recall',
+            'f1': 'f1',
+            'roc_auc': 'roc_auc',
+            'average_precision': 'average_precision'
+        }
+
+        # Run cross-validation
+        cv_results = cross_validate(
+            self.model,
+            self.X,
+            self.y,
+            cv=cv,
+            scoring=scoring,
+            return_train_score=True,
+            return_estimator=True,
+            n_jobs=-1
+        )
+
+        # Aggregate results
+        results_summary = {}
+
+        for metric in scoring.keys():
+            test_scores = cv_results[f'test_{metric}']
+            train_scores = cv_results[f'train_{metric}']
+
+            results_summary[metric] = {
+                'test_mean': np.mean(test_scores),
+                'test_std': np.std(test_scores),
+                'test_scores': test_scores.tolist(),
+                'train_mean': np.mean(train_scores),
+                'train_std': np.std(train_scores),
+                'overfitting_gap': np.mean(train_scores) - np.mean(test_scores)
+            }
+
+        # Check for overfitting
+        for metric, scores in results_summary.items():
+            if scores['overfitting_gap'] > 0.1:
+                logger.warning(
+                    f"Potential overfitting detected for {metric}: "
+                    f"gap = {scores['overfitting_gap']:.3f}"
+                )
+
+        results_summary['cv_estimators'] = cv_results['estimator']
+
+        return results_summary
+
+    def evaluate_thresholds(
+        self,
+        X_test: pd.DataFrame,
+        y_test: pd.Series,
+        thresholds: List[float] = None
+    ) -> pd.DataFrame:
+        """Evaluate model at different decision thresholds"""
+
+        if thresholds is None:
+            thresholds = np.arange(0.1, 1.0, 0.05)
+
+        # Get predicted probabilities
+        y_proba = self.model.predict_proba(X_test)[:, 1]
+
+        results = []
+
+        for threshold in thresholds:
+            y_pred = (y_proba >= threshold).astype(int)
+
+            # Calculate metrics
+            precision = precision_score(y_test, y_pred, zero_division=0)
+            recall = recall_score(y_test, y_pred, zero_division=0)
+            f1 = f1_score(y_test, y_pred, zero_division=0)
+
+            results.append({
+                'threshold': threshold,
+                'precision': precision,
+                'recall': recall,
+                'f1': f1
+            })
+
+        results_df = pd.DataFrame(results)
+
+        # Find optimal threshold (maximize F1)
+        optimal_idx = results_df['f1'].idxmax()
+        optimal_threshold = results_df.loc[optimal_idx, 'threshold']
+
+        logger.info(
+            f"Optimal threshold: {optimal_threshold:.2f} "
+            f"(F1: {results_df.loc[optimal_idx, 'f1']:.3f})"
+        )
+
+        return results_df
+
+    def evaluate_fairness(
+        self,
+        X_test: pd.DataFrame,
+        y_test: pd.Series,
+        sensitive_feature: str
+    ) -> Dict[str, Any]:
+        """Evaluate model fairness across groups"""
+
+        y_pred = self.model.predict(X_test)
+
+        # Get unique groups
+        groups = X_test[sensitive_feature].unique()
+
+        fairness_metrics = {}
+
+        for group in groups:
+            mask = X_test[sensitive_feature] == group
+
+            group_metrics = {
+                'size': mask.sum(),
+                'accuracy': accuracy_score(y_test[mask], y_pred[mask]),
+                'precision': precision_score(y_test[mask], y_pred[mask]),
+                'recall': recall_score(y_test[mask], y_pred[mask]),
+                'f1': f1_score(y_test[mask], y_pred[mask])
+            }
+
+            fairness_metrics[str(group)] = group_metrics
+
+        # Calculate disparity
+        accuracies = [m['accuracy'] for m in fairness_metrics.values()]
+        disparity = max(accuracies) - min(accuracies)
+
+        fairness_metrics['accuracy_disparity'] = disparity
+
+        if disparity > 0.05:
+            logger.warning(
+                f"Fairness concern: accuracy disparity = {disparity:.3f}"
+            )
+
+        return fairness_metrics
+
+    def generate_report(
+        self,
+        X_test: pd.DataFrame,
+        y_test: pd.Series,
+        output_dir: str = 'validation_reports'
+    ):
+        """Generate comprehensive validation report"""
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Predictions
+        y_pred = self.model.predict(X_test)
+        y_proba = self.model.predict_proba(X_test)[:, 1]
+
+        # Classification report
+        report = classification_report(y_test, y_pred, output_dict=True)
+        report_df = pd.DataFrame(report).transpose()
+        report_df.to_csv(f'{output_dir}/classification_report.csv')
+
+        # Confusion matrix
+        cm = confusion_matrix(y_test, y_pred)
+
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+        plt.title('Confusion Matrix')
+        plt.ylabel('True Label')
+        plt.xlabel('Predicted Label')
+        plt.savefig(f'{output_dir}/confusion_matrix.png')
+        plt.close()
+
+        # ROC curve
+        from sklearn.metrics import roc_curve, auc
+
+        fpr, tpr, thresholds = roc_curve(y_test, y_proba)
+        roc_auc = auc(fpr, tpr)
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(fpr, tpr, label=f'ROC curve (AUC = {roc_auc:.3f})')
+        plt.plot([0, 1], [0, 1], 'k--', label='Random')
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('ROC Curve')
+        plt.legend()
+        plt.savefig(f'{output_dir}/roc_curve.png')
+        plt.close()
+
+        # Precision-Recall curve
+        from sklearn.metrics import precision_recall_curve
+
+        precision, recall, _ = precision_recall_curve(y_test, y_proba)
+        avg_precision = average_precision_score(y_test, y_proba)
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(recall, precision, label=f'AP = {avg_precision:.3f}')
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall Curve')
+        plt.legend()
+        plt.savefig(f'{output_dir}/precision_recall_curve.png')
+        plt.close()
+
+        logger.info(f"Validation report saved to {output_dir}/")
+
+# Usage
+def validate_model_comprehensive():
+    """Example: Comprehensive model validation"""
+
+    from sklearn.ensemble import RandomForestClassifier
+
+    # Load data
+    train_df = pd.read_csv('data/train.csv')
+    test_df = pd.read_csv('data/test.csv')
+
+    X_train = train_df.drop('label', axis=1)
+    y_train = train_df['label']
+    X_test = test_df.drop('label', axis=1)
+    y_test = test_df['label']
+
+    # Train model
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+
+    # Initialize validator
+    validator = ModelValidator(model, X_train, y_train)
+
+    # Cross-validation
+    cv_results = validator.cross_validate_comprehensive(n_splits=5)
+
+    # Threshold analysis
+    threshold_results = validator.evaluate_thresholds(X_test, y_test)
+
+    # Fairness evaluation
+    fairness_results = validator.evaluate_fairness(
+        X_test, y_test, sensitive_feature='age_group'
+    )
+
+    # Generate report
+    validator.generate_report(X_test, y_test)
+
+    return cv_results, threshold_results, fairness_results
+\end{lstlisting}
+
+\section{A/B Testing for ML Models}
+
+A/B testing ML models in production requires careful experimental design and statistical rigor.
+
+\subsection{Model A/B Test Design}
+
+\begin{lstlisting}[style=python, caption=A/B Testing Framework for ML Models]
+import hashlib
+from typing import Dict, Any, Optional
+from dataclasses import dataclass
+from datetime import datetime
+import pandas as pd
+import numpy as np
+from scipy import stats
+import logging
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class ABTestConfig:
+    """Configuration for model A/B test"""
+    experiment_name: str
+    control_model_version: str
+    treatment_model_version: str
+    traffic_allocation: float = 0.5  # 50/50 split
+    minimum_sample_size: int = 1000
+    significance_level: float = 0.05
+    minimum_detectable_effect: float = 0.02  # 2% relative change
+    start_date: datetime = None
+    end_date: datetime = None
+
+class ModelABTest:
+    """Production A/B testing framework for ML models"""
+
+    def __init__(self, config: ABTestConfig):
+        self.config = config
+        self.results = {'control': [], 'treatment': []}
+
+    def assign_variant(self, user_id: str) -> str:
+        """Consistent user assignment using hash-based randomization"""
+
+        # Create deterministic hash
+        hash_value = int(
+            hashlib.md5(
+                f"{user_id}_{self.config.experiment_name}".encode()
+            ).hexdigest(),
+            16
+        )
+
+        # Convert to probability [0, 1)
+        prob = (hash_value % 10000) / 10000
+
+        if prob < self.config.traffic_allocation:
+            return 'treatment'
+        else:
+            return 'control'
+
+    def get_model_version(self, user_id: str) -> str:
+        """Get model version for user"""
+
+        variant = self.assign_variant(user_id)
+
+        if variant == 'treatment':
+            return self.config.treatment_model_version
+        else:
+            return self.config.control_model_version
+
+    def log_prediction(
+        self,
+        user_id: str,
+        prediction: float,
+        actual: Optional[float] = None
+    ):
+        """Log prediction result for A/B test"""
+
+        variant = self.assign_variant(user_id)
+
+        result = {
+            'user_id': user_id,
+            'timestamp': datetime.now(),
+            'prediction': prediction,
+            'actual': actual,
+            'variant': variant
+        }
+
+        self.results[variant].append(result)
+
+    def calculate_sample_size(
+        self,
+        baseline_conversion: float,
+        minimum_detectable_effect: float = None
+    ) -> int:
+        """Calculate required sample size for statistical power"""
+
+        if minimum_detectable_effect is None:
+            minimum_detectable_effect = self.config.minimum_detectable_effect
+
+        # Use statsmodels for power analysis
+        from statsmodels.stats.power import zt_ind_solve_power
+
+        # Calculate required sample size per variant
+        n_per_variant = zt_ind_solve_power(
+            effect_size=minimum_detectable_effect,
+            alpha=self.config.significance_level,
+            power=0.8,  # 80% power
+            ratio=1.0,  # Equal sample sizes
+            alternative='two-sided'
+        )
+
+        total_sample_size = int(np.ceil(n_per_variant * 2))
+
+        logger.info(
+            f"Required sample size: {total_sample_size} "
+            f"({n_per_variant:.0f} per variant)"
+        )
+
+        return total_sample_size
+
+    def analyze_results(
+        self,
+        metric: str = 'accuracy'
+    ) -> Dict[str, Any]:
+        """Analyze A/B test results"""
+
+        # Convert results to DataFrames
+        control_df = pd.DataFrame(self.results['control'])
+        treatment_df = pd.DataFrame(self.results['treatment'])
+
+        # Check minimum sample size
+        if len(control_df) < self.config.minimum_sample_size:
+            logger.warning(
+                f"Insufficient control samples: {len(control_df)} "
+                f"< {self.config.minimum_sample_size}"
+            )
+            return {'status': 'insufficient_data'}
+
+        if len(treatment_df) < self.config.minimum_sample_size:
+            logger.warning(
+                f"Insufficient treatment samples: {len(treatment_df)} "
+                f"< {self.config.minimum_sample_size}"
+            )
+            return {'status': 'insufficient_data'}
+
+        # Calculate metric
+        if metric == 'accuracy':
+            control_metric = (
+                control_df['prediction'] == control_df['actual']
+            ).mean()
+            treatment_metric = (
+                treatment_df['prediction'] == treatment_df['actual']
+            ).mean()
+
+        elif metric == 'auc':
+            from sklearn.metrics import roc_auc_score
+            control_metric = roc_auc_score(
+                control_df['actual'],
+                control_df['prediction']
+            )
+            treatment_metric = roc_auc_score(
+                treatment_df['actual'],
+                treatment_df['prediction']
+            )
+
+        # Calculate absolute and relative difference
+        absolute_diff = treatment_metric - control_metric
+        relative_diff = absolute_diff / control_metric
+
+        # Statistical test (two-sample t-test)
+        t_stat, p_value = stats.ttest_ind(
+            treatment_df['prediction'],
+            control_df['prediction'],
+            equal_var=False
+        )
+
+        # Confidence interval
+        se = np.sqrt(
+            control_metric * (1 - control_metric) / len(control_df) +
+            treatment_metric * (1 - treatment_metric) / len(treatment_df)
+        )
+
+        ci_lower = absolute_diff - 1.96 * se
+        ci_upper = absolute_diff + 1.96 * se
+
+        # Decision
+        is_significant = p_value < self.config.significance_level
+        recommend_treatment = is_significant and absolute_diff > 0
+
+        results = {
+            'status': 'complete',
+            'control': {
+                'samples': len(control_df),
+                'metric': control_metric
+            },
+            'treatment': {
+                'samples': len(treatment_df),
+                'metric': treatment_metric
+            },
+            'difference': {
+                'absolute': absolute_diff,
+                'relative': relative_diff,
+                'ci_lower': ci_lower,
+                'ci_upper': ci_upper
+            },
+            'statistics': {
+                't_statistic': t_stat,
+                'p_value': p_value,
+                'is_significant': is_significant
+            },
+            'recommendation': {
+                'deploy_treatment': recommend_treatment,
+                'reason': self._get_recommendation_reason(
+                    is_significant, absolute_diff, p_value
+                )
+            }
+        }
+
+        logger.info(
+            f"A/B Test Results: "
+            f"Control={control_metric:.4f}, "
+            f"Treatment={treatment_metric:.4f}, "
+            f"Diff={relative_diff:.2%}, "
+            f"p-value={p_value:.4f}"
+        )
+
+        return results
+
+    def _get_recommendation_reason(
+        self,
+        is_significant: bool,
+        diff: float,
+        p_value: float
+    ) -> str:
+        """Generate recommendation explanation"""
+
+        if not is_significant:
+            return f"No significant difference (p={p_value:.4f})"
+
+        if diff > 0:
+            return f"Treatment significantly better (p={p_value:.4f}, improvement={diff:.2%})"
+        else:
+            return f"Treatment significantly worse (p={p_value:.4f}, degradation={diff:.2%})"
+
+# Usage example
+def run_model_ab_test():
+    """Example: Production A/B test for model deployment"""
+
+    # Configure test
+    config = ABTestConfig(
+        experiment_name='churn_model_v2_vs_v1',
+        control_model_version='v1.0',
+        treatment_model_version='v2.0',
+        traffic_allocation=0.5,
+        minimum_sample_size=1000,
+        significance_level=0.05,
+        minimum_detectable_effect=0.02
+    )
+
+    # Initialize test
+    ab_test = ModelABTest(config)
+
+    # Calculate required sample size
+    required_n = ab_test.calculate_sample_size(
+        baseline_conversion=0.75  # Current accuracy
+    )
+
+    # In production: log predictions as they happen
+    # Here: simulated data
+    for user_id in range(5000):
+        # Get assigned model version
+        model_version = ab_test.get_model_version(f'user_{user_id}')
+
+        # Make prediction (simulated)
+        prediction = np.random.choice([0, 1], p=[0.3, 0.7])
+        actual = np.random.choice([0, 1], p=[0.3, 0.7])
+
+        # Log result
+        ab_test.log_prediction(
+            user_id=f'user_{user_id}',
+            prediction=prediction,
+            actual=actual
+        )
+
+    # Analyze results
+    results = ab_test.analyze_results(metric='accuracy')
+
+    # Make deployment decision
+    if results.get('recommendation', {}).get('deploy_treatment'):
+        logger.info("Recommendation: Deploy treatment model to 100% traffic")
+    else:
+        logger.info("Recommendation: Keep control model")
+
+    return results
+\end{lstlisting}
+
+\section{Case Study: BigQuery ML ARIMA\_PLUS for Time Series Forecasting}
+
+BigQuery ML enables scalable time series forecasting without infrastructure management. This case study demonstrates production time series pipelines.
+
+\subsection{Business Context}
+
+An e-commerce company needs to forecast daily sales for inventory planning. Requirements:
+\begin{itemize}
+    \item 7-day ahead forecast updated daily
+    \item Incorporate seasonality and holidays
+    \item Handle multiple product categories
+    \item Minimal infrastructure overhead
+\end{itemize}
+
+\subsection{Implementation with BigQuery ML}
+
+\begin{lstlisting}[style=sql, caption=BigQuery ML ARIMA\_PLUS Time Series Forecast]
+-- Step 1: Prepare training data
+CREATE OR REPLACE TABLE `project.dataset.sales_training_data` AS
+SELECT
+    DATE(order_timestamp) AS date,
+    product_category,
+    SUM(sales_amount) AS daily_sales,
+    COUNT(DISTINCT order_id) AS order_count
+FROM `project.dataset.orders`
+WHERE DATE(order_timestamp) BETWEEN '2022-01-01' AND '2024-01-31'
+GROUP BY date, product_category
+ORDER BY product_category, date;
+
+-- Step 2: Create ARIMA_PLUS model
+CREATE OR REPLACE MODEL `project.dataset.sales_forecast_model`
+OPTIONS(
+    model_type='ARIMA_PLUS',
+    time_series_timestamp_col='date',
+    time_series_data_col='daily_sales',
+    time_series_id_col='product_category',
+    holiday_region='US',  -- Include US holidays
+    auto_arima=TRUE,
+    data_frequency='DAILY',
+    decompose_time_series=TRUE
+) AS
+SELECT
+    date,
+    product_category,
+    daily_sales
+FROM `project.dataset.sales_training_data`;
+
+-- Step 3: Evaluate model
+SELECT
+    *
+FROM ML.ARIMA_EVALUATE(
+    MODEL `project.dataset.sales_forecast_model`,
+    STRUCT(TRUE AS show_all_candidate_models)
+);
+
+-- Step 4: Generate 7-day forecast
+CREATE OR REPLACE TABLE `project.dataset.sales_forecast` AS
+SELECT
+    *
+FROM ML.FORECAST(
+    MODEL `project.dataset.sales_forecast_model`,
+    STRUCT(
+        7 AS horizon,  -- 7 days ahead
+        0.95 AS confidence_level  -- 95% confidence intervals
+    )
+);
+
+-- Step 5: Explain forecast components
+SELECT
+    product_category,
+    date,
+    daily_sales_forecast,
+    standard_error,
+    confidence_level,
+    prediction_interval_lower_bound,
+    prediction_interval_upper_bound
+FROM `project.dataset.sales_forecast`
+ORDER BY product_category, date;
+
+-- Step 6: Detect anomalies
+CREATE OR REPLACE TABLE `project.dataset.sales_anomalies` AS
+SELECT
+    *
+FROM ML.DETECT_ANOMALIES(
+    MODEL `project.dataset.sales_forecast_model`,
+    STRUCT(0.95 AS anomaly_prob_threshold)
+);
+\end{lstlisting}
+
+\subsection{Production Pipeline with Airflow}
+
+\begin{lstlisting}[style=python, caption=Production BigQuery ML Pipeline]
+from airflow import DAG
+from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobOperator
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timedelta
+import pandas as pd
+from google.cloud import bigquery
+
+default_args = {
+    'owner': 'ml-team',
+    'depends_on_past': False,
+    'email_on_failure': True,
+    'retries': 2
+}
+
+dag = DAG(
+    'bigquery_ml_arima_forecast',
+    default_args=default_args,
+    description='Daily sales forecasting with BigQuery ML',
+    schedule_interval='0 3 * * *',  # Daily at 3 AM
+    start_date=datetime(2024, 1, 1),
+    catchup=False
+)
+
+# Task 1: Retrain model (weekly)
+retrain_model = BigQueryInsertJobOperator(
+    task_id='retrain_arima_model',
+    configuration={
+        'query': {
+            'query': '''
+                CREATE OR REPLACE MODEL `project.dataset.sales_forecast_model`
+                OPTIONS(
+                    model_type='ARIMA_PLUS',
+                    time_series_timestamp_col='date',
+                    time_series_data_col='daily_sales',
+                    time_series_id_col='product_category',
+                    holiday_region='US',
+                    auto_arima=TRUE
+                ) AS
+                SELECT date, product_category, daily_sales
+                FROM `project.dataset.sales_training_data`
+                WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 730 DAY)
+            ''',
+            'useLegacySql': False
+        }
+    },
+    dag=dag
+)
+
+# Task 2: Generate forecast
+generate_forecast = BigQueryInsertJobOperator(
+    task_id='generate_forecast',
+    configuration={
+        'query': {
+            'query': '''
+                CREATE OR REPLACE TABLE `project.dataset.sales_forecast` AS
+                SELECT *
+                FROM ML.FORECAST(
+                    MODEL `project.dataset.sales_forecast_model`,
+                    STRUCT(7 AS horizon, 0.95 AS confidence_level)
+                )
+            ''',
+            'useLegacySql': False
+        }
+    },
+    dag=dag
+)
+
+# Task 3: Validate forecast
+def validate_forecast(**context):
+    """Validate forecast reasonableness"""
+    client = bigquery.Client()
+
+    # Get forecast
+    query = '''
+        SELECT
+            product_category,
+            AVG(daily_sales_forecast) as avg_forecast,
+            MAX(daily_sales_forecast) as max_forecast,
+            MIN(daily_sales_forecast) as min_forecast
+        FROM `project.dataset.sales_forecast`
+        GROUP BY product_category
+    '''
+
+    forecast_df = client.query(query).to_dataframe()
+
+    # Get historical average
+    hist_query = '''
+        SELECT
+            product_category,
+            AVG(daily_sales) as avg_historical
+        FROM `project.dataset.sales_training_data`
+        WHERE date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+        GROUP BY product_category
+    '''
+
+    hist_df = client.query(hist_query).to_dataframe()
+
+    # Merge and validate
+    merged = forecast_df.merge(hist_df, on='product_category')
+
+    # Check if forecast is within 3x historical average
+    merged['is_reasonable'] = (
+        (merged['avg_forecast'] <= merged['avg_historical'] * 3) &
+        (merged['avg_forecast'] >= merged['avg_historical'] * 0.3)
+    )
+
+    if not merged['is_reasonable'].all():
+        unreasonable = merged[~merged['is_reasonable']]
+        raise ValueError(
+            f"Unreasonable forecast detected for categories: "
+            f"{unreasonable['product_category'].tolist()}"
+        )
+
+    print("Forecast validation passed")
+
+validate_task = PythonOperator(
+    task_id='validate_forecast',
+    python_callable=validate_forecast,
+    dag=dag
+)
+
+# Task 4: Export to data warehouse
+export_forecast = BigQueryInsertJobOperator(
+    task_id='export_forecast',
+    configuration={
+        'query': {
+            'query': '''
+                INSERT INTO `project.warehouse.daily_forecasts`
+                SELECT
+                    CURRENT_TIMESTAMP() as generated_at,
+                    product_category,
+                    date as forecast_date,
+                    daily_sales_forecast,
+                    prediction_interval_lower_bound,
+                    prediction_interval_upper_bound
+                FROM `project.dataset.sales_forecast`
+            ''',
+            'useLegacySql': False
+        }
+    },
+    dag=dag
+)
+
+# Dependencies
+retrain_model >> generate_forecast >> validate_task >> export_forecast
+\end{lstlisting}
+
+Key advantages of BigQuery ML for time series:
+\begin{itemize}
+    \item \textbf{Serverless:} No infrastructure management
+    \item \textbf{Scalable:} Handles millions of time series
+    \item \textbf{SQL-Native:} Familiar interface for data teams
+    \item \textbf{Auto-tuning:} Automatic ARIMA parameter selection
+    \item \textbf{Seasonality:} Built-in holiday and seasonal effects
+    \item \textbf{Anomaly Detection:} Integrated anomaly detection
+\end{itemize}
+
+\section{Failure Handling and Retry Mechanisms}
+
+Production pipelines must handle failures gracefully and recover automatically.
+
+\subsection{Failure Patterns and Solutions}
+
+\begin{table}[h]
+\centering
+\caption{Common ML Pipeline Failures}
+\label{tab:pipeline_failures}
+\small
+\begin{tabular}{@{}lp{4cm}p{4.5cm}@{}}
+\toprule
+\textbf{Failure Type} & \textbf{Cause} & \textbf{Solution} \\
+\midrule
+Data unavailability & Upstream pipeline delayed & Retry with exponential backoff \\
+OOM errors & Insufficient memory & Batch processing, distributed compute \\
+Network timeouts & Temporary connectivity & Automatic retry with circuit breaker \\
+Invalid data & Schema changes & Data validation gates \\
+Resource exhaustion & High concurrent load & Rate limiting, queue management \\
+Dependency failure & External service down & Fallback to cached results \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Robust Failure Handling}
+
+\begin{lstlisting}[style=python, caption=Production-Grade Failure Handling]
+from functools import wraps
+import time
+import logging
+from typing import Callable, Any, Optional
+from dataclasses import dataclass
+import traceback
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class RetryConfig:
+    """Retry configuration"""
+    max_retries: int = 3
+    base_delay: float = 1.0  # seconds
+    max_delay: float = 60.0
+    exponential_base: float = 2.0
+    jitter: bool = True
+
+def retry_with_backoff(config: RetryConfig = None):
+    """Decorator for retry with exponential backoff"""
+
+    if config is None:
+        config = RetryConfig()
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(*args, **kwargs) -> Any:
+            last_exception = None
+
+            for attempt in range(config.max_retries):
+                try:
+                    return func(*args, **kwargs)
+
+                except Exception as e:
+                    last_exception = e
+
+                    if attempt == config.max_retries - 1:
+                        logger.error(
+                            f"Function {func.__name__} failed after "
+                            f"{config.max_retries} attempts: {e}"
+                        )
+                        raise
+
+                    # Calculate backoff delay
+                    delay = min(
+                        config.base_delay * (config.exponential_base ** attempt),
+                        config.max_delay
+                    )
+
+                    # Add jitter
+                    if config.jitter:
+                        import random
+                        delay *= (0.5 + random.random())
+
+                    logger.warning(
+                        f"Attempt {attempt + 1}/{config.max_retries} failed "
+                        f"for {func.__name__}: {e}. "
+                        f"Retrying in {delay:.1f}s..."
+                    )
+
+                    time.sleep(delay)
+
+            raise last_exception
+
+        return wrapper
+    return decorator
+
+class CircuitBreaker:
+    """Circuit breaker pattern for external dependencies"""
+
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        timeout: float = 60.0,
+        expected_exception: type = Exception
+    ):
+        self.failure_threshold = failure_threshold
+        self.timeout = timeout
+        self.expected_exception = expected_exception
+
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = 'closed'  # closed, open, half_open
+
+    def call(self, func: Callable, *args, **kwargs) -> Any:
+        """Execute function with circuit breaker protection"""
+
+        if self.state == 'open':
+            if time.time() - self.last_failure_time > self.timeout:
+                self.state = 'half_open'
+                logger.info("Circuit breaker entering half-open state")
+            else:
+                raise Exception("Circuit breaker is OPEN")
+
+        try:
+            result = func(*args, **kwargs)
+
+            # Success - reset circuit breaker
+            if self.state == 'half_open':
+                self.state = 'closed'
+                self.failure_count = 0
+                logger.info("Circuit breaker closed")
+
+            return result
+
+        except self.expected_exception as e:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+
+            if self.failure_count >= self.failure_threshold:
+                self.state = 'open'
+                logger.error(
+                    f"Circuit breaker opened after {self.failure_count} failures"
+                )
+
+            raise
+
+class PipelineCheckpoint:
+    """Checkpoint mechanism for long-running pipelines"""
+
+    def __init__(self, checkpoint_dir: str):
+        self.checkpoint_dir = checkpoint_dir
+        import os
+        os.makedirs(checkpoint_dir, exist_ok=True)
+
+    def save(self, step: str, data: Any):
+        """Save checkpoint"""
+        import pickle
+
+        checkpoint_path = f"{self.checkpoint_dir}/{step}.pkl"
+        with open(checkpoint_path, 'wb') as f:
+            pickle.dump(data, f)
+
+        logger.info(f"Checkpoint saved: {step}")
+
+    def load(self, step: str) -> Optional[Any]:
+        """Load checkpoint if exists"""
+        import pickle
+        import os
+
+        checkpoint_path = f"{self.checkpoint_dir}/{step}.pkl"
+
+        if os.path.exists(checkpoint_path):
+            with open(checkpoint_path, 'rb') as f:
+                data = pickle.load(f)
+
+            logger.info(f"Checkpoint loaded: {step}")
+            return data
+
+        return None
+
+    def exists(self, step: str) -> bool:
+        """Check if checkpoint exists"""
+        import os
+        checkpoint_path = f"{self.checkpoint_dir}/{step}.pkl"
+        return os.path.exists(checkpoint_path)
+
+# Usage example
+@retry_with_backoff(RetryConfig(max_retries=3, base_delay=2.0))
+def train_model_with_retry(data_path: str):
+    """Train model with automatic retry"""
+    import pandas as pd
+
+    # This might fail due to network issues
+    df = pd.read_csv(data_path)
+
+    # Train model
+    from sklearn.ensemble import RandomForestClassifier
+
+    X = df.drop('label', axis=1)
+    y = df['label']
+
+    model = RandomForestClassifier()
+    model.fit(X, y)
+
+    return model
+
+def resilient_pipeline():
+    """Example: Pipeline with checkpointing and retry"""
+
+    checkpoint = PipelineCheckpoint('./checkpoints')
+
+    # Step 1: Data loading (with checkpoint)
+    if checkpoint.exists('data'):
+        data = checkpoint.load('data')
+    else:
+        data = train_model_with_retry('data/train.csv')
+        checkpoint.save('data', data)
+
+    # Step 2: Training (with circuit breaker for external service)
+    circuit_breaker = CircuitBreaker(failure_threshold=3, timeout=60)
+
+    try:
+        model = circuit_breaker.call(train_model_with_retry, 'data/train.csv')
+        checkpoint.save('model', model)
+    except Exception as e:
+        logger.error(f"Training failed: {e}")
+        raise
+
+    return model
+\end{lstlisting}
+
+\section{Chapter Summary}
+
+This chapter covered production training pipeline design:
+
+\begin{itemize}
+    \item \textbf{Orchestration:} Airflow for general workflows, Kubeflow for K8s-native ML
+    \item \textbf{Experiment Tracking:} MLflow for comprehensive reproducibility
+    \item \textbf{Hyperparameter Optimization:} Optuna and Ray Tune for efficient search
+    \item \textbf{Model Validation:} Cross-validation, threshold analysis, fairness evaluation
+    \item \textbf{A/B Testing:} Statistical frameworks for model deployment decisions
+    \item \textbf{BigQuery ML:} Serverless time series forecasting at scale
+    \item \textbf{Failure Handling:} Retry mechanisms, circuit breakers, checkpointing
+\end{itemize}
+
+Key takeaways:
+
+\begin{enumerate}
+    \item Define pipelines as code for version control and reproducibility
+    \item Track every aspect of experiments—code, data, config, environment
+    \item Use Bayesian optimization for expensive model training
+    \item Validate models comprehensively beyond simple accuracy metrics
+    \item Design A/B tests with proper statistical power
+    \item Choose serverless solutions (BigQuery ML) when appropriate
+    \item Build resilience into pipelines with retry and checkpoint mechanisms
+    \item Monitor pipeline health and set up alerting
+\end{enumerate}
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item Lakshmanan, V., et al. (2020). \textit{Machine Learning Design Patterns}. O'Reilly.
+    \item Huyen, C. (2022). \textit{Designing Machine Learning Systems}. O'Reilly.
+    \item Apache Airflow Documentation: \url{https://airflow.apache.org/docs/}
+    \item Kubeflow Pipelines: \url{https://www.kubeflow.org/docs/components/pipelines/}
+    \item MLflow Documentation: \url{https://mlflow.org/docs/latest/index.html}
+    \item Optuna: \url{https://optuna.org/}
+    \item BigQuery ML: \url{https://cloud.google.com/bigquery-ml/docs}
+\end{itemize}
+
+\section{Exercises}
+
+\begin{exercise}
+\textbf{End-to-End Training Pipeline}
+
+Build a complete training pipeline using Airflow:
+
+\begin{enumerate}
+    \item Create a DAG with these tasks:
+    \begin{itemize}
+        \item Data extraction from BigQuery
+        \item Data validation with Great Expectations
+        \item Feature engineering
+        \item Model training with MLflow tracking
+        \item Model evaluation on holdout set
+        \item Conditional model registration
+    \end{itemize}
+    \item Add error handling and retries
+    \item Implement data quality gates
+    \item Set up email alerting
+    \item Create monitoring dashboard
+\end{enumerate}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Hyperparameter Optimization}
+
+Implement distributed HPO:
+
+\begin{enumerate}
+    \item Set up Optuna study with pruning
+    \item Define search space for your model
+    \item Implement objective function with MLflow integration
+    \item Run 100+ trials with parallel execution
+    \item Analyze parameter importance
+    \item Visualize optimization history
+    \item Train final model with best parameters
+    \item Compare performance vs baseline
+\end{enumerate}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Model Validation Framework}
+
+Create comprehensive validation:
+
+\begin{enumerate}
+    \item Implement stratified k-fold cross-validation
+    \item Calculate multiple metrics (accuracy, precision, recall, AUC)
+    \item Analyze threshold-dependent metrics
+    \item Generate confusion matrix and ROC curves
+    \item Evaluate fairness across demographic groups
+    \item Check for overfitting
+    \item Create automated validation report
+    \item Set performance thresholds for deployment
+\end{enumerate}
+\end{exercise}
+
+\begin{exercise}
+\textbf{A/B Test Design}
+
+Design and analyze model A/B test:
+
+\begin{enumerate}
+    \item Define test hypothesis and metrics
+    \item Calculate required sample size for 80\% power
+    \item Implement hash-based user assignment
+    \item Log predictions and outcomes
+    \item Run statistical significance test
+    \item Calculate confidence intervals
+    \item Make deployment decision
+    \item Document results and recommendation
+\end{enumerate}
+\end{exercise}
+
+\begin{exercise}
+\textbf{BigQuery ML Time Series}
+
+Build production time series pipeline:
+
+\begin{enumerate}
+    \item Prepare time series data in BigQuery
+    \item Train ARIMA\_PLUS model with seasonality
+    \item Evaluate model performance
+    \item Generate multi-step ahead forecasts
+    \item Extract confidence intervals
+    \item Implement anomaly detection
+    \item Create Airflow DAG for daily retraining
+    \item Validate forecast reasonableness
+\end{enumerate}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Kubeflow Pipeline}
+
+Implement Kubernetes-native ML pipeline:
+
+\begin{enumerate}
+    \item Define reusable components as Python functions
+    \item Create data preprocessing component
+    \item Build training component with GPU support
+    \item Add evaluation component
+    \item Implement deployment component
+    \item Compile pipeline to YAML
+    \item Run on Kubeflow cluster
+    \item Monitor execution and debug failures
+\end{enumerate}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Resilient Pipeline Design}
+
+Build fault-tolerant pipeline:
+
+\begin{enumerate}
+    \item Implement retry with exponential backoff
+    \item Add circuit breaker for external dependencies
+    \item Create checkpoint mechanism
+    \item Handle OOM errors with batch processing
+    \item Implement graceful degradation
+    \item Add dead letter queue for failures
+    \item Set up comprehensive logging
+    \item Test failure scenarios
+\end{enumerate}
+\end{exercise}

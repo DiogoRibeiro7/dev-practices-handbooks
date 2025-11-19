@@ -104,7 +104,71 @@ python tools/facilitation.py --mode mental \
 
 Artifacts land in \texttt{tools/generated/}, ready to paste into collaboration documents immediately after workshops.
 
+\section{Cross-Industry Scenarios}
+\label{sec:translation-examples}
+
+\paragraph{Fintech.} A digital bank building a real-time fraud model succeeded when PMs ran joint playbacks where risk officers explained regulatory clocks (same-day reports) while engineers demoed streaming constraints. A parallel card-reissuance project failed because business leaders demanded quarterly KPI forecasts without acknowledging the data science iteration needed, triggering scope resets.
+
+\paragraph{Healthcare.} A telehealth platform aligned incentives by mapping clinical safety requirements into engineering acceptance criteria and data-science validation plans, enabling a compliant triage chatbot launch. Conversely, a remote-monitoring initiative stalled when clinicians assumed ``model'' meant explainable rules while engineers shipped a black-box model, eroding trust.
+
+\paragraph{E-commerce.} A marketplace planning personalization upgrades succeeded after PMs documented vocabulary differences (``feature'' as SKU attribute vs. UI module) and set shared metrics. A catalog-quality effort failed initially because finance imposed portfolio-level revenue commitments without factoring model uncertainty, leading to overpromising and churn.
+
 \section{Summary}
 \label{sec:translation-summary}
 
 Translation failures stem from mismatched mental models, divergent vocabularies, conflicting time horizons, and varied risk perceptions. By recognizing these differences and deliberately addressing them, product managers lay the groundwork for the frameworks explored in subsequent chapters. The next chapter examines how traditional product management approaches fall short when these translation challenges remain unaddressed.
+
+\subsection{Day in the Life: Maya Bridges the Clinic and the Cloud}
+Maya begins her Tuesday at MedLinea Health by reviewing overnight telemetry from hospital partners. A cardiologist emails her a frustrated note: ``The model keeps flagging borderline cases without showing me the sensor issues.'' Minutes later, the engineering lead pings her about a looming sprint demo that still lacks data-science input. She opens the translation canvas, documents each stakeholder's mental model, and runs a 20-minute huddle. Clinicians walk through their risk lens (patient safety, audit trails), engineers outline cloud-deployment constraints, and Maya captures the overloaded term ``event'' that caused confusion. By lunch, she has reworded the requirement with explicit thresholds, booked a glossary update, and sent a recap aligning regulatory clocks (FDA submission in six weeks) with sprint cadences. When a hospital admin later asks for an impossible ETA, she references the canvas, explains the decision checkpoints, and keeps trust intact.
+
+\subsection{Action Checklist}
+\begin{enumerate}
+    \item Complete a mental-model canvas for engineering, data science, and business stakeholders noting their priorities and constraints.
+    \item Create a living glossary entry or wiki page for at least three overloaded terms uncovered this week.
+    \item Plot the differing time horizons (sprint, release, quarter) on a shared diagram and review it in the next planning meeting.
+\end{enumerate}
+
+\paragraph{Try this now (5 min).} Open the last email or deck you sent to stakeholders. Highlight one sentence that could be misunderstood by another discipline, rewrite it with explicit assumptions, and send the clarified version.
+
+\section{Warning Signs and Recovery}
+\label{sec:translation-warning}
+\begin{description}
+    \item[\textbf{Warning sign}] Meetings stall because each function brings a different data source or ``truth,'' triggering debates over whose numbers count.
+    \item[\textbf{Recovery}] Establish the decision-specific source of truth before the meeting and document it in notes; if disagreement persists, assign a joint task to reconcile metrics within 24 hours.
+    \item[\textbf{Warning sign}] Requests arrive framed entirely in one discipline's vocabulary (e.g., ``build feature X'') with no translation to shared outcomes.
+    \item[\textbf{Recovery}] Ask the requester to restate the ask in terms of the agreed glossary and to include metric impact, then coach them on using the translation canvas for future submissions.
+\end{description}
+
+\section{Triple-Lens Takeaways}
+\label{sec:translation-triple}
+
+\begin{description}
+    \item[\textbf{Busy PM}] Turn the mental-model inventory into a pre-meeting checklist—capture each stakeholder's incentives, vocabulary, and time horizon before refinement sessions so you can preempt friction.
+    \item[\textbf{Technical Lead}] Leverage the discipline-specific sections as prompts for architecture or modeling reviews, ensuring requirements document invariants, data availability, and risk tolerance explicitly.
+    \item[\textbf{Executive}] Focus on the vocabulary and time-horizon analyses to set governance expectations: align steering metrics to the clocks each function runs on and sponsor glossary-building as a strategic control.
+\end{description}
+\section{Industry Adaptations}
+\label{sec:translation-industry}
+\paragraph{Regulated Industries (Healthcare, Finance, Aviation).} Document regulatory vocabulary and approval gates explicitly. Translation canvases should include compliance owners, audit evidence, and escalation paths. When reconciling time horizons, align sprint cadences with audit/filing cycles so regulators see intentional synchronization.
+
+\paragraph{Startups vs. Enterprises.} Startups often lack formal governance; lightweight versions of the translation canvas keep velocity high—focus on hypotheses and decision owners. Enterprises should emphasize traceability: pair each assumption with policy references, and ensure translation artifacts feed portfolio reviews to avoid siloed politics.
+
+\paragraph{B2B vs. B2C.} B2B motions require translating between buyer personas (procurement, IT, legal) as well as internal teams. Capture each external stakeholder's risk tolerance in the mental-model canvas. B2C focuses on consumer sentiment—fold marketing and support into translation workshops so messaging, product, and data signals align.
+
+\paragraph{Hardware-Software Integration.} When firmware or device constraints intersect with software changes, add physical timelines (manufacturing, certification) to the time-horizon chart and ensure telemetry definitions include both device and cloud data. Translation artifacts should list hardware dependencies and rollback plans.
+\section{Visual Guide}
+\label{sec:translation-visuals}
+\begin{itemize}
+    \item \textbf{Flowchart: Translation Canvas}—depict the steps Maya follows (collect mental models $\rightarrow$ capture vocabulary clashes $\rightarrow$ align time horizons $\rightarrow$ log decisions). Include swimlanes for engineering, data science, business, and compliance.
+    \item \textbf{Decision Tree: Escalation Paths}—show how Leo decides whether to update the glossary, convene a workshop, or escalate to executives when ambiguity persists.
+    \item \textbf{Before/After Diagram}—contrast a ``jargon-filled request'' with a translated artifact that lists incentives, success metrics, and shared vocabulary.
+\end{itemize}
+
+\section{Interactive Elements}
+\label{sec:translation-interactive}
+\begin{itemize}
+    \item \textbf{Self-Assessment}—survey scoring how well teams understand each other's incentives, vocabulary, and timelines; produce a radar chart for stakeholders.
+    \item \textbf{Reflection Prompt}—``Recall a recent misunderstanding. Which translation step was skipped?'' Encourage journaling concrete fixes.
+    \item \textbf{Pause and Practice}—fillable template to run a mini translation workshop on an active feature.
+    \item \textbf{Implementation Planner}—checklist for scheduling glossary creation, translation canvases, and steering updates with owners/dates.
+\end{itemize}

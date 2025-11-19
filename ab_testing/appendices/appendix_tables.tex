@@ -1,0 +1,276 @@
+\section{Statistical Tables}
+
+This appendix provides reference tables for common statistical distributions and critical values used in A/B testing.
+
+\subsection{Standard Normal Distribution ($Z$) Critical Values}
+
+\begin{center}
+\begin{tabular}{ccc}
+\toprule
+\textbf{Confidence Level} & \textbf{Significance ($\alpha$)} & \textbf{$z_{\alpha/2}$} \\
+\midrule
+90\% & 0.10 & 1.645 \\
+95\% & 0.05 & 1.960 \\
+98\% & 0.02 & 2.326 \\
+99\% & 0.01 & 2.576 \\
+99.5\% & 0.005 & 2.807 \\
+99.9\% & 0.001 & 3.291 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Student's t-Distribution Critical Values ($t_{\alpha/2, df}$)}
+
+For two-sided tests at $\alpha = 0.05$:
+
+\begin{center}
+\begin{tabular}{cc}
+\toprule
+\textbf{Degrees of Freedom} & \textbf{$t_{0.025, df}$} \\
+\midrule
+5 & 2.571 \\
+10 & 2.228 \\
+15 & 2.131 \\
+20 & 2.086 \\
+25 & 2.060 \\
+30 & 2.042 \\
+40 & 2.021 \\
+50 & 2.009 \\
+60 & 2.000 \\
+80 & 1.990 \\
+100 & 1.984 \\
+$\infty$ & 1.960 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Chi-Squared Distribution Critical Values ($\chi^2_{\alpha, df}$)}
+
+For significance level $\alpha = 0.05$:
+
+\begin{center}
+\begin{tabular}{cc}
+\toprule
+\textbf{Degrees of Freedom} & \textbf{$\chi^2_{0.05, df}$} \\
+\midrule
+1 & 3.841 \\
+2 & 5.991 \\
+3 & 7.815 \\
+4 & 9.488 \\
+5 & 11.070 \\
+6 & 12.592 \\
+7 & 14.067 \\
+8 & 15.507 \\
+9 & 16.919 \\
+10 & 18.307 \\
+15 & 24.996 \\
+20 & 31.410 \\
+25 & 37.652 \\
+30 & 43.773 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Sample Size Requirements (Two Proportions)}
+
+For $\alpha = 0.05$ (two-sided), power = 0.80, and baseline proportion $p_1$:
+
+\begin{center}
+\small
+\begin{tabular}{cccccc}
+\toprule
+& \multicolumn{5}{c}{\textbf{Baseline Proportion ($p_1$)}} \\
+\cmidrule{2-6}
+\textbf{Relative Lift} & \textbf{0.05} & \textbf{0.10} & \textbf{0.15} & \textbf{0.20} & \textbf{0.25} \\
+\midrule
+5\% & 62,448 & 30,081 & 19,718 & 14,616 & 11,540 \\
+10\% & 15,396 & 7,337 & 4,784 & 3,540 & 2,790 \\
+15\% & 6,772 & 3,213 & 2,092 & 1,547 & 1,218 \\
+20\% & 3,788 & 1,793 & 1,166 & 862 & 678 \\
+25\% & 2,405 & 1,137 & 739 & 546 & 429 \\
+30\% & 1,650 & 780 & 507 & 374 & 294 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textit{Note: Values show sample size per variant.}
+
+\subsection{Minimum Detectable Effect (MDE)}
+
+For $\alpha = 0.05$, power = 0.80, and sample size $n$ per variant:
+
+\begin{center}
+\begin{tabular}{ccccc}
+\toprule
+& \multicolumn{4}{c}{\textbf{Sample Size per Variant}} \\
+\cmidrule{2-5}
+\textbf{Baseline ($p_1$)} & \textbf{1,000} & \textbf{5,000} & \textbf{10,000} & \textbf{25,000} \\
+\midrule
+0.05 & 3.95\% & 1.76\% & 1.24\% & 0.79\% \\
+0.10 & 5.32\% & 2.38\% & 1.68\% & 1.06\% \\
+0.15 & 6.31\% & 2.82\% & 2.00\% & 1.26\% \\
+0.20 & 7.08\% & 3.17\% & 2.24\% & 1.42\% \\
+0.25 & 7.66\% & 3.42\% & 2.42\% & 1.53\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textit{Note: Values show absolute minimum detectable effect (e.g., 0.05 = 5 percentage points).}
+
+\subsection{Bonferroni Corrected Significance Levels}
+
+For overall $\alpha = 0.05$:
+
+\begin{center}
+\begin{tabular}{cc}
+\toprule
+\textbf{Number of Tests ($m$)} & \textbf{Corrected $\alpha^* = \alpha/m$} \\
+\midrule
+2 & 0.0250 \\
+3 & 0.0167 \\
+4 & 0.0125 \\
+5 & 0.0100 \\
+6 & 0.0083 \\
+8 & 0.0063 \\
+10 & 0.0050 \\
+15 & 0.0033 \\
+20 & 0.0025 \\
+25 & 0.0020 \\
+50 & 0.0010 \\
+100 & 0.0005 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Power vs. Sample Size}
+
+For two-proportion test with $p_1 = 0.10$, $p_2 = 0.12$ (20\% relative lift), $\alpha = 0.05$:
+
+\begin{center}
+\begin{tabular}{cc}
+\toprule
+\textbf{Sample Size per Variant} & \textbf{Statistical Power} \\
+\midrule
+1,000 & 0.17 \\
+2,000 & 0.27 \\
+3,000 & 0.35 \\
+4,000 & 0.42 \\
+5,000 & 0.49 \\
+7,500 & 0.62 \\
+10,000 & 0.72 \\
+15,000 & 0.85 \\
+20,000 & 0.92 \\
+25,000 & 0.96 \\
+30,000 & 0.98 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Beta Distribution Quantiles}
+
+For Beta(a, b) distributions commonly used as priors:
+
+\begin{center}
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Distribution} & \textbf{Mean} & \textbf{Mode} & \textbf{2.5\% Quantile} & \textbf{97.5\% Quantile} \\
+\midrule
+Beta(1, 1) & 0.500 & - & 0.025 & 0.975 \\
+Beta(2, 2) & 0.500 & 0.500 & 0.082 & 0.918 \\
+Beta(5, 5) & 0.500 & 0.500 & 0.186 & 0.814 \\
+Beta(1, 9) & 0.100 & 0.000 & 0.003 & 0.352 \\
+Beta(10, 90) & 0.100 & 0.099 & 0.050 & 0.165 \\
+Beta(50, 450) & 0.100 & 0.099 & 0.071 & 0.133 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Conversion Rate Effect Size Examples}
+
+Real-world context for effect sizes at different baseline rates:
+
+\begin{center}
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Baseline} & \textbf{5\% Lift} & \textbf{10\% Lift} & \textbf{20\% Lift} & \textbf{50\% Lift} \\
+\midrule
+1\% & 1.05\% & 1.10\% & 1.20\% & 1.50\% \\
+5\% & 5.25\% & 5.50\% & 6.00\% & 7.50\% \\
+10\% & 10.50\% & 11.00\% & 12.00\% & 15.00\% \\
+20\% & 21.00\% & 22.00\% & 24.00\% & 30.00\% \\
+50\% & 52.50\% & 55.00\% & 60.00\% & 75.00\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Design Effect for Cluster Randomization}
+
+Design effect = $1 + (m - 1)\rho$ where $m$ is cluster size and $\rho$ is ICC:
+
+\begin{center}
+\begin{tabular}{ccccc}
+\toprule
+& \multicolumn{4}{c}{\textbf{Intraclass Correlation ($\rho$)}} \\
+\cmidrule{2-5}
+\textbf{Cluster Size ($m$)} & \textbf{0.01} & \textbf{0.05} & \textbf{0.10} & \textbf{0.20} \\
+\midrule
+5 & 1.04 & 1.20 & 1.40 & 1.80 \\
+10 & 1.09 & 1.45 & 1.90 & 2.80 \\
+20 & 1.19 & 1.95 & 2.90 & 4.80 \\
+50 & 1.49 & 3.45 & 5.90 & 10.80 \\
+100 & 1.99 & 5.95 & 10.90 & 20.80 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Quick Reference Formulas}
+
+\textbf{Standard Error for Proportion:}
+\begin{equation*}
+SE(\hat{p}) = \sqrt{\frac{p(1-p)}{n}}
+\end{equation*}
+
+\textbf{Confidence Interval for Proportion:}
+\begin{equation*}
+\hat{p} \pm z_{\alpha/2} \sqrt{\frac{\hat{p}(1-\hat{p})}{n}}
+\end{equation*}
+
+\textbf{Z-Test Statistic for Proportions:}
+\begin{equation*}
+Z = \frac{\hat{p}_2 - \hat{p}_1}{\sqrt{\bar{p}(1-\bar{p})(1/n_1 + 1/n_2)}}
+\end{equation*}
+
+\textbf{Sample Size for Proportions:}
+\begin{equation*}
+n = \frac{(z_{\alpha/2} + z_{\beta})^2 [p_1(1-p_1) + p_2(1-p_2)]}{(p_2 - p_1)^2}
+\end{equation*}
+
+\textbf{Relative Lift:}
+\begin{equation*}
+\text{Relative Lift} = \frac{p_2 - p_1}{p_1} = \frac{p_2}{p_1} - 1
+\end{equation*}
+
+\textbf{Minimum Detectable Effect:}
+\begin{equation*}
+\text{MDE} \approx (z_{\alpha/2} + z_{\beta}) \sqrt{\frac{2p(1-p)}{n}}
+\end{equation*}
+
+\subsection{Decision Matrix}
+
+\begin{center}
+\begin{tabular}{cp{10cm}}
+\toprule
+\textbf{Scenario} & \textbf{Recommended Approach} \\
+\midrule
+Small sample ($n < 100$) & Fisher's exact test or permutation test \\
+Large sample, proportions & Z-test or chi-squared test \\
+Continuous metric, normal & T-test (Welch's preferred) \\
+Continuous metric, skewed & Transform data, use robust statistics, or permutation test \\
+Multiple metrics ($m < 10$) & Bonferroni or Holm-Bonferroni correction \\
+Multiple metrics ($m > 10$) & Benjamini-Hochberg FDR control \\
+Sequential testing & Group sequential with spending function \\
+Rare events ($p < 0.01$) & Longer duration, proxy metrics, or exact tests \\
+Network effects & Cluster randomization with appropriate analysis \\
+\bottomrule
+\end{tabular}
+\end{center}

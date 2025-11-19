@@ -85,9 +85,56 @@ Requirements should state the problem, the hypothesis, and the observable signal
 Flexibility does not mean a lack of rigor. Structured experimentation with pre-registered metrics and instrumentation ensures that pivots are grounded in evidence. Clear success criteria describe the behaviors we expect to observe, not the exact implementation, granting engineers and data scientists the autonomy to discover the best solution.
 
 \subsection{Aligning Incentives Across Disciplines}
-Cross-functional incentives must reward shared outcomes. That involves aligning teams around north-star metrics, embedding data scientists in planning rituals, and providing engineering with visibility into business milestones. Chapters that follow introduce collaboration patterns—such as joint discovery workshops and translation canvases—that institutionalize this alignment.
+Cross-functional incentives must reward shared outcomes. That involves aligning teams around north-star metrics (\gls{northstar}), embedding data scientists in planning rituals, and providing engineering with visibility into business milestones. Chapters that follow introduce collaboration patterns—such as joint discovery workshops and translation canvases—that institutionalize this alignment.
 
 \section{Summary}
 \label{sec:failures-summary}
 
 Waterfall and superficial Agile frameworks collapse when faced with the ambiguity of data-driven products. Over-specified requirements, ceremony-driven planning, and throughput obsession obscure learning and derail outcomes. The next chapters delve into concrete tools for reframing requirements, quantifying uncertainty, and building operating mechanisms that honor the realities of data-informed product development.
+
+\subsection{Day in the Life: Leo Escapes the Feature Factory}
+Leo starts his morning sprint review at FlowPay hearing stakeholders cheer ``We shipped five widgets!'' even though last week's fraud spikes remain unexplained. Sensing the feature-factory trap, he pivots the meeting into a learning review: every item must state the hypothesis tested and the evidence observed. A ``Build Platinum Tier'' story stalls—no one can cite its expected signal—so he reclassifies it as discovery work and parks it. After lunch he meets finance, who demand fixed timelines; Leo sketches probability bars for each experiment and negotiates staged funding instead of rigid estimates. By day’s end he has a revised backlog tagged with learning objectives, a dual-track discovery outline, and an executive note explaining why a canceled feature saved \$400k in future rework.
+
+\subsection{Action Checklist}
+\begin{enumerate}
+    \item Audit your backlog for waterfall remnants: tag any item pretending to be fully specified despite open questions.
+    \item Schedule a learning review that replaces demo theater with experiment results and decisions.
+    \item Define a single forcing function to break feature-factory patterns (e.g., require hypothesis statements for every new story).
+\end{enumerate}
+
+\paragraph{Try this now (5 min).} Write down the last three items you shipped. For each, note whether it produced learning, outcome, or just output. Share the pattern with your team and discuss one process tweak.
+
+\section{Visual Guide}
+\label{sec:failures-visuals}
+\begin{itemize}
+    \item \textbf{Before/After Backlog Board}—contrast a feature-factory board (status columns, no metrics) with a learning board (hypothesis fields, metric links, review cadence).
+    \item \textbf{Dual-Track Flowchart}—map discovery and delivery tracks with explicit handoffs, decision points, and shared checkpoints.
+    \item \textbf{Probability Bar Graphic}—Leo’s technique for showing uncertainty to finance, illustrating scenario ranges and confidence.
+\end{itemize}
+
+\section{Interactive Elements}
+\label{sec:failures-interactive}
+\begin{itemize}
+    \item \textbf{Self-Assessment}—scorecard evaluating waterfall remnants (e.g., over-specified requirements, hero PM behavior) with suggested countermeasures.
+    \item \textbf{Reflection Prompt}—ask readers to list three recent successes and categorize them as learning/outcome/output to reveal patterns.
+    \item \textbf{Pause and Practice}—worksheet for redesigning a sprint review agenda into a learning review with roles and metrics.
+    \item \textbf{Implementation Planner}—template for planning the transition to dual-track discovery, including milestones and stakeholder comms.
+\end{itemize}
+
+\section{Warning Signs and Recovery}
+\label{sec:failures-warning}
+\begin{description}
+    \item[\textbf{Warning sign}] Backlog reviews revolve around percent complete and Gantt charts while hypotheses and learning are absent.
+    \item[\textbf{Recovery}] Introduce a standing agenda item to review experiment status and replace at least one progress metric with a learning metric (e.g., hypotheses retired).
+    \item[\textbf{Warning sign}] Teams rush to lock requirements to appease stakeholders, resulting in hidden assumptions and repeated scope thrash.
+    \item[\textbf{Recovery}] Recast pending requirements as hypotheses with decision triggers, gaining stakeholder sign-off on uncertainty rather than false certainty.
+\end{description}
+
+\section{Triple-Lens Takeaways}
+\label{sec:failures-triple}
+
+\begin{description}
+    \item[\textbf{Busy PM}] Use the failure patterns as a diagnostic matrix—circle the anti-pattern your team exhibits and adopt the suggested countermeasure (hypothesis backlog, learning review, dual-track discovery, i.e., parallel discovery-and-delivery work) this sprint.
+    \item[\textbf{Technical Lead}] Map each pitfall to technical consequences: where sequential thinking or throughput pressure drives architectural shortcuts, propose concurrency-friendly workflows and capacity buffers.
+    \item[\textbf{Executive}] Translate the case critiques into governance questions you can ask in portfolio reviews (e.g., ``Which hypotheses retired this quarter?''), ensuring leadership reinforces learning over raw output.
+\end{description}

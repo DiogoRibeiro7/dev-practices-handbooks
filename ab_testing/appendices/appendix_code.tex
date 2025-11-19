@@ -1,0 +1,515 @@
+\section{Complete Code Examples}
+
+This appendix provides complete, production-ready code implementations for common A/B testing tasks.
+
+\subsection{Comprehensive A/B Test Analysis Class (Python)}
+
+\lstset{language=Python}
+\begin{lstlisting}
+import numpy as np
+import pandas as pd
+from scipy import stats
+from dataclasses import dataclass
+from typing import Optional, Dict, List
+
+@dataclass
+class ABTestResult:
+    """Container for A/B test results."""
+    control_mean: float
+    treatment_mean: float
+    difference: float
+    relative_lift: float
+    standard_error: float
+    confidence_interval: tuple
+    p_value: float
+    statistically_significant: bool
+    test_statistic: float
+    sample_size_control: int
+    sample_size_treatment: int
+
+class ABTestAnalyzer:
+    """
+    Comprehensive A/B test analysis.
+
+    Supports:
+    - Proportions (conversion rates)
+    - Continuous metrics (revenue, time, etc.)
+    - Multiple testing corrections
+    - Subgroup analysis
+    """
+
+    def __init__(self, alpha=0.05):
+        self.alpha = alpha
+
+    def test_proportions(self, control_conversions, control_total,
+                        treatment_conversions, treatment_total,
+                        method='z_test'):
+        """
+        Test difference in proportions.
+
+        Parameters:
+        -----------
+        control_conversions : int
+            Number of successes in control
+        control_total : int
+            Total observations in control
+        treatment_conversions : int
+            Number of successes in treatment
+        treatment_total : int
+            Total observations in treatment
+        method : str
+            'z_test', 'chi_squared', or 'fisher_exact'
+
+        Returns:
+        --------
+        ABTestResult : Test results
+        """
+        p1 = control_conversions / control_total
+        p2 = treatment_conversions / treatment_total
+
+        if method == 'z_test':
+            # Pooled proportion
+            p_pool = ((control_conversions + treatment_conversions) /
+                     (control_total + treatment_total))
+
+            # Standard error under null
+            se_null = np.sqrt(p_pool * (1 - p_pool) *
+                            (1/control_total + 1/treatment_total))
+
+            # Test statistic
+            z_stat = (p2 - p1) / se_null
+            p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
+
+            # Confidence interval (unpooled)
+            se_unpooled = np.sqrt(p1*(1-p1)/control_total +
+                                 p2*(1-p2)/treatment_total)
+            z_crit = stats.norm.ppf(1 - self.alpha/2)
+            ci = (p2 - p1 - z_crit * se_unpooled,
+                  p2 - p1 + z_crit * se_unpooled)
+
+            test_stat = z_stat
+            se = se_unpooled
+
+        elif method == 'chi_squared':
+            table = [[control_conversions, control_total - control_conversions],
+                    [treatment_conversions, treatment_total - treatment_conversions]]
+            chi2, p_value, dof, expected = stats.chi2_contingency(table)
+            test_stat = chi2
+
+            # CI from z-test
+            se = np.sqrt(p1*(1-p1)/control_total +
+                        p2*(1-p2)/treatment_total)
+            z_crit = stats.norm.ppf(1 - self.alpha/2)
+            ci = (p2 - p1 - z_crit * se, p2 - p1 + z_crit * se)
+
+        elif method == 'fisher_exact':
+            table = [[control_conversions, control_total - control_conversions],
+                    [treatment_conversions, treatment_total - treatment_conversions]]
+            _, p_value = stats.fisher_exact(table)
+            test_stat = None
+
+            # CI from z-test
+            se = np.sqrt(p1*(1-p1)/control_total +
+                        p2*(1-p2)/treatment_total)
+            z_crit = stats.norm.ppf(1 - self.alpha/2)
+            ci = (p2 - p1 - z_crit * se, p2 - p1 + z_crit * se)
+
+        return ABTestResult(
+            control_mean=p1,
+            treatment_mean=p2,
+            difference=p2 - p1,
+            relative_lift=(p2 - p1) / p1 if p1 > 0 else np.nan,
+            standard_error=se,
+            confidence_interval=ci,
+            p_value=p_value,
+            statistically_significant=p_value < self.alpha,
+            test_statistic=test_stat,
+            sample_size_control=control_total,
+            sample_size_treatment=treatment_total
+        )
+
+    def test_means(self, control_data, treatment_data,
+                  equal_variance=False):
+        """
+        Test difference in means.
+
+        Parameters:
+        -----------
+        control_data : array-like
+            Control group values
+        treatment_data : array-like
+            Treatment group values
+        equal_variance : bool
+            Assume equal variances (default False, uses Welch's t-test)
+
+        Returns:
+        --------
+        ABTestResult : Test results
+        """
+        control_data = np.array(control_data)
+        treatment_data = np.array(treatment_data)
+
+        n1 = len(control_data)
+        n2 = len(treatment_data)
+        mean1 = np.mean(control_data)
+        mean2 = np.mean(treatment_data)
+        var1 = np.var(control_data, ddof=1)
+        var2 = np.var(treatment_data, ddof=1)
+
+        # T-test
+        t_stat, p_value = stats.ttest_ind(treatment_data, control_data,
+                                          equal_var=equal_variance)
+
+        # Standard error and CI
+        se = np.sqrt(var1/n1 + var2/n2)
+
+        if equal_variance:
+            df = n1 + n2 - 2
+        else:
+            # Welch-Satterthwaite degrees of freedom
+            df = ((var1/n1 + var2/n2)**2 /
+                 ((var1/n1)**2/(n1-1) + (var2/n2)**2/(n2-1)))
+
+        t_crit = stats.t.ppf(1 - self.alpha/2, df)
+        ci = (mean2 - mean1 - t_crit * se, mean2 - mean1 + t_crit * se)
+
+        return ABTestResult(
+            control_mean=mean1,
+            treatment_mean=mean2,
+            difference=mean2 - mean1,
+            relative_lift=(mean2 - mean1) / mean1 if mean1 > 0 else np.nan,
+            standard_error=se,
+            confidence_interval=ci,
+            p_value=p_value,
+            statistically_significant=p_value < self.alpha,
+            test_statistic=t_stat,
+            sample_size_control=n1,
+            sample_size_treatment=n2
+        )
+
+    def calculate_sample_size_proportions(self, p1, p2, power=0.80):
+        """
+        Calculate required sample size for proportion test.
+
+        Parameters:
+        -----------
+        p1 : float
+            Control proportion
+        p2 : float
+            Treatment proportion
+        power : float
+            Desired statistical power
+
+        Returns:
+        --------
+        dict : Sample size requirements
+        """
+        z_alpha = stats.norm.ppf(1 - self.alpha/2)
+        z_beta = stats.norm.ppf(power)
+
+        variance = p1*(1-p1) + p2*(1-p2)
+        effect = (p2 - p1)**2
+
+        n_per_group = int(np.ceil(
+            ((z_alpha + z_beta)**2 * variance) / effect
+        ))
+
+        return {
+            'n_per_group': n_per_group,
+            'n_total': 2 * n_per_group,
+            'p1': p1,
+            'p2': p2,
+            'effect_absolute': p2 - p1,
+            'effect_relative': (p2 - p1) / p1,
+            'alpha': self.alpha,
+            'power': power
+        }
+
+    def format_results(self, result: ABTestResult) -> str:
+        """Format results for reporting."""
+        report = f"""
+A/B Test Results
+================
+Control Mean: {result.control_mean:.4f}
+Treatment Mean: {result.treatment_mean:.4f}
+
+Difference: {result.difference:.4f}
+Relative Lift: {result.relative_lift:.2%}
+Standard Error: {result.standard_error:.4f}
+
+95% Confidence Interval: [{result.confidence_interval[0]:.4f}, {result.confidence_interval[1]:.4f}]
+
+Test Statistic: {result.test_statistic:.4f}
+P-value: {result.p_value:.4f}
+Statistically Significant: {'Yes' if result.statistically_significant else 'No'}
+
+Sample Sizes:
+  Control: {result.sample_size_control:,}
+  Treatment: {result.sample_size_treatment:,}
+"""
+        return report
+
+# Example usage
+if __name__ == "__main__":
+    analyzer = ABTestAnalyzer(alpha=0.05)
+
+    # Test proportions
+    result_prop = analyzer.test_proportions(
+        control_conversions=80,
+        control_total=1000,
+        treatment_conversions=95,
+        treatment_total=1000
+    )
+
+    print(analyzer.format_results(result_prop))
+
+    # Calculate sample size
+    sample_size = analyzer.calculate_sample_size_proportions(
+        p1=0.08,
+        p2=0.09,
+        power=0.80
+    )
+
+    print("\nSample Size Calculation:")
+    print(f"  Required per group: {sample_size['n_per_group']:,}")
+    print(f"  Total required: {sample_size['n_total']:,}")
+\end{lstlisting}
+
+\subsection{Experiment Analysis Pipeline (R)}
+
+\lstset{language=R}
+\begin{lstlisting}
+library(tidyverse)
+library(broom)
+
+# Comprehensive experiment analysis pipeline
+analyze_experiment <- function(data, metric, variant_col = "variant",
+                              alpha = 0.05) {
+  #' Analyze A/B test experiment
+  #'
+  #' @param data DataFrame with experiment data
+  #' @param metric Character, name of metric column
+  #' @param variant_col Character, name of variant column
+  #' @param alpha Numeric, significance level
+  #'
+  #' @return List with analysis results
+
+  # 1. Pre-analysis checks
+  cat("=== Pre-Analysis Checks ===\n")
+
+  # Sample ratio mismatch
+  variant_counts <- table(data[[variant_col]])
+  srm_test <- chisq.test(variant_counts)
+  cat(sprintf("SRM p-value: %.4f %s\n", srm_test$p.value,
+              ifelse(srm_test$p.value < 0.01, "(WARNING)", "(OK)")))
+
+  # 2. Summary statistics
+  cat("\n=== Summary Statistics ===\n")
+  summary_stats <- data %>%
+    group_by(!!sym(variant_col)) %>%
+    summarise(
+      n = n(),
+      mean = mean(!!sym(metric), na.rm = TRUE),
+      median = median(!!sym(metric), na.rm = TRUE),
+      sd = sd(!!sym(metric), na.rm = TRUE),
+      se = sd / sqrt(n),
+      .groups = 'drop'
+    )
+
+  print(summary_stats)
+
+  # 3. Statistical test
+  cat("\n=== Statistical Test ===\n")
+
+  variants <- unique(data[[variant_col]])
+  control <- data %>% filter(!!sym(variant_col) == variants[1]) %>%
+    pull(!!sym(metric))
+  treatment <- data %>% filter(!!sym(variant_col) == variants[2]) %>%
+    pull(!!sym(metric))
+
+  # Welch's t-test (robust to unequal variances)
+  test_result <- t.test(treatment, control, var.equal = FALSE)
+
+  cat(sprintf("Test statistic: %.4f\n", test_result$statistic))
+  cat(sprintf("P-value: %.4f\n", test_result$p.value))
+  cat(sprintf("Significant: %s\n",
+              ifelse(test_result$p.value < alpha, "Yes", "No")))
+
+  # 4. Effect sizes
+  cat("\n=== Effect Sizes ===\n")
+
+  mean_control <- mean(control, na.rm = TRUE)
+  mean_treatment <- mean(treatment, na.rm = TRUE)
+  diff <- mean_treatment - mean_control
+  relative_lift <- diff / mean_control
+
+  cat(sprintf("Absolute difference: %.4f\n", diff))
+  cat(sprintf("Relative lift: %.2f%%\n", relative_lift * 100))
+  cat(sprintf("95%% CI: [%.4f, %.4f]\n",
+              test_result$conf.int[1], test_result$conf.int[2]))
+
+  # 5. Visualizations
+  p1 <- ggplot(data, aes_string(x = variant_col, y = metric)) +
+    geom_boxplot() +
+    geom_jitter(alpha = 0.1, width = 0.2) +
+    labs(title = "Distribution by Variant",
+         x = "Variant", y = metric) +
+    theme_minimal()
+
+  # Density plot
+  p2 <- ggplot(data, aes_string(x = metric, fill = variant_col)) +
+    geom_density(alpha = 0.5) +
+    labs(title = "Density Plot by Variant",
+         x = metric, fill = "Variant") +
+    theme_minimal()
+
+  # Return results
+  list(
+    srm_check = list(p_value = srm_test$p.value,
+                    passed = srm_test$p.value >= 0.01),
+    summary = summary_stats,
+    test = test_result,
+    effect_size = list(
+      absolute = diff,
+      relative = relative_lift,
+      ci = test_result$conf.int
+    ),
+    plots = list(boxplot = p1, density = p2)
+  )
+}
+
+# Bayesian analysis function
+bayesian_ab_test <- function(x_control, n_control, x_treatment, n_treatment,
+                             prior_alpha = 1, prior_beta = 1,
+                             n_sim = 100000) {
+  #' Bayesian A/B test for proportions
+  #'
+  #' @param x_control Conversions in control
+  #' @param n_control Sample size control
+  #' @param x_treatment Conversions in treatment
+  #' @param n_treatment Sample size treatment
+  #' @param prior_alpha Beta prior alpha
+  #' @param prior_beta Beta prior beta
+  #' @param n_sim Number of Monte Carlo simulations
+  #'
+  #' @return List with Bayesian results
+
+  # Posterior parameters
+  post_alpha_control <- prior_alpha + x_control
+  post_beta_control <- prior_beta + n_control - x_control
+  post_alpha_treatment <- prior_alpha + x_treatment
+  post_beta_treatment <- prior_beta + n_treatment - x_treatment
+
+  # Simulate from posteriors
+  p_control <- rbeta(n_sim, post_alpha_control, post_beta_control)
+  p_treatment <- rbeta(n_sim, post_alpha_treatment, post_beta_treatment)
+
+  # Probability treatment > control
+  prob_treatment_better <- mean(p_treatment > p_control)
+
+  # Expected lift
+  lift <- p_treatment / p_control - 1
+  expected_lift <- mean(lift)
+  lift_ci <- quantile(lift, c(0.025, 0.975))
+
+  # Expected loss
+  loss_control <- mean(pmax(0, p_treatment - p_control))
+  loss_treatment <- mean(pmax(0, p_control - p_treatment))
+
+  list(
+    prob_treatment_better = prob_treatment_better,
+    expected_lift = expected_lift,
+    lift_ci = lift_ci,
+    loss = list(
+      control = loss_control,
+      treatment = loss_treatment,
+      recommendation = ifelse(loss_control < loss_treatment,
+                             "Control", "Treatment")
+    )
+  )
+}
+
+# Example usage:
+# data <- read_csv("experiment_data.csv")
+# results <- analyze_experiment(data, metric = "conversion")
+# print(results$plots$boxplot)
+\end{lstlisting}
+
+\subsection{Experiment Simulation Framework}
+
+\lstset{language=Python}
+\begin{lstlisting}
+import numpy as np
+import pandas as pd
+from typing import Callable
+
+class ExperimentSimulator:
+    """Simulate A/B tests for power analysis and methodology validation."""
+
+    def __init__(self, seed=None):
+        if seed is not None:
+            np.random.seed(seed)
+
+    def simulate_proportions(self, n_control, n_treatment,
+                            p_control, p_treatment,
+                            n_simulations=1000, alpha=0.05):
+        """
+        Simulate A/B tests with binary outcomes.
+
+        Returns:
+        --------
+        dict : Simulation results including empirical power and Type I error
+        """
+        results = []
+
+        for _ in range(n_simulations):
+            # Generate data
+            control = np.random.binomial(1, p_control, n_control)
+            treatment = np.random.binomial(1, p_treatment, n_treatment)
+
+            # Test
+            p1 = np.mean(control)
+            p2 = np.mean(treatment)
+
+            p_pooled = (np.sum(control) + np.sum(treatment)) / (n_control + n_treatment)
+            se = np.sqrt(p_pooled * (1 - p_pooled) * (1/n_control + 1/n_treatment))
+
+            z = (p2 - p1) / se
+            p_value = 2 * (1 - stats.norm.cdf(abs(z)))
+
+            results.append({
+                'p_value': p_value,
+                'reject': p_value < alpha,
+                'p1_hat': p1,
+                'p2_hat': p2,
+                'effect_estimate': p2 - p1
+            })
+
+        results_df = pd.DataFrame(results)
+
+        # Calculate metrics
+        empirical_power = results_df['reject'].mean()
+        type_i_error = empirical_power if p_control == p_treatment else None
+
+        return {
+            'results': results_df,
+            'empirical_power': empirical_power,
+            'type_i_error': type_i_error,
+            'mean_p_value': results_df['p_value'].mean(),
+            'significant_count': results_df['reject'].sum()
+        }
+
+# Example: Verify power calculation
+simulator = ExperimentSimulator(seed=42)
+sim_result = simulator.simulate_proportions(
+    n_control=1000,
+    n_treatment=1000,
+    p_control=0.10,
+    p_treatment=0.12,
+    n_simulations=10000,
+    alpha=0.05
+)
+
+print(f"Empirical power: {sim_result['empirical_power']:.3f}")
+print(f"Significant tests: {sim_result['significant_count']}/{10000}")
+\end{lstlisting}

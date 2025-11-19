@@ -6311,17 +6311,17 @@ The team performs a comprehensive cost-benefit analysis:
 
 \textbf{Short-Term Revenue (Year 1):}
 \begin{itemize}
-    \item Model A: 200K users $	imes$ 3.2\% conversion $	imes$ \$120/year = \$768K
-    \item Model B: 200K users $	imes$ 4.1\% conversion $	imes$ \$120/year = \$984K
+    \item Model A: 200K users $\times$ 3.2\% conversion $\times$ \$120/year = \$768K
+    \item Model B: 200K users $\times$ 4.1\% conversion $\times$ \$120/year = \$984K
     \item \textbf{Gain}: +\$216K (+28\%)
 \end{itemize}
 
 \textbf{Long-Term User Loss (3-Year LTV):}
 \begin{itemize}
     \item Retention drop: -3pp (-4\%)
-    \item Annual churn increase: -3pp $	imes$ 200K = 6,000 users/year
-    \item Average LTV per user: \$180 (3 years $	imes$ \$60/year average)
-    \item \textbf{Loss}: 6,000 users $	imes$ \$180 = \$1.08M over 3 years
+    \item Annual churn increase: -3pp $\times$ 200K = 6,000 users/year
+    \item Average LTV per user: \$180 (3 years $\times$ \$60/year average)
+    \item \textbf{Loss}: 6,000 users $\times$ \$180 = \$1.08M over 3 years
 \end{itemize}
 
 \textbf{Net Present Value (3 years, 10\% discount rate):}
@@ -6346,10 +6346,10 @@ Instead of binary ship/don't-ship, the team implements \textbf{segment-targeted 
 
 \textbf{Blended Business Impact:}
 \begin{itemize}
-    \item Conversion: 3.2\% → 3.7\% (+15.6\% blended)
-    \item Listening time: 65 min → 63 min (-3\% blended)
-    \item Retention: 82\% → 81\% (-1.2\% blended)
-    \item Revenue: \$8.20 → \$9.00 (+9.8\% blended)
+    \item Conversion: 3.2\% $\to$ 3.7\% (+15.6\% blended)
+    \item Listening time: 65 min $\to$ 63 min (-3\% blended)
+    \item Retention: 82\% $\to$ 81\% (-1.2\% blended)
+    \item Revenue: \$8.20 $\to$ \$9.00 (+9.8\% blended)
     \item \textbf{3-year NPV}: +\$850K (positive!)
 \end{itemize}
 
@@ -10235,12 +10235,12 @@ KEY FINDINGS:
         # Add top findings
         for metric_arm, interp in list(interpretation.items())[:3]:
             metric = metric_arm.rsplit('_', 1)[0]
-            summary += f"  • {metric}: {interp}\n"
+            summary += f"  - {metric}: {interp}\n"
 
         if recommendation.estimated_impact:
-            summary += "\nESTIMATED BUSINESS IMPACT:\n"
-            for impact_type, value in recommendation.estimated_impact.items():
-                summary += f"  • {impact_type}: ${value:,.0f}\n"
+                    summary += "\nESTIMATED BUSINESS IMPACT:\n"
+                    for impact_type, value in recommendation.estimated_impact.items():
+                        summary += f"  - {impact_type}: ${value:,.0f}\n"
 
         summary += f"\nNEXT STEPS:\n"
         for i, step in enumerate(recommendation.next_steps, 1):
@@ -10312,12 +10312,12 @@ DETAILED FINDINGS:
 """
 
         for metric_arm, interp in interpretation.items():
-            summary += f"  • {interp}\n"
+                    summary += f"  - {interp}\n"
 
         if recommendation.estimated_impact:
             summary += f"\nBUSINESS IMPACT:\n"
             for impact_type, value in recommendation.estimated_impact.items():
-                summary += f"  • {impact_type}: ${value:,.0f}\n"
+                summary += f"  - {impact_type}: ${value:,.0f}\n"
 
         summary += f"\nWHAT'S NEXT:\n"
         for step in recommendation.next_steps:
@@ -10557,8 +10557,8 @@ Armed with causal evidence, the team presented to leadership:
 
 \begin{itemize}
     \item \textbf{Causal Effect}: Recommendations drive +23\% of purchases
-    \item \textbf{Annual Value}: 23\% $	imes$ \$8B GMV = \textbf{\$1.84B in incremental GMV}
-    \item \textbf{ROI}: Recommendation system costs \$12M/year → \textbf{154x ROI}
+    \item \textbf{Annual Value}: $23\% \times \$8\text{B GMV} = \$1.84\text{B in incremental GMV}$
+    \item \textbf{ROI}: Recommendation system costs \$12M/year $\to$ \textbf{154x ROI}
     \item \textbf{Decision}: Secured \$50M budget for recommendation R\&D expansion
 \end{itemize}
 
@@ -12333,7 +12333,7 @@ class ExperimentDurationPlanner:
         # Final recommendations
         if seasonal_risk == 'low':
             recommendations.append(
-                f"✅ No major seasonality conflicts. Proceed with {start_date.strftime('%Y-%m-%d')} start."
+                f"[OK] No major seasonality conflicts. Proceed with {start_date.strftime('%Y-%m-%d')} start."
             )
 
         return DurationPlan(

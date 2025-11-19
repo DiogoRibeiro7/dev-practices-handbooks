@@ -1,0 +1,292 @@
+\section{Complete Training Pipeline Example}
+
+\begin{lstlisting}[style=python, caption=train\_pipeline.py]
+import mlflow
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
+import joblib
+
+def load_data(path):
+    """Load and prepare data"""
+    df = pd.read_csv(path)
+    X = df.drop('target', axis=1)
+    y = df['target']
+    return train_test_split(X, y, test_size=0.2, random_state=42)
+
+def train_model(X_train, y_train, params):
+    """Train RandomForest model"""
+    model = RandomForestClassifier(**params)
+    model.fit(X_train, y_train)
+    return model
+
+def evaluate_model(model, X_test, y_test):
+    """Evaluate model performance"""
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    report = classification_report(y_test, y_pred)
+    return accuracy, report
+
+def main():
+    # MLflow experiment tracking
+    mlflow.set_experiment("model_training")
+
+    with mlflow.start_run():
+        # Load data
+        X_train, X_test, y_train, y_test = load_data('data/processed/data.csv')
+
+        # Model parameters
+        params = {
+            'n_estimators': 100,
+            'max_depth': 10,
+            'random_state': 42
+        }
+        mlflow.log_params(params)
+
+        # Train model
+        model = train_model(X_train, y_train, params)
+
+        # Evaluate model
+        accuracy, report = evaluate_model(model, X_test, y_test)
+        mlflow.log_metric("accuracy", accuracy)
+
+        # Save model
+        mlflow.sklearn.log_model(model, "model")
+        joblib.dump(model, 'models/model.pkl')
+
+        print(f"Accuracy: {accuracy:.4f}")
+        print(report)
+
+if __name__ == "__main__":
+    main()
+\end{lstlisting}
+
+\section{REST API for Model Serving}
+
+\begin{lstlisting}[style=python, caption=serve.py]
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+import joblib
+import numpy as np
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load model
+model = joblib.load('models/model.pkl')
+
+# Create FastAPI app
+app = FastAPI(title="ML Model API", version="1.0")
+
+class PredictionRequest(BaseModel):
+    features: list[float]
+
+class PredictionResponse(BaseModel):
+    prediction: int
+    probability: float
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy"}
+
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(request: PredictionRequest):
+    """Make prediction"""
+    try:
+        # Prepare input
+        X = np.array(request.features).reshape(1, -1)
+
+        # Make prediction
+        prediction = model.predict(X)[0]
+        probability = model.predict_proba(X)[0].max()
+
+        logger.info(f"Prediction: {prediction}, Probability: {probability:.4f}")
+
+        return PredictionResponse(
+            prediction=int(prediction),
+            probability=float(probability)
+        )
+    except Exception as e:
+        logger.error(f"Prediction error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+\end{lstlisting}
+
+\section{Data Validation with Great Expectations}
+
+\begin{lstlisting}[style=python, caption=validate\_data.py]
+import great_expectations as ge
+import pandas as pd
+
+def create_expectation_suite(df):
+    """Create data validation suite"""
+    # Convert to GE DataFrame
+    ge_df = ge.from_pandas(df)
+
+    # Define expectations
+    ge_df.expect_table_row_count_to_be_between(min_value=100, max_value=1000000)
+    ge_df.expect_column_values_to_not_be_null('user_id')
+    ge_df.expect_column_values_to_be_unique('user_id')
+    ge_df.expect_column_values_to_be_between('age', min_value=0, max_value=120)
+    ge_df.expect_column_values_to_be_in_set('country', ['US', 'UK', 'CA', 'AU'])
+    ge_df.expect_column_mean_to_be_between('revenue', min_value=0, max_value=10000)
+
+    # Save expectation suite
+    ge_df.save_expectation_suite('data_expectations.json')
+
+    return ge_df
+
+def validate_data(df, expectation_suite_path):
+    """Validate data against expectations"""
+    ge_df = ge.from_pandas(df)
+
+    # Load expectations
+    ge_df.read_json(expectation_suite_path)
+
+    # Validate
+    results = ge_df.validate()
+
+    return results
+
+if __name__ == "__main__":
+    # Load data
+    df = pd.read_csv('data/raw/data.csv')
+
+    # Create and validate
+    ge_df = create_expectation_suite(df)
+    results = validate_data(df, 'data_expectations.json')
+
+    print(f"Validation success: {results.success}")
+    print(f"Number of expectations: {len(results.results)}")
+\end{lstlisting}
+
+\section{Airflow DAG Template}
+
+\begin{lstlisting}[style=python, caption=ml\_dag.py]
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
+from datetime import datetime, timedelta
+import sys
+
+sys.path.insert(0, '/opt/airflow/dags/src')
+
+from data_processing import extract_data, transform_data
+from model_training import train_model
+from model_evaluation import evaluate_model
+
+default_args = {
+    'owner': 'ml_team',
+    'depends_on_past': False,
+    'start_date': datetime(2024, 1, 1),
+    'email': ['ml-team@example.com'],
+    'email_on_failure': True,
+    'email_on_retry': False,
+    'retries': 3,
+    'retry_delay': timedelta(minutes=5),
+}
+
+with DAG(
+    'ml_training_pipeline',
+    default_args=default_args,
+    description='Complete ML training pipeline',
+    schedule_interval='@daily',
+    catchup=False,
+    tags=['ml', 'training'],
+) as dag:
+
+    extract_task = PythonOperator(
+        task_id='extract_data',
+        python_callable=extract_data,
+    )
+
+    transform_task = PythonOperator(
+        task_id='transform_data',
+        python_callable=transform_data,
+    )
+
+    validate_task = BashOperator(
+        task_id='validate_data',
+        bash_command='python /opt/airflow/dags/src/validate_data.py',
+    )
+
+    train_task = PythonOperator(
+        task_id='train_model',
+        python_callable=train_model,
+    )
+
+    evaluate_task = PythonOperator(
+        task_id='evaluate_model',
+        python_callable=evaluate_model,
+    )
+
+    deploy_task = BashOperator(
+        task_id='deploy_model',
+        bash_command='python /opt/airflow/dags/src/deploy_model.py',
+    )
+
+    extract_task >> transform_task >> validate_task >> train_task >> evaluate_task >> deploy_task
+\end{lstlisting}
+
+\section{Model Monitoring Script}
+
+\begin{lstlisting}[style=python, caption=monitor.py]
+import pandas as pd
+import numpy as np
+from scipy import stats
+from evidently.report import Report
+from evidently.metric_preset import DataDriftPreset, DataQualityPreset
+
+def detect_data_drift(reference_data, current_data, threshold=0.05):
+    """Detect data drift using KS test"""
+    drift_detected = {}
+
+    for column in reference_data.columns:
+        if pd.api.types.is_numeric_dtype(reference_data[column]):
+            statistic, pvalue = stats.ks_2samp(
+                reference_data[column].dropna(),
+                current_data[column].dropna()
+            )
+            drift_detected[column] = {
+                'drift': pvalue < threshold,
+                'pvalue': pvalue,
+                'statistic': statistic
+            }
+
+    return drift_detected
+
+def generate_monitoring_report(reference_data, current_data):
+    """Generate comprehensive monitoring report"""
+    report = Report(metrics=[
+        DataDriftPreset(),
+        DataQualityPreset(),
+    ])
+
+    report.run(reference_data=reference_data, current_data=current_data)
+    report.save_html('monitoring_report.html')
+
+    return report
+
+if __name__ == "__main__":
+    # Load reference and current data
+    reference = pd.read_csv('data/reference/data.csv')
+    current = pd.read_csv('data/current/data.csv')
+
+    # Detect drift
+    drift_results = detect_data_drift(reference, current)
+
+    # Print results
+    for column, result in drift_results.items():
+        if result['drift']:
+            print(f"⚠ Drift detected in {column}: p-value={result['pvalue']:.4f}")
+
+    # Generate detailed report
+    report = generate_monitoring_report(reference, current)
+\end{lstlisting}

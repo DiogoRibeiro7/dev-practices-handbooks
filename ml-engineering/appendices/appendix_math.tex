@@ -1,0 +1,201 @@
+\section{Linear Algebra Fundamentals}
+
+\subsection{Matrix Operations}
+
+\textbf{Matrix Multiplication:}
+\begin{equation}
+\mathbf{C} = \mathbf{A}\mathbf{B}, \quad C_{ij} = \sum_{k=1}^{n} A_{ik}B_{kj}
+\end{equation}
+
+\textbf{Matrix Transpose:}
+\begin{equation}
+(\mathbf{A}^T)_{ij} = A_{ji}
+\end{equation}
+
+\textbf{Matrix Inverse:}
+\begin{equation}
+\mathbf{A}\mathbf{A}^{-1} = \mathbf{I}
+\end{equation}
+
+\subsection{Eigenvalues and Eigenvectors}
+
+For a square matrix $\mathbf{A}$, an eigenvector $\mathbf{v}$ and eigenvalue $\lambda$ satisfy:
+\begin{equation}
+\mathbf{A}\mathbf{v} = \lambda\mathbf{v}
+\end{equation}
+
+\section{Probability and Statistics}
+
+\subsection{Probability Distributions}
+
+\textbf{Normal Distribution:}
+\begin{equation}
+f(x \mid \mu, \sigma^2) = \frac{1}{\sqrt{2\pi\sigma^2}} \exp\left(-\frac{(x-\mu)^2}{2\sigma^2}\right)
+\end{equation}
+
+\textbf{Bernoulli Distribution:}
+\begin{equation}
+P(X=x) = p^x(1-p)^{1-x}, \quad x \in \{0,1\}
+\end{equation}
+
+\subsection{Expected Value and Variance}
+
+\textbf{Expected Value:}
+\begin{equation}
+\mathbb{E}[X] = \sum_{i} x_i P(X=x_i) \quad \text{or} \quad \mathbb{E}[X] = \int x f(x) dx
+\end{equation}
+
+\textbf{Variance:}
+\begin{equation}
+\text{Var}(X) = \mathbb{E}[(X - \mathbb{E}[X])^2] = \mathbb{E}[X^2] - (\mathbb{E}[X])^2
+\end{equation}
+
+\subsection{Covariance and Correlation}
+
+\textbf{Covariance:}
+\begin{equation}
+\text{Cov}(X,Y) = \mathbb{E}[(X - \mathbb{E}[X])(Y - \mathbb{E}[Y])]
+\end{equation}
+
+\textbf{Correlation:}
+\begin{equation}
+\rho_{X,Y} = \frac{\text{Cov}(X,Y)}{\sqrt{\text{Var}(X)\text{Var}(Y)}}
+\end{equation}
+
+\section{Optimization}
+
+\subsection{Gradient Descent}
+
+\textbf{Update Rule:}
+\begin{equation}
+\theta_{t+1} = \theta_t - \alpha \nabla_\theta L(\theta_t)
+\end{equation}
+
+where $\alpha$ is the learning rate and $L(\theta)$ is the loss function.
+
+\subsection{Stochastic Gradient Descent}
+
+\textbf{Update with Mini-batch:}
+\begin{equation}
+\theta_{t+1} = \theta_t - \alpha \frac{1}{m}\sum_{i=1}^{m} \nabla_\theta L(\theta_t; x^{(i)}, y^{(i)})
+\end{equation}
+
+\subsection{Adam Optimizer}
+
+\textbf{First and Second Moment Estimates:}
+\begin{align}
+m_t &= \beta_1 m_{t-1} + (1-\beta_1) g_t \\
+v_t &= \beta_2 v_{t-1} + (1-\beta_2) g_t^2
+\end{align}
+
+\textbf{Bias-Corrected Estimates:}
+\begin{align}
+\hat{m}_t &= \frac{m_t}{1-\beta_1^t} \\
+\hat{v}_t &= \frac{v_t}{1-\beta_2^t}
+\end{align}
+
+\textbf{Parameter Update:}
+\begin{equation}
+\theta_{t+1} = \theta_t - \frac{\alpha \hat{m}_t}{\sqrt{\hat{v}_t} + \epsilon}
+\end{equation}
+
+\section{Loss Functions}
+
+\subsection{Mean Squared Error}
+
+\begin{equation}
+L_{\text{MSE}} = \frac{1}{n}\sum_{i=1}^{n}(y_i - \hat{y}_i)^2
+\end{equation}
+
+\subsection{Cross-Entropy Loss}
+
+\textbf{Binary Cross-Entropy:}
+\begin{equation}
+L_{\text{BCE}} = -\frac{1}{n}\sum_{i=1}^{n}[y_i \log(\hat{y}_i) + (1-y_i)\log(1-\hat{y}_i)]
+\end{equation}
+
+\textbf{Categorical Cross-Entropy:}
+\begin{equation}
+L_{\text{CCE}} = -\frac{1}{n}\sum_{i=1}^{n}\sum_{c=1}^{C} y_{ic} \log(\hat{y}_{ic})
+\end{equation}
+
+\section{Regularization}
+
+\subsection{L1 Regularization (Lasso)}
+
+\begin{equation}
+L = L_0 + \lambda \sum_{j=1}^{p} |\theta_j|
+\end{equation}
+
+\subsection{L2 Regularization (Ridge)}
+
+\begin{equation}
+L = L_0 + \lambda \sum_{j=1}^{p} \theta_j^2
+\end{equation}
+
+\subsection{Elastic Net}
+
+\begin{equation}
+L = L_0 + \lambda_1 \sum_{j=1}^{p} |\theta_j| + \lambda_2 \sum_{j=1}^{p} \theta_j^2
+\end{equation}
+
+\section{Information Theory}
+
+\subsection{Entropy}
+
+\begin{equation}
+H(X) = -\sum_{x \in \mathcal{X}} P(x) \log P(x)
+\end{equation}
+
+\subsection{KL Divergence}
+
+\begin{equation}
+D_{KL}(P \parallel Q) = \sum_{x} P(x) \log\frac{P(x)}{Q(x)}
+\end{equation}
+
+\subsection{Mutual Information}
+
+\begin{equation}
+I(X;Y) = \sum_{x,y} P(x,y) \log\frac{P(x,y)}{P(x)P(y)}
+\end{equation}
+
+\section{Evaluation Metrics}
+
+\subsection{Classification Metrics}
+
+\textbf{Accuracy:}
+\begin{equation}
+\text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}
+\end{equation}
+
+\textbf{Precision:}
+\begin{equation}
+\text{Precision} = \frac{TP}{TP + FP}
+\end{equation}
+
+\textbf{Recall:}
+\begin{equation}
+\text{Recall} = \frac{TP}{TP + FN}
+\end{equation}
+
+\textbf{F1 Score:}
+\begin{equation}
+F_1 = 2 \cdot \frac{\text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}
+\end{equation}
+
+\subsection{Regression Metrics}
+
+\textbf{Mean Absolute Error (MAE):}
+\begin{equation}
+\text{MAE} = \frac{1}{n}\sum_{i=1}^{n}|y_i - \hat{y}_i|
+\end{equation}
+
+\textbf{Root Mean Squared Error (RMSE):}
+\begin{equation}
+\text{RMSE} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}(y_i - \hat{y}_i)^2}
+\end{equation}
+
+\textbf{R-Squared:}
+\begin{equation}
+R^2 = 1 - \frac{\sum_{i=1}^{n}(y_i - \hat{y}_i)^2}{\sum_{i=1}^{n}(y_i - \bar{y})^2}
+\end{equation}

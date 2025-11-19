@@ -1,0 +1,142 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Design scalable data pipeline architectures
+    \item Implement ETL/ELT processes for ML
+    \item Use workflow orchestration tools
+    \item Handle batch and streaming data
+    \item Ensure data pipeline reliability and monitoring
+\end{itemize}
+
+\section{Data Pipeline Architecture}
+
+\subsection{ETL vs ELT}
+
+\textbf{ETL (Extract, Transform, Load):} Traditional approach where data is transformed before loading.
+
+\textbf{ELT (Extract, Load, Transform):} Modern approach leveraging powerful data warehouses.
+
+\section{Batch Processing with Apache Airflow}
+
+\subsection{Airflow DAG Example}
+
+\begin{lstlisting}[style=python, caption=Airflow DAG for data pipeline]
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.providers.postgres.operators.postgres import PostgresOperator
+from datetime import datetime, timedelta
+
+default_args = {
+    'owner': 'ml_team',
+    'depends_on_past': False,
+    'start_date': datetime(2024, 1, 1),
+    'email_on_failure': True,
+    'email_on_retry': False,
+    'retries': 3,
+    'retry_delay': timedelta(minutes=5),
+}
+
+def extract_data(**context):
+    """Extract data from source"""
+    # Implementation here
+    pass
+
+def transform_data(**context):
+    """Transform and clean data"""
+    # Implementation here
+    pass
+
+def validate_data(**context):
+    """Validate data quality"""
+    # Implementation here
+    pass
+
+with DAG(
+    'ml_data_pipeline',
+    default_args=default_args,
+    description='ML data pipeline',
+    schedule_interval='@daily',
+    catchup=False
+) as dag:
+
+    extract = PythonOperator(
+        task_id='extract_data',
+        python_callable=extract_data
+    )
+
+    transform = PythonOperator(
+        task_id='transform_data',
+        python_callable=transform_data
+    )
+
+    validate = PythonOperator(
+        task_id='validate_data',
+        python_callable=validate_data
+    )
+
+    load = PostgresOperator(
+        task_id='load_to_warehouse',
+        postgres_conn_id='warehouse',
+        sql='sql/load_data.sql'
+    )
+
+    extract >> transform >> validate >> load
+\end{lstlisting}
+
+\section{Streaming Data Processing}
+
+\subsection{Real-Time Pipelines}
+
+\begin{lstlisting}[style=python, caption=Kafka consumer for streaming]
+from kafka import KafkaConsumer
+import json
+
+consumer = KafkaConsumer(
+    'ml_features',
+    bootstrap_servers=['localhost:9092'],
+    value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+    group_id='ml_pipeline'
+)
+
+for message in consumer:
+    data = message.value
+    # Process streaming data
+    features = transform_features(data)
+    # Store or use for inference
+    save_to_feature_store(features)
+\end{lstlisting}
+
+\section{Data Pipeline Monitoring}
+
+\subsection{Data Quality Checks}
+
+\begin{lstlisting}[style=python]
+import great_expectations as ge
+
+# Load data as GE DataFrame
+df = ge.read_csv('data.csv')
+
+# Define expectations
+df.expect_column_values_to_not_be_null('user_id')
+df.expect_column_values_to_be_between('age', 0, 120)
+df.expect_column_values_to_be_in_set('country', ['US', 'UK', 'CA'])
+
+# Validate
+results = df.validate()
+print(results)
+\end{lstlisting}
+
+\section{Chapter Summary}
+
+Data pipelines are the backbone of ML systems. This chapter covered architectural patterns, orchestration tools, and best practices for building reliable data pipelines.
+
+\section{Exercises}
+
+\begin{exercise}
+Design a data pipeline for a recommendation system that processes user interaction logs daily.
+\end{exercise}
+
+\begin{exercise}
+Implement an Airflow DAG with data quality checks using Great Expectations.
+\end{exercise}

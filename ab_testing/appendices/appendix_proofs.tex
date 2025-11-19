@@ -1,0 +1,189 @@
+\section{Mathematical Proofs}
+
+This appendix provides rigorous mathematical proofs for key theorems referenced throughout the book.
+
+\subsection{Proof: Unbiasedness of Sample Mean}
+
+\begin{theorem}
+Let $X_1, X_2, \ldots, X_n$ be independent and identically distributed random variables with $\mathbb{E}[X_i] = \mu$. Then the sample mean $\bar{X} = \frac{1}{n}\sum_{i=1}^n X_i$ is an unbiased estimator of $\mu$.
+\end{theorem}
+
+\begin{proof}
+By linearity of expectation:
+\begin{align}
+\mathbb{E}[\bar{X}] &= \mathbb{E}\left[\frac{1}{n}\sum_{i=1}^n X_i\right] \\
+&= \frac{1}{n}\sum_{i=1}^n \mathbb{E}[X_i] \\
+&= \frac{1}{n}\sum_{i=1}^n \mu \\
+&= \frac{1}{n} \cdot n\mu \\
+&= \mu
+\end{align}
+
+Therefore, $\bar{X}$ is an unbiased estimator of $\mu$.
+\end{proof}
+
+\subsection{Proof: Variance of Sample Mean}
+
+\begin{theorem}
+For independent random variables $X_1, \ldots, X_n$ with $\text{Var}(X_i) = \sigma^2$:
+\begin{equation}
+\text{Var}(\bar{X}) = \frac{\sigma^2}{n}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Using independence:
+\begin{align}
+\text{Var}(\bar{X}) &= \text{Var}\left(\frac{1}{n}\sum_{i=1}^n X_i\right) \\
+&= \frac{1}{n^2}\text{Var}\left(\sum_{i=1}^n X_i\right) \\
+&= \frac{1}{n^2}\sum_{i=1}^n \text{Var}(X_i) \quad \text{(by independence)} \\
+&= \frac{1}{n^2}\sum_{i=1}^n \sigma^2 \\
+&= \frac{1}{n^2} \cdot n\sigma^2 \\
+&= \frac{\sigma^2}{n}
+\end{align}
+\end{proof}
+
+\subsection{Proof: Beta-Binomial Conjugacy}
+
+\begin{theorem}
+If $p \sim \text{Beta}(\alpha, \beta)$ and $X | p \sim \text{Binomial}(n, p)$, then:
+\begin{equation}
+p | X \sim \text{Beta}(\alpha + X, \beta + n - X)
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+By Bayes' theorem:
+\begin{equation}
+f(p | X) \propto f(X | p) \cdot f(p)
+\end{equation}
+
+The likelihood is:
+\begin{equation}
+f(X | p) = \binom{n}{X} p^X (1-p)^{n-X}
+\end{equation}
+
+The prior is:
+\begin{equation}
+f(p) = \frac{\Gamma(\alpha + \beta)}{\Gamma(\alpha)\Gamma(\beta)} p^{\alpha-1}(1-p)^{\beta-1}
+\end{equation}
+
+The posterior is proportional to:
+\begin{align}
+f(p | X) &\propto p^X (1-p)^{n-X} \cdot p^{\alpha-1}(1-p)^{\beta-1} \\
+&= p^{X + \alpha - 1}(1-p)^{n - X + \beta - 1}
+\end{align}
+
+This is the kernel of a $\text{Beta}(\alpha + X, \beta + n - X)$ distribution.
+\end{proof}
+
+\subsection{Proof: Sample Size Formula for Proportions}
+
+\begin{theorem}
+For comparing two proportions $p_1$ and $p_2$ with significance level $\alpha$ and power $1-\beta$:
+\begin{equation}
+n = \frac{(z_{\alpha/2} + z_{\beta})^2 [p_1(1-p_1) + p_2(1-p_2)]}{(p_2 - p_1)^2}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Under $H_0: p_1 = p_2 = p$, using pooled proportion:
+\begin{equation}
+Z_0 = \frac{\hat{p}_2 - \hat{p}_1}{\sqrt{2p(1-p)/n}} \sim \mathcal{N}(0, 1)
+\end{equation}
+
+Under $H_1: p_1 \neq p_2$:
+\begin{equation}
+Z_1 = \frac{(\hat{p}_2 - \hat{p}_1) - (p_2 - p_1)}{\sqrt{[p_1(1-p_1) + p_2(1-p_2)]/n}} \sim \mathcal{N}(0, 1)
+\end{equation}
+
+Rejection region: $|\hat{p}_2 - \hat{p}_1| > z_{\alpha/2}\sqrt{2p(1-p)/n}$
+
+For power $1-\beta$, we require:
+\begin{equation}
+P\left(|\hat{p}_2 - \hat{p}_1| > z_{\alpha/2}\sqrt{2p(1-p)/n} \mid H_1\right) = 1 - \beta
+\end{equation}
+
+Assuming $p_2 > p_1$ and approximating $p \approx (p_1 + p_2)/2$:
+\begin{equation}
+\frac{(p_2 - p_1) - z_{\alpha/2}\sqrt{2p(1-p)/n}}{\sqrt{[p_1(1-p_1) + p_2(1-p_2)]/n}} = z_{\beta}
+\end{equation}
+
+Solving for $n$ yields the formula above (with slight approximation).
+\end{proof}
+
+\subsection{Proof: CUPED Variance Reduction}
+
+\begin{theorem}
+For adjusted outcome $Y^* = Y - \theta(X - \mathbb{E}[X])$ with $\theta = \frac{\text{Cov}(Y,X)}{\text{Var}(X)}$:
+\begin{equation}
+\text{Var}(Y^*) = \text{Var}(Y)(1 - \rho^2)
+\end{equation}
+where $\rho = \text{Cor}(Y, X)$.
+\end{theorem}
+
+\begin{proof}
+\begin{align}
+\text{Var}(Y^*) &= \text{Var}(Y - \theta(X - \mathbb{E}[X])) \\
+&= \text{Var}(Y) + \theta^2\text{Var}(X) - 2\theta\text{Cov}(Y, X) \\
+&= \text{Var}(Y) + \frac{\text{Cov}(Y,X)^2}{\text{Var}(X)^2}\text{Var}(X) - 2\frac{\text{Cov}(Y,X)}{\text{Var}(X)}\text{Cov}(Y, X) \\
+&= \text{Var}(Y) + \frac{\text{Cov}(Y,X)^2}{\text{Var}(X)} - 2\frac{\text{Cov}(Y,X)^2}{\text{Var}(X)} \\
+&= \text{Var}(Y) - \frac{\text{Cov}(Y,X)^2}{\text{Var}(X)} \\
+&= \text{Var}(Y)\left(1 - \frac{\text{Cov}(Y,X)^2}{\text{Var}(Y)\text{Var}(X)}\right) \\
+&= \text{Var}(Y)(1 - \rho^2)
+\end{align}
+\end{proof}
+
+\subsection{Central Limit Theorem}
+
+\begin{theorem}[Lindeberg-Lévy CLT]
+Let $X_1, X_2, \ldots$ be i.i.d. random variables with $\mathbb{E}[X_i] = \mu$ and $\text{Var}(X_i) = \sigma^2 < \infty$. Then:
+\begin{equation}
+\frac{\sqrt{n}(\bar{X}_n - \mu)}{\sigma} \xrightarrow{d} \mathcal{N}(0, 1)
+\end{equation}
+\end{theorem}
+
+The full proof requires characteristic functions and is beyond scope, but the key idea is that standardized sums of i.i.d. random variables converge in distribution to the standard normal distribution.
+
+\subsection{Bonferroni Inequality}
+
+\begin{theorem}[Bonferroni Correction]
+For $m$ hypothesis tests, each at level $\alpha/m$, the family-wise error rate satisfies:
+\begin{equation}
+\text{FWER} = P(\text{Reject at least one true } H_0) \leq \alpha
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Let $R_i$ be the event that test $i$ rejects a true null hypothesis. By Boole's inequality:
+\begin{align}
+\text{FWER} &= P\left(\bigcup_{i=1}^m R_i\right) \\
+&\leq \sum_{i=1}^m P(R_i) \\
+&= \sum_{i=1}^m \frac{\alpha}{m} \\
+&= \alpha
+\end{align}
+\end{proof}
+
+\subsection{Delta Method}
+
+\begin{theorem}[Delta Method]
+Let $\sqrt{n}(\hat{\theta} - \theta) \xrightarrow{d} \mathcal{N}(0, \sigma^2)$ and $g$ be differentiable at $\theta$ with $g'(\theta) \neq 0$. Then:
+\begin{equation}
+\sqrt{n}(g(\hat{\theta}) - g(\theta)) \xrightarrow{d} \mathcal{N}(0, [g'(\theta)]^2 \sigma^2)
+\end{equation}
+\end{theorem}
+
+\textbf{Application:} Useful for transformations like log odds ratios or relative lifts.
+
+\begin{proof}[Proof Sketch]
+By Taylor expansion around $\theta$:
+\begin{equation}
+g(\hat{\theta}) \approx g(\theta) + g'(\theta)(\hat{\theta} - \theta)
+\end{equation}
+
+Therefore:
+\begin{equation}
+\sqrt{n}(g(\hat{\theta}) - g(\theta)) \approx g'(\theta)\sqrt{n}(\hat{\theta} - \theta)
+\end{equation}
+
+Since $\sqrt{n}(\hat{\theta} - \theta) \xrightarrow{d} \mathcal{N}(0, \sigma^2)$ and multiplication by constant preserves normality, the result follows.
+\end{proof}

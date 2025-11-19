@@ -1,0 +1,586 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Apply Bayesian inference to A/B testing
+    \item Construct and interpret posterior distributions
+    \item Use conjugate priors for analytical solutions
+    \item Calculate probability of superiority and expected loss
+    \item Implement Bayesian A/B tests in Python and R
+    \item Understand advantages and limitations of Bayesian approaches
+\end{itemize}
+
+\section{Bayesian vs. Frequentist Paradigms}
+
+The Bayesian framework treats parameters as random variables and updates beliefs using observed data.
+
+\subsection{Key Philosophical Differences}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Aspect} & \textbf{Frequentist} & \textbf{Bayesian} \\
+\midrule
+Parameters & Fixed constants & Random variables \\
+Probability & Long-run frequency & Degree of belief \\
+Inference & Confidence intervals & Credible intervals \\
+Prior info & Not incorporated & Explicitly modeled \\
+Interpretation & Indirect (via procedures) & Direct (probability) \\
+Sequential testing & Problematic & Natural \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Bayes' Theorem for A/B Testing}
+
+\begin{equation}
+p(\theta | D) = \frac{p(D | \theta) \cdot p(\theta)}{p(D)} \propto p(D | \theta) \cdot p(\theta)
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $\theta$: Parameter of interest (e.g., conversion rate)
+    \item $D$: Observed data
+    \item $p(\theta)$: Prior distribution (before seeing data)
+    \item $p(D | \theta)$: Likelihood (probability of data given parameter)
+    \item $p(\theta | D)$: Posterior distribution (after seeing data)
+\end{itemize}
+
+The posterior combines prior beliefs with observed evidence.
+
+\section{Conjugate Priors for Common Distributions}
+
+Conjugate priors yield posterior distributions in the same family, enabling analytical solutions.
+
+\subsection{Beta-Binomial Model for Conversion Rates}
+
+For binary outcomes (conversions), the natural model is:
+
+\textbf{Likelihood:}
+\begin{equation}
+X | p \sim \text{Binomial}(n, p)
+\end{equation}
+
+\textbf{Prior:}
+\begin{equation}
+p \sim \text{Beta}(\alpha, \beta)
+\end{equation}
+
+The Beta distribution has PDF:
+\begin{equation}
+f(p; \alpha, \beta) = \frac{\Gamma(\alpha + \beta)}{\Gamma(\alpha)\Gamma(\beta)} p^{\alpha-1}(1-p)^{\beta-1}, \quad p \in (0, 1)
+\end{equation}
+
+Properties:
+\begin{itemize}
+    \item $\mathbb{E}[p] = \frac{\alpha}{\alpha + \beta}$
+    \item $\text{Mode}[p] = \frac{\alpha - 1}{\alpha + \beta - 2}$ for $\alpha, \beta > 1$
+    \item $\text{Var}(p) = \frac{\alpha\beta}{(\alpha+\beta)^2(\alpha+\beta+1)}$
+\end{itemize}
+
+\textbf{Posterior:}
+
+Given $x$ conversions from $n$ trials:
+
+\begin{theorem}[Beta-Binomial Conjugacy]
+If $p \sim \text{Beta}(\alpha, \beta)$ and $X | p \sim \text{Binomial}(n, p)$, then:
+\begin{equation}
+p | X=x \sim \text{Beta}(\alpha + x, \beta + n - x)
+\end{equation}
+\end{theorem}
+
+\textbf{Interpretation:}
+\begin{itemize}
+    \item Prior $\text{Beta}(\alpha, \beta)$ represents $\alpha - 1$ prior successes and $\beta - 1$ prior failures
+    \item Posterior adds observed data: $x$ successes and $n - x$ failures
+    \item Total: $\alpha + x - 1$ successes, $\beta + n - x - 1$ failures
+\end{itemize}
+
+\begin{example}[Uninformative Prior]
+Use $\text{Beta}(1, 1)$ (uniform on $[0,1]$) when no prior information exists.
+
+After observing 80 conversions from 1000 users:
+\begin{equation}
+p | D \sim \text{Beta}(1 + 80, 1 + 920) = \text{Beta}(81, 921)
+\end{equation}
+
+Posterior mean: $\mathbb{E}[p | D] = \frac{81}{81 + 921} = 0.0808$
+
+95\% credible interval: $[0.0649, 0.0992]$ (using beta quantiles)
+\end{example}
+
+\lstset{language=Python, caption=Bayesian Inference for Conversion Rate}
+\begin{lstlisting}
+import numpy as np
+from scipy.stats import beta
+import matplotlib.pyplot as plt
+
+def bayesian_conversion_inference(conversions, trials,
+                                   prior_alpha=1, prior_beta=1):
+    """
+    Bayesian inference for conversion rate using Beta-Binomial model.
+
+    Parameters:
+    -----------
+    conversions : int
+        Number of conversions
+    trials : int
+        Number of trials
+    prior_alpha, prior_beta : float
+        Beta prior parameters
+
+    Returns:
+    --------
+    dict : Posterior statistics
+    """
+    # Posterior parameters
+    post_alpha = prior_alpha + conversions
+    post_beta = prior_beta + trials - conversions
+
+    # Posterior statistics
+    post_mean = post_alpha / (post_alpha + post_beta)
+    post_mode = (post_alpha - 1) / (post_alpha + post_beta - 2) \
+                if post_alpha > 1 and post_beta > 1 else None
+    post_var = (post_alpha * post_beta) / \
+               ((post_alpha + post_beta)**2 * (post_alpha + post_beta + 1))
+
+    # Credible intervals
+    ci_95 = beta.ppf([0.025, 0.975], post_alpha, post_beta)
+    ci_90 = beta.ppf([0.05, 0.95], post_alpha, post_beta)
+
+    return {
+        'posterior_alpha': post_alpha,
+        'posterior_beta': post_beta,
+        'posterior_mean': post_mean,
+        'posterior_mode': post_mode,
+        'posterior_std': np.sqrt(post_var),
+        'ci_95': ci_95,
+        'ci_90': ci_90,
+        'observed_rate': conversions / trials
+    }
+
+# Example
+result = bayesian_conversion_inference(conversions=80, trials=1000)
+
+print("Posterior Beta({}, {})".format(result['posterior_alpha'],
+                                      result['posterior_beta']))
+print(f"Posterior mean: {result['posterior_mean']:.4f}")
+print(f"Posterior std: {result['posterior_std']:.4f}")
+print(f"95% Credible Interval: [{result['ci_95'][0]:.4f}, "
+      f"{result['ci_95'][1]:.4f}]")
+
+# Visualize posterior
+p_values = np.linspace(0.05, 0.12, 1000)
+posterior_pdf = beta.pdf(p_values, result['posterior_alpha'],
+                         result['posterior_beta'])
+
+plt.figure(figsize=(10, 6))
+plt.plot(p_values, posterior_pdf, linewidth=2, label='Posterior')
+plt.axvline(result['posterior_mean'], color='red', linestyle='--',
+            label=f"Mean = {result['posterior_mean']:.4f}")
+plt.fill_between(p_values, 0, posterior_pdf,
+                where=(p_values >= result['ci_95'][0]) &
+                      (p_values <= result['ci_95'][1]),
+                alpha=0.3, label='95% Credible Interval')
+plt.xlabel('Conversion Rate')
+plt.ylabel('Density')
+plt.title('Posterior Distribution for Conversion Rate')
+plt.legend()
+plt.grid(alpha=0.3)
+plt.tight_layout()
+plt.savefig('bayesian_posterior.pdf')
+plt.show()
+\end{lstlisting}
+
+\subsection{Normal-Normal Model for Continuous Metrics}
+
+For continuous outcomes with known variance:
+
+\textbf{Likelihood:}
+\begin{equation}
+Y_i | \mu \sim \mathcal{N}(\mu, \sigma^2)
+\end{equation}
+
+\textbf{Prior:}
+\begin{equation}
+\mu \sim \mathcal{N}(\mu_0, \tau^2)
+\end{equation}
+
+\textbf{Posterior:}
+
+Given data $\mathbf{y} = (y_1, \ldots, y_n)$ with sample mean $\bar{y}$:
+
+\begin{theorem}[Normal-Normal Conjugacy]
+\begin{equation}
+\mu | \mathbf{y} \sim \mathcal{N}\left(\frac{\frac{\mu_0}{\tau^2} + \frac{n\bar{y}}{\sigma^2}}{\frac{1}{\tau^2} + \frac{n}{\sigma^2}}, \left(\frac{1}{\tau^2} + \frac{n}{\sigma^2}\right)^{-1}\right)
+\end{equation}
+\end{theorem}
+
+The posterior mean is a precision-weighted average of prior mean and sample mean.
+
+\section{Bayesian A/B Testing}
+
+For comparing two variants, we need the posterior distribution of the difference or ratio.
+
+\subsection{Comparing Two Conversion Rates}
+
+Given:
+\begin{align}
+p_A &\sim \text{Beta}(\alpha_A, \beta_A) \\
+p_B &\sim \text{Beta}(\alpha_B, \beta_B)
+\end{align}
+
+We want to know:
+\begin{equation}
+P(p_B > p_A | D) = \int_0^1 \int_0^{p_B} f(p_A | D) f(p_B | D) \, dp_A \, dp_B
+\end{equation}
+
+No closed form, but easily computed via:
+\begin{enumerate}
+    \item \textbf{Numerical integration}
+    \item \textbf{Monte Carlo simulation:}
+    \begin{itemize}
+        \item Sample $p_A^{(1)}, \ldots, p_A^{(S)}$ from $\text{Beta}(\alpha_A + x_A, \beta_A + n_A - x_A)$
+        \item Sample $p_B^{(1)}, \ldots, p_B^{(S)}$ from $\text{Beta}(\alpha_B + x_B, \beta_B + n_B - x_B)$
+        \item Estimate $P(p_B > p_A | D) \approx \frac{1}{S}\sum_{s=1}^S \mathbb{I}(p_B^{(s)} > p_A^{(s)})$
+    \end{itemize}
+\end{enumerate}
+
+\begin{example}[Bayesian A/B Test]
+\begin{align}
+\text{Variant A: } & 80 \text{ conversions from } 1000 \text{ users} \\
+\text{Variant B: } & 95 \text{ conversions from } 1000 \text{ users}
+\end{align}
+
+Using uniform priors $\text{Beta}(1, 1)$:
+\begin{align}
+p_A | D &\sim \text{Beta}(81, 921) \\
+p_B | D &\sim \text{Beta}(96, 906)
+\end{align}
+
+Via Monte Carlo: $P(p_B > p_A | D) \approx 0.92$
+
+Interpretation: There is a 92\% probability that variant B has higher conversion rate than A.
+\end{example}
+
+\lstset{language=R, caption=Bayesian A/B Test in R}
+\begin{lstlisting}
+# Bayesian A/B test comparison
+bayesian_ab_test <- function(x_a, n_a, x_b, n_b,
+                             prior_alpha = 1, prior_beta = 1,
+                             n_simulations = 100000) {
+  # Posterior parameters
+  post_alpha_a <- prior_alpha + x_a
+  post_beta_a <- prior_beta + n_a - x_a
+
+  post_alpha_b <- prior_alpha + x_b
+  post_beta_b <- prior_beta + n_b - x_b
+
+  # Monte Carlo simulation
+  p_a_samples <- rbeta(n_simulations, post_alpha_a, post_beta_a)
+  p_b_samples <- rbeta(n_simulations, post_alpha_b, post_beta_b)
+
+  # Probability B > A
+  prob_b_better <- mean(p_b_samples > p_a_samples)
+
+  # Expected lift
+  lift <- p_b_samples / p_a_samples - 1
+  expected_lift <- mean(lift)
+  lift_ci <- quantile(lift, c(0.025, 0.975))
+
+  # Difference distribution
+  diff <- p_b_samples - p_a_samples
+  diff_mean <- mean(diff)
+  diff_ci <- quantile(diff, c(0.025, 0.975))
+
+  list(
+    prob_b_better = prob_b_better,
+    expected_lift = expected_lift,
+    lift_ci = lift_ci,
+    difference_mean = diff_mean,
+    difference_ci = diff_ci,
+    posterior_a = list(alpha = post_alpha_a, beta = post_beta_a),
+    posterior_b = list(alpha = post_alpha_b, beta = post_beta_b)
+  )
+}
+
+# Example
+result <- bayesian_ab_test(x_a = 80, n_a = 1000, x_b = 95, n_b = 1000)
+
+cat("Probability B > A:", result$prob_b_better, "\n")
+cat("Expected relative lift:", result$expected_lift, "\n")
+cat("95% CI for lift:", result$lift_ci, "\n")
+cat("Mean difference:", result$difference_mean, "\n")
+cat("95% CI for difference:", result$difference_ci, "\n")
+\end{lstlisting}
+
+\subsection{Expected Loss}
+
+Instead of binary decisions, we can quantify the expected loss from choosing the wrong variant.
+
+\begin{definition}[Expected Loss]
+The expected loss from choosing variant A is:
+\begin{equation}
+\mathcal{L}(A) = \mathbb{E}[\max(0, p_B - p_A) | D]
+\end{equation}
+
+Similarly for choosing B:
+\begin{equation}
+\mathcal{L}(B) = \mathbb{E}[\max(0, p_A - p_B) | D]
+\end{equation}
+\end{definition}
+
+\textbf{Decision rule:} Choose the variant with smaller expected loss.
+
+\textbf{Interpretation:} $\mathcal{L}(A)$ is the expected opportunity cost (in terms of conversion rate) if we choose A but B is actually better.
+
+\lstset{language=Python, caption=Expected Loss Calculation}
+\begin{lstlisting}
+def expected_loss(x_a, n_a, x_b, n_b, prior_alpha=1, prior_beta=1,
+                 n_simulations=100000):
+    """
+    Calculate expected loss for both variants.
+
+    Returns:
+    --------
+    dict : Expected losses and recommendation
+    """
+    # Posterior parameters
+    post_alpha_a = prior_alpha + x_a
+    post_beta_a = prior_beta + n_a - x_a
+    post_alpha_b = prior_alpha + x_b
+    post_beta_b = prior_beta + n_b - x_b
+
+    # Simulate from posteriors
+    p_a = np.random.beta(post_alpha_a, post_beta_a, n_simulations)
+    p_b = np.random.beta(post_alpha_b, post_beta_b, n_simulations)
+
+    # Expected loss calculations
+    loss_a = np.mean(np.maximum(0, p_b - p_a))
+    loss_b = np.mean(np.maximum(0, p_a - p_b))
+
+    # Relative expected loss
+    rel_loss_a = loss_a / np.mean(p_a)
+    rel_loss_b = loss_b / np.mean(p_b)
+
+    recommendation = 'A' if loss_a < loss_b else 'B'
+
+    return {
+        'loss_a': loss_a,
+        'loss_b': loss_b,
+        'relative_loss_a': rel_loss_a,
+        'relative_loss_b': rel_loss_b,
+        'recommendation': recommendation,
+        'loss_ratio': min(loss_a, loss_b) / max(loss_a, loss_b)
+    }
+
+# Example
+result = expected_loss(x_a=80, n_a=1000, x_b=95, n_b=1000)
+
+print(f"Expected loss choosing A: {result['loss_a']:.6f}")
+print(f"Expected loss choosing B: {result['loss_b']:.6f}")
+print(f"Relative loss A: {result['relative_loss_a']:.2%}")
+print(f"Relative loss B: {result['relative_loss_b']:.2%}")
+print(f"Recommendation: Variant {result['recommendation']}")
+\end{lstlisting}
+
+\section{Prior Selection}
+
+Prior choice affects posterior, especially with limited data.
+
+\subsection{Types of Priors}
+
+\begin{enumerate}
+    \item \textbf{Uninformative (Flat) Priors}
+
+    $\text{Beta}(1, 1)$ (uniform) or Jeffrey's prior $\text{Beta}(0.5, 0.5)$
+
+    Lets data dominate; minimal assumptions
+
+    \item \textbf{Weakly Informative Priors}
+
+    $\text{Beta}(2, 20)$ for expected conversion around 10\%
+
+    Provides gentle regularization without strong assumptions
+
+    \item \textbf{Informative Priors}
+
+    Based on historical data or expert knowledge
+
+    Example: $\text{Beta}(50, 450)$ from previous experiments showing 10\% conversion
+
+    \item \textbf{Empirical Bayes}
+
+    Use data itself to estimate prior (controversial but practical)
+\end{enumerate}
+
+\subsection{Prior Sensitivity Analysis}
+
+Always check how conclusions depend on prior choice.
+
+\begin{example}[Prior Sensitivity]
+Test with 10 conversions from 100 users:
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Prior} & \textbf{Post. Mean} & \textbf{Post. Std} & \textbf{95\% CI} \\
+\midrule
+$\text{Beta}(1, 1)$ & 0.108 & 0.031 & [0.058, 0.175] \\
+$\text{Beta}(5, 45)$ & 0.106 & 0.026 & [0.063, 0.162] \\
+$\text{Beta}(10, 90)$ & 0.105 & 0.023 & [0.066, 0.154] \\
+$\text{Beta}(20, 180)$ & 0.103 & 0.020 & [0.069, 0.145] \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+With small data, stronger priors pull estimates toward prior mean.
+\end{example}
+
+\section{Advantages of Bayesian A/B Testing}
+
+\begin{enumerate}
+    \item \textbf{Direct Probability Statements}
+
+    "95\% probability that B is better" vs. "reject null with p = 0.03"
+
+    More intuitive for stakeholders
+
+    \item \textbf{Natural Sequential Testing}
+
+    Can stop anytime without inflating error rates
+
+    No need for $\alpha$-spending functions
+
+    \item \textbf{Incorporation of Prior Information}
+
+    Leverage historical data and expert knowledge
+
+    Particularly valuable for rare events
+
+    \item \textbf{Coherent Decision Framework}
+
+    Expected loss provides principled stopping rules
+
+    Balances statistical and business considerations
+
+    \item \textbf{Full Uncertainty Quantification}
+
+    Entire posterior distribution available
+
+    Can compute any quantity of interest
+\end{enumerate}
+
+\section{Limitations and Challenges}
+
+\begin{enumerate}
+    \item \textbf{Prior Dependence}
+
+    Results depend on prior, especially with little data
+
+    Requires prior specification and sensitivity analysis
+
+    \item \textbf{Computational Complexity}
+
+    Complex models may require MCMC or variational inference
+
+    Not always analytical like conjugate examples
+
+    \item \textbf{Interpretation Challenges}
+
+    "Probability B > A" requires careful framing
+
+    Can be misinterpreted as certainty
+
+    \item \textbf{Less Familiar}
+
+    Stakeholders more familiar with p-values and confidence intervals
+
+    Requires education and buy-in
+
+    \item \textbf{No Error Rate Guarantees}
+
+    Unlike frequentist methods, no Type I/II error control
+
+    Different philosophical framework for errors
+\end{enumerate}
+
+\section{Bayesian vs. Frequentist: When to Use Which}
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Scenario} & \textbf{Frequentist} & \textbf{Bayesian} \\
+\midrule
+Fixed sample size & \checkmark & \checkmark \\
+Sequential/adaptive & & \checkmark \\
+Prior information available & & \checkmark \\
+Regulatory requirement & \checkmark & \\
+Simple communication & \checkmark & \\
+Probability statements needed & & \checkmark \\
+Multiple metrics/variants & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Recommendation:} Both frameworks are valuable. Choose based on:
+\begin{itemize}
+    \item Organizational culture and stakeholder preferences
+    \item Regulatory requirements
+    \item Prior information availability
+    \item Sequential testing needs
+    \item Computational resources
+\end{itemize}
+
+Many organizations use hybrid approaches: frequentist for primary analysis, Bayesian for exploration.
+
+\section{Summary}
+
+Bayesian A/B testing offers a powerful alternative to frequentist methods:
+
+\begin{itemize}
+    \item Treats parameters as random variables with probability distributions
+    \item Updates beliefs via Bayes' theorem
+    \item Conjugate priors enable analytical solutions
+    \item Provides direct probability statements
+    \item Handles sequential testing naturally
+    \item Requires prior specification and sensitivity analysis
+\end{itemize}
+
+The choice between Bayesian and frequentist approaches depends on context, but understanding both enriches the practitioner's toolkit.
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \cite{gelman2013bayesian}: Comprehensive Bayesian data analysis
+    \item \cite{kruschke2014doing}: Bayesian analysis for psychology (accessible)
+    \item \cite{stucchio2015bayesian}: Bayesian A/B testing for practitioners
+\end{itemize}
+
+\section{Exercises}
+
+\begin{enumerate}
+    \item \textbf{Beta-Binomial Calculations}
+    \begin{enumerate}
+        \item Derive the posterior for Beta-Binomial model from first principles.
+        \item Show that $\text{Beta}(1,1)$ is the uniform distribution on $[0,1]$.
+    \end{enumerate}
+
+    \item \textbf{Bayesian A/B Test}
+    \begin{enumerate}
+        \item Implement complete Bayesian A/B test including posterior visualization, probability calculations, and expected loss.
+        \item Compare Bayesian and frequentist conclusions for various sample sizes.
+    \end{enumerate}
+
+    \item \textbf{Prior Sensitivity}
+    \begin{enumerate}
+        \item Conduct sensitivity analysis varying prior from uninformative to strongly informative.
+        \item At what sample size do priors matter little?
+    \end{enumerate}
+
+    \item \textbf{Sequential Testing}
+    \begin{enumerate}
+        \item Simulate sequential Bayesian testing with stopping rule based on probability threshold.
+        \item Compare to frequentist sequential testing in terms of sample size and error rates.
+    \end{enumerate}
+\end{enumerate}

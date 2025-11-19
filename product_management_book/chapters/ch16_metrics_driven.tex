@@ -341,7 +341,7 @@ Metrics underpin learning organizations.
 Document baselines before changes, measure results, and iterate. Incorporate metrics into retrospectives to assess whether processes improved.
 
 \subsection{Improvement Targets}
-Set realistic stretch goals. Use statistical process control charts to track whether improvements are sustained.
+Set realistic stretch goals. Use statistical process control charts (\gls{spc} plots that flag when metrics leave normal bounds) to track whether improvements are sustained.
 
 \subsection{Experimentation Culture}
 Make experimentation the default: small, instrumented changes inform future decisions. Encourage sharing of negative results.
@@ -353,3 +353,58 @@ Create forums where teams present metric outcomes, case studies, and lessons lea
 \label{sec:metrics-summary}
 
 Metrics-driven acceptance criteria bring clarity, accountability, and learning to the product lifecycle. By choosing meaningful metrics, balancing trade-offs, and monitoring outcomes, teams ensure that shipped features deliver tangible value. The next chapter discusses documentation patterns that preserve these insights.
+
+\subsection{Action Checklist}
+\begin{enumerate}
+    \item Define metric shortlists (leading, lagging, guardrail) for each initiative and record them in your templates.
+    \item Align each metric with an owner and instrumentation plan before development starts.
+    \item Review metric dashboards weekly to validate improvements and trigger experiments when trends slip.
+\end{enumerate}
+
+\paragraph{Try this now (5 min).} For your top initiative, write down one leading indicator and one guardrail. Note the current value and desired target on a sticky note and place it on your monitor.
+
+\section{Day in the Life: Rowan Curates the Scoreboard}
+Rowan opens NimbusOne’s metrics dashboard and sees only lagging KPIs. He adds a new panel with leading signals (demo-to-win rate, onboarding completion) and guardrails (support tickets, latency). During stand-up he asks each squad to report against their metric instead of subjective status. When marketing proposes a campaign, Rowan checks the guardrails: ``If latency exceeds 250\,ms during the push, we pause.'' After a week, leadership comments on how debates now center on the shared board rather than anecdotes.
+
+\section{Visual Guide}
+\label{sec:metrics-visuals}
+\begin{itemize}
+    \item \textbf{Metrics Scorecard}—table showing leading, lagging, input, output, and guardrail metrics with owners and data sources.
+    \item \textbf{Decision Tree}—guide to choosing metrics based on question type (predict vs. measure) and data availability.
+    \item \textbf{Dashboard Mockup}—combined view of Rowan’s board with alerts when guardrails breach, reinforcing automation potential.
+\end{itemize}
+
+\section{Interactive Elements}
+\label{sec:metrics-interactive}
+\begin{itemize}
+    \item \textbf{Self-Assessment}—metric portfolio audit verifying presence of leading/lagging and guardrails per initiative.
+    \item \textbf{Reflection Prompt}—``Which decision this quarter lacked data?'' Document how future metrics could prevent it.
+    \item \textbf{Pause and Practice}—exercise to build a metric scorecard for one feature, including instrumentation notes.
+    \item \textbf{Implementation Planner}—plan for wiring metrics into dashboards/CI, with owners and alert thresholds.
+\end{itemize}
+\section{Industry Adaptations}
+\label{sec:metrics-industry}
+\paragraph{Regulated Industries.} Metrics must align with compliance obligations (SLOs, audit KPIs). Ensure dashboards capture audit evidence (data lineage, model validation) and store metric definitions in controlled repositories.
+
+\paragraph{Startups vs. Enterprises.} Startups should limit metrics to the few that drive survival (activation, revenue, runway) and iterate quickly. Enterprises can support richer metric hierarchies (north-star, input/output metrics) and embed them in OKR or portfolio tools with automated governance.
+
+\paragraph{B2B vs. B2C.} B2B metrics often revolve around account health, adoption rates, and revenue per customer. B2C metrics focus on funnels, engagement, churn, and virality. Tailor guardrails accordingly; e.g., churn guardrails for B2B, latency guardrails for B2C.
+
+\paragraph{Hardware-Software Integration.} Combine software telemetry with hardware metrics (battery life, temperature, failure rates). Use cross-domain dashboards so hardware, firmware, and software teams see the same truth.
+\section{Warning Signs and Recovery}
+\label{sec:metrics-warning}
+\begin{description}
+    \item[\textbf{Warning sign}] Teams chase vanity metrics or only lagging KPIs, making it impossible to course-correct mid-iteration.
+    \item[\textbf{Recovery}] Rebalance metric portfolios to include leading indicators and guardrails; review them at stand-ups and tie them to concrete decisions.
+    \item[\textbf{Warning sign}] Metrics live in one-off spreadsheets maintained by a single analyst, so discrepancies go unnoticed.
+    \item[\textbf{Recovery}] Move metrics into shared dashboards with clear owners and automate alerts when thresholds breach.
+\end{description}
+
+\section{Triple-Lens Takeaways}
+\label{sec:metrics-triple}
+
+\begin{description}
+    \item[\textbf{Busy PM}] Use the metric-decision tree to select KPI + guardrails per feature, and record them in tickets so launch reviews become data-first conversations.
+    \item[\textbf{Technical Lead}] Tie metrics to automated alerts and CI gates; the chapter’s instrumentation guidance helps ensure technical signals protect business outcomes.
+    \item[\textbf{Executive}] Track leading/lagging and input/output metrics by portfolio to verify that investments influence outcomes—ask teams to show this linkage before approving scope changes.
+\end{description}

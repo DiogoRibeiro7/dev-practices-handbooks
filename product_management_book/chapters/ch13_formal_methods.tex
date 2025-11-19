@@ -201,7 +201,70 @@ SDV applies model checking to Windows drivers, catching bugs before release and 
 \subsection{CompCert Verified Compiler}
 CompCert proves end-to-end correctness of a C compiler, demonstrating how formal verification can secure foundational infrastructure.
 
+\section{Industry Scenarios}
+\label{sec:formal-examples}
+
+\paragraph{Fintech.} A derivatives clearinghouse adopted controlled natural language for margin rules and Alloy models for collateral flows, preventing conflicting interpretations during audits. A smaller exchange relied on informal docs; a misread settlement clause led to double payouts and legal exposure.
+
+\paragraph{Healthcare.} A medical-software vendor used Gherkin scenarios and state machines to capture patient-consent flows, catching ambiguities before certification. A clinical-trial platform that skipped formal specs shipped an enrollment workflow with ambiguous inclusion criteria, forcing emergency patches when participants were misclassified.
+
+\paragraph{E-commerce.} A logistics team modeled delivery SLAs with temporal logic, ensuring refunds triggered when promises broke, which raised customer trust. Another retailer’s promotion engine lacked algebraic specs; overlapping coupons stacked unintentionally until developers reverse-engineered rules.
+
 \section{Summary}
 \label{sec:formal-summary}
 
 Formal methods are not all-or-nothing. Controlled language, models, algebraic specs, temporal logic, and tooling can be combined to reduce ambiguity where it matters most. Incremental adoption, guided by risk, maximizes return on investment.
+
+\subsection{Action Checklist}
+\begin{enumerate}
+    \item Choose one ambiguous requirement and rewrite it using controlled language or Gherkin.
+    \item Pilot a lightweight modeling tool (Alloy, state diagrams) on a high-risk component and review findings with the team.
+    \item Define criteria for when to escalate from prose to formal methods (e.g., compliance, safety, financial exposure).
+\end{enumerate}
+
+\paragraph{Try this now (5 min).} Take a policy-heavy rule and restate it in Given/When/Then format. Verify with a peer whether the behavior is clearer.
+
+\section{Day in the Life: Aisha Experiments with Gherkin}
+Aisha faces recurring bugs in AlloyWorks' safety interlock. She pairs with a QA lead to rewrite the spec using Gherkin scenarios. ``Given the machine is in Maintenance mode, When an operator presses Start, Then deny the action and display code M-12.'' They cover a dozen cases, run them through Cucumber, and attach the feature file to the repo. During code review, an engineer spots an unhandled state because the scenario fails. They fix the logic before shipping. Aisha shares the story in a lunch-and-learn—suddenly other teams ask for help translating ambiguous requirements into executable narratives.
+\section{Industry Adaptations}
+\label{sec:formal-industry}
+\paragraph{Regulated Industries.} Map formal artifacts to compliance evidence—e.g., store TLA+ models or ACE specifications in audit folders and reference them in change-control records. Regulators often respond well to explicit proofs or simulations.
+
+\paragraph{Startups vs. Enterprises.} Startups can use controlled language and decision tables as low-effort formalism when resources are scarce. Enterprises can combine multiple formal techniques with centralized tooling and training programs.
+
+\paragraph{B2B vs. B2C.} B2B customers may request formal guarantees; share sanitized ADRs or specs to build trust. B2C teams should employ formal methods on systems underpinning customer trust (payments, privacy) to avoid brand damage.
+
+\paragraph{Hardware-Software Integration.} Use modeling languages that capture both hardware states and software events; simulate asynchronous interactions to surface timing bugs before integration.
+\section{Warning Signs and Recovery}
+\label{sec:formal-warning}
+\begin{description}
+    \item[\textbf{Warning sign}] Bugs recur in the same logical area despite repeated patches, suggesting ambiguous requirements.
+    \item[\textbf{Recovery}] Apply controlled language or modeling to that domain and run a focused review to surface contradictions before coding resumes.
+    \item[\textbf{Warning sign}] Formal techniques live only with a specialist; when they go on leave, adoption stalls.
+    \item[\textbf{Recovery}] Build cross-training plans and document how to run the tools so multiple engineers can maintain the practice.
+\end{description}
+
+\section{Triple-Lens Takeaways}
+\label{sec:formal-triple}
+
+\begin{description}
+    \item[\textbf{Busy PM}] Start with controlled language or Gherkin for ambiguous areas to reap clarity benefits without wholesale process changes.
+    \item[\textbf{Technical Lead}] Pilot model-based specs or property-based tests on the riskiest components, using the case studies as validation that the investment pays off.
+    \item[\textbf{Executive}] Evaluate formal-method proposals through the lens of risk reduction vs. adoption cost—prioritize areas tied to compliance, safety, or high-dollar impact.
+\end{description}
+\section{Visual Guide}
+\label{sec:formal-visuals}
+\begin{itemize}
+    \item \textbf{Technique Decision Tree}—axes for risk and complexity guiding selection among controlled language, decision tables, state machines, or model checking.
+    \item \textbf{Formal Artifact Gallery}—snippets of a Gherkin scenario, a state diagram, and an Alloy model to illustrate differences.
+    \item \textbf{Process Flow}—show how formal methods feed into CI/CD: author spec $\rightarrow$ validate $\rightarrow$ link to tests $\rightarrow$ audit storage.
+\end{itemize}
+
+\section{Interactive Elements}
+\label{sec:formal-interactive}
+\begin{itemize}
+    \item \textbf{Self-Assessment}—risk vs. rigor quiz that recommends a starting technique based on product domain.
+    \item \textbf{Reflection Prompt}—``Where have defects recurred despite fixes?'' Encourage mapping these to candidate formal methods.
+    \item \textbf{Pause and Practice}—exercise to rewrite one policy statement using Gherkin or decision tables.
+    \item \textbf{Implementation Planner}—roadmap for piloting formal methods (training, tooling, success metrics).
+\end{itemize}

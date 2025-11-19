@@ -23,16 +23,16 @@ Hybrid acceptance criteria combine deterministic checks (e.g., API schemas) with
 Selecting the right metric shapes behavior. Requirements should justify metric choice and highlight trade-offs.
 
 \subsection{Classification Metrics}
-Precision, recall, F1, ROC-AUC, and confusion matrices describe different slices of classification performance. Requirements should specify which metric reflects business value (e.g., high recall to catch fraud) and include guardrails for others.
+Precision (share of flagged items that are correct), recall (share of actual positives captured), F1 (harmonic mean of precision/recall), ROC-AUC (\gls{rocauc}), and confusion matrices (tables comparing predicted vs. actual outcomes) describe different slices of classification performance. Requirements should specify which metric reflects business value (e.g., high recall to catch fraud) and include guardrails for others.
 
 \subsection{Regression Metrics}
-Mean squared error, MAE, and R-squared quantify continuous predictions. Include residual analysis expectations to detect heteroscedasticity and require prediction intervals where appropriate.
+Mean squared error, MAE, and R-squared quantify continuous predictions. Include residual analysis expectations to detect heteroscedasticity (variance that changes with the predicted value) and require prediction intervals where appropriate.
 
 \subsection{Ranking and Recommendation Metrics}
-For recommendation systems, precision@K, recall@K, MAP, or NDCG capture ordered relevance. Add diversity or novelty metrics to prevent filter bubbles when business goals demand variety.
+For recommendation systems, precision@K (relevant items in the top K results), recall@K (coverage of relevant items within the first K slots), MAP (\gls{mapmetric}), or NDCG (\gls{ndcg}) capture ordered relevance. Add diversity or novelty metrics to prevent filter bubbles when business goals demand variety.
 
 \subsection{Clustering and Segmentation Metrics}
-Clustering acceptance includes silhouette scores or Davies--Bouldin indices, but should also reference actionability---e.g., ``Segments must map to distinct marketing strategies.''
+Clustering acceptance includes silhouette scores (\gls{silhouette}) or Davies--Bouldin indices (\gls{daviesbouldin}), but should also reference actionability---e.g., ``Segments must map to distinct marketing strategies.''
 
 \section{Setting Performance Thresholds}
 \label{sec:performance-thresholds}
@@ -147,7 +147,71 @@ Reject launches where statistically significant gains fail to deliver business v
 \subsection{Misinterpreting Confidence Intervals}
 Clarify that a 95\% interval does not mean a 95\% probability the true value lies within. Provide training or tooltips to prevent miscommunication.
 
+\section{Industry Scenarios}
+\label{sec:stats-examples}
+
+\paragraph{Fintech.} A fraud-detection team defined acceptance as ``Recall $\ge 0.92$ with false-positive rate $\le 1\%$ on high-value transactions'' and documented segmented metrics plus drift monitoring, enabling a successful rollout. A credit-scoring update failed when leadership accepted ``Model looks better'' without specifying confidence intervals; post-launch, approval rates fluctuated and regulators questioned the evidence.
+
+\paragraph{Healthcare.} A radiology AI product tied acceptance to sensitivity/specificity thresholds with 95\% confidence intervals and guardrails on review time, ensuring safe deployment. A hospital operations model shipped with binary pass/fail QA only; ignoring probabilistic metrics led to resource misallocation when the demand forecast proved biased.
+
+\paragraph{E-commerce.} A search relevance project used precision@10, diversity scores, and latency guardrails, preventing regression while raising conversion. A recommendation tweak passed deterministic QA but lacked statistical acceptance, resulting in a subtle recall drop that went unnoticed until revenue dipped.
+
 \section{Summary}
 \label{sec:stats-acceptance-summary}
 
 Statistical acceptance criteria bring rigor to data-driven releases by combining metrics, uncertainty quantification, robustness tests, and clear communication. When baked into Definition of Done, they prevent wishful thinking and ensure launches deliver real value.
+
+\subsection{Action Checklist}
+\begin{enumerate}
+    \item For every upcoming release, define deterministic checks and probabilistic metrics with thresholds.
+    \item Document confidence intervals, sample sizes, and acceptable variance for primary metrics.
+    \item Set up monitoring dashboards or CI gates that block deploys when guardrails fail.
+\end{enumerate}
+
+\paragraph{Try this now (5 min).} Take a feature nearing completion and list three metrics: one must-hit, one guardrail, and one monitoring metric. Write the numeric threshold next to each.
+
+\section{Day in the Life: Leo Runs the Gate}
+Release day at FlowPay starts with Leo skimming the statistical acceptance doc. The fraud team wants to push a new model, but the guardrail metric is blank. Leo halts the deploy meeting and asks data science to fill in the recall/precision table plus confidence intervals. They spend 20 minutes updating the doc, citing P95 latency 82\,ms, recall 0.94 $\pm$ 0.01, and false positives capped at 1.5\%. He then shares his screen with customer support, explaining the guardrails and what triggers rollback. Later that night, when an alert shows a segment deviating, the on-call engineer checks the doc, sees the threshold, and pauses rollout without paging Leo. The upfront rigor prevents guesswork and keeps regulators satisfied.
+
+\section{Visual Guide}
+\label{sec:stats-visuals}
+\begin{itemize}
+    \item \textbf{Acceptance Checklist Graphic}—paired columns for deterministic QA vs. statistical metrics, with checkmarks showing both must pass before launch.
+    \item \textbf{Decision Tree}—``Is metric statistically significant?'' and ``Does it meet practical significance?'' guiding go/hold/pivot decisions.
+    \item \textbf{Monitoring Dashboard Mockup}—key metrics, confidence intervals, and guardrail alerts shown on a single screen to inspire implementation.
+\end{itemize}
+
+\section{Interactive Elements}
+\label{sec:stats-interactive}
+\begin{itemize}
+    \item \textbf{Self-Assessment}—worksheet checking whether each feature has defined metrics, confidence intervals, and guardrails.
+    \item \textbf{Reflection Prompt}—``Recall a deployment that backfired. Which statistical guardrail was missing?'' Capture remediation ideas.
+    \item \textbf{Pause and Practice}—hands-on exercise to calculate sample size and confidence interval for a forthcoming test.
+    \item \textbf{Implementation Planner}—plan for adding statistical gates to release processes, including tooling and training needs.
+\end{itemize}
+\section{Industry Adaptations}
+\label{sec:stats-industry}
+\paragraph{Regulated Industries.} Acceptance criteria must reference regulatory thresholds (e.g., sensitivity requirements for diagnostics, stress limits for finance). Include audit-ready documentation of datasets, sample sizes, and analysis scripts. Consider independent validation or third-party attestations for critical releases.
+
+\paragraph{Startups vs. Enterprises.} Startups may lack statisticians; bake reusable templates and office hours into the process so teams can still set guardrails. Enterprises should integrate statistical gates into release workflows (CI/CD or change boards) with automated reports.
+
+\paragraph{B2B vs. B2C.} B2B acceptance metrics might include contractual SLAs or customer-specific KPIs—capture per-customer baselines. B2C requires segment-level or A/B metrics with strong monitoring to catch regression at scale.
+
+\paragraph{Hardware-Software Integration.} Pair software metrics (latency, accuracy) with hardware measures (power consumption, thermal limits). Acceptance should include environmental testing data and hardware certification checkpoints.
+\section{Warning Signs and Recovery}
+\label{sec:stats-warning}
+\begin{description}
+    \item[\textbf{Warning sign}] Launch readiness reviews discuss only engineering QA without referencing statistical thresholds or variability.
+    \item[\textbf{Recovery}] Introduce a dual checklist that pairs deterministic QA with statistical acceptance; block releases that lack both.
+    \item[\textbf{Warning sign}] Teams call wins on tiny lifts that are statistically significant but practically meaningless.
+    \item[\textbf{Recovery}] Document minimum detectable effect and business guardrails up front; if a result misses practical significance, deliberately plan a follow-up iteration rather than shipping by default.
+\end{description}
+
+\section{Triple-Lens Takeaways}
+\label{sec:stats-acceptance-triple}
+
+\begin{description}
+    \item[\textbf{Busy PM}] Adopt the metric-selection and threshold tables as a ready-made Definition of Done checklist so acceptance reviews stay objective and fast.
+    \item[\textbf{Technical Lead}] Tie each metric to instrumentation plans and CI hooks, ensuring regression tests and monitoring reflect the probabilistic guardrails captured here.
+    \item[\textbf{Executive}] Scan the probabilistic vs. deterministic framing to challenge launch decisions: ask for confidence ranges, guardrail metrics, and evidence of practical significance before green-lighting.
+\end{description}

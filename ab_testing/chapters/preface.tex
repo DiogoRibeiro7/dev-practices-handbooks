@@ -1,0 +1,80 @@
+The idea for this book crystallized during a late-night debugging session at Mysense.ai, where I serve as Lead Data Scientist. We were investigating why an A/B test that should have been straightforward—comparing two checkout button designs—had produced confusing results. The statistical significance was marginal, the effect size was tiny, yet business stakeholders were pressing for a decision. As I walked through the analysis with the team, I realized that the real challenge wasn't the mathematics or the code—it was the gap between statistical rigor and practical decision-making under uncertainty.
+
+This experience, repeated countless times across industry and academia, revealed a fundamental problem: most practitioners learn A/B testing from one of two extremes. Either they study rigorous statistical theory without adequate grounding in real-world constraints, or they learn practical "recipes" without understanding the underlying assumptions and limitations. Both approaches leave critical gaps. The theorist may design a perfectly valid experiment that's impossible to implement in production. The practitioner may run hundreds of tests without recognizing systematic biases that invalidate their conclusions.
+
+This book attempts to bridge that divide.
+
+\section*{Why This Book, Why Now}
+
+The practice of experimentation has undergone a quiet revolution over the past two decades. What began as a specialized technique used primarily in pharmaceutical trials and agricultural research has become the cornerstone of decision-making at technology companies, e-commerce platforms, government agencies, and organizations of all types. Google runs tens of thousands of experiments annually. Amazon tests nearly every product change. Netflix uses experimentation to optimize everything from recommendation algorithms to thumbnail images. Even traditional industries—retail, finance, healthcare—increasingly embrace data-driven experimentation.
+
+Yet this democratization of A/B testing has created new challenges. The barrier to running an experiment has dropped dramatically—modern platforms make it trivially easy to split traffic and measure outcomes. But the barrier to running a \textit{good} experiment, one that produces trustworthy insights and leads to sound decisions, remains high. Statistical literacy has not kept pace with experimental practice.
+
+The consequences manifest in multiple ways. I've seen teams celebrate "winning" variants that were merely lucky noise. I've watched organizations make million-dollar decisions based on p-values they didn't understand. I've encountered experiments that violated basic statistical assumptions yet were treated as gospel. Most concerning, I've observed a growing cynicism about experimentation itself when poorly designed tests produce conflicting or irreproducible results.
+
+These experiences, accumulated through my dual roles—as Lead Data Scientist at Mysense.ai, where I design and analyze experiments for real products and real customers, and as Researcher and Instructor at ESMAD (Instituto Politécnico do Porto), where I teach the statistical foundations to the next generation of data scientists—convinced me that a different kind of book was needed.
+
+\section*{Who This Book Is For}
+
+I wrote this book with several overlapping audiences in mind, all united by a need to understand both the "how" and the "why" of A/B testing.
+
+\textbf{Data Scientists and Analysts} working in industry will find practical guidance grounded in statistical rigor. You face daily pressures to move fast, to test everything, to "let the data decide." This book will help you move quickly \textit{and} correctly, understanding when standard methods apply and when you need something more sophisticated. You'll learn to spot the subtle implementation issues that invalidate experiments, to communicate uncertainty clearly to stakeholders, and to push back on unreasonable demands ("Can we just peek at the results?") with solid statistical reasoning.
+
+\textbf{Graduate Students} in statistics, data science, computer science, or related fields will find a modern treatment of experimental design that connects classical theory to contemporary practice. The mathematical development is rigorous—I don't shy away from proofs when they illuminate understanding—but always motivated by practical questions. You'll see how the Central Limit Theorem justifies real-world approximations, why Bayesian methods handle certain problems elegantly, and where theory meets the messiness of production systems.
+
+\textbf{Researchers} in academia or industry who design experiments will discover how classical experimental design principles translate to digital contexts. If you're familiar with randomized controlled trials in clinical or social science settings, you'll learn how online experimentation differs—both the new opportunities (instant results, massive sample sizes) and new challenges (network effects, novelty effects, implementation bugs).
+
+\textbf{Product Managers and Technical Leaders} who make decisions based on experimental evidence need to understand what the numbers really mean. This book will help you ask the right questions: Is this sample size adequate? Are we measuring the right thing? What assumptions underlie this analysis? You'll develop intuition for when to trust experimental results and when to dig deeper.
+
+\textbf{Practitioners Transitioning from Other Fields} who have statistical training but are new to online experimentation will find familiar concepts (hypothesis testing, confidence intervals, power analysis) applied in novel contexts. You'll learn the domain-specific challenges—how to handle sample ratio mismatches, why sequential testing requires special care, when to use variance reduction techniques.
+
+What unites all these audiences is a need for both depth and breadth—statistical foundations solid enough to support critical decisions, practical guidance specific enough to implement tomorrow, and judgment sophisticated enough to navigate the grey areas where theory doesn't provide clear answers.
+
+\section*{What Makes This Book Different}
+
+Several principles guided the development of this book:
+
+\textbf{Theory Motivated by Practice.} Every statistical concept is introduced in response to a real problem. Why do we need the Central Limit Theorem? Because we want to make probability statements about sample means. Why study multiple testing corrections? Because without them, we fool ourselves with false discoveries. The mathematics serves the practice, not the other way around.
+
+\textbf{Practice Grounded in Theory.} Conversely, every practical technique is connected to its theoretical foundation. When I present a Python function for calculating sample size, I also derive the formula and explain the assumptions. When we implement Bayesian A/B testing, we understand why conjugate priors work and when they're appropriate. You won't just learn what to do—you'll understand why it works and when it doesn't.
+
+\textbf{Code as First-Class Citizen.} This is not a book where code appears as an afterthought. The implementations in Python and R are production-quality, documented, and ready to adapt. I've run every code example, debugged the edge cases, and provided not just the happy path but also error handling and validation. Because I've been the person at 2 AM trying to debug a broken experiment, I know that implementation details matter.
+
+\textbf{Honest About Limitations.} Statistics education often presents methods as if they solve problems cleanly. Real experimentation is messier. This book acknowledges the gaps: where assumptions are likely violated, when approximations break down, which questions statistics cannot answer. I share failures alongside successes, because learning what doesn't work is as valuable as learning what does.
+
+\textbf{Modern Methodologies.} While grounded in classical statistics, this book embraces contemporary approaches. We cover Bayesian methods seriously, not as a curiosity but as a practical alternative with real advantages in certain contexts. We explore multi-armed bandits, sequential testing, and variance reduction techniques that have emerged from modern practice. We address challenges—network effects, novelty effects, metric dilution—that classical texts don't consider.
+
+\section*{How to Use This Book}
+
+The book is designed for multiple modes of engagement:
+
+\textbf{As a Course Text:} Graduate courses can proceed through chapters sequentially, using exercises to reinforce learning. I've structured the material to build progressively, with each chapter assuming mastery of previous content. Problem sets range from mathematical derivations to simulation studies to analysis of real datasets.
+
+\textbf{As a Reference:} Practitioners can dive directly into specific chapters as needs arise. Comprehensive cross-referencing, a detailed index, and self-contained chapters enable targeted learning. Need to understand multiple testing corrections? Chapter 6 provides everything required. Want to implement Bayesian A/B testing? Chapter 7 is your guide.
+
+\textbf{As Professional Development:} Working data scientists can deepen their understanding systematically. Perhaps you've been running A/B tests for years using standard tools but want to understand the statistical foundations more rigorously. Or you're comfortable with frequentist methods but curious about Bayesian approaches. The book supports both deepening and broadening your expertise.
+
+Each chapter includes learning objectives, worked examples with complete solutions, production-ready code, exercises at varying difficulty levels, and suggestions for further reading. The appendices provide mathematical proofs for those seeking rigor, comprehensive code libraries for those seeking implementation, and statistical tables for quick reference.
+
+\section*{A Personal Note}
+
+Writing this book has been a journey of synthesis—bringing together years of experience across industry and academia, reconciling practical constraints with theoretical ideals, and distilling complex ideas into accessible explanations. My work at Mysense.ai has provided invaluable real-world context: the pressure to move fast, the complexity of production systems, the challenge of communicating uncertainty to stakeholders who want certainty. My teaching and research at ESMAD has forced me to articulate foundations clearly, to answer "why" questions rigorously, and to stay current with methodological developments.
+
+This dual perspective—practitioner and educator, industry and academia—has shaped every page. I've tried to write the book I wish had existed when I began my career, one that would have saved me from numerous mistakes and accelerated my understanding of this powerful methodology.
+
+Experimentation, at its best, represents a commitment to learning from reality rather than assuming we already know. It's an acknowledgment that our intuitions, however informed, are fallible—and that careful measurement can surprise us. This intellectual humility, coupled with methodological rigor, enables genuine discovery.
+
+My hope is that this book helps you design better experiments, analyze results more critically, make sounder decisions, and ultimately contribute to the growing culture of evidence-based decision making. Whether you're optimizing a website, evaluating a policy intervention, or conducting scientific research, the principles of rigorous experimentation apply.
+
+The field of A/B testing continues to evolve. New methods emerge, new challenges arise, new applications appear. But the fundamentals—randomization, statistical inference, careful interpretation—endure. Master these foundations, and you'll be equipped not just for today's problems but for tomorrow's challenges.
+
+\vspace{1cm}
+
+\begin{flushright}
+Diogo Ribeiro\\
+Lead Data Scientist, Mysense.ai\\
+Researcher and Instructor, ESMAD\\
+Instituto Politécnico do Porto\\
+Porto, Portugal\\
+\today
+\end{flushright}

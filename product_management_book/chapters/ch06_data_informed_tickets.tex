@@ -311,7 +311,71 @@ body:
       placeholder: "- Risk: data gap... Mitigation: request labeling batch."
 \end{lstlisting}
 
+\section{Industry Scenarios}
+\label{sec:ticket-examples}
+
+\paragraph{Fintech.} A lending platform wrote tickets for a credit-limit increase experiment that paired hypotheses (``If we incorporate payroll data, approval rates improve because income volatility drops'') with guardrails such as delinquency ratios. Success came from including compliance reviews and data-lineage acceptance tests up front. A failure mode occurred when another team filed ``Improve approval rate'' tickets without metrics; engineering delivered UI tweaks while risk teams rejected the change due to missing evidence.
+
+\paragraph{Healthcare.} A hospital scheduling product described hypotheses about reducing no-shows with SMS reminders, including success metrics (15\% drop) and safeguards for protected health information. The rollout succeeded because tickets listed handling of consent and auditing. A contrasting ML triage project wrote generic ``Improve accuracy'' tickets, omitting data-quality checks; the model misrouted cases and required rollback.
+
+\paragraph{E-commerce.} A recommendation team framed ``If we show bundles based on complementary purchases, average order value rises'' with metric baselines and telemetry requirements, enabling safe experiments. Another team’s ``Fix search relevance'' ticket lacked a hypothesis or measurement plan, leading to tune-after-launch chaos and customer complaints.
+
 \section{Summary}
 \label{sec:tickets-summary}
 
 Data-informed tickets turn requirements into living hypotheses with explicit metrics, risks, and ownership. They normalize uncertainty, support collaboration, and provide a repeatable pattern for experimenting responsibly. The next chapter builds on this foundation by showing how to manage uncertainty throughout the requirement lifecycle.
+
+\subsection{Action Checklist}
+\begin{enumerate}
+    \item Update your ticket template to include problem, hypothesis, metrics, acceptance, risks, and instrumentation before the next grooming session.
+    \item Enforce a rule that no ticket enters ``Ready'' without a measurable success criterion or guardrail.
+    \item Schedule a review with engineering/data partners to validate that telemetry and non-functional requirements are explicit.
+\end{enumerate}
+
+\paragraph{Try this now (5 min).} Take a ticket currently in progress and rewrite its description using the hypothesis format (If/Then/Because + metrics). Share the rewrite with the team to confirm alignment.
+
+\section{Industry Adaptations}
+\label{sec:tickets-industry}
+\paragraph{Regulated Industries.} Add compliance evidence fields to tickets—e.g., FDA submission references or SOX controls. Include audit log requirements and sign-off steps in acceptance criteria so releases can pass regulatory review without last-minute scramble.
+
+\paragraph{Startups vs. Enterprises.} Startups can trim fields to the essentials (problem, hypothesis, metrics) but must still log decisions to prevent tribal knowledge. Enterprises should link tickets to program charters, include dependency fields, and route approvals through governance workflows.
+
+\paragraph{B2B vs. B2C.} B2B tickets benefit from customer-account metadata and playbook references so sales or customer success can plan interventions. B2C tickets should capture user-segmentation assumptions and marketing touchpoints.
+
+\paragraph{Hardware-Software Integration.} Include hardware readiness in ticket scope (firmware version, manufacturing lot). Acceptance criteria should confirm both digital telemetry and physical QA requirements. Reference component lead times to avoid blocking software release on unavailable hardware.
+\section{Warning Signs and Recovery}
+\label{sec:tickets-warning}
+\begin{description}
+    \item[\textbf{Warning sign}] Tickets hit ``Ready'' with empty success-metric fields or ambiguous acceptance criteria.
+    \item[\textbf{Recovery}] Block ticket progression until metrics and acceptance are filled; supply a checklist or template snippet to speed compliance.
+    \item[\textbf{Warning sign}] Teams retroactively bolt monitoring or data needs onto tickets after code is complete.
+    \item[\textbf{Recovery}] Add an explicit instrumentation review during grooming and assign an owner for telemetry before development starts.
+\end{description}
+
+\section{Triple-Lens Takeaways}
+\label{sec:tickets-triple}
+
+\begin{description}
+    \item[\textbf{Busy PM}] Copy the ticket anatomy into your issue tracker and treat the hypothesis + metric fields as non-negotiable; it keeps backlogs aligned without extra meetings.
+    \item[\textbf{Technical Lead}] Use the expanded acceptance-criteria and instrumentation sections to ensure every ticket contains the data hooks or non-functional constraints engineering needs before implementation.
+    \item[\textbf{Executive}] Skim the example tickets to understand how investment narratives translate into measurable hypotheses—then ask to see these tickets in portfolio reviews to keep conversations grounded in evidence.
+\end{description}
+
+\section{Day in the Life: Leo Rewrites a Ticket}
+An alert pings Leo about a ``Improve onboarding'' story slated for development tomorrow. The ticket lacks metrics, telemetry, and risk owners. Instead of rubber-stamping, Leo sits with the designer and data scientist to rewrite it live: ``If we add contextual hints after the KYC form, then activation will rise from 42\% to 48\% because fewer users abandon during document uploads.'' They add guardrails (fraud false positives), instrumentation steps, and compliance notes. Leo pastes the updated template into Jira, tags the legal reviewer, and shares a Loom video showing how the new format prevents wasted sprints. Within an hour, the story moves to Ready with everyone's confidence intact.
+\section{Visual Guide}
+\label{sec:tickets-visuals}
+\begin{itemize}
+    \item \textbf{Ticket Anatomy Infographic}—callouts for each required section with sample text from Leo’s rewrite and icons for metrics, telemetry, compliance, and risks.
+    \item \textbf{Before/After Ticket Snapshot}—side-by-side view of the vague ``Improve onboarding'' story and the hypothesis-based version, highlighting differences in clarity and accountability.
+    \item \textbf{Process Flow} showing the ticket lifecycle: draft $\rightarrow$ review $\rightarrow$ ready $\rightarrow$ instrumentation check $\rightarrow$ done.
+\end{itemize}
+
+\section{Interactive Elements}
+\label{sec:tickets-interactive}
+\begin{itemize}
+    \item \textbf{Self-Assessment}—checklist scoring current tickets on completeness, metric quality, and instrumentation readiness.
+    \item \textbf{Reflection Prompt}—``Pick a past ticket that failed. Which fields would have prevented the issue?'' Document learnings.
+    \item \textbf{Pause and Practice}—downloadable ticket template with guidance prompts; readers rewrite one live story.
+    \item \textbf{Implementation Planner}—rollout plan for updating templates/tooling, including training sessions and adoption metrics.
+\end{itemize}

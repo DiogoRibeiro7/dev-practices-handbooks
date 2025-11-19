@@ -1,0 +1,2496 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Apply classical hypothesis testing frameworks to A/B tests
+    \item Select appropriate statistical tests for different metric types
+    \item Check assumptions and diagnose violations
+    \item Implement non-parametric alternatives when assumptions fail
+    \item Interpret test results correctly and avoid common pitfalls
+    \item Use decision frameworks for systematic test selection
+\end{itemize}
+
+\section{Classical Hypothesis Testing Framework}
+
+Hypothesis testing provides a formal procedure for making decisions under uncertainty. While introduced earlier, this chapter provides rigorous treatment and practical implementation.
+
+\subsection{Structure of a Hypothesis Test}
+
+\begin{enumerate}
+    \item \textbf{State hypotheses:}
+    \begin{itemize}
+        \item Null hypothesis $H_0$: No effect or no difference
+        \item Alternative hypothesis $H_1$: An effect exists
+    \end{itemize}
+
+    \item \textbf{Choose significance level:} $\alpha$ (typically 0.05 or 0.01)
+
+    \item \textbf{Calculate test statistic:} Function of data measuring evidence against $H_0$
+
+    \item \textbf{Determine p-value:} Probability of observing data this extreme under $H_0$
+
+    \item \textbf{Make decision:}
+    \begin{itemize}
+        \item Reject $H_0$ if p-value $< \alpha$
+        \item Fail to reject $H_0$ otherwise
+    \end{itemize}
+
+    \item \textbf{Interpret in context:} Translate statistical conclusion to practical meaning
+\end{enumerate}
+
+\subsection{One-Sided vs. Two-Sided Tests}
+
+\textbf{Two-sided test:}
+\begin{equation}
+H_0: \theta_1 = \theta_2 \quad \text{vs.} \quad H_1: \theta_1 \neq \theta_2
+\end{equation}
+
+Tests for any difference (positive or negative). Most common in A/B testing.
+
+\textbf{One-sided test:}
+\begin{equation}
+H_0: \theta_1 \geq \theta_2 \quad \text{vs.} \quad H_1: \theta_1 < \theta_2
+\end{equation}
+
+Tests specifically for improvement (or degradation). More powerful but only detects effects in specified direction.
+
+\begin{theorem}[Relationship Between One-Sided and Two-Sided Tests]
+For the same data and test statistic, the one-sided p-value equals half the two-sided p-value (when the effect is in the hypothesized direction).
+
+If $p_{\text{two-sided}} = 2P(|Z| > |z_{\text{obs}}|)$, then:
+\begin{equation}
+p_{\text{one-sided}} = P(Z > z_{\text{obs}}) = \frac{p_{\text{two-sided}}}{2}
+\end{equation}
+\end{theorem}
+
+\textbf{When to use one-sided tests:}
+\begin{itemize}
+    \item Only care about improvements (would not implement if treatment is worse)
+    \item Regulatory or business constraints dictate directionality
+    \item Pre-registered directional hypothesis
+    \item Strong theoretical reason to expect one direction only
+\end{itemize}
+
+\textbf{Caution:} One-sided tests are often misused. Default to two-sided unless strong justification exists.
+
+\section{Tests for Proportions}
+
+Proportion tests are fundamental for A/B testing of conversion rates, click-through rates, and other binary outcomes.
+
+\subsection{Two-Sample Z-Test for Proportions}
+
+For control proportion $\hat{p}_1 = x_1/n_1$ and treatment proportion $\hat{p}_2 = x_2/n_2$:
+
+\begin{equation}
+H_0: p_1 = p_2 \quad \text{vs.} \quad H_1: p_1 \neq p_2
+\end{equation}
+
+Under $H_0$, we use the pooled proportion:
+
+\begin{equation}
+\hat{p}_{\text{pooled}} = \frac{x_1 + x_2}{n_1 + n_2}
+\end{equation}
+
+Test statistic:
+
+\begin{equation}
+Z = \frac{\hat{p}_2 - \hat{p}_1}{\sqrt{\hat{p}_{\text{pooled}}(1 - \hat{p}_{\text{pooled}})(1/n_1 + 1/n_2)}}
+\end{equation}
+
+Under $H_0$: $Z \sim \mathcal{N}(0, 1)$ approximately (by CLT for large samples).
+
+P-value (two-sided):
+\begin{equation}
+p = 2(1 - \Phi(|Z|))
+\end{equation}
+where $\Phi$ is the standard normal CDF.
+
+Decision rule: Reject $H_0$ if $|Z| > z_{\alpha/2}$ (equivalently, if $p < \alpha$).
+
+\subsection{Confidence Interval for Difference in Proportions}
+
+For confidence interval, use unpooled variance:
+
+\begin{equation}
+\text{SE}_{\text{unpooled}} = \sqrt{\frac{\hat{p}_1(1-\hat{p}_1)}{n_1} + \frac{\hat{p}_2(1-\hat{p}_2)}{n_2}}
+\end{equation}
+
+$(1-\alpha)$ confidence interval:
+\begin{equation}
+(\hat{p}_2 - \hat{p}_1) \pm z_{\alpha/2} \cdot \text{SE}_{\text{unpooled}}
+\end{equation}
+
+\begin{example}[Conversion Rate Test]
+\begin{align*}
+\text{Control: } & n_1 = 2000, x_1 = 160, \hat{p}_1 = 0.080 \\
+\text{Treatment: } & n_2 = 2000, x_2 = 190, \hat{p}_2 = 0.095
+\end{align*}
+
+Pooled proportion:
+\begin{equation}
+\hat{p}_{\text{pooled}} = \frac{160 + 190}{2000 + 2000} = \frac{350}{4000} = 0.0875
+\end{equation}
+
+Standard error:
+\begin{equation}
+\text{SE} = \sqrt{0.0875 \times 0.9125 \times (1/2000 + 1/2000)} = 0.00894
+\end{equation}
+
+Test statistic:
+\begin{equation}
+Z = \frac{0.095 - 0.080}{0.00894} = 1.68
+\end{equation}
+
+P-value: $p = 2(1 - \Phi(1.68)) = 2(1 - 0.9535) = 0.093$
+
+At $\alpha = 0.05$, we fail to reject $H_0$. The observed difference is not statistically significant.
+\end{example}
+
+\lstset{language=Python, caption=Comprehensive Z-Test Implementation for Proportions}
+\begin{lstlisting}
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+from typing import Dict, Tuple
+import pandas as pd
+
+def z_test_proportions(
+    x1: int,
+    n1: int,
+    x2: int,
+    n2: int,
+    alpha: float = 0.05,
+    alternative: str = 'two-sided'
+) -> Dict:
+    """
+    Perform z-test for comparing two proportions.
+
+    Parameters:
+    -----------
+    x1, x2 : int
+        Number of successes in each group
+    n1, n2 : int
+        Sample sizes
+    alpha : float
+        Significance level
+    alternative : str
+        'two-sided', 'greater', or 'less'
+
+    Returns:
+    --------
+    dict : Test results including statistic, p-value, CI, decision
+    """
+    # Sample proportions
+    p1_hat = x1 / n1
+    p2_hat = x2 / n2
+    diff = p2_hat - p1_hat
+
+    # Pooled proportion under null hypothesis
+    p_pooled = (x1 + x2) / (n1 + n2)
+
+    # Standard error under null (pooled)
+    se_pooled = np.sqrt(p_pooled * (1 - p_pooled) * (1/n1 + 1/n2))
+
+    # Test statistic
+    z_stat = diff / se_pooled
+
+    # P-value
+    if alternative == 'two-sided':
+        p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
+    elif alternative == 'greater':
+        p_value = 1 - stats.norm.cdf(z_stat)
+    elif alternative == 'less':
+        p_value = stats.norm.cdf(z_stat)
+    else:
+        raise ValueError("alternative must be 'two-sided', 'greater', or 'less'")
+
+    # Decision
+    reject_null = p_value < alpha
+
+    # Confidence interval (using unpooled variance)
+    se_unpooled = np.sqrt(p1_hat*(1-p1_hat)/n1 + p2_hat*(1-p2_hat)/n2)
+
+    if alternative == 'two-sided':
+        z_crit = stats.norm.ppf(1 - alpha/2)
+        ci_lower = diff - z_crit * se_unpooled
+        ci_upper = diff + z_crit * se_unpooled
+    elif alternative == 'greater':
+        z_crit = stats.norm.ppf(1 - alpha)
+        ci_lower = diff - z_crit * se_unpooled
+        ci_upper = np.inf
+    else:  # less
+        z_crit = stats.norm.ppf(1 - alpha)
+        ci_lower = -np.inf
+        ci_upper = diff + z_crit * se_unpooled
+
+    # Effect size (relative lift)
+    relative_lift = diff / p1_hat if p1_hat > 0 else np.nan
+
+    return {
+        'test': 'Z-test for proportions',
+        'p1_hat': p1_hat,
+        'p2_hat': p2_hat,
+        'difference': diff,
+        'relative_lift': relative_lift,
+        'z_statistic': z_stat,
+        'p_value': p_value,
+        'alpha': alpha,
+        'reject_null': reject_null,
+        'ci_lower': ci_lower,
+        'ci_upper': ci_upper,
+        'se_pooled': se_pooled,
+        'se_unpooled': se_unpooled,
+        'alternative': alternative,
+        'decision': 'Reject H0' if reject_null else 'Fail to reject H0'
+    }
+
+def visualize_proportion_test(result: Dict, x1: int, n1: int, x2: int, n2: int):
+    """Visualize proportion test results."""
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    # 1. Proportions with CI
+    ax = axes[0]
+    props = [result['p1_hat'], result['p2_hat']]
+    labels = ['Control', 'Treatment']
+    colors = ['C0', 'C1']
+
+    # Standard errors for individual proportions
+    se1 = np.sqrt(result['p1_hat'] * (1 - result['p1_hat']) / n1)
+    se2 = np.sqrt(result['p2_hat'] * (1 - result['p2_hat']) / n2)
+    errors = [1.96 * se1, 1.96 * se2]
+
+    x_pos = np.arange(2)
+    bars = ax.bar(x_pos, props, yerr=errors, capsize=5, alpha=0.7, color=colors)
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel('Conversion Rate')
+    ax.set_title('Conversion Rates with 95% CI')
+    ax.grid(axis='y', alpha=0.3)
+
+    # Add values on bars
+    for i, (bar, prop) in enumerate(zip(bars, props)):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height + errors[i] + 0.01,
+                f'{prop:.3f}', ha='center', va='bottom', fontweight='bold')
+
+    # 2. Difference with CI
+    ax = axes[1]
+    diff = result['difference']
+    ci_lower = result['ci_lower']
+    ci_upper = result['ci_upper']
+
+    ax.barh([0], [diff], xerr=[[diff - ci_lower], [ci_upper - diff]],
+            capsize=5, alpha=0.7, color='green' if diff > 0 else 'red')
+    ax.axvline(x=0, color='black', linestyle='--', linewidth=1)
+    ax.set_yticks([])
+    ax.set_xlabel('Difference in Proportions')
+    ax.set_title(f'Difference: {diff:.4f} [{ci_lower:.4f}, {ci_upper:.4f}]')
+    ax.grid(axis='x', alpha=0.3)
+
+    # Add significance marker
+    if result['reject_null']:
+        ax.text(diff, 0.3, 'Significant', ha='center', fontsize=12,
+                fontweight='bold', color='darkgreen')
+    else:
+        ax.text(diff, 0.3, 'Not Significant', ha='center', fontsize=12,
+                fontweight='bold', color='gray')
+
+    # 3. Null distribution with test statistic
+    ax = axes[2]
+    x = np.linspace(-4, 4, 1000)
+    y = stats.norm.pdf(x, 0, 1)
+    ax.plot(x, y, 'b-', linewidth=2, label='Null distribution N(0,1)')
+    ax.axvline(x=result['z_statistic'], color='red', linestyle='--',
+               linewidth=2, label=f'Observed z = {result["z_statistic"]:.2f}')
+
+    # Shade rejection region
+    if result['alternative'] == 'two-sided':
+        z_crit = stats.norm.ppf(1 - result['alpha']/2)
+        x_left = x[x <= -z_crit]
+        x_right = x[x >= z_crit]
+        ax.fill_between(x_left, 0, stats.norm.pdf(x_left, 0, 1),
+                        alpha=0.3, color='red')
+        ax.fill_between(x_right, 0, stats.norm.pdf(x_right, 0, 1),
+                        alpha=0.3, color='red', label=f'Rejection region (α={result["alpha"]})')
+        ax.axvline(x=-z_crit, color='red', linestyle=':', alpha=0.5)
+        ax.axvline(x=z_crit, color='red', linestyle=':', alpha=0.5)
+
+    ax.set_xlabel('Z-statistic')
+    ax.set_ylabel('Density')
+    ax.set_title(f'Null Distribution (p-value = {result["p_value"]:.4f})')
+    ax.legend()
+    ax.grid(alpha=0.3)
+
+    plt.tight_layout()
+    return fig
+
+# Example usage
+print("=== Z-Test for Proportions ===\n")
+
+# Example 1: Non-significant result
+result1 = z_test_proportions(x1=160, n1=2000, x2=190, n2=2000)
+
+print("Example 1: Marginal effect")
+print(f"Control:    {result1['p1_hat']:.3f} ({160}/{2000})")
+print(f"Treatment:  {result1['p2_hat']:.3f} ({190}/{2000})")
+print(f"Difference: {result1['difference']:.4f}")
+print(f"Relative lift: {result1['relative_lift']*100:.1f}%")
+print(f"Z-statistic: {result1['z_statistic']:.3f}")
+print(f"P-value: {result1['p_value']:.4f}")
+print(f"95% CI: [{result1['ci_lower']:.4f}, {result1['ci_upper']:.4f}]")
+print(f"Decision: {result1['decision']}\n")
+
+# Example 2: Significant result
+result2 = z_test_proportions(x1=200, n1=2000, x2=260, n2=2000)
+
+print("Example 2: Strong effect")
+print(f"Control:    {result2['p1_hat']:.3f} ({200}/{2000})")
+print(f"Treatment:  {result2['p2_hat']:.3f} ({260}/{2000})")
+print(f"Difference: {result2['difference']:.4f}")
+print(f"Relative lift: {result2['relative_lift']*100:.1f}%")
+print(f"Z-statistic: {result2['z_statistic']:.3f}")
+print(f"P-value: {result2['p_value']:.4e}")
+print(f"95% CI: [{result2['ci_lower']:.4f}, {result2['ci_upper']:.4f}]")
+print(f"Decision: {result2['decision']}\n")
+
+# Example 3: One-sided test
+result3 = z_test_proportions(x1=200, n1=2000, x2=260, n2=2000,
+                             alternative='greater')
+
+print("Example 3: One-sided test (greater)")
+print(f"Z-statistic: {result3['z_statistic']:.3f}")
+print(f"P-value (one-sided): {result3['p_value']:.4e}")
+print(f"P-value (two-sided): {result2['p_value']:.4e}")
+print(f"Ratio: {result2['p_value'] / result3['p_value']:.1f}\n")
+
+# Visualize
+fig1 = visualize_proportion_test(result1, 160, 2000, 190, 2000)
+plt.savefig('proportion_test_marginal.pdf')
+
+fig2 = visualize_proportion_test(result2, 200, 2000, 260, 2000)
+plt.savefig('proportion_test_strong.pdf')
+
+plt.show()
+\end{lstlisting}
+
+\subsection{Assumptions for Z-Test}
+
+The z-test for proportions relies on:
+
+\begin{enumerate}
+    \item \textbf{Independence:} Observations are independent within and between groups
+
+    \item \textbf{Random sampling:} Groups formed by randomization
+
+    \item \textbf{Large samples:} Normal approximation valid
+
+    Rule of thumb: $n_i p_i > 5$ and $n_i(1-p_i) > 5$ for $i = 1, 2$.
+
+    More conservative: $n_i p_i > 10$ and $n_i(1-p_i) > 10$.
+\end{enumerate}
+
+When assumptions are violated, consider:
+\begin{itemize}
+    \item Fisher's exact test for small samples
+    \item Permutation tests (robust to distributional assumptions)
+    \item Adjustments for clustering or correlation
+\end{itemize}
+
+\section{Tests for Means}
+
+When comparing continuous outcomes (revenue, time on site, engagement metrics), we use t-tests.
+
+\subsection{Two-Sample T-Test}
+
+For means $\bar{X}_1$ and $\bar{X}_2$ from groups with variances $s_1^2$ and $s_2^2$:
+
+\begin{equation}
+H_0: \mu_1 = \mu_2 \quad \text{vs.} \quad H_1: \mu_1 \neq \mu_2
+\end{equation}
+
+\textbf{Pooled (Student's) t-test} (assumes equal variances):
+
+Pooled variance:
+\begin{equation}
+s_p^2 = \frac{(n_1 - 1)s_1^2 + (n_2 - 1)s_2^2}{n_1 + n_2 - 2}
+\end{equation}
+
+Test statistic:
+\begin{equation}
+t = \frac{\bar{X}_2 - \bar{X}_1}{s_p \sqrt{1/n_1 + 1/n_2}}
+\end{equation}
+
+Distribution under $H_0$: $t \sim t_{n_1 + n_2 - 2}$
+
+\textbf{Welch's t-test} (unequal variances):
+
+Test statistic:
+\begin{equation}
+t = \frac{\bar{X}_2 - \bar{X}_1}{\sqrt{s_1^2/n_1 + s_2^2/n_2}}
+\end{equation}
+
+Degrees of freedom (Welch-Satterthwaite approximation):
+\begin{equation}
+\nu = \frac{(s_1^2/n_1 + s_2^2/n_2)^2}{\frac{(s_1^2/n_1)^2}{n_1-1} + \frac{(s_2^2/n_2)^2}{n_2-1}}
+\end{equation}
+
+\begin{theorem}[Robustness of Welch's t-test]
+Welch's t-test maintains correct Type I error rate even when:
+\begin{itemize}
+    \item Variances are unequal
+    \item Sample sizes are unequal
+    \item Both conditions hold simultaneously
+\end{itemize}
+
+The pooled t-test can have inflated Type I error when $\sigma_1 \neq \sigma_2$ and $n_1 \neq n_2$.
+\end{theorem}
+
+\textbf{Practical recommendation:} Default to Welch's t-test. It performs nearly as well as pooled t-test when variances are equal, and much better when they're not.
+
+\lstset{language=Python, caption=Comprehensive T-Test Implementation}
+\begin{lstlisting}
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+from typing import Dict
+import pandas as pd
+
+def t_test_means(
+    data1: np.ndarray,
+    data2: np.ndarray,
+    alpha: float = 0.05,
+    equal_var: bool = False,
+    alternative: str = 'two-sided'
+) -> Dict:
+    """
+    Perform t-test for comparing two means.
+
+    Parameters:
+    -----------
+    data1, data2 : np.ndarray
+        Data for each group
+    alpha : float
+        Significance level
+    equal_var : bool
+        If True, use pooled t-test. If False, use Welch's t-test
+    alternative : str
+        'two-sided', 'greater', or 'less'
+
+    Returns:
+    --------
+    dict : Test results
+    """
+    n1, n2 = len(data1), len(data2)
+    mean1, mean2 = np.mean(data1), np.mean(data2)
+    var1, var2 = np.var(data1, ddof=1), np.var(data2, ddof=1)
+    std1, std2 = np.std(data1, ddof=1), np.std(data2, ddof=1)
+
+    diff = mean2 - mean1
+
+    if equal_var:
+        # Pooled t-test
+        pooled_var = ((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2)
+        se = np.sqrt(pooled_var * (1/n1 + 1/n2))
+        df = n1 + n2 - 2
+        test_type = "Pooled t-test"
+    else:
+        # Welch's t-test
+        se = np.sqrt(var1/n1 + var2/n2)
+        # Welch-Satterthwaite degrees of freedom
+        df = (var1/n1 + var2/n2)**2 / (
+            (var1/n1)**2/(n1-1) + (var2/n2)**2/(n2-1)
+        )
+        test_type = "Welch's t-test"
+
+    # Test statistic
+    t_stat = diff / se
+
+    # P-value
+    if alternative == 'two-sided':
+        p_value = 2 * (1 - stats.t.cdf(abs(t_stat), df))
+    elif alternative == 'greater':
+        p_value = 1 - stats.t.cdf(t_stat, df)
+    elif alternative == 'less':
+        p_value = stats.t.cdf(t_stat, df)
+    else:
+        raise ValueError("alternative must be 'two-sided', 'greater', or 'less'")
+
+    # Decision
+    reject_null = p_value < alpha
+
+    # Confidence interval
+    if alternative == 'two-sided':
+        t_crit = stats.t.ppf(1 - alpha/2, df)
+        ci_lower = diff - t_crit * se
+        ci_upper = diff + t_crit * se
+    elif alternative == 'greater':
+        t_crit = stats.t.ppf(1 - alpha, df)
+        ci_lower = diff - t_crit * se
+        ci_upper = np.inf
+    else:  # less
+        t_crit = stats.t.ppf(1 - alpha, df)
+        ci_lower = -np.inf
+        ci_upper = diff + t_crit * se
+
+    # Effect size (Cohen's d)
+    if equal_var:
+        pooled_std = np.sqrt(pooled_var)
+    else:
+        # Use pooled std even for Welch's when calculating Cohen's d
+        pooled_std = np.sqrt(((n1-1)*var1 + (n2-1)*var2) / (n1 + n2 - 2))
+
+    cohens_d = diff / pooled_std
+
+    # Relative effect (if mean1 > 0)
+    relative_diff = diff / mean1 if mean1 != 0 else np.nan
+
+    return {
+        'test': test_type,
+        'n1': n1,
+        'n2': n2,
+        'mean1': mean1,
+        'mean2': mean2,
+        'std1': std1,
+        'std2': std2,
+        'difference': diff,
+        'relative_diff': relative_diff,
+        't_statistic': t_stat,
+        'df': df,
+        'p_value': p_value,
+        'alpha': alpha,
+        'reject_null': reject_null,
+        'ci_lower': ci_lower,
+        'ci_upper': ci_upper,
+        'se': se,
+        'cohens_d': cohens_d,
+        'alternative': alternative,
+        'decision': 'Reject H0' if reject_null else 'Fail to reject H0'
+    }
+
+def compare_t_test_variants(data1: np.ndarray, data2: np.ndarray, alpha: float = 0.05):
+    """Compare pooled vs. Welch's t-test."""
+
+    pooled = t_test_means(data1, data2, alpha=alpha, equal_var=True)
+    welch = t_test_means(data1, data2, alpha=alpha, equal_var=False)
+
+    print("=== Comparison: Pooled vs. Welch's t-test ===\n")
+
+    print(f"Sample sizes: n1={len(data1)}, n2={len(data2)}")
+    print(f"Means: {np.mean(data1):.2f}, {np.mean(data2):.2f}")
+    print(f"Std devs: {np.std(data1, ddof=1):.2f}, {np.std(data2, ddof=1):.2f}")
+    print(f"Variance ratio: {np.var(data2, ddof=1) / np.var(data1, ddof=1):.2f}\n")
+
+    comparison = pd.DataFrame({
+        'Pooled t-test': [
+            pooled['t_statistic'],
+            pooled['df'],
+            pooled['p_value'],
+            pooled['ci_lower'],
+            pooled['ci_upper'],
+            pooled['decision']
+        ],
+        'Welch\'s t-test': [
+            welch['t_statistic'],
+            welch['df'],
+            welch['p_value'],
+            welch['ci_lower'],
+            welch['ci_upper'],
+            welch['decision']
+        ]
+    }, index=['t-statistic', 'df', 'p-value', 'CI lower', 'CI upper', 'Decision'])
+
+    print(comparison)
+    print()
+
+    return pooled, welch
+
+def visualize_t_test(result: Dict, data1: np.ndarray, data2: np.ndarray):
+    """Visualize t-test results."""
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # 1. Distributions
+    ax = axes[0, 0]
+    ax.hist(data1, bins=30, alpha=0.6, label='Control', density=True, color='C0')
+    ax.hist(data2, bins=30, alpha=0.6, label='Treatment', density=True, color='C1')
+    ax.axvline(result['mean1'], color='C0', linestyle='--', linewidth=2,
+              label=f'Control mean = {result["mean1"]:.2f}')
+    ax.axvline(result['mean2'], color='C1', linestyle='--', linewidth=2,
+              label=f'Treatment mean = {result["mean2"]:.2f}')
+    ax.set_xlabel('Value')
+    ax.set_ylabel('Density')
+    ax.set_title('Data Distributions')
+    ax.legend()
+    ax.grid(alpha=0.3)
+
+    # 2. Means with CI
+    ax = axes[0, 1]
+    means = [result['mean1'], result['mean2']]
+    sems = [result['std1']/np.sqrt(result['n1']),
+            result['std2']/np.sqrt(result['n2'])]
+    labels = ['Control', 'Treatment']
+
+    x_pos = np.arange(2)
+    bars = ax.bar(x_pos, means, yerr=[1.96*s for s in sems],
+                  capsize=5, alpha=0.7, color=['C0', 'C1'])
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel('Mean Value')
+    ax.set_title('Means with 95% CI')
+    ax.grid(axis='y', alpha=0.3)
+
+    # Add values
+    for i, (bar, mean) in enumerate(zip(bars, means)):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height + sems[i]*2,
+                f'{mean:.2f}', ha='center', va='bottom', fontweight='bold')
+
+    # 3. Difference with CI
+    ax = axes[1, 0]
+    diff = result['difference']
+    ci_lower = result['ci_lower']
+    ci_upper = result['ci_upper']
+
+    ax.barh([0], [diff], xerr=[[diff - ci_lower], [ci_upper - diff]],
+            capsize=5, alpha=0.7, color='green' if diff > 0 else 'red')
+    ax.axvline(x=0, color='black', linestyle='--', linewidth=1)
+    ax.set_yticks([])
+    ax.set_xlabel('Difference in Means')
+    ax.set_title(f'{result["test"]}\nDifference: {diff:.2f} '
+                f'[{ci_lower:.2f}, {ci_upper:.2f}]')
+    ax.grid(axis='x', alpha=0.3)
+
+    # Add significance and effect size
+    if result['reject_null']:
+        sig_text = 'Significant'
+        color = 'darkgreen'
+    else:
+        sig_text = 'Not Significant'
+        color = 'gray'
+
+    ax.text(diff, 0.3, f'{sig_text}\nCohen\'s d = {result["cohens_d"]:.3f}',
+           ha='center', fontsize=10, fontweight='bold', color=color)
+
+    # 4. T-distribution with test statistic
+    ax = axes[1, 1]
+    df = result['df']
+    x = np.linspace(-5, 5, 1000)
+    y = stats.t.pdf(x, df)
+    ax.plot(x, y, 'b-', linewidth=2, label=f't-distribution (df={df:.1f})')
+    ax.axvline(x=result['t_statistic'], color='red', linestyle='--',
+               linewidth=2, label=f'Observed t = {result["t_statistic"]:.2f}')
+
+    # Shade rejection region for two-sided
+    if result['alternative'] == 'two-sided':
+        t_crit = stats.t.ppf(1 - result['alpha']/2, df)
+        x_left = x[x <= -t_crit]
+        x_right = x[x >= t_crit]
+        ax.fill_between(x_left, 0, stats.t.pdf(x_left, df),
+                        alpha=0.3, color='red')
+        ax.fill_between(x_right, 0, stats.t.pdf(x_right, df),
+                        alpha=0.3, color='red',
+                        label=f'Rejection region (α={result["alpha"]})')
+        ax.axvline(x=-t_crit, color='red', linestyle=':', alpha=0.5)
+        ax.axvline(x=t_crit, color='red', linestyle=':', alpha=0.5)
+
+    ax.set_xlabel('t-statistic')
+    ax.set_ylabel('Density')
+    ax.set_title(f't-Distribution (p-value = {result["p_value"]:.4f})')
+    ax.legend()
+    ax.grid(alpha=0.3)
+
+    plt.tight_layout()
+    return fig
+
+# Example usage
+print("=== T-Test for Means ===\n")
+
+# Generate data
+np.random.seed(42)
+
+# Example 1: Equal variances
+data1_eq = np.random.normal(45, 10, 500)
+data2_eq = np.random.normal(48, 10, 500)
+
+pooled_eq, welch_eq = compare_t_test_variants(data1_eq, data2_eq)
+
+# Example 2: Unequal variances
+data1_uneq = np.random.normal(45, 10, 500)
+data2_uneq = np.random.normal(48, 20, 500)
+
+print("\n=== Example 2: Unequal Variances ===\n")
+pooled_uneq, welch_uneq = compare_t_test_variants(data1_uneq, data2_uneq)
+
+# Visualize
+fig1 = visualize_t_test(welch_eq, data1_eq, data2_eq)
+plt.savefig('t_test_equal_var.pdf')
+
+fig2 = visualize_t_test(welch_uneq, data1_uneq, data2_uneq)
+plt.savefig('t_test_unequal_var.pdf')
+
+plt.show()
+\end{lstlisting}
+
+\section{Chi-Squared Test for Categorical Data}
+
+The chi-squared test assesses association between categorical variables, useful for multi-category outcomes.
+
+\subsection{Pearson's Chi-Squared Test}
+
+For $r \times c$ contingency table with observed counts $O_{ij}$:
+
+\begin{equation}
+H_0: \text{Row and column variables are independent}
+\end{equation}
+
+Expected counts under independence:
+\begin{equation}
+E_{ij} = \frac{(\text{row } i \text{ total}) \times (\text{column } j \text{ total})}{n}
+\end{equation}
+
+Test statistic:
+\begin{equation}
+\chi^2 = \sum_{i=1}^r \sum_{j=1}^c \frac{(O_{ij} - E_{ij})^2}{E_{ij}}
+\end{equation}
+
+Under $H_0$: $\chi^2 \sim \chi^2_{(r-1)(c-1)}$ approximately.
+
+\begin{proposition}[Equivalence for 2×2 Tables]
+For $2 \times 2$ contingency tables, $\chi^2 = Z^2$ where $Z$ is the z-test statistic for proportions. The tests yield identical p-values for two-sided alternatives.
+\end{proposition}
+
+\textbf{Assumptions:}
+\begin{itemize}
+    \item Independent observations
+    \item Expected cell counts $E_{ij} \geq 5$ for all cells
+    \item If some $E_{ij} < 5$: use Fisher's exact test or combine categories
+\end{itemize}
+
+\subsection{Fisher's Exact Test}
+
+For small samples or when chi-squared assumptions fail, Fisher's exact test calculates exact p-values.
+
+Particularly useful for $2 \times 2$ tables with small expected counts.
+
+\lstset{language=Python, caption=Chi-Squared and Fisher's Exact Test Implementation}
+\begin{lstlisting}
+from scipy.stats import chi2_contingency, fisher_exact
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from typing import Dict, Tuple
+
+def chi_square_test(
+    table: np.ndarray,
+    alpha: float = 0.05
+) -> Dict:
+    """
+    Perform chi-squared test of independence.
+
+    Parameters:
+    -----------
+    table : np.ndarray
+        Contingency table (rows × columns)
+    alpha : float
+        Significance level
+
+    Returns:
+    --------
+    dict : Test results
+    """
+    chi2_stat, p_value, dof, expected = chi2_contingency(table)
+
+    reject_null = p_value < alpha
+
+    # Check assumption: expected counts >= 5
+    min_expected = expected.min()
+    assumption_met = min_expected >= 5
+
+    # Cramér's V effect size
+    n = table.sum()
+    min_dim = min(table.shape[0] - 1, table.shape[1] - 1)
+    cramers_v = np.sqrt(chi2_stat / (n * min_dim))
+
+    return {
+        'test': 'Chi-squared test',
+        'chi2_statistic': chi2_stat,
+        'p_value': p_value,
+        'df': dof,
+        'expected_counts': expected,
+        'min_expected': min_expected,
+        'assumption_met': assumption_met,
+        'cramers_v': cramers_v,
+        'alpha': alpha,
+        'reject_null': reject_null,
+        'decision': 'Reject H0' if reject_null else 'Fail to reject H0'
+    }
+
+def fishers_test_2x2(
+    table: np.ndarray,
+    alpha: float = 0.05,
+    alternative: str = 'two-sided'
+) -> Dict:
+    """
+    Perform Fisher's exact test for 2×2 table.
+
+    Parameters:
+    -----------
+    table : np.ndarray
+        2×2 contingency table
+    alpha : float
+        Significance level
+    alternative : str
+        'two-sided', 'greater', or 'less'
+
+    Returns:
+    --------
+    dict : Test results
+    """
+    if table.shape != (2, 2):
+        raise ValueError("Fisher's exact test requires a 2×2 table")
+
+    oddsratio, p_value = fisher_exact(table, alternative=alternative)
+
+    reject_null = p_value < alpha
+
+    return {
+        'test': 'Fisher\'s exact test',
+        'odds_ratio': oddsratio,
+        'p_value': p_value,
+        'alpha': alpha,
+        'reject_null': reject_null,
+        'alternative': alternative,
+        'decision': 'Reject H0' if reject_null else 'Fail to reject H0'
+    }
+
+def compare_chi_square_fisher(table: np.ndarray, alpha: float = 0.05):
+    """Compare chi-squared test with Fisher's exact test."""
+
+    print("=== Comparison: Chi-Squared vs. Fisher's Exact Test ===\n")
+
+    print("Contingency table:")
+    print(table)
+    print()
+
+    # Chi-squared test
+    chi2_result = chi_square_test(table, alpha)
+
+    print("Chi-Squared Test:")
+    print(f"  Chi-squared statistic: {chi2_result['chi2_statistic']:.3f}")
+    print(f"  Degrees of freedom: {chi2_result['df']}")
+    print(f"  P-value: {chi2_result['p_value']:.4f}")
+    print(f"  Cramér's V: {chi2_result['cramers_v']:.3f}")
+    print(f"  Min expected count: {chi2_result['min_expected']:.2f}")
+    print(f"  Assumption met (E>=5): {chi2_result['assumption_met']}")
+    print(f"  Decision: {chi2_result['decision']}\n")
+
+    print("Expected frequencies:")
+    print(chi2_result['expected_counts'].round(2))
+    print()
+
+    # Fisher's exact test (if 2×2)
+    if table.shape == (2, 2):
+        fisher_result = fishers_test_2x2(table, alpha)
+
+        print("Fisher's Exact Test:")
+        print(f"  Odds ratio: {fisher_result['odds_ratio']:.3f}")
+        print(f"  P-value: {fisher_result['p_value']:.4f}")
+        print(f"  Decision: {fisher_result['decision']}\n")
+
+        # Compare p-values
+        print(f"P-value difference: {abs(chi2_result['p_value'] - fisher_result['p_value']):.4f}")
+
+        if not chi2_result['assumption_met']:
+            print("\nNote: Expected counts < 5. Fisher's exact test is more reliable.")
+
+        return chi2_result, fisher_result
+    else:
+        return chi2_result, None
+
+def visualize_contingency_table(table: np.ndarray, result: Dict,
+                                row_labels=None, col_labels=None):
+    """Visualize contingency table analysis."""
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    if row_labels is None:
+        row_labels = [f'Row {i}' for i in range(table.shape[0])]
+    if col_labels is None:
+        col_labels = [f'Col {j}' for j in range(table.shape[1])]
+
+    # 1. Observed counts heatmap
+    ax = axes[0]
+    im1 = ax.imshow(table, cmap='YlOrRd', aspect='auto')
+    ax.set_xticks(range(table.shape[1]))
+    ax.set_yticks(range(table.shape[0]))
+    ax.set_xticklabels(col_labels)
+    ax.set_yticklabels(row_labels)
+    ax.set_title('Observed Counts')
+
+    # Add text annotations
+    for i in range(table.shape[0]):
+        for j in range(table.shape[1]):
+            text = ax.text(j, i, int(table[i, j]),
+                          ha="center", va="center", color="black",
+                          fontweight='bold', fontsize=12)
+
+    plt.colorbar(im1, ax=ax)
+
+    # 2. Expected counts heatmap
+    ax = axes[1]
+    expected = result['expected_counts']
+    im2 = ax.imshow(expected, cmap='Blues', aspect='auto')
+    ax.set_xticks(range(expected.shape[1]))
+    ax.set_yticks(range(expected.shape[0]))
+    ax.set_xticklabels(col_labels)
+    ax.set_yticklabels(row_labels)
+    ax.set_title('Expected Counts (under H0)')
+
+    # Add text annotations
+    for i in range(expected.shape[0]):
+        for j in range(expected.shape[1]):
+            text = ax.text(j, i, f'{expected[i, j]:.1f}',
+                          ha="center", va="center", color="black",
+                          fontweight='bold', fontsize=12)
+
+    plt.colorbar(im2, ax=ax)
+
+    # 3. Standardized residuals
+    ax = axes[2]
+    residuals = (table - expected) / np.sqrt(expected)
+    max_abs = np.max(np.abs(residuals))
+    im3 = ax.imshow(residuals, cmap='RdBu_r', aspect='auto',
+                    vmin=-max_abs, vmax=max_abs)
+    ax.set_xticks(range(residuals.shape[1]))
+    ax.set_yticks(range(residuals.shape[0]))
+    ax.set_xticklabels(col_labels)
+    ax.set_yticklabels(row_labels)
+    ax.set_title('Standardized Residuals\n(|residual| > 2 suggests departure)')
+
+    # Add text annotations
+    for i in range(residuals.shape[0]):
+        for j in range(residuals.shape[1]):
+            color = 'white' if abs(residuals[i, j]) > 1.5 else 'black'
+            text = ax.text(j, i, f'{residuals[i, j]:.2f}',
+                          ha="center", va="center", color=color,
+                          fontweight='bold', fontsize=10)
+
+    plt.colorbar(im3, ax=ax)
+
+    plt.suptitle(f'Chi-Squared Test: χ² = {result["chi2_statistic"]:.2f}, '
+                f'p = {result["p_value"]:.4f}',
+                fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    return fig
+
+# Example usage
+print("=== Chi-Squared Test Example ===\n")
+
+# Example 1: Standard 2×2 table
+table1 = np.array([[160, 1840],
+                   [190, 1810]])
+
+chi2_1, fisher_1 = compare_chi_square_fisher(table1, alpha=0.05)
+
+# Verify equivalence with z-test
+x1, n1 = table1[0, 0], table1[0].sum()
+x2, n2 = table1[1, 0], table1[1].sum()
+
+p1 = x1 / n1
+p2 = x2 / n2
+p_pooled = (x1 + x2) / (n1 + n2)
+
+z = (p2 - p1) / np.sqrt(p_pooled * (1 - p_pooled) * (1/n1 + 1/n2))
+p_z = 2 * (1 - stats.norm.cdf(abs(z)))
+
+print("=== Equivalence Verification (2×2 table) ===")
+print(f"Z-test p-value:        {p_z:.4f}")
+print(f"Chi-squared p-value:   {chi2_1['p_value']:.4f}")
+print(f"z² = {z**2:.3f}, χ² = {chi2_1['chi2_statistic']:.3f}")
+print(f"Difference: {abs(z**2 - chi2_1['chi2_statistic']):.6f}\n")
+
+# Example 2: Small expected counts (Fisher's better)
+table2 = np.array([[8, 12],
+                   [2, 18]])
+
+print("=== Example 2: Small Expected Counts ===\n")
+chi2_2, fisher_2 = compare_chi_square_fisher(table2, alpha=0.05)
+
+# Example 3: Larger table (3×3)
+table3 = np.array([[30, 20, 10],
+                   [25, 30, 15],
+                   [15, 25, 30]])
+
+print("\n=== Example 3: 3×3 Table ===\n")
+chi2_3, _ = compare_chi_square_fisher(table3, alpha=0.05)
+
+# Visualize
+row_labels = ['Control', 'Treatment']
+col_labels = ['Converted', 'Not Converted']
+
+fig1 = visualize_contingency_table(table1, chi2_1, row_labels, col_labels)
+plt.savefig('chi_square_2x2.pdf')
+
+category_labels = ['Category A', 'Category B', 'Category C']
+fig3 = visualize_contingency_table(table3, chi2_3,
+                                    category_labels, category_labels)
+plt.savefig('chi_square_3x3.pdf')
+
+plt.show()
+\end{lstlisting}
+
+\section{Understanding P-Values}
+
+\begin{definition}[P-Value]
+The p-value is the probability, under the null hypothesis, of observing a test statistic at least as extreme as the one actually observed.
+
+Formally: $p = P(T \geq t_{\text{obs}} | H_0)$ for one-sided, or $p = P(|T| \geq |t_{\text{obs}}| | H_0)$ for two-sided.
+\end{definition}
+
+\subsection{Correct Interpretation}
+
+A p-value of 0.03 means:
+\begin{itemize}
+    \item \checkmark If $H_0$ were true, we would observe data this extreme in 3\% of experiments
+    \item \checkmark The data provide evidence against $H_0$ (but don't prove $H_1$)
+    \item \checkmark At $\alpha = 0.05$, we reject $H_0$
+\end{itemize}
+
+\subsection{Common Misinterpretations}
+
+\begin{enumerate}
+    \item \textbf{WRONG:} "The probability that $H_0$ is true is 0.03"
+
+    P-values are \textit{not} probabilities of hypotheses. They assume $H_0$ is true and calculate probability of data.
+
+    Correct: $P(\text{data}|H_0)$, not $P(H_0|\text{data})$
+
+    \item \textbf{WRONG:} "The probability that the result occurred by chance is 0.03"
+
+    Everything has some probability. This confuses conditional probabilities and event probabilities.
+
+    \item \textbf{WRONG:} "A p-value of 0.049 is meaningfully different from 0.051"
+
+    The $\alpha = 0.05$ threshold is arbitrary. P-values are continuous measures of evidence against $H_0$, not binary outcomes.
+
+    \item \textbf{WRONG:} "A non-significant result means no effect exists"
+
+    Absence of evidence is not evidence of absence. Failure to reject $H_0$ may indicate:
+    \begin{itemize}
+        \item True null effect
+        \item Insufficient power to detect existing effect
+        \item High variance masking signal
+    \end{itemize}
+
+    \item \textbf{WRONG:} "A significant result means the effect is large or important"
+
+    Statistical significance depends on sample size. With n=1,000,000, tiny meaningless effects become "significant."
+\end{enumerate}
+
+\subsection{Statistical Significance vs. Practical Significance}
+
+Statistical significance ($p < \alpha$) does not imply practical importance.
+
+\begin{example}[Large Sample Paradox]
+With $n = 100{,}000$ per variant:
+
+Conversion rate: 10.00\% → 10.05\% (0.05 percentage points)
+
+This is highly statistically significant ($p < 0.001$) but may be economically negligible if implementation cost exceeds benefit.
+
+Conversely, with $n = 100$:
+
+Conversion rate: 10\% → 15\% (5 percentage points)
+
+This may not reach significance ($p = 0.12$) despite clear practical importance.
+\end{example}
+
+\textbf{Recommendation:} Report effect sizes, confidence intervals, and business impact alongside p-values. Make decisions based on practical significance informed by statistical uncertainty.
+
+\section{Assumptions and Diagnostics}
+
+All parametric tests make assumptions. Violating assumptions can invalidate conclusions.
+
+\subsection{Normality Testing}
+
+Many tests (t-test, ANOVA) assume data are approximately normally distributed.
+
+\textbf{Visual diagnostics:}
+\begin{itemize}
+    \item Histograms
+    \item Q-Q plots (quantile-quantile)
+    \item Kernel density estimates
+\end{itemize}
+
+\textbf{Formal tests:}
+\begin{itemize}
+    \item Shapiro-Wilk test (most powerful for small-medium samples)
+    \item Kolmogorov-Smirnov test
+    \item Anderson-Darling test
+\end{itemize}
+
+\textbf{Important caveat:} With large samples, normality tests often reject $H_0$ for trivial departures. Visual inspection often more useful.
+
+\textbf{Robustness:} T-tests are robust to moderate departures from normality, especially with:
+\begin{itemize}
+    \item Large samples ($n > 30$ per group)
+    \item Symmetric distributions
+    \item Equal sample sizes
+\end{itemize}
+
+\subsection{Variance Homogeneity}
+
+Pooled t-test and ANOVA assume equal variances across groups.
+
+\textbf{Visual diagnostics:}
+\begin{itemize}
+    \item Side-by-side boxplots
+    \item Residual plots
+    \item Spread-location plots
+\end{itemize}
+
+\textbf{Formal tests:}
+\begin{itemize}
+    \item Levene's test (robust to non-normality)
+    \item Bartlett's test (sensitive to non-normality)
+    \item F-test (assumes normality)
+\end{itemize}
+
+\textbf{Rule of thumb:} If largest variance / smallest variance $> 4$, consider variances unequal.
+
+\textbf{Solution:} Use Welch's t-test (doesn't assume equal variances).
+
+\subsection{Independence Assumptions}
+
+Most critical assumption, hardest to test.
+
+\textbf{Violations:}
+\begin{itemize}
+    \item Repeated measures (same user appears multiple times)
+    \item Clustering (users within groups more similar)
+    \item Time series (temporal autocorrelation)
+    \item Spatial correlation
+    \item Network effects
+\end{itemize}
+
+\textbf{Detection:}
+\begin{itemize}
+    \item Check data collection process
+    \item Autocorrelation plots (time series)
+    \item Intraclass correlation coefficient (clustering)
+\end{itemize}
+
+\textbf{Solutions:}
+\begin{itemize}
+    \item Mixed effects models
+    \item Cluster-robust standard errors
+    \item Time series methods
+    \item Aggregation to independent units
+\end{itemize}
+
+\subsection{Outlier Detection and Treatment}
+
+Outliers can severely affect means and standard deviations, distorting test results.
+
+\textbf{Detection methods:}
+\begin{itemize}
+    \item Boxplot (IQR method): values $< Q_1 - 1.5 \times IQR$ or $> Q_3 + 1.5 \times IQR$
+    \item Z-score: $|z| > 3$ (or 2.5 for stricter criterion)
+    \item Modified Z-score using median absolute deviation (robust)
+    \item Visual inspection (always!)
+\end{itemize}
+
+\textbf{Treatment options:}
+\begin{enumerate}
+    \item \textbf{Investigate:} Are outliers errors or valid extreme values?
+
+    \item \textbf{Cap/winsorize:} Replace extreme values with threshold (e.g., 99th percentile)
+
+    \item \textbf{Transform:} Log transform to reduce impact of extremes
+
+    \item \textbf{Remove:} Only if clear data errors, document clearly
+
+    \item \textbf{Robust methods:} Use median instead of mean, trimmed means, non-parametric tests
+
+    \item \textbf{Separate analysis:} Analyze with and without outliers, report both
+\end{enumerate}
+
+\textbf{Never:} Selectively remove outliers to achieve desired p-value.
+
+\lstset{language=Python, caption=Comprehensive Diagnostic Functions}
+\begin{lstlisting}
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+import seaborn as sns
+from typing import Dict, Tuple
+import pandas as pd
+
+def check_normality(
+    data: np.ndarray,
+    name: str = "Data",
+    alpha: float = 0.05
+) -> Dict:
+    """
+    Check normality assumption using multiple methods.
+
+    Parameters:
+    -----------
+    data : np.ndarray
+        Data to test
+    name : str
+        Name for labeling
+    alpha : float
+        Significance level for tests
+
+    Returns:
+    --------
+    dict : Normality test results
+    """
+    # Shapiro-Wilk test
+    shapiro_stat, shapiro_p = stats.shapiro(data)
+
+    # Kolmogorov-Smirnov test
+    ks_stat, ks_p = stats.kstest(data, 'norm',
+                                  args=(np.mean(data), np.std(data)))
+
+    # Anderson-Darling test
+    anderson_result = stats.anderson(data, dist='norm')
+
+    # Skewness and kurtosis
+    skewness = stats.skew(data)
+    kurtosis = stats.kurtosis(data)
+
+    return {
+        'name': name,
+        'n': len(data),
+        'shapiro_statistic': shapiro_stat,
+        'shapiro_pvalue': shapiro_p,
+        'shapiro_normal': shapiro_p > alpha,
+        'ks_statistic': ks_stat,
+        'ks_pvalue': ks_p,
+        'ks_normal': ks_p > alpha,
+        'anderson_statistic': anderson_result.statistic,
+        'anderson_critical_values': anderson_result.critical_values,
+        'skewness': skewness,
+        'kurtosis': kurtosis
+    }
+
+def check_variance_equality(
+    data1: np.ndarray,
+    data2: np.ndarray,
+    alpha: float = 0.05
+) -> Dict:
+    """
+    Check equality of variances.
+
+    Parameters:
+    -----------
+    data1, data2 : np.ndarray
+        Data for each group
+    alpha : float
+        Significance level
+
+    Returns:
+    --------
+    dict : Variance equality test results
+    """
+    var1, var2 = np.var(data1, ddof=1), np.var(data2, ddof=1)
+    std1, std2 = np.std(data1, ddof=1), np.std(data2, ddof=1)
+
+    # Variance ratio
+    var_ratio = max(var1, var2) / min(var1, var2)
+
+    # Levene's test (robust to non-normality)
+    levene_stat, levene_p = stats.levene(data1, data2)
+
+    # Bartlett's test (assumes normality)
+    bartlett_stat, bartlett_p = stats.bartlett(data1, data2)
+
+    # F-test (assumes normality)
+    if var1 >= var2:
+        f_stat = var1 / var2
+        df1, df2 = len(data1) - 1, len(data2) - 1
+    else:
+        f_stat = var2 / var1
+        df2, df1 = len(data1) - 1, len(data2) - 1
+
+    f_p = 2 * min(stats.f.cdf(f_stat, df1, df2),
+                  1 - stats.f.cdf(f_stat, df1, df2))
+
+    return {
+        'var1': var1,
+        'var2': var2,
+        'std1': std1,
+        'std2': std2,
+        'variance_ratio': var_ratio,
+        'levene_statistic': levene_stat,
+        'levene_pvalue': levene_p,
+        'levene_equal': levene_p > alpha,
+        'bartlett_statistic': bartlett_stat,
+        'bartlett_pvalue': bartlett_p,
+        'bartlett_equal': bartlett_p > alpha,
+        'f_statistic': f_stat,
+        'f_pvalue': f_p,
+        'f_equal': f_p > alpha
+    }
+
+def detect_outliers(
+    data: np.ndarray,
+    method: str = 'iqr'
+) -> Dict:
+    """
+    Detect outliers using various methods.
+
+    Parameters:
+    -----------
+    data : np.ndarray
+        Data to analyze
+    method : str
+        'iqr', 'zscore', or 'modified_zscore'
+
+    Returns:
+    --------
+    dict : Outlier detection results
+    """
+    if method == 'iqr':
+        q1 = np.percentile(data, 25)
+        q3 = np.percentile(data, 75)
+        iqr = q3 - q1
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+        outliers = (data < lower_bound) | (data > upper_bound)
+
+    elif method == 'zscore':
+        z_scores = np.abs(stats.zscore(data))
+        outliers = z_scores > 3
+
+    elif method == 'modified_zscore':
+        median = np.median(data)
+        mad = np.median(np.abs(data - median))
+        modified_z_scores = 0.6745 * (data - median) / mad
+        outliers = np.abs(modified_z_scores) > 3.5
+
+    else:
+        raise ValueError("method must be 'iqr', 'zscore', or 'modified_zscore'")
+
+    outlier_indices = np.where(outliers)[0]
+    outlier_values = data[outliers]
+
+    return {
+        'method': method,
+        'n_outliers': np.sum(outliers),
+        'outlier_proportion': np.mean(outliers),
+        'outlier_indices': outlier_indices,
+        'outlier_values': outlier_values,
+        'outlier_mask': outliers
+    }
+
+def visualize_diagnostics(
+    data1: np.ndarray,
+    data2: np.ndarray,
+    name1: str = "Control",
+    name2: str = "Treatment"
+):
+    """Create comprehensive diagnostic plots."""
+    fig = plt.figure(figsize=(16, 12))
+    gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
+
+    # 1. Histograms with normal overlay
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax1.hist(data1, bins=30, alpha=0.6, density=True, label=name1, color='C0')
+    mu1, std1 = np.mean(data1), np.std(data1)
+    x1 = np.linspace(data1.min(), data1.max(), 100)
+    ax1.plot(x1, stats.norm.pdf(x1, mu1, std1), 'C0--', linewidth=2,
+            label='Normal fit')
+    ax1.set_xlabel('Value')
+    ax1.set_ylabel('Density')
+    ax1.set_title(f'{name1} Distribution')
+    ax1.legend()
+    ax1.grid(alpha=0.3)
+
+    ax2 = fig.add_subplot(gs[0, 1])
+    ax2.hist(data2, bins=30, alpha=0.6, density=True, label=name2, color='C1')
+    mu2, std2 = np.mean(data2), np.std(data2)
+    x2 = np.linspace(data2.min(), data2.max(), 100)
+    ax2.plot(x2, stats.norm.pdf(x2, mu2, std2), 'C1--', linewidth=2,
+            label='Normal fit')
+    ax2.set_xlabel('Value')
+    ax2.set_ylabel('Density')
+    ax2.set_title(f'{name2} Distribution')
+    ax2.legend()
+    ax2.grid(alpha=0.3)
+
+    # 2. Q-Q plots
+    ax3 = fig.add_subplot(gs[0, 2])
+    stats.probplot(data1, dist="norm", plot=ax3)
+    ax3.set_title(f'{name1} Q-Q Plot')
+    ax3.grid(alpha=0.3)
+
+    ax4 = fig.add_subplot(gs[1, 0])
+    stats.probplot(data2, dist="norm", plot=ax4)
+    ax4.set_title(f'{name2} Q-Q Plot')
+    ax4.grid(alpha=0.3)
+
+    # 3. Box plots
+    ax5 = fig.add_subplot(gs[1, 1])
+    box_data = [data1, data2]
+    bp = ax5.boxplot(box_data, labels=[name1, name2],
+                     patch_artist=True, widths=0.6)
+    for patch, color in zip(bp['boxes'], ['C0', 'C1']):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.6)
+    ax5.set_ylabel('Value')
+    ax5.set_title('Box Plots (outlier detection)')
+    ax5.grid(axis='y', alpha=0.3)
+
+    # Add variance ratio annotation
+    var_ratio = max(np.var(data1), np.var(data2)) / min(np.var(data1), np.var(data2))
+    ax5.text(0.5, 0.95, f'Variance ratio: {var_ratio:.2f}',
+            transform=ax5.transAxes, ha='center', va='top',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    # 4. Violin plots with individual points
+    ax6 = fig.add_subplot(gs[1, 2])
+    parts = ax6.violinplot([data1, data2], positions=[1, 2],
+                           showmeans=True, showmedians=True)
+    ax6.set_xticks([1, 2])
+    ax6.set_xticklabels([name1, name2])
+    ax6.set_ylabel('Value')
+    ax6.set_title('Violin Plots')
+    ax6.grid(axis='y', alpha=0.3)
+
+    # 5. ECDF comparison
+    ax7 = fig.add_subplot(gs[2, 0])
+    sorted_data1 = np.sort(data1)
+    sorted_data2 = np.sort(data2)
+    ecdf1 = np.arange(1, len(sorted_data1) + 1) / len(sorted_data1)
+    ecdf2 = np.arange(1, len(sorted_data2) + 1) / len(sorted_data2)
+    ax7.plot(sorted_data1, ecdf1, label=name1, linewidth=2, color='C0')
+    ax7.plot(sorted_data2, ecdf2, label=name2, linewidth=2, color='C1')
+    ax7.set_xlabel('Value')
+    ax7.set_ylabel('ECDF')
+    ax7.set_title('Empirical Cumulative Distribution')
+    ax7.legend()
+    ax7.grid(alpha=0.3)
+
+    # 6. Variance comparison
+    ax8 = fig.add_subplot(gs[2, 1])
+    variances = [np.var(data1, ddof=1), np.var(data2, ddof=1)]
+    std_devs = [np.std(data1, ddof=1), np.std(data2, ddof=1)]
+
+    x_pos = np.arange(2)
+    bars = ax8.bar(x_pos, std_devs, alpha=0.7, color=['C0', 'C1'])
+    ax8.set_xticks(x_pos)
+    ax8.set_xticklabels([name1, name2])
+    ax8.set_ylabel('Standard Deviation')
+    ax8.set_title('Standard Deviations Comparison')
+    ax8.grid(axis='y', alpha=0.3)
+
+    for i, (bar, std) in enumerate(zip(bars, std_devs)):
+        height = bar.get_height()
+        ax8.text(bar.get_x() + bar.get_width()/2., height,
+                f'{std:.2f}', ha='center', va='bottom', fontweight='bold')
+
+    # 7. Summary statistics table
+    ax9 = fig.add_subplot(gs[2, 2])
+    ax9.axis('off')
+
+    summary_data = [
+        ['Statistic', name1, name2],
+        ['n', f'{len(data1)}', f'{len(data2)}'],
+        ['Mean', f'{np.mean(data1):.2f}', f'{np.mean(data2):.2f}'],
+        ['Median', f'{np.median(data1):.2f}', f'{np.median(data2):.2f}'],
+        ['Std Dev', f'{np.std(data1, ddof=1):.2f}', f'{np.std(data2, ddof=1):.2f}'],
+        ['Min', f'{data1.min():.2f}', f'{data2.min():.2f}'],
+        ['Max', f'{data1.max():.2f}', f'{data2.max():.2f}'],
+        ['Q1', f'{np.percentile(data1, 25):.2f}', f'{np.percentile(data2, 25):.2f}'],
+        ['Q3', f'{np.percentile(data1, 75):.2f}', f'{np.percentile(data2, 75):.2f}'],
+        ['Skewness', f'{stats.skew(data1):.2f}', f'{stats.skew(data2):.2f}'],
+        ['Kurtosis', f'{stats.kurtosis(data1):.2f}', f'{stats.kurtosis(data2):.2f}']
+    ]
+
+    table = ax9.table(cellText=summary_data, cellLoc='center',
+                     loc='center', bbox=[0, 0, 1, 1])
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1, 1.8)
+
+    # Style header row
+    for i in range(3):
+        table[(0, i)].set_facecolor('#4CAF50')
+        table[(0, i)].set_text_props(weight='bold', color='white')
+
+    plt.suptitle('Comprehensive Diagnostic Plots', fontsize=16, fontweight='bold')
+
+    return fig
+
+# Example usage
+print("=== Assumption Diagnostics ===\n")
+
+np.random.seed(42)
+
+# Generate test data
+data1_normal = np.random.normal(50, 10, 500)
+data2_normal = np.random.normal(53, 10, 500)
+
+data1_skewed = np.random.gamma(2, 5, 500)
+data2_skewed = np.random.gamma(2.5, 5, 500)
+
+data1_unequal_var = np.random.normal(50, 10, 500)
+data2_unequal_var = np.random.normal(53, 20, 500)
+
+# Check normality
+print("=== Normality Tests (Normal Data) ===")
+norm_result1 = check_normality(data1_normal, "Control (Normal)")
+print(f"{norm_result1['name']} (n={norm_result1['n']}):")
+print(f"  Shapiro-Wilk: W={norm_result1['shapiro_statistic']:.4f}, "
+      f"p={norm_result1['shapiro_pvalue']:.4f}, "
+      f"Normal: {norm_result1['shapiro_normal']}")
+print(f"  Skewness: {norm_result1['skewness']:.3f}")
+print(f"  Kurtosis: {norm_result1['kurtosis']:.3f}\n")
+
+print("=== Normality Tests (Skewed Data) ===")
+norm_result2 = check_normality(data1_skewed, "Control (Skewed)")
+print(f"{norm_result2['name']} (n={norm_result2['n']}):")
+print(f"  Shapiro-Wilk: W={norm_result2['shapiro_statistic']:.4f}, "
+      f"p={norm_result2['shapiro_pvalue']:.4e}, "
+      f"Normal: {norm_result2['shapiro_normal']}")
+print(f"  Skewness: {norm_result2['skewness']:.3f}")
+print(f"  Kurtosis: {norm_result2['kurtosis']:.3f}\n")
+
+# Check variance equality
+print("=== Variance Equality Tests ===")
+var_result = check_variance_equality(data1_unequal_var, data2_unequal_var)
+print(f"Variance 1: {var_result['var1']:.2f}, Variance 2: {var_result['var2']:.2f}")
+print(f"Variance ratio: {var_result['variance_ratio']:.2f}")
+print(f"Levene's test: F={var_result['levene_statistic']:.4f}, "
+      f"p={var_result['levene_pvalue']:.4f}, "
+      f"Equal: {var_result['levene_equal']}\n")
+
+# Detect outliers
+print("=== Outlier Detection ===")
+# Add some outliers
+data_with_outliers = np.concatenate([data1_normal, [100, 105, -20]])
+outlier_result = detect_outliers(data_with_outliers, method='iqr')
+print(f"Method: {outlier_result['method']}")
+print(f"Number of outliers: {outlier_result['n_outliers']}")
+print(f"Outlier proportion: {outlier_result['outlier_proportion']:.3f}")
+print(f"Outlier values: {outlier_result['outlier_values']}\n")
+
+# Visualize
+fig1 = visualize_diagnostics(data1_normal, data2_normal)
+plt.savefig('diagnostics_normal.pdf')
+
+fig2 = visualize_diagnostics(data1_skewed, data2_skewed,
+                             "Control (Skewed)", "Treatment (Skewed)")
+plt.savefig('diagnostics_skewed.pdf')
+
+fig3 = visualize_diagnostics(data1_unequal_var, data2_unequal_var,
+                             "Control (σ=10)", "Treatment (σ=20)")
+plt.savefig('diagnostics_unequal_var.pdf')
+
+plt.show()
+\end{lstlisting}
+
+\section{Non-Parametric Alternatives}
+
+When parametric assumptions fail, non-parametric tests provide robust alternatives.
+
+\subsection{Mann-Whitney U Test}
+
+The Mann-Whitney U test (also called Wilcoxon rank-sum test) tests whether two samples come from populations with the same distribution.
+
+\textbf{Null hypothesis:} The distributions of the two groups are identical (specifically, $P(X_1 > X_2) = 0.5$).
+
+\textbf{Procedure:}
+\begin{enumerate}
+    \item Rank all observations from both groups combined
+    \item Calculate sum of ranks for each group: $R_1$, $R_2$
+    \item Calculate U statistic:
+    \begin{equation}
+    U_1 = R_1 - \frac{n_1(n_1 + 1)}{2}, \quad U_2 = R_2 - \frac{n_2(n_2 + 1)}{2}
+    \end{equation}
+    \item Use $U = \min(U_1, U_2)$ as test statistic
+\end{enumerate}
+
+\textbf{Advantages:}
+\begin{itemize}
+    \item No normality assumption
+    \item Robust to outliers
+    \item Works for ordinal data
+    \item More powerful than t-test for heavy-tailed distributions
+\end{itemize}
+
+\textbf{Disadvantages:}
+\begin{itemize}
+    \item Less powerful than t-test when data are normal
+    \item Tests distribution similarity, not just location
+    \item Harder to interpret (medians, not means)
+\end{itemize}
+
+\subsection{Permutation Tests}
+
+Permutation tests provide exact p-values without distributional assumptions.
+
+\textbf{Principle:} Under $H_0$ of no treatment effect, treatment labels are exchangeable.
+
+\textbf{Procedure:}
+\begin{enumerate}
+    \item Calculate observed test statistic $T_{\text{obs}}$
+    \item Randomly permute treatment labels many times (e.g., 10,000)
+    \item For each permutation, calculate test statistic
+    \item P-value = proportion of permutations with $|T| \geq |T_{\text{obs}}|$
+\end{enumerate}
+
+\textbf{Advantages:}
+\begin{itemize}
+    \item Exact finite-sample validity (no approximations)
+    \item No distributional assumptions
+    \item Works for any test statistic (means, medians, quantiles, etc.)
+    \item Intuitive interpretation
+\end{itemize}
+
+\textbf{Disadvantages:}
+\begin{itemize}
+    \item Computationally intensive
+    \item Requires exchangeability (randomization)
+    \item Less familiar to stakeholders
+\end{itemize}
+
+\subsection{Bootstrap Methods}
+
+Bootstrap resampling estimates sampling distributions and constructs confidence intervals.
+
+\textbf{Procedure for confidence interval:}
+\begin{enumerate}
+    \item Resample with replacement from each group
+    \item Calculate statistic of interest (e.g., difference in means)
+    \item Repeat B times (e.g., B=10,000)
+    \item Use percentiles of bootstrap distribution for CI
+\end{enumerate}
+
+\textbf{Percentile CI:}
+\begin{equation}
+\text{CI}_{1-\alpha} = [\text{Percentile}_{\alpha/2}, \text{Percentile}_{1-\alpha/2}]
+\end{equation}
+
+\textbf{Bias-corrected and accelerated (BCa) CI:} Adjusts for bias and skewness in bootstrap distribution.
+
+\lstset{language=Python, caption=Non-Parametric Tests Implementation}
+\begin{lstlisting}
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+from typing import Dict
+import pandas as pd
+
+def mann_whitney_test(
+    data1: np.ndarray,
+    data2: np.ndarray,
+    alpha: float = 0.05,
+    alternative: str = 'two-sided'
+) -> Dict:
+    """
+    Perform Mann-Whitney U test.
+
+    Parameters:
+    -----------
+    data1, data2 : np.ndarray
+        Data for each group
+    alpha : float
+        Significance level
+    alternative : str
+        'two-sided', 'greater', or 'less'
+
+    Returns:
+    --------
+    dict : Test results
+    """
+    u_stat, p_value = stats.mannwhitneyu(
+        data1, data2, alternative=alternative
+    )
+
+    reject_null = p_value < alpha
+
+    # Effect size: rank-biserial correlation
+    n1, n2 = len(data1), len(data2)
+    rank_biserial = 1 - (2*u_stat) / (n1 * n2)
+
+    # Median difference (approximate)
+    median1, median2 = np.median(data1), np.median(data2)
+    median_diff = median2 - median1
+
+    return {
+        'test': 'Mann-Whitney U test',
+        'u_statistic': u_stat,
+        'p_value': p_value,
+        'alpha': alpha,
+        'reject_null': reject_null,
+        'alternative': alternative,
+        'median1': median1,
+        'median2': median2,
+        'median_diff': median_diff,
+        'rank_biserial': rank_biserial,
+        'n1': n1,
+        'n2': n2,
+        'decision': 'Reject H0' if reject_null else 'Fail to reject H0'
+    }
+
+def permutation_test(
+    data1: np.ndarray,
+    data2: np.ndarray,
+    n_permutations: int = 10000,
+    statistic: str = 'mean_diff',
+    alternative: str = 'two-sided',
+    seed: int = None
+) -> Dict:
+    """
+    Perform permutation test.
+
+    Parameters:
+    -----------
+    data1, data2 : np.ndarray
+        Data for each group
+    n_permutations : int
+        Number of permutations
+    statistic : str
+        Test statistic: 'mean_diff', 'median_diff', 't_stat', or custom function
+    alternative : str
+        'two-sided', 'greater', or 'less'
+    seed : int
+        Random seed
+
+    Returns:
+    --------
+    dict : Test results
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    combined = np.concatenate([data1, data2])
+    n1 = len(data1)
+    n_total = len(combined)
+
+    # Define test statistic function
+    def calc_statistic(d1, d2):
+        if statistic == 'mean_diff':
+            return np.mean(d2) - np.mean(d1)
+        elif statistic == 'median_diff':
+            return np.median(d2) - np.median(d1)
+        elif statistic == 't_stat':
+            # Welch's t-statistic
+            m1, m2 = np.mean(d1), np.mean(d2)
+            v1, v2 = np.var(d1, ddof=1), np.var(d2, ddof=1)
+            n1, n2 = len(d1), len(d2)
+            return (m2 - m1) / np.sqrt(v1/n1 + v2/n2)
+        elif callable(statistic):
+            return statistic(d1, d2)
+        else:
+            raise ValueError("Invalid statistic")
+
+    # Observed test statistic
+    obs_stat = calc_statistic(data1, data2)
+
+    # Permutation distribution
+    perm_stats = np.zeros(n_permutations)
+
+    for i in range(n_permutations):
+        # Randomly permute
+        permuted = np.random.permutation(combined)
+        perm_data1 = permuted[:n1]
+        perm_data2 = permuted[n1:]
+
+        perm_stats[i] = calc_statistic(perm_data1, perm_data2)
+
+    # P-value
+    if alternative == 'two-sided':
+        p_value = np.mean(np.abs(perm_stats) >= np.abs(obs_stat))
+    elif alternative == 'greater':
+        p_value = np.mean(perm_stats >= obs_stat)
+    elif alternative == 'less':
+        p_value = np.mean(perm_stats <= obs_stat)
+    else:
+        raise ValueError("alternative must be 'two-sided', 'greater', or 'less'")
+
+    reject_null = p_value < 0.05
+
+    return {
+        'test': 'Permutation test',
+        'observed_statistic': obs_stat,
+        'permutation_statistics': perm_stats,
+        'p_value': p_value,
+        'n_permutations': n_permutations,
+        'alternative': alternative,
+        'reject_null': reject_null,
+        'statistic_type': statistic if isinstance(statistic, str) else 'custom',
+        'decision': 'Reject H0' if reject_null else 'Fail to reject H0'
+    }
+
+def bootstrap_ci(
+    data1: np.ndarray,
+    data2: np.ndarray,
+    statistic: str = 'mean_diff',
+    n_bootstrap: int = 10000,
+    alpha: float = 0.05,
+    method: str = 'percentile',
+    seed: int = None
+) -> Dict:
+    """
+    Bootstrap confidence interval for difference.
+
+    Parameters:
+    -----------
+    data1, data2 : np.ndarray
+        Data for each group
+    statistic : str
+        'mean_diff', 'median_diff', or custom function
+    n_bootstrap : int
+        Number of bootstrap samples
+    alpha : float
+        Significance level
+    method : str
+        'percentile' or 'bca' (bias-corrected accelerated)
+    seed : int
+        Random seed
+
+    Returns:
+    --------
+    dict : Bootstrap results
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    def calc_statistic(d1, d2):
+        if statistic == 'mean_diff':
+            return np.mean(d2) - np.mean(d1)
+        elif statistic == 'median_diff':
+            return np.median(d2) - np.median(d1)
+        elif callable(statistic):
+            return statistic(d1, d2)
+        else:
+            raise ValueError("Invalid statistic")
+
+    # Observed statistic
+    obs_stat = calc_statistic(data1, data2)
+
+    # Bootstrap distribution
+    bootstrap_stats = np.zeros(n_bootstrap)
+
+    for i in range(n_bootstrap):
+        # Resample with replacement from each group
+        boot_data1 = np.random.choice(data1, size=len(data1), replace=True)
+        boot_data2 = np.random.choice(data2, size=len(data2), replace=True)
+
+        bootstrap_stats[i] = calc_statistic(boot_data1, boot_data2)
+
+    if method == 'percentile':
+        ci_lower = np.percentile(bootstrap_stats, 100 * alpha/2)
+        ci_upper = np.percentile(bootstrap_stats, 100 * (1 - alpha/2))
+
+    elif method == 'bca':
+        # Bias correction
+        z0 = stats.norm.ppf(np.mean(bootstrap_stats < obs_stat))
+
+        # Acceleration (jackknife)
+        n1, n2 = len(data1), len(data2)
+        jack_stats = []
+
+        for i in range(n1):
+            jack_data1 = np.delete(data1, i)
+            jack_stats.append(calc_statistic(jack_data1, data2))
+
+        jack_mean = np.mean(jack_stats)
+        numerator = np.sum((jack_mean - jack_stats)**3)
+        denominator = 6 * (np.sum((jack_mean - jack_stats)**2)**(3/2))
+        a = numerator / denominator if denominator != 0 else 0
+
+        # Adjusted percentiles
+        z_alpha_2 = stats.norm.ppf(alpha/2)
+        z_1_alpha_2 = stats.norm.ppf(1 - alpha/2)
+
+        alpha_1 = stats.norm.cdf(z0 + (z0 + z_alpha_2)/(1 - a*(z0 + z_alpha_2)))
+        alpha_2 = stats.norm.cdf(z0 + (z0 + z_1_alpha_2)/(1 - a*(z0 + z_1_alpha_2)))
+
+        ci_lower = np.percentile(bootstrap_stats, 100 * alpha_1)
+        ci_upper = np.percentile(bootstrap_stats, 100 * alpha_2)
+
+    else:
+        raise ValueError("method must be 'percentile' or 'bca'")
+
+    # Standard error
+    bootstrap_se = np.std(bootstrap_stats)
+
+    return {
+        'method': f'Bootstrap {method} CI',
+        'observed_statistic': obs_stat,
+        'bootstrap_statistics': bootstrap_stats,
+        'bootstrap_se': bootstrap_se,
+        'ci_lower': ci_lower,
+        'ci_upper': ci_upper,
+        'alpha': alpha,
+        'n_bootstrap': n_bootstrap,
+        'statistic_type': statistic if isinstance(statistic, str) else 'custom'
+    }
+
+def visualize_nonparametric_tests(
+    data1: np.ndarray,
+    data2: np.ndarray,
+    perm_result: Dict,
+    boot_result: Dict,
+    name1: str = "Control",
+    name2: str = "Treatment"
+):
+    """Visualize non-parametric test results."""
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # 1. Permutation distribution
+    ax = axes[0, 0]
+    ax.hist(perm_result['permutation_statistics'], bins=50, density=True,
+           alpha=0.7, label='Permutation distribution', color='skyblue')
+    ax.axvline(perm_result['observed_statistic'], color='red',
+              linestyle='--', linewidth=2,
+              label=f'Observed = {perm_result["observed_statistic"]:.3f}')
+
+    # Add p-value region
+    if perm_result['alternative'] == 'two-sided':
+        obs_abs = abs(perm_result['observed_statistic'])
+        ax.axvline(-obs_abs, color='red', linestyle='--',
+                  linewidth=2, alpha=0.5)
+
+    ax.set_xlabel('Test Statistic')
+    ax.set_ylabel('Density')
+    ax.set_title(f'Permutation Test\n'
+                f'p-value = {perm_result["p_value"]:.4f}')
+    ax.legend()
+    ax.grid(alpha=0.3)
+
+    # 2. Bootstrap distribution
+    ax = axes[0, 1]
+    ax.hist(boot_result['bootstrap_statistics'], bins=50, density=True,
+           alpha=0.7, label='Bootstrap distribution', color='lightgreen')
+    ax.axvline(boot_result['observed_statistic'], color='red',
+              linestyle='--', linewidth=2,
+              label=f'Observed = {boot_result["observed_statistic"]:.3f}')
+    ax.axvline(boot_result['ci_lower'], color='orange',
+              linestyle=':', linewidth=2,
+              label=f'CI: [{boot_result["ci_lower"]:.3f}, {boot_result["ci_upper"]:.3f}]')
+    ax.axvline(boot_result['ci_upper'], color='orange',
+              linestyle=':', linewidth=2)
+
+    ax.set_xlabel('Difference')
+    ax.set_ylabel('Density')
+    ax.set_title(f'Bootstrap Distribution\n'
+                f'SE = {boot_result["bootstrap_se"]:.3f}')
+    ax.legend()
+    ax.grid(alpha=0.3)
+
+    # 3. ECDF comparison (Mann-Whitney concept)
+    ax = axes[1, 0]
+    sorted_data1 = np.sort(data1)
+    sorted_data2 = np.sort(data2)
+    ecdf1 = np.arange(1, len(sorted_data1) + 1) / len(sorted_data1)
+    ecdf2 = np.arange(1, len(sorted_data2) + 1) / len(sorted_data2)
+    ax.plot(sorted_data1, ecdf1, label=name1, linewidth=2, color='C0')
+    ax.plot(sorted_data2, ecdf2, label=name2, linewidth=2, color='C1')
+
+    # Add medians
+    ax.axvline(np.median(data1), color='C0', linestyle='--', alpha=0.5)
+    ax.axvline(np.median(data2), color='C1', linestyle='--', alpha=0.5)
+
+    ax.set_xlabel('Value')
+    ax.set_ylabel('ECDF')
+    ax.set_title('Empirical CDFs (Mann-Whitney Concept)')
+    ax.legend()
+    ax.grid(alpha=0.3)
+
+    # 4. Comparison table
+    ax = axes[1, 1]
+    ax.axis('off')
+
+    # Run all tests for comparison
+    t_result = t_test_means(data1, data2)
+    mw_result = mann_whitney_test(data1, data2)
+
+    comparison_data = [
+        ['Test', 'Statistic', 'P-value', 'Decision'],
+        ['T-test', f'{t_result["t_statistic"]:.3f}',
+         f'{t_result["p_value"]:.4f}', t_result['decision']],
+        ['Mann-Whitney', f'{mw_result["u_statistic"]:.1f}',
+         f'{mw_result["p_value"]:.4f}', mw_result['decision']],
+        ['Permutation', f'{perm_result["observed_statistic"]:.3f}',
+         f'{perm_result["p_value"]:.4f}', perm_result['decision']],
+        ['Bootstrap CI', f'[{boot_result["ci_lower"]:.3f}, {boot_result["ci_upper"]:.3f}]',
+         '--', 'CI includes 0' if boot_result['ci_lower'] < 0 < boot_result['ci_upper'] else 'CI excludes 0']
+    ]
+
+    table = ax.table(cellText=comparison_data, cellLoc='left',
+                    loc='center', bbox=[0, 0, 1, 1])
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1, 2.5)
+
+    # Style header row
+    for i in range(4):
+        table[(0, i)].set_facecolor('#4CAF50')
+        table[(0, i)].set_text_props(weight='bold', color='white')
+
+    plt.suptitle('Non-Parametric Test Comparison', fontsize=14, fontweight='bold')
+    plt.tight_layout()
+
+    return fig
+
+# Example usage
+print("=== Non-Parametric Tests ===\n")
+
+np.random.seed(42)
+
+# Example 1: Normal data (t-test and non-parametric should agree)
+data1_normal = np.random.normal(50, 10, 200)
+data2_normal = np.random.normal(53, 10, 200)
+
+# Example 2: Skewed data (non-parametric more appropriate)
+data1_skewed = np.random.gamma(2, 5, 200)
+data2_skewed = np.random.gamma(2.5, 5, 200)
+
+print("=== Example 1: Normal Data ===\n")
+
+# T-test
+t_result = t_test_means(data1_normal, data2_normal)
+print(f"T-test: t = {t_result['t_statistic']:.3f}, p = {t_result['p_value']:.4f}\n")
+
+# Mann-Whitney
+mw_result = mann_whitney_test(data1_normal, data2_normal)
+print(f"Mann-Whitney: U = {mw_result['u_statistic']:.1f}, p = {mw_result['p_value']:.4f}")
+print(f"Median difference: {mw_result['median_diff']:.3f}")
+print(f"Rank-biserial correlation: {mw_result['rank_biserial']:.3f}\n")
+
+# Permutation test
+perm_result = permutation_test(data1_normal, data2_normal,
+                               n_permutations=10000, seed=42)
+print(f"Permutation test: p = {perm_result['p_value']:.4f}\n")
+
+# Bootstrap CI
+boot_result = bootstrap_ci(data1_normal, data2_normal,
+                          n_bootstrap=10000, seed=42)
+print(f"Bootstrap 95% CI: [{boot_result['ci_lower']:.3f}, {boot_result['ci_upper']:.3f}]")
+print(f"Bootstrap SE: {boot_result['bootstrap_se']:.3f}\n")
+
+print("=== Example 2: Skewed Data ===\n")
+
+t_result_skewed = t_test_means(data1_skewed, data2_skewed)
+mw_result_skewed = mann_whitney_test(data1_skewed, data2_skewed)
+perm_result_skewed = permutation_test(data1_skewed, data2_skewed,
+                                      n_permutations=10000, seed=42)
+boot_result_skewed = bootstrap_ci(data1_skewed, data2_skewed,
+                                  n_bootstrap=10000, seed=42)
+
+print(f"T-test: t = {t_result_skewed['t_statistic']:.3f}, "
+      f"p = {t_result_skewed['p_value']:.4f}")
+print(f"Mann-Whitney: U = {mw_result_skewed['u_statistic']:.1f}, "
+      f"p = {mw_result_skewed['p_value']:.4f}")
+print(f"Permutation test: p = {perm_result_skewed['p_value']:.4f}")
+print(f"Bootstrap 95% CI: [{boot_result_skewed['ci_lower']:.3f}, "
+      f"{boot_result_skewed['ci_upper']:.3f}]\n")
+
+# Visualize
+fig1 = visualize_nonparametric_tests(data1_normal, data2_normal,
+                                     perm_result, boot_result)
+plt.savefig('nonparametric_normal.pdf')
+
+fig2 = visualize_nonparametric_tests(data1_skewed, data2_skewed,
+                                     perm_result_skewed, boot_result_skewed,
+                                     "Control (Skewed)", "Treatment (Skewed)")
+plt.savefig('nonparametric_skewed.pdf')
+
+plt.show()
+\end{lstlisting}
+
+\subsection{When to Use Non-Parametric Tests}
+
+\textbf{Use non-parametric tests when:}
+\begin{itemize}
+    \item Data are heavily skewed or have extreme outliers
+    \item Sample sizes are small ($n < 30$ per group)
+    \item Distributions are clearly non-normal (confirmed visually)
+    \item Ordinal data (rankings, Likert scales)
+    \item Variances are very unequal and sample sizes differ
+\end{itemize}
+
+\textbf{Use parametric tests when:}
+\begin{itemize}
+    \item Data are approximately normal
+    \item Sample sizes are large ($n > 30$)
+    \item More statistical power needed
+    \item Easier interpretation desired (means vs. medians)
+\end{itemize}
+
+\textbf{Consider both:} For borderline cases, run both parametric and non-parametric tests. If conclusions agree, confidence increases. If they differ, investigate further.
+
+\section{Test Selection Framework}
+
+\lstset{language=Python, caption=Test Selection Decision Tree}
+\begin{lstlisting}
+def select_statistical_test(
+    data1: np.ndarray,
+    data2: np.ndarray,
+    metric_type: str,
+    check_assumptions: bool = True,
+    alpha: float = 0.05
+) -> Dict:
+    """
+    Recommend appropriate statistical test based on data characteristics.
+
+    Parameters:
+    -----------
+    data1, data2 : np.ndarray
+        Data for each group
+    metric_type : str
+        'proportion', 'mean', 'count', or 'ordinal'
+    check_assumptions : bool
+        Whether to check parametric assumptions
+    alpha : float
+        Significance level
+
+    Returns:
+    --------
+    dict : Test recommendation and results
+    """
+    n1, n2 = len(data1), len(data2)
+
+    recommendations = []
+    tests_run = {}
+
+    # Proportion test
+    if metric_type == 'proportion':
+        # Check sample size requirements
+        if isinstance(data1[0], (int, np.integer)):
+            # Binary data (0/1)
+            x1, x2 = data1.sum(), data2.sum()
+            p1, p2 = x1/n1, x2/n2
+
+            min_count = min(x1, n1-x1, x2, n2-x2)
+
+            if min_count >= 10:
+                # Z-test appropriate
+                result = z_test_proportions(int(x1), n1, int(x2), n2, alpha)
+                recommendations.append("Use Z-test (normal approximation valid)")
+                tests_run['z_test'] = result
+            elif min_count >= 5:
+                # Z-test with continuity correction or Fisher's
+                result_z = z_test_proportions(int(x1), n1, int(x2), n2, alpha)
+                table = np.array([[x1, n1-x1], [x2, n2-x2]])
+                result_fisher = fishers_test_2x2(table, alpha)
+
+                recommendations.append("Consider both Z-test (with caution) and Fisher's exact")
+                tests_run['z_test'] = result_z
+                tests_run['fisher'] = result_fisher
+            else:
+                # Fisher's exact test
+                table = np.array([[x1, n1-x1], [x2, n2-x2]])
+                result = fishers_test_2x2(table, alpha)
+                recommendations.append("Use Fisher's exact test (small expected counts)")
+                tests_run['fisher'] = result
+
+    # Mean test
+    elif metric_type == 'mean':
+        if check_assumptions:
+            # Check normality
+            norm1 = check_normality(data1)
+            norm2 = check_normality(data2)
+
+            # Check variance equality
+            var_eq = check_variance_equality(data1, data2, alpha)
+
+            # Detect outliers
+            outliers1 = detect_outliers(data1, method='iqr')
+            outliers2 = detect_outliers(data2, method='iqr')
+
+            normal1 = norm1['shapiro_normal']
+            normal2 = norm2['shapiro_normal']
+            equal_var = var_eq['levene_equal']
+            has_outliers = (outliers1['n_outliers'] > 0 or
+                           outliers2['n_outliers'] > 0)
+
+            tests_run['normality_check'] = {
+                'group1_normal': normal1,
+                'group2_normal': normal2,
+                'variance_equal': equal_var,
+                'has_outliers': has_outliers
+            }
+
+            if normal1 and normal2:
+                if equal_var:
+                    result = t_test_means(data1, data2, alpha, equal_var=True)
+                    recommendations.append("Use pooled t-test (normal data, equal variances)")
+                else:
+                    result = t_test_means(data1, data2, alpha, equal_var=False)
+                    recommendations.append("Use Welch's t-test (normal data, unequal variances)")
+                tests_run['t_test'] = result
+            else:
+                # Non-normal data
+                if n1 >= 30 and n2 >= 30:
+                    result_t = t_test_means(data1, data2, alpha, equal_var=False)
+                    result_mw = mann_whitney_test(data1, data2, alpha)
+
+                    recommendations.append("Large samples: t-test likely robust (CLT), "
+                                         "but consider Mann-Whitney if heavily skewed")
+                    tests_run['t_test'] = result_t
+                    tests_run['mann_whitney'] = result_mw
+                else:
+                    result_mw = mann_whitney_test(data1, data2, alpha)
+                    result_perm = permutation_test(data1, data2,
+                                                   n_permutations=10000,
+                                                   seed=42)
+
+                    recommendations.append("Use Mann-Whitney U test or permutation test "
+                                         "(non-normal, small samples)")
+                    tests_run['mann_whitney'] = result_mw
+                    tests_run['permutation'] = result_perm
+        else:
+            # Default: Welch's t-test (generally robust)
+            result = t_test_means(data1, data2, alpha, equal_var=False)
+            recommendations.append("Use Welch's t-test (default, robust choice)")
+            tests_run['t_test'] = result
+
+    # Ordinal or rank data
+    elif metric_type == 'ordinal':
+        result = mann_whitney_test(data1, data2, alpha)
+        recommendations.append("Use Mann-Whitney U test (ordinal data)")
+        tests_run['mann_whitney'] = result
+
+    # Count data
+    elif metric_type == 'count':
+        # Poisson-based tests or transformations
+        recommendations.append("Consider: (1) Square-root transform + t-test, "
+                              "(2) Log transform + t-test, (3) Mann-Whitney, "
+                              "(4) Generalized linear model")
+
+        # Try multiple approaches
+        result_t = t_test_means(data1, data2, alpha, equal_var=False)
+        result_mw = mann_whitney_test(data1, data2, alpha)
+
+        tests_run['t_test'] = result_t
+        tests_run['mann_whitney'] = result_mw
+
+    return {
+        'metric_type': metric_type,
+        'recommendations': recommendations,
+        'tests_performed': list(tests_run.keys()),
+        'results': tests_run,
+        'sample_sizes': (n1, n2)
+    }
+
+# Example usage
+print("=== Test Selection Framework ===\n")
+
+np.random.seed(42)
+
+# Example 1: Binary outcome (conversion rate)
+conversions_control = np.random.binomial(1, 0.10, 2000)
+conversions_treatment = np.random.binomial(1, 0.12, 2000)
+
+print("Example 1: Conversion Rate")
+result1 = select_statistical_test(conversions_control, conversions_treatment,
+                                  metric_type='proportion')
+print(f"Metric type: {result1['metric_type']}")
+print(f"Recommendations:")
+for rec in result1['recommendations']:
+    print(f"  - {rec}")
+print(f"Tests performed: {', '.join(result1['tests_performed'])}\n")
+
+# Example 2: Continuous metric (normal data)
+revenue_control = np.random.normal(50, 10, 500)
+revenue_treatment = np.random.normal(53, 10, 500)
+
+print("Example 2: Revenue (Normal Distribution)")
+result2 = select_statistical_test(revenue_control, revenue_treatment,
+                                  metric_type='mean', check_assumptions=True)
+print(f"Recommendations:")
+for rec in result2['recommendations']:
+    print(f"  - {rec}")
+if 'normality_check' in result2['results']:
+    checks = result2['results']['normality_check']
+    print(f"Assumption checks:")
+    print(f"  Group 1 normal: {checks['group1_normal']}")
+    print(f"  Group 2 normal: {checks['group2_normal']}")
+    print(f"  Variances equal: {checks['variance_equal']}")
+print()
+
+# Example 3: Skewed data
+pageviews_control = np.random.gamma(2, 5, 500)
+pageviews_treatment = np.random.gamma(2.5, 5, 500)
+
+print("Example 3: Page Views (Skewed Distribution)")
+result3 = select_statistical_test(pageviews_control, pageviews_treatment,
+                                  metric_type='mean', check_assumptions=True)
+print(f"Recommendations:")
+for rec in result3['recommendations']:
+    print(f"  - {rec}")
+\end{lstlisting}
+
+\section{Common Pitfalls and How to Avoid Them}
+
+\subsection{Pitfall 1: Peeking at Results}
+
+\textbf{Problem:} Continuously checking p-values and stopping when significant inflates Type I error.
+
+\textbf{Solution:} Pre-specify sample size and duration. If monitoring needed, use group sequential testing methods (Chapter 8).
+
+\subsection{Pitfall 2: Multiple Testing Without Correction}
+
+\textbf{Problem:} Testing many metrics without adjustment increases false positives.
+
+\textbf{Solution:} Apply Bonferroni or FDR correction (Chapter 6). Pre-specify primary metric.
+
+\subsection{Pitfall 3: Misinterpreting P-Values}
+
+\textbf{Problem:} Confusing $P(\text{data}|H_0)$ with $P(H_0|\text{data})$.
+
+\textbf{Solution:} Report effect sizes and confidence intervals. Focus on practical significance.
+
+\subsection{Pitfall 4: Ignoring Assumptions}
+
+\textbf{Problem:} Using t-tests on heavily skewed data with small samples.
+
+\textbf{Solution:} Check assumptions visually and statistically. Use non-parametric alternatives when needed.
+
+\subsection{Pitfall 5: Conflating Statistical and Practical Significance}
+
+\textbf{Problem:} Declaring tiny effects "significant" with huge samples, or dismissing important effects as "non-significant" with small samples.
+
+\textbf{Solution:} Always report effect sizes. Use minimum detectable effect (MDE) framework from Chapter 4.
+
+\section{Summary}
+
+Hypothesis testing provides a rigorous framework for A/B test analysis:
+
+\begin{itemize}
+    \item \textbf{Proportions:} Z-test for large samples, Fisher's exact for small
+    \item \textbf{Means:} Welch's t-test as robust default
+    \item \textbf{Categorical:} Chi-squared test (expected counts $\geq$ 5)
+    \item \textbf{Assumptions matter:} Check normality, variance equality, independence
+    \item \textbf{Non-parametric alternatives:} Mann-Whitney, permutation, bootstrap when assumptions fail
+    \item \textbf{P-values are not enough:} Report effect sizes, confidence intervals, practical significance
+\end{itemize}
+
+Proper test selection and interpretation enable sound statistical inference and business decisions.
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \cite{casella2002statistical}: Rigorous theoretical foundations
+    \item \cite{good2013permutation}: Comprehensive treatment of permutation and bootstrap methods
+    \item \cite{wasserstein2016asa}: ASA statement on p-values and statistical significance
+\end{itemize}
+
+\section{Exercises}
+
+\subsection{Conceptual Questions}
+
+\begin{enumerate}
+    \item Explain why p-value is $P(\text{data}|H_0)$ and not $P(H_0|\text{data})$. What additional information would be needed to calculate $P(H_0|\text{data})$?
+
+    \item When should you use Welch's t-test instead of pooled t-test? Why is Welch's often recommended as the default?
+
+    \item Describe a scenario where statistical significance ($p < 0.05$) exists but practical significance does not, and vice versa.
+
+    \item Why does "peeking" at A/B test results inflate Type I error? Sketch how error rate changes with number of peeks.
+\end{enumerate}
+
+\subsection{Calculation Exercises}
+
+\begin{enumerate}
+    \item Given: Control (n=1000, conversions=80), Treatment (n=1000, conversions=95)
+    \begin{enumerate}
+        \item Calculate z-statistic and p-value for two-sided test
+        \item Construct 95% confidence interval for difference
+        \item Calculate relative lift
+        \item Verify $\chi^2 = Z^2$ using contingency table
+    \end{enumerate}
+
+    \item Given: Control (n=500, mean=\$45.20, sd=\$28.30), Treatment (n=500, mean=\$48.70, sd=\$31.10)
+    \begin{enumerate}
+        \item Perform Welch's t-test
+        \item Calculate Cohen's d
+        \item Construct 95% CI for difference
+        \item Calculate variance ratio and assess assumption
+    \end{enumerate}
+\end{enumerate}
+
+\subsection{Programming Exercises}
+
+\begin{enumerate}
+    \item Implement comprehensive test comparison framework:
+    \begin{itemize}
+        \item Generate data from various distributions (normal, skewed, heavy-tailed)
+        \item Run t-test, Mann-Whitney, permutation test
+        \item Compare p-values and power across methods
+        \item Visualize results
+    \end{itemize}
+
+    \item Create assumption diagnostic dashboard:
+    \begin{itemize}
+        \item Automated normality checks
+        \item Variance equality tests
+        \item Outlier detection
+        \item Visual diagnostics
+        \item Test recommendations
+    \end{itemize}
+
+    \item Bootstrap confidence interval comparison:
+    \begin{itemize}
+        \item Implement percentile and BCa methods
+        \item Compare to parametric CIs
+        \item Evaluate coverage rates via simulation
+        \item Test with various distributions
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Applied Exercises}
+
+\begin{enumerate}
+    \item \textbf{Real data analysis:} Obtain an A/B test dataset (public or from your organization)
+    \begin{itemize}
+        \item Perform comprehensive assumption checks
+        \item Run appropriate tests
+        \item Compare parametric and non-parametric methods
+        \item Report results with effect sizes and CIs
+        \item Make business recommendation
+    \end{itemize}
+
+    \item \textbf{Simulation study:} Investigate robustness of t-test
+    \begin{itemize}
+        \item Generate data from increasingly non-normal distributions
+        \item Compare Type I error rates for t-test vs. Mann-Whitney
+        \item Vary sample sizes
+        \item Identify boundary where t-test breaks down
+    \end{itemize}
+
+    \item \textbf{Decision framework:} Create flowchart for test selection
+    \begin{itemize}
+        \item Decision points based on metric type, sample size, assumptions
+        \item Implement as interactive tool
+        \item Test with various scenarios
+        \item Document edge cases
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Advanced Projects}
+
+\begin{enumerate}
+    \item \textbf{Meta-analysis:} Analyze 100+ A/B tests from an organization
+    \begin{itemize}
+        \item What proportion use appropriate tests?
+        \item How often are assumptions checked?
+        \item Do parametric and non-parametric yield different conclusions?
+        \item Recommend process improvements
+    \end{itemize}
+
+    \item \textbf{Power simulation:} Compare power across test types
+    \begin{itemize}
+        \item Fix true effect size
+        \item Vary distribution shape
+        \item Calculate empirical power for each test
+        \item Create power curves
+        \item Identify optimal test for each scenario
+    \end{itemize}
+\end{enumerate}

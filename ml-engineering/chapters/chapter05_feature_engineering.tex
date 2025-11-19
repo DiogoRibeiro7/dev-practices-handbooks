@@ -1,0 +1,2098 @@
+\chapter{Feature Engineering at Scale}
+\label{ch:feature_engineering}
+
+\section*{Learning Objectives}
+
+By the end of this chapter, you will be able to:
+
+\begin{itemize}
+    \item Design systematic feature engineering pipelines for production ML systems
+    \item Extract temporal features from timestamp data including cyclical and holiday features
+    \item Implement scalable aggregation and rolling window features for time series and grouped data
+    \item Create interaction and polynomial features while managing dimensionality
+    \item Apply advanced categorical encoding strategies including target encoding and embeddings
+    \item Implement feature selection techniques to reduce dimensionality and improve model performance
+    \item Build automated feature engineering frameworks for reproducibility and maintainability
+\end{itemize}
+
+\section{Introduction}
+
+Feature engineering is often cited as the most impactful aspect of applied machine learning. While model selection and hyperparameter tuning provide incremental improvements, good features can transform an intractable problem into a solvable one.
+
+In production ML systems, feature engineering must be:
+
+\begin{itemize}
+    \item \textbf{Scalable:} Handle large datasets efficiently
+    \item \textbf{Reproducible:} Consistent across training and serving
+    \item \textbf{Maintainable:} Clear code and documentation
+    \item \textbf{Robust:} Handle missing values and edge cases
+    \item \textbf{Monitored:} Track feature distributions and drift
+\end{itemize}
+
+\subsection{Feature Engineering Principles}
+
+\begin{table}[h]
+\centering
+\caption{Feature Engineering Best Practices}
+\label{tab:feature_engineering_principles}
+\begin{tabular}{|l|p{10cm}|}
+\hline
+\textbf{Principle} & \textbf{Description} \\
+\hline
+Domain Knowledge & Leverage business understanding to create meaningful features \\
+Train-Test Consistency & Ensure features computed identically during training and serving \\
+Avoid Data Leakage & Never use future information or target variables \\
+Handle Missing Values & Explicit strategy for nulls and edge cases \\
+Feature Documentation & Clear naming and metadata for all features \\
+Computational Efficiency & Consider computation cost for real-time serving \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Feature Engineering Pipeline Architecture}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=1.5cm,
+    box/.style={rectangle, draw, text width=3cm, align=center, minimum height=1cm},
+    arrow/.style={->, >=stealth, thick}
+]
+    \node[box] (raw) {Raw Data};
+    \node[box, right=of raw] (clean) {Data Cleaning};
+    \node[box, right=of clean] (temporal) {Temporal Features};
+    \node[box, below=of temporal] (agg) {Aggregations};
+    \node[box, left=of agg] (encode) {Encoding};
+    \node[box, left=of encode] (select) {Feature Selection};
+    \node[box, below=of encode] (output) {Feature Matrix};
+
+    \draw[arrow] (raw) -- (clean);
+    \draw[arrow] (clean) -- (temporal);
+    \draw[arrow] (temporal) -- (agg);
+    \draw[arrow] (agg) -- (encode);
+    \draw[arrow] (encode) -- (select);
+    \draw[arrow] (select) -- (output);
+\end{tikzpicture}
+\caption{Feature Engineering Pipeline Flow}
+\label{fig:feature_pipeline}
+\end{figure}
+
+\section{Feature Engineering Fundamentals}
+
+\subsection{Comprehensive Feature Engineering Framework}
+
+\begin{lstlisting}[style=python, caption={Production Feature Engineering Framework}]
+from typing import Dict, List, Optional, Union, Callable, Any, Tuple
+from dataclasses import dataclass, field
+import pandas as pd
+import numpy as np
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import StandardScaler, RobustScaler
+import logging
+from pathlib import Path
+import json
+import hashlib
+from datetime import datetime
+
+@dataclass
+class FeatureConfig:
+    """Configuration for feature engineering pipeline."""
+    name: str
+    feature_type: str  # 'numerical', 'categorical', 'temporal', 'text'
+    transformations: List[str] = field(default_factory=list)
+    required: bool = True
+    default_value: Any = None
+    scaling_strategy: Optional[str] = None  # 'standard', 'robust', 'minmax'
+    encoding_strategy: Optional[str] = None  # 'onehot', 'label', 'target', 'frequency'
+
+@dataclass
+class FeatureMetadata:
+    """Metadata for tracking feature provenance."""
+    name: str
+    source_columns: List[str]
+    transformation_logic: str
+    created_at: datetime
+    version: str
+    statistics: Dict[str, float] = field(default_factory=dict)
+
+class FeatureEngineer(BaseEstimator, TransformerMixin):
+    """
+    Comprehensive feature engineering framework.
+
+    Features:
+    - Modular transformation pipeline
+    - Feature versioning and metadata tracking
+    - Train/test consistency enforcement
+    - Missing value handling
+    - Feature validation
+    """
+
+    def __init__(
+        self,
+        feature_configs: Optional[List[FeatureConfig]] = None,
+        handle_missing: str = 'median',  # 'median', 'mean', 'mode', 'drop', 'constant'
+        missing_indicator: bool = True,
+        validate_features: bool = True,
+        track_metadata: bool = True
+    ):
+        """
+        Initialize feature engineer.
+
+        Args:
+            feature_configs: List of feature configurations
+            handle_missing: Strategy for handling missing values
+            missing_indicator: Add indicator features for missing values
+            validate_features: Enable feature validation
+            track_metadata: Enable metadata tracking
+        """
+        self.feature_configs = feature_configs or []
+        self.handle_missing = handle_missing
+        self.missing_indicator = missing_indicator
+        self.validate_features = validate_features
+        self.track_metadata = track_metadata
+
+        # State
+        self.feature_metadata_: Dict[str, FeatureMetadata] = {}
+        self.missing_value_fills_: Dict[str, Any] = {}
+        self.fitted_ = False
+
+        self.logger = logging.getLogger(__name__)
+
+    def fit(self, X: pd.DataFrame, y: Optional[pd.Series] = None) -> 'FeatureEngineer':
+        """
+        Fit feature engineering pipeline.
+
+        Args:
+            X: Input data
+            y: Target variable (optional, needed for target encoding)
+
+        Returns:
+            Self
+        """
+        # Compute missing value fills
+        self._compute_missing_fills(X)
+
+        # Store target for target encoding if provided
+        self.y_fit_ = y
+
+        self.fitted_ = True
+        self.logger.info(f"Feature engineer fitted on {len(X)} samples")
+
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        Transform data using fitted feature engineering pipeline.
+
+        Args:
+            X: Input data
+
+        Returns:
+            Transformed data
+        """
+        if not self.fitted_:
+            raise ValueError("FeatureEngineer must be fitted before transform")
+
+        X_transformed = X.copy()
+
+        # Handle missing values
+        X_transformed = self._handle_missing_values(X_transformed)
+
+        # Validate features if enabled
+        if self.validate_features:
+            self._validate_features(X_transformed)
+
+        return X_transformed
+
+    def fit_transform(self, X: pd.DataFrame, y: Optional[pd.Series] = None) -> pd.DataFrame:
+        """Fit and transform in one step."""
+        return self.fit(X, y).transform(X)
+
+    def _compute_missing_fills(self, X: pd.DataFrame):
+        """Compute values for filling missing data."""
+        for col in X.columns:
+            if X[col].isna().any():
+                if self.handle_missing == 'median' and pd.api.types.is_numeric_dtype(X[col]):
+                    self.missing_value_fills_[col] = X[col].median()
+                elif self.handle_missing == 'mean' and pd.api.types.is_numeric_dtype(X[col]):
+                    self.missing_value_fills_[col] = X[col].mean()
+                elif self.handle_missing == 'mode':
+                    self.missing_value_fills_[col] = X[col].mode()[0] if not X[col].mode().empty else None
+                elif self.handle_missing == 'constant':
+                    self.missing_value_fills_[col] = 0 if pd.api.types.is_numeric_dtype(X[col]) else 'MISSING'
+                else:
+                    self.missing_value_fills_[col] = None
+
+    def _handle_missing_values(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Handle missing values according to strategy."""
+        X_filled = X.copy()
+
+        for col, fill_value in self.missing_value_fills_.items():
+            if col in X_filled.columns:
+                # Add missing indicator if enabled
+                if self.missing_indicator and X_filled[col].isna().any():
+                    X_filled[f'{col}_is_missing'] = X_filled[col].isna().astype(int)
+
+                # Fill missing values
+                if fill_value is not None:
+                    X_filled[col].fillna(fill_value, inplace=True)
+
+        return X_filled
+
+    def _validate_features(self, X: pd.DataFrame):
+        """Validate feature quality and distributions."""
+        for col in X.columns:
+            # Check for infinite values
+            if pd.api.types.is_numeric_dtype(X[col]):
+                if np.isinf(X[col]).any():
+                    self.logger.warning(f"Feature {col} contains infinite values")
+
+            # Check for high cardinality in categorical features
+            if pd.api.types.is_object_dtype(X[col]) or pd.api.types.is_categorical_dtype(X[col]):
+                n_unique = X[col].nunique()
+                if n_unique > 1000:
+                    self.logger.warning(
+                        f"Feature {col} has high cardinality: {n_unique} unique values"
+                    )
+
+            # Check for constant features
+            if X[col].nunique() == 1:
+                self.logger.warning(f"Feature {col} is constant")
+
+    def add_feature_metadata(
+        self,
+        name: str,
+        source_columns: List[str],
+        transformation_logic: str,
+        statistics: Optional[Dict[str, float]] = None
+    ):
+        """Add metadata for a feature."""
+        if self.track_metadata:
+            self.feature_metadata_[name] = FeatureMetadata(
+                name=name,
+                source_columns=source_columns,
+                transformation_logic=transformation_logic,
+                created_at=datetime.now(),
+                version="1.0",
+                statistics=statistics or {}
+            )
+
+    def get_feature_metadata(self) -> Dict[str, Dict[str, Any]]:
+        """Get all feature metadata."""
+        return {
+            name: {
+                'source_columns': meta.source_columns,
+                'transformation_logic': meta.transformation_logic,
+                'created_at': meta.created_at.isoformat(),
+                'version': meta.version,
+                'statistics': meta.statistics
+            }
+            for name, meta in self.feature_metadata_.items()
+        }
+
+    def save_state(self, path: str):
+        """Save feature engineer state for reproducibility."""
+        state = {
+            'missing_value_fills': self.missing_value_fills_,
+            'feature_metadata': self.get_feature_metadata(),
+            'fitted': self.fitted_
+        }
+
+        with open(path, 'w') as f:
+            json.dump(state, f, indent=2, default=str)
+
+        self.logger.info(f"Feature engineer state saved to {path}")
+
+    def load_state(self, path: str):
+        """Load feature engineer state."""
+        with open(path, 'r') as f:
+            state = json.load(f)
+
+        self.missing_value_fills_ = state['missing_value_fills']
+        self.fitted_ = state['fitted']
+
+        self.logger.info(f"Feature engineer state loaded from {path}")
+
+class FeatureStore:
+    """
+    Simple feature store for managing feature definitions and values.
+
+    In production, consider using dedicated feature stores like:
+    - Feast
+    - Tecton
+    - AWS Feature Store
+    - Databricks Feature Store
+    """
+
+    def __init__(self, storage_path: str = "./feature_store"):
+        """
+        Initialize feature store.
+
+        Args:
+            storage_path: Path for storing feature definitions and values
+        """
+        self.storage_path = Path(storage_path)
+        self.storage_path.mkdir(parents=True, exist_ok=True)
+        self.logger = logging.getLogger(__name__)
+
+        # Feature registry
+        self.feature_registry: Dict[str, FeatureConfig] = {}
+
+    def register_feature(self, config: FeatureConfig):
+        """Register a feature definition."""
+        self.feature_registry[config.name] = config
+        self.logger.info(f"Registered feature: {config.name}")
+
+        # Save to disk
+        self._save_registry()
+
+    def get_feature(self, name: str) -> Optional[FeatureConfig]:
+        """Get feature configuration by name."""
+        return self.feature_registry.get(name)
+
+    def list_features(self) -> List[str]:
+        """List all registered features."""
+        return list(self.feature_registry.keys())
+
+    def _save_registry(self):
+        """Save feature registry to disk."""
+        registry_path = self.storage_path / "feature_registry.json"
+        registry_data = {
+            name: {
+                'name': config.name,
+                'feature_type': config.feature_type,
+                'transformations': config.transformations,
+                'required': config.required,
+                'default_value': config.default_value,
+                'scaling_strategy': config.scaling_strategy,
+                'encoding_strategy': config.encoding_strategy
+            }
+            for name, config in self.feature_registry.items()
+        }
+
+        with open(registry_path, 'w') as f:
+            json.dump(registry_data, f, indent=2)
+
+    def compute_features(
+        self,
+        entity_df: pd.DataFrame,
+        feature_names: List[str],
+        timestamp_column: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        Compute features for entities.
+
+        Args:
+            entity_df: DataFrame with entity IDs
+            feature_names: List of features to compute
+            timestamp_column: Column for point-in-time correctness
+
+        Returns:
+            DataFrame with computed features
+        """
+        # In production, this would fetch precomputed features
+        # For now, return placeholder
+        self.logger.info(f"Computing {len(feature_names)} features for {len(entity_df)} entities")
+        return entity_df
+
+# Example usage
+if __name__ == "__main__":
+    # Generate sample data
+    np.random.seed(42)
+    df = pd.DataFrame({
+        'customer_id': range(1000),
+        'age': np.random.randint(18, 80, 1000),
+        'income': np.random.normal(50000, 20000, 1000),
+        'purchase_amount': np.random.exponential(100, 1000),
+        'category': np.random.choice(['A', 'B', 'C', 'D'], 1000),
+        'timestamp': pd.date_range('2023-01-01', periods=1000, freq='H')
+    })
+
+    # Add missing values
+    df.loc[df.sample(100).index, 'income'] = np.nan
+    df.loc[df.sample(50).index, 'category'] = np.nan
+
+    # Initialize feature engineer
+    engineer = FeatureEngineer(
+        handle_missing='median',
+        missing_indicator=True,
+        validate_features=True
+    )
+
+    # Fit and transform
+    df_transformed = engineer.fit_transform(df)
+    print(f"\nTransformed shape: {df_transformed.shape}")
+    print(f"Missing value fills: {engineer.missing_value_fills_}")
+
+    # Save state
+    engineer.save_state("feature_engineer_state.json")
+\end{lstlisting}
+
+\section{Temporal and Time-based Features}
+
+Temporal features are crucial for time series forecasting, user behavior modeling, and event prediction. Proper temporal feature extraction can capture seasonality, trends, and cyclical patterns.
+
+\subsection{Temporal Feature Extraction}
+
+\begin{lstlisting}[style=python, caption={Comprehensive Temporal Feature Engineering}]
+from typing import List, Optional
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+class TemporalFeatureExtractor:
+    """
+    Extract comprehensive temporal features from datetime columns.
+
+    Features extracted:
+    - Basic components (year, month, day, hour, etc.)
+    - Cyclical encodings (sin/cos transformations)
+    - Business calendar features (holidays, weekends)
+    - Relative time features (time since event)
+    - Temporal aggregations
+    """
+
+    def __init__(
+        self,
+        timestamp_column: str,
+        country_holidays: str = 'US',  # Country code for holidays
+        extract_cyclical: bool = True,
+        extract_business_features: bool = True
+    ):
+        """
+        Initialize temporal feature extractor.
+
+        Args:
+            timestamp_column: Name of timestamp column
+            country_holidays: Country code for holiday calendar
+            extract_cyclical: Extract cyclical (sin/cos) features
+            extract_business_features: Extract business calendar features
+        """
+        self.timestamp_column = timestamp_column
+        self.country_holidays = country_holidays
+        self.extract_cyclical = extract_cyclical
+        self.extract_business_features = extract_business_features
+
+        # Try to load holidays library
+        try:
+            import holidays
+            self.holidays = holidays.country_holidays(country_holidays)
+        except ImportError:
+            self.holidays = None
+            if extract_business_features:
+                logging.warning("holidays library not installed, business features will be limited")
+
+    def extract_basic_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extract basic temporal components.
+
+        Args:
+            df: DataFrame with timestamp column
+
+        Returns:
+            DataFrame with added temporal features
+        """
+        df = df.copy()
+        ts = pd.to_datetime(df[self.timestamp_column])
+
+        # Basic components
+        df['year'] = ts.dt.year
+        df['month'] = ts.dt.month
+        df['day'] = ts.dt.day
+        df['dayofweek'] = ts.dt.dayofweek  # 0 = Monday
+        df['dayofyear'] = ts.dt.dayofyear
+        df['quarter'] = ts.dt.quarter
+        df['weekofyear'] = ts.dt.isocalendar().week
+        df['hour'] = ts.dt.hour
+        df['minute'] = ts.dt.minute
+
+        # Boolean indicators
+        df['is_weekend'] = (ts.dt.dayofweek >= 5).astype(int)
+        df['is_month_start'] = ts.dt.is_month_start.astype(int)
+        df['is_month_end'] = ts.dt.is_month_end.astype(int)
+        df['is_quarter_start'] = ts.dt.is_quarter_start.astype(int)
+        df['is_quarter_end'] = ts.dt.is_quarter_end.astype(int)
+
+        return df
+
+    def extract_cyclical_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extract cyclical features using sin/cos transformations.
+
+        Cyclical encoding ensures smooth transitions (e.g., 11pm -> 12am).
+
+        Args:
+            df: DataFrame with timestamp column
+
+        Returns:
+            DataFrame with cyclical features
+        """
+        if not self.extract_cyclical:
+            return df
+
+        df = df.copy()
+        ts = pd.to_datetime(df[self.timestamp_column])
+
+        # Month cyclical (12 months)
+        df['month_sin'] = np.sin(2 * np.pi * ts.dt.month / 12)
+        df['month_cos'] = np.cos(2 * np.pi * ts.dt.month / 12)
+
+        # Day of week cyclical (7 days)
+        df['dayofweek_sin'] = np.sin(2 * np.pi * ts.dt.dayofweek / 7)
+        df['dayofweek_cos'] = np.cos(2 * np.pi * ts.dt.dayofweek / 7)
+
+        # Day of month cyclical (assuming 31 days)
+        df['day_sin'] = np.sin(2 * np.pi * ts.dt.day / 31)
+        df['day_cos'] = np.cos(2 * np.pi * ts.dt.day / 31)
+
+        # Hour cyclical (24 hours)
+        df['hour_sin'] = np.sin(2 * np.pi * ts.dt.hour / 24)
+        df['hour_cos'] = np.cos(2 * np.pi * ts.dt.hour / 24)
+
+        # Day of year cyclical (365 days)
+        df['dayofyear_sin'] = np.sin(2 * np.pi * ts.dt.dayofyear / 365)
+        df['dayofyear_cos'] = np.cos(2 * np.pi * ts.dt.dayofyear / 365)
+
+        return df
+
+    def extract_business_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extract business calendar features.
+
+        Args:
+            df: DataFrame with timestamp column
+
+        Returns:
+            DataFrame with business features
+        """
+        if not self.extract_business_features:
+            return df
+
+        df = df.copy()
+        ts = pd.to_datetime(df[self.timestamp_column])
+
+        # Business day indicator
+        df['is_business_day'] = ts.dt.dayofweek < 5  # Monday-Friday
+
+        # Holiday indicator
+        if self.holidays is not None:
+            df['is_holiday'] = ts.dt.date.apply(lambda d: d in self.holidays).astype(int)
+
+            # Days until/since holiday
+            df['days_to_next_holiday'] = ts.apply(self._days_to_next_holiday)
+            df['days_since_last_holiday'] = ts.apply(self._days_since_last_holiday)
+        else:
+            df['is_holiday'] = 0
+            df['days_to_next_holiday'] = -1
+            df['days_since_last_holiday'] = -1
+
+        # Time of day categories
+        hour = ts.dt.hour
+        df['time_of_day'] = 'night'  # 0-6
+        df.loc[hour >= 6, 'time_of_day'] = 'morning'  # 6-12
+        df.loc[hour >= 12, 'time_of_day'] = 'afternoon'  # 12-18
+        df.loc[hour >= 18, 'time_of_day'] = 'evening'  # 18-24
+
+        # Part of month
+        day = ts.dt.day
+        df['part_of_month'] = 'beginning'  # 1-10
+        df.loc[day > 10, 'part_of_month'] = 'middle'  # 11-20
+        df.loc[day > 20, 'part_of_month'] = 'end'  # 21-31
+
+        return df
+
+    def _days_to_next_holiday(self, dt: pd.Timestamp) -> int:
+        """Calculate days to next holiday."""
+        if self.holidays is None:
+            return -1
+
+        current_date = dt.date()
+        for i in range(1, 366):  # Look ahead up to 1 year
+            future_date = current_date + timedelta(days=i)
+            if future_date in self.holidays:
+                return i
+        return 365
+
+    def _days_since_last_holiday(self, dt: pd.Timestamp) -> int:
+        """Calculate days since last holiday."""
+        if self.holidays is None:
+            return -1
+
+        current_date = dt.date()
+        for i in range(1, 366):  # Look back up to 1 year
+            past_date = current_date - timedelta(days=i)
+            if past_date in self.holidays:
+                return i
+        return 365
+
+    def extract_relative_features(
+        self,
+        df: pd.DataFrame,
+        reference_date: Optional[datetime] = None,
+        event_column: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        Extract relative time features.
+
+        Args:
+            df: DataFrame with timestamp column
+            reference_date: Reference date for time calculations
+            event_column: Column containing event timestamps
+
+        Returns:
+            DataFrame with relative time features
+        """
+        df = df.copy()
+        ts = pd.to_datetime(df[self.timestamp_column])
+
+        # Time since reference date
+        if reference_date:
+            ref_date = pd.to_datetime(reference_date)
+            df['days_since_reference'] = (ts - ref_date).dt.days
+            df['hours_since_reference'] = (ts - ref_date).dt.total_seconds() / 3600
+
+        # Time since event
+        if event_column and event_column in df.columns:
+            event_ts = pd.to_datetime(df[event_column])
+            df['days_since_event'] = (ts - event_ts).dt.days
+            df['hours_since_event'] = (ts - event_ts).dt.total_seconds() / 3600
+
+        # Time to end of period
+        df['days_until_month_end'] = (ts + pd.offsets.MonthEnd(0) - ts).dt.days
+        df['days_until_quarter_end'] = (ts + pd.offsets.QuarterEnd(0) - ts).dt.days
+        df['days_until_year_end'] = (ts + pd.offsets.YearEnd(0) - ts).dt.days
+
+        return df
+
+    def extract_all_features(self, df: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        """
+        Extract all temporal features.
+
+        Args:
+            df: DataFrame with timestamp column
+            **kwargs: Additional arguments for specific extractors
+
+        Returns:
+            DataFrame with all temporal features
+        """
+        df = self.extract_basic_features(df)
+        df = self.extract_cyclical_features(df)
+        df = self.extract_business_features(df)
+        df = self.extract_relative_features(df, **kwargs)
+
+        return df
+
+# Example usage
+if __name__ == "__main__":
+    # Generate sample data
+    df = pd.DataFrame({
+        'timestamp': pd.date_range('2023-01-01', periods=1000, freq='H'),
+        'value': np.random.randn(1000)
+    })
+
+    # Extract temporal features
+    extractor = TemporalFeatureExtractor(
+        timestamp_column='timestamp',
+        country_holidays='US',
+        extract_cyclical=True,
+        extract_business_features=True
+    )
+
+    df_features = extractor.extract_all_features(df)
+    print(f"\nOriginal columns: {df.shape[1]}")
+    print(f"After feature extraction: {df_features.shape[1]}")
+    print(f"\nNew features: {[col for col in df_features.columns if col not in df.columns]}")
+\end{lstlisting}
+
+\section{Aggregation and Rolling Features}
+
+Aggregation and rolling window features are essential for capturing historical patterns and trends in time series and grouped data.
+
+\subsection{Scalable Aggregation Features}
+
+\begin{lstlisting}[style=python, caption={Scalable Aggregation and Rolling Window Features}]
+from typing import List, Dict, Optional, Union, Callable
+import pandas as pd
+import numpy as np
+from functools import partial
+
+class AggregationFeatureGenerator:
+    """
+    Generate aggregation and rolling window features at scale.
+
+    Features:
+    - Group-by aggregations
+    - Rolling window statistics
+    - Expanding window features
+    - Lag features
+    - Custom aggregation functions
+    """
+
+    def __init__(
+        self,
+        group_columns: Optional[List[str]] = None,
+        timestamp_column: Optional[str] = None
+    ):
+        """
+        Initialize aggregation feature generator.
+
+        Args:
+            group_columns: Columns to group by
+            timestamp_column: Column for temporal operations
+        """
+        self.group_columns = group_columns or []
+        self.timestamp_column = timestamp_column
+
+    def create_group_aggregations(
+        self,
+        df: pd.DataFrame,
+        value_columns: List[str],
+        agg_functions: List[Union[str, Callable]] = ['mean', 'std', 'min', 'max', 'count']
+    ) -> pd.DataFrame:
+        """
+        Create group-by aggregation features.
+
+        Args:
+            df: Input DataFrame
+            value_columns: Columns to aggregate
+            agg_functions: Aggregation functions to apply
+
+        Returns:
+            DataFrame with aggregation features
+        """
+        if not self.group_columns:
+            raise ValueError("group_columns must be specified")
+
+        df = df.copy()
+        agg_dict = {col: agg_functions for col in value_columns}
+
+        # Compute aggregations
+        agg_df = df.groupby(self.group_columns).agg(agg_dict)
+
+        # Flatten column names
+        agg_df.columns = ['_'.join(col).strip() for col in agg_df.columns.values]
+
+        # Merge back to original DataFrame
+        df = df.merge(agg_df, on=self.group_columns, how='left')
+
+        return df
+
+    def create_rolling_features(
+        self,
+        df: pd.DataFrame,
+        value_column: str,
+        windows: List[int] = [7, 14, 30],
+        functions: List[str] = ['mean', 'std', 'min', 'max']
+    ) -> pd.DataFrame:
+        """
+        Create rolling window features.
+
+        Args:
+            df: Input DataFrame
+            value_column: Column to compute rolling features on
+            windows: List of window sizes
+            functions: List of aggregation functions
+
+        Returns:
+            DataFrame with rolling features
+        """
+        if self.timestamp_column is None:
+            raise ValueError("timestamp_column must be specified for rolling features")
+
+        df = df.copy()
+        df = df.sort_values(self.timestamp_column)
+
+        for window in windows:
+            for func in functions:
+                feature_name = f'{value_column}_rolling_{window}_{func}'
+
+                if self.group_columns:
+                    # Rolling within groups
+                    df[feature_name] = df.groupby(self.group_columns)[value_column].transform(
+                        lambda x: x.rolling(window=window, min_periods=1).agg(func)
+                    )
+                else:
+                    # Global rolling
+                    df[feature_name] = df[value_column].rolling(
+                        window=window, min_periods=1
+                    ).agg(func)
+
+        return df
+
+    def create_lag_features(
+        self,
+        df: pd.DataFrame,
+        value_column: str,
+        lags: List[int] = [1, 7, 14, 30]
+    ) -> pd.DataFrame:
+        """
+        Create lag features.
+
+        Args:
+            df: Input DataFrame
+            value_column: Column to create lags for
+            lags: List of lag periods
+
+        Returns:
+            DataFrame with lag features
+        """
+        if self.timestamp_column is None:
+            raise ValueError("timestamp_column must be specified for lag features")
+
+        df = df.copy()
+        df = df.sort_values(self.timestamp_column)
+
+        for lag in lags:
+            feature_name = f'{value_column}_lag_{lag}'
+
+            if self.group_columns:
+                # Lag within groups
+                df[feature_name] = df.groupby(self.group_columns)[value_column].shift(lag)
+            else:
+                # Global lag
+                df[feature_name] = df[value_column].shift(lag)
+
+        return df
+
+    def create_expanding_features(
+        self,
+        df: pd.DataFrame,
+        value_column: str,
+        functions: List[str] = ['mean', 'std', 'min', 'max', 'count']
+    ) -> pd.DataFrame:
+        """
+        Create expanding window features (cumulative statistics).
+
+        Args:
+            df: Input DataFrame
+            value_column: Column to compute expanding features on
+            functions: List of aggregation functions
+
+        Returns:
+            DataFrame with expanding features
+        """
+        if self.timestamp_column is None:
+            raise ValueError("timestamp_column must be specified for expanding features")
+
+        df = df.copy()
+        df = df.sort_values(self.timestamp_column)
+
+        for func in functions:
+            feature_name = f'{value_column}_expanding_{func}'
+
+            if self.group_columns:
+                # Expanding within groups
+                df[feature_name] = df.groupby(self.group_columns)[value_column].transform(
+                    lambda x: x.expanding(min_periods=1).agg(func)
+                )
+            else:
+                # Global expanding
+                df[feature_name] = df[value_column].expanding(min_periods=1).agg(func)
+
+        return df
+
+    def create_diff_features(
+        self,
+        df: pd.DataFrame,
+        value_column: str,
+        periods: List[int] = [1, 7]
+    ) -> pd.DataFrame:
+        """
+        Create difference features (change from previous period).
+
+        Args:
+            df: Input DataFrame
+            value_column: Column to compute differences for
+            periods: List of periods for differences
+
+        Returns:
+            DataFrame with difference features
+        """
+        if self.timestamp_column is None:
+            raise ValueError("timestamp_column must be specified for diff features")
+
+        df = df.copy()
+        df = df.sort_values(self.timestamp_column)
+
+        for period in periods:
+            feature_name = f'{value_column}_diff_{period}'
+
+            if self.group_columns:
+                # Diff within groups
+                df[feature_name] = df.groupby(self.group_columns)[value_column].diff(period)
+            else:
+                # Global diff
+                df[feature_name] = df[value_column].diff(period)
+
+            # Percentage change
+            pct_change_name = f'{value_column}_pct_change_{period}'
+            if self.group_columns:
+                df[pct_change_name] = df.groupby(self.group_columns)[value_column].pct_change(period)
+            else:
+                df[pct_change_name] = df[value_column].pct_change(period)
+
+        return df
+
+    def create_time_based_aggregations(
+        self,
+        df: pd.DataFrame,
+        value_column: str,
+        time_windows: List[str] = ['1D', '7D', '30D'],
+        functions: List[str] = ['mean', 'std', 'sum']
+    ) -> pd.DataFrame:
+        """
+        Create time-based rolling aggregations.
+
+        Args:
+            df: Input DataFrame
+            value_column: Column to aggregate
+            time_windows: List of time windows (pandas offset strings)
+            functions: List of aggregation functions
+
+        Returns:
+            DataFrame with time-based aggregations
+        """
+        if self.timestamp_column is None:
+            raise ValueError("timestamp_column must be specified")
+
+        df = df.copy()
+        df = df.sort_values(self.timestamp_column)
+
+        # Set timestamp as index for time-based rolling
+        df_indexed = df.set_index(self.timestamp_column)
+
+        for window in time_windows:
+            for func in functions:
+                feature_name = f'{value_column}_rolling_{window}_{func}'
+
+                if self.group_columns:
+                    # Time-based rolling within groups
+                    df[feature_name] = df_indexed.groupby(self.group_columns)[value_column].transform(
+                        lambda x: x.rolling(window=window, min_periods=1).agg(func)
+                    )
+                else:
+                    # Global time-based rolling
+                    df[feature_name] = df_indexed[value_column].rolling(
+                        window=window, min_periods=1
+                    ).agg(func).values
+
+        return df
+
+    def create_all_aggregation_features(
+        self,
+        df: pd.DataFrame,
+        value_columns: List[str],
+        rolling_windows: List[int] = [7, 14, 30],
+        lags: List[int] = [1, 7, 14],
+        time_windows: List[str] = ['7D', '30D']
+    ) -> pd.DataFrame:
+        """
+        Create comprehensive set of aggregation features.
+
+        Args:
+            df: Input DataFrame
+            value_columns: Columns to create features for
+            rolling_windows: Rolling window sizes
+            lags: Lag periods
+            time_windows: Time-based windows
+
+        Returns:
+            DataFrame with all aggregation features
+        """
+        df_result = df.copy()
+
+        for value_col in value_columns:
+            # Rolling features
+            if rolling_windows:
+                df_result = self.create_rolling_features(
+                    df_result, value_col, windows=rolling_windows
+                )
+
+            # Lag features
+            if lags:
+                df_result = self.create_lag_features(df_result, value_col, lags=lags)
+
+            # Expanding features
+            df_result = self.create_expanding_features(df_result, value_col)
+
+            # Diff features
+            df_result = self.create_diff_features(df_result, value_col)
+
+            # Time-based aggregations
+            if time_windows and self.timestamp_column:
+                df_result = self.create_time_based_aggregations(
+                    df_result, value_col, time_windows=time_windows
+                )
+
+        return df_result
+
+# Example usage
+if __name__ == "__main__":
+    # Generate sample time series data
+    np.random.seed(42)
+    dates = pd.date_range('2023-01-01', periods=365, freq='D')
+    customers = ['A', 'B', 'C']
+
+    df = pd.DataFrame({
+        'date': np.repeat(dates, len(customers)),
+        'customer': np.tile(customers, len(dates)),
+        'sales': np.random.exponential(100, len(dates) * len(customers)),
+        'quantity': np.random.poisson(10, len(dates) * len(customers))
+    })
+
+    # Initialize generator
+    generator = AggregationFeatureGenerator(
+        group_columns=['customer'],
+        timestamp_column='date'
+    )
+
+    # Create all features
+    df_features = generator.create_all_aggregation_features(
+        df,
+        value_columns=['sales', 'quantity'],
+        rolling_windows=[7, 14, 30],
+        lags=[1, 7, 14, 30],
+        time_windows=['7D', '30D']
+    )
+
+    print(f"\nOriginal shape: {df.shape}")
+    print(f"With features: {df_features.shape}")
+    print(f"\nNew features ({df_features.shape[1] - df.shape[1]} total):")
+    new_features = [col for col in df_features.columns if col not in df.columns]
+    for feat in new_features[:10]:  # Show first 10
+        print(f"  - {feat}")
+\end{lstlisting}
+
+\section{Interaction and Polynomial Features}
+
+Interaction and polynomial features can capture non-linear relationships and feature interactions, but must be managed carefully to avoid dimensionality explosion.
+
+\subsection{Feature Interactions}
+
+\begin{lstlisting}[style=python, caption={Intelligent Feature Interaction Generation}]
+from typing import List, Tuple, Optional, Dict
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import PolynomialFeatures
+from itertools import combinations
+import logging
+
+class InteractionFeatureGenerator:
+    """
+    Generate interaction and polynomial features with dimensionality management.
+
+    Features:
+    - Pairwise interactions
+    - Polynomial features
+    - Ratio features
+    - Product features
+    - Feature selection based on importance
+    """
+
+    def __init__(
+        self,
+        max_interactions: int = 100,
+        interaction_degree: int = 2,
+        include_polynomial: bool = True,
+        polynomial_degree: int = 2,
+        include_bias: bool = False
+    ):
+        """
+        Initialize interaction feature generator.
+
+        Args:
+            max_interactions: Maximum number of interaction features to create
+            interaction_degree: Degree of interactions (2 = pairwise)
+            include_polynomial: Include polynomial features
+            polynomial_degree: Degree of polynomial features
+            include_bias: Include bias term in polynomial features
+        """
+        self.max_interactions = max_interactions
+        self.interaction_degree = interaction_degree
+        self.include_polynomial = include_polynomial
+        self.polynomial_degree = polynomial_degree
+        self.include_bias = include_bias
+
+        self.logger = logging.getLogger(__name__)
+        self.selected_interactions_: Optional[List[Tuple[str, ...]]] = None
+
+    def create_pairwise_interactions(
+        self,
+        df: pd.DataFrame,
+        numerical_columns: List[str],
+        interaction_type: str = 'multiply'  # 'multiply', 'add', 'subtract', 'divide'
+    ) -> pd.DataFrame:
+        """
+        Create pairwise interaction features.
+
+        Args:
+            df: Input DataFrame
+            numerical_columns: Numerical columns to create interactions for
+            interaction_type: Type of interaction
+
+        Returns:
+            DataFrame with interaction features
+        """
+        df = df.copy()
+
+        # Generate all pairwise combinations
+        pairs = list(combinations(numerical_columns, 2))
+
+        # Limit number of interactions
+        if len(pairs) > self.max_interactions:
+            self.logger.warning(
+                f"Number of pairs ({len(pairs)}) exceeds max_interactions ({self.max_interactions}). "
+                "Consider using feature importance to select top interactions."
+            )
+            pairs = pairs[:self.max_interactions]
+
+        for col1, col2 in pairs:
+            feature_name = f'{col1}_{interaction_type}_{col2}'
+
+            if interaction_type == 'multiply':
+                df[feature_name] = df[col1] * df[col2]
+            elif interaction_type == 'add':
+                df[feature_name] = df[col1] + df[col2]
+            elif interaction_type == 'subtract':
+                df[feature_name] = df[col1] - df[col2]
+            elif interaction_type == 'divide':
+                # Avoid division by zero
+                df[feature_name] = df[col1] / (df[col2] + 1e-8)
+            else:
+                raise ValueError(f"Unknown interaction type: {interaction_type}")
+
+        return df
+
+    def create_ratio_features(
+        self,
+        df: pd.DataFrame,
+        numerator_columns: List[str],
+        denominator_columns: List[str]
+    ) -> pd.DataFrame:
+        """
+        Create ratio features.
+
+        Args:
+            df: Input DataFrame
+            numerator_columns: Columns for numerator
+            denominator_columns: Columns for denominator
+
+        Returns:
+            DataFrame with ratio features
+        """
+        df = df.copy()
+
+        for num_col in numerator_columns:
+            for den_col in denominator_columns:
+                if num_col != den_col:
+                    feature_name = f'{num_col}_div_{den_col}'
+                    # Add small epsilon to avoid division by zero
+                    df[feature_name] = df[num_col] / (df[den_col] + 1e-8)
+
+        return df
+
+    def create_polynomial_features(
+        self,
+        df: pd.DataFrame,
+        numerical_columns: List[str]
+    ) -> pd.DataFrame:
+        """
+        Create polynomial features using sklearn.
+
+        Args:
+            df: Input DataFrame
+            numerical_columns: Columns to create polynomial features for
+
+        Returns:
+            DataFrame with polynomial features
+        """
+        if not self.include_polynomial:
+            return df
+
+        # Select numerical columns
+        X = df[numerical_columns].values
+
+        # Create polynomial features
+        poly = PolynomialFeatures(
+            degree=self.polynomial_degree,
+            include_bias=self.include_bias,
+            interaction_only=False
+        )
+        X_poly = poly.fit_transform(X)
+
+        # Get feature names
+        feature_names = poly.get_feature_names_out(numerical_columns)
+
+        # Create DataFrame with polynomial features
+        df_poly = pd.DataFrame(X_poly, columns=feature_names, index=df.index)
+
+        # Remove original columns to avoid duplication
+        original_cols = set(numerical_columns)
+        new_cols = [col for col in df_poly.columns if col not in original_cols]
+        df_poly = df_poly[new_cols]
+
+        # Limit number of features
+        if len(new_cols) > self.max_interactions:
+            self.logger.warning(
+                f"Polynomial features ({len(new_cols)}) exceed max_interactions. "
+                "Keeping first {self.max_interactions} features."
+            )
+            df_poly = df_poly.iloc[:, :self.max_interactions]
+
+        # Merge with original DataFrame
+        df = pd.concat([df, df_poly], axis=1)
+
+        return df
+
+    def create_domain_specific_interactions(
+        self,
+        df: pd.DataFrame,
+        interaction_rules: Dict[str, Tuple[List[str], Callable]]
+    ) -> pd.DataFrame:
+        """
+        Create domain-specific interaction features.
+
+        Args:
+            df: Input DataFrame
+            interaction_rules: Dictionary mapping feature names to (columns, function) tuples
+
+        Returns:
+            DataFrame with domain-specific interactions
+
+        Example:
+            interaction_rules = {
+                'bmi': (['weight', 'height'], lambda w, h: w / (h ** 2)),
+                'age_income_ratio': (['age', 'income'], lambda a, i: a / i)
+            }
+        """
+        df = df.copy()
+
+        for feature_name, (columns, func) in interaction_rules.items():
+            # Extract column values
+            column_values = [df[col].values for col in columns]
+
+            # Apply function
+            df[feature_name] = func(*column_values)
+
+        return df
+
+    def select_top_interactions(
+        self,
+        df: pd.DataFrame,
+        target: pd.Series,
+        numerical_columns: List[str],
+        n_top: int = 50,
+        method: str = 'mutual_info'  # 'mutual_info', 'correlation', 'random_forest'
+    ) -> List[Tuple[str, ...]]:
+        """
+        Select top interaction features based on importance.
+
+        Args:
+            df: Input DataFrame
+            target: Target variable
+            numerical_columns: Numerical columns
+            n_top: Number of top interactions to select
+            method: Method for ranking interactions
+
+        Returns:
+            List of selected interaction pairs
+        """
+        from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
+
+        # Generate all pairwise combinations
+        pairs = list(combinations(numerical_columns, 2))
+
+        # Compute interaction importance
+        importances = []
+
+        for col1, col2 in pairs:
+            interaction = df[col1] * df[col2]
+
+            if method == 'mutual_info':
+                # Determine if classification or regression
+                if target.nunique() < 20:  # Heuristic for classification
+                    mi = mutual_info_classif(interaction.values.reshape(-1, 1), target)[0]
+                else:
+                    mi = mutual_info_regression(interaction.values.reshape(-1, 1), target)[0]
+                importances.append(mi)
+
+            elif method == 'correlation':
+                corr = np.abs(np.corrcoef(interaction, target)[0, 1])
+                importances.append(corr if not np.isnan(corr) else 0)
+
+            else:
+                raise ValueError(f"Unknown method: {method}")
+
+        # Select top pairs
+        top_indices = np.argsort(importances)[::-1][:n_top]
+        selected_pairs = [pairs[i] for i in top_indices]
+
+        self.selected_interactions_ = selected_pairs
+
+        self.logger.info(f"Selected {len(selected_pairs)} top interaction pairs")
+
+        return selected_pairs
+
+    def create_selected_interactions(
+        self,
+        df: pd.DataFrame,
+        interaction_type: str = 'multiply'
+    ) -> pd.DataFrame:
+        """
+        Create interactions from pre-selected pairs.
+
+        Args:
+            df: Input DataFrame
+            interaction_type: Type of interaction
+
+        Returns:
+            DataFrame with selected interactions
+        """
+        if self.selected_interactions_ is None:
+            raise ValueError("Run select_top_interactions first")
+
+        df = df.copy()
+
+        for col1, col2 in self.selected_interactions_:
+            feature_name = f'{col1}_{interaction_type}_{col2}'
+
+            if interaction_type == 'multiply':
+                df[feature_name] = df[col1] * df[col2]
+            elif interaction_type == 'add':
+                df[feature_name] = df[col1] + df[col2]
+            elif interaction_type == 'divide':
+                df[feature_name] = df[col1] / (df[col2] + 1e-8)
+
+        return df
+
+# Example usage
+if __name__ == "__main__":
+    # Generate sample data
+    np.random.seed(42)
+    df = pd.DataFrame({
+        'feature1': np.random.randn(1000),
+        'feature2': np.random.randn(1000),
+        'feature3': np.random.randn(1000),
+        'feature4': np.random.randn(1000),
+        'target': np.random.randn(1000)
+    })
+
+    numerical_cols = ['feature1', 'feature2', 'feature3', 'feature4']
+
+    # Initialize generator
+    generator = InteractionFeatureGenerator(
+        max_interactions=100,
+        include_polynomial=True,
+        polynomial_degree=2
+    )
+
+    # Select top interactions
+    selected_pairs = generator.select_top_interactions(
+        df, df['target'], numerical_cols, n_top=10
+    )
+
+    print(f"\nTop 10 interaction pairs:")
+    for pair in selected_pairs:
+        print(f"  {pair[0]} × {pair[1]}")
+
+    # Create selected interactions
+    df_with_interactions = generator.create_selected_interactions(df)
+
+    print(f"\nOriginal shape: {df.shape}")
+    print(f"With interactions: {df_with_interactions.shape}")
+\end{lstlisting}
+
+\section{Categorical Encoding Strategies}
+
+Proper categorical encoding is critical for model performance. Different encoding strategies are appropriate for different scenarios and model types.
+
+\subsection{Advanced Categorical Encoding}
+
+\begin{lstlisting}[style=python, caption={Comprehensive Categorical Encoding Framework}]
+from typing import List, Dict, Optional, Union
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+import category_encoders as ce
+import logging
+
+class CategoricalEncoder:
+    """
+    Comprehensive categorical encoding framework.
+
+    Encoding strategies:
+    - Label Encoding
+    - One-Hot Encoding
+    - Target Encoding (mean encoding)
+    - Frequency Encoding
+    - Binary Encoding
+    - Hash Encoding (for high cardinality)
+    - Ordinal Encoding
+    """
+
+    def __init__(
+        self,
+        encoding_strategy: Dict[str, str] = None,
+        handle_unknown: str = 'value',  # 'value', 'error', 'ignore'
+        unknown_value: int = -1,
+        smoothing: float = 1.0  # For target encoding
+    ):
+        """
+        Initialize categorical encoder.
+
+        Args:
+            encoding_strategy: Dictionary mapping column names to encoding strategies
+            handle_unknown: How to handle unknown categories
+            unknown_value: Value for unknown categories
+            smoothing: Smoothing parameter for target encoding
+        """
+        self.encoding_strategy = encoding_strategy or {}
+        self.handle_unknown = handle_unknown
+        self.unknown_value = unknown_value
+        self.smoothing = smoothing
+
+        # State
+        self.encoders_: Dict[str, Any] = {}
+        self.fitted_ = False
+
+        self.logger = logging.getLogger(__name__)
+
+    def fit(self, X: pd.DataFrame, y: Optional[pd.Series] = None) -> 'CategoricalEncoder':
+        """
+        Fit encoders on data.
+
+        Args:
+            X: Input DataFrame
+            y: Target variable (required for target encoding)
+
+        Returns:
+            Self
+        """
+        for col, strategy in self.encoding_strategy.items():
+            if col not in X.columns:
+                self.logger.warning(f"Column {col} not found in DataFrame")
+                continue
+
+            if strategy == 'label':
+                encoder = LabelEncoder()
+                encoder.fit(X[col])
+                self.encoders_[col] = encoder
+
+            elif strategy == 'onehot':
+                encoder = OneHotEncoder(
+                    handle_unknown=self.handle_unknown,
+                    sparse_output=False
+                )
+                encoder.fit(X[[col]])
+                self.encoders_[col] = encoder
+
+            elif strategy == 'target':
+                if y is None:
+                    raise ValueError("Target variable required for target encoding")
+                encoder = ce.TargetEncoder(
+                    cols=[col],
+                    smoothing=self.smoothing,
+                    handle_unknown=self.handle_unknown
+                )
+                encoder.fit(X[[col]], y)
+                self.encoders_[col] = encoder
+
+            elif strategy == 'frequency':
+                # Frequency encoding: replace with frequency in dataset
+                freq = X[col].value_counts(normalize=True).to_dict()
+                self.encoders_[col] = freq
+
+            elif strategy == 'binary':
+                encoder = ce.BinaryEncoder(cols=[col])
+                encoder.fit(X[[col]])
+                self.encoders_[col] = encoder
+
+            elif strategy == 'hash':
+                # Hash encoding for high cardinality
+                encoder = ce.HashingEncoder(
+                    cols=[col],
+                    n_components=8  # Number of hash bins
+                )
+                encoder.fit(X[[col]])
+                self.encoders_[col] = encoder
+
+            elif strategy == 'ordinal':
+                encoder = ce.OrdinalEncoder(cols=[col])
+                encoder.fit(X[[col]])
+                self.encoders_[col] = encoder
+
+            else:
+                raise ValueError(f"Unknown encoding strategy: {strategy}")
+
+        self.fitted_ = True
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        Transform data using fitted encoders.
+
+        Args:
+            X: Input DataFrame
+
+        Returns:
+            Transformed DataFrame
+        """
+        if not self.fitted_:
+            raise ValueError("Encoder must be fitted before transform")
+
+        X_transformed = X.copy()
+
+        for col, encoder in self.encoders_.items():
+            if col not in X_transformed.columns:
+                continue
+
+            strategy = self.encoding_strategy[col]
+
+            if strategy == 'label':
+                # Handle unknown categories
+                X_transformed[col] = X_transformed[col].apply(
+                    lambda x: encoder.transform([x])[0]
+                    if x in encoder.classes_
+                    else self.unknown_value
+                )
+
+            elif strategy == 'onehot':
+                # One-hot encoding
+                encoded = encoder.transform(X_transformed[[col]])
+                feature_names = [f'{col}_{cat}' for cat in encoder.categories_[0]]
+
+                # Remove original column and add encoded columns
+                X_transformed = X_transformed.drop(columns=[col])
+                for i, name in enumerate(feature_names):
+                    X_transformed[name] = encoded[:, i]
+
+            elif strategy == 'target':
+                # Target encoding
+                encoded = encoder.transform(X_transformed[[col]])
+                X_transformed[col] = encoded[col].values
+
+            elif strategy == 'frequency':
+                # Frequency encoding
+                freq_dict = encoder
+                X_transformed[col] = X_transformed[col].map(freq_dict).fillna(0)
+
+            elif strategy in ['binary', 'hash', 'ordinal']:
+                # Category encoders
+                encoded = encoder.transform(X_transformed[[col]])
+                X_transformed = X_transformed.drop(columns=[col])
+                X_transformed = pd.concat([X_transformed, encoded], axis=1)
+
+        return X_transformed
+
+    def fit_transform(self, X: pd.DataFrame, y: Optional[pd.Series] = None) -> pd.DataFrame:
+        """Fit and transform in one step."""
+        return self.fit(X, y).transform(X)
+
+    def get_feature_names(self) -> List[str]:
+        """Get names of all encoded features."""
+        feature_names = []
+
+        for col, encoder in self.encoders_.items():
+            strategy = self.encoding_strategy[col]
+
+            if strategy == 'onehot':
+                for cat in encoder.categories_[0]:
+                    feature_names.append(f'{col}_{cat}')
+            elif strategy in ['binary', 'hash']:
+                # These create multiple columns
+                feature_names.extend([f'{col}_{i}' for i in range(encoder.n_features_out_)])
+            else:
+                # Single column encodings
+                feature_names.append(col)
+
+        return feature_names
+
+# Example usage
+if __name__ == "__main__":
+    # Generate sample data
+    np.random.seed(42)
+    df = pd.DataFrame({
+        'category_low_card': np.random.choice(['A', 'B', 'C'], 1000),
+        'category_high_card': np.random.choice([f'cat_{i}' for i in range(100)], 1000),
+        'category_ordinal': np.random.choice(['low', 'medium', 'high'], 1000),
+        'target': np.random.randint(0, 2, 1000)
+    })
+
+    # Define encoding strategies
+    encoding_config = {
+        'category_low_card': 'onehot',
+        'category_high_card': 'hash',
+        'category_ordinal': 'target'
+    }
+
+    # Initialize encoder
+    encoder = CategoricalEncoder(
+        encoding_strategy=encoding_config,
+        smoothing=1.0
+    )
+
+    # Fit and transform
+    df_encoded = encoder.fit_transform(df, df['target'])
+
+    print(f"\nOriginal shape: {df.shape}")
+    print(f"Encoded shape: {df_encoded.shape}")
+    print(f"\nOriginal columns: {df.columns.tolist()}")
+    print(f"Encoded columns ({len(df_encoded.columns)} total)")
+\end{lstlisting}
+
+\section{Feature Selection and Importance}
+
+Feature selection reduces dimensionality, improves model performance, and enhances interpretability by removing irrelevant or redundant features.
+
+\subsection{Automated Feature Selection}
+
+\begin{lstlisting}[style=python, caption={Comprehensive Feature Selection Framework}]
+from typing import List, Optional, Dict, Any, Tuple
+import pandas as pd
+import numpy as np
+from sklearn.feature_selection import (
+    SelectKBest, mutual_info_classif, mutual_info_regression,
+    f_classif, f_regression, RFE, SelectFromModel
+)
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.linear_model import LassoCV
+import logging
+
+class FeatureSelector:
+    """
+    Comprehensive feature selection framework.
+
+    Methods:
+    - Filter methods (univariate statistical tests)
+    - Wrapper methods (RFE)
+    - Embedded methods (L1 regularization, tree importance)
+    - Correlation-based selection
+    - Variance threshold
+    """
+
+    def __init__(
+        self,
+        task_type: str = 'classification',  # 'classification' or 'regression'
+        selection_method: str = 'mutual_info',  # 'mutual_info', 'f_test', 'rfe', 'lasso', 'tree'
+        n_features: Optional[int] = None,
+        threshold: Optional[float] = None
+    ):
+        """
+        Initialize feature selector.
+
+        Args:
+            task_type: Type of ML task
+            selection_method: Feature selection method
+            n_features: Number of features to select
+            threshold: Threshold for feature importance
+        """
+        self.task_type = task_type
+        self.selection_method = selection_method
+        self.n_features = n_features
+        self.threshold = threshold
+
+        self.selector_ = None
+        self.selected_features_: Optional[List[str]] = None
+        self.feature_importance_: Optional[pd.DataFrame] = None
+
+        self.logger = logging.getLogger(__name__)
+
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> 'FeatureSelector':
+        """
+        Fit feature selector.
+
+        Args:
+            X: Features
+            y: Target
+
+        Returns:
+            Self
+        """
+        feature_names = X.columns.tolist()
+
+        if self.selection_method == 'mutual_info':
+            # Mutual information
+            if self.task_type == 'classification':
+                score_func = mutual_info_classif
+            else:
+                score_func = mutual_info_regression
+
+            selector = SelectKBest(score_func=score_func, k=self.n_features or 'all')
+            selector.fit(X, y)
+
+            # Get scores
+            scores = pd.DataFrame({
+                'feature': feature_names,
+                'score': selector.scores_
+            }).sort_values('score', ascending=False)
+
+            self.feature_importance_ = scores
+            self.selector_ = selector
+
+            # Select top features
+            if self.n_features:
+                self.selected_features_ = scores.head(self.n_features)['feature'].tolist()
+            else:
+                self.selected_features_ = feature_names
+
+        elif self.selection_method == 'f_test':
+            # F-test (ANOVA for classification, F-statistic for regression)
+            if self.task_type == 'classification':
+                score_func = f_classif
+            else:
+                score_func = f_regression
+
+            selector = SelectKBest(score_func=score_func, k=self.n_features or 'all')
+            selector.fit(X, y)
+
+            scores = pd.DataFrame({
+                'feature': feature_names,
+                'score': selector.scores_
+            }).sort_values('score', ascending=False)
+
+            self.feature_importance_ = scores
+            self.selector_ = selector
+            self.selected_features_ = scores.head(self.n_features or len(feature_names))['feature'].tolist()
+
+        elif self.selection_method == 'rfe':
+            # Recursive Feature Elimination
+            if self.task_type == 'classification':
+                estimator = RandomForestClassifier(n_estimators=50, random_state=42)
+            else:
+                estimator = RandomForestRegressor(n_estimators=50, random_state=42)
+
+            selector = RFE(
+                estimator=estimator,
+                n_features_to_select=self.n_features,
+                step=1
+            )
+            selector.fit(X, y)
+
+            # Get feature ranking
+            rankings = pd.DataFrame({
+                'feature': feature_names,
+                'ranking': selector.ranking_
+            }).sort_values('ranking')
+
+            self.feature_importance_ = rankings
+            self.selector_ = selector
+            self.selected_features_ = [f for f, r in zip(feature_names, selector.support_) if r]
+
+        elif self.selection_method == 'lasso':
+            # L1 regularization (Lasso)
+            lasso = LassoCV(cv=5, random_state=42, max_iter=10000)
+            lasso.fit(X, y)
+
+            # Get coefficients
+            coefs = pd.DataFrame({
+                'feature': feature_names,
+                'coefficient': np.abs(lasso.coef_)
+            }).sort_values('coefficient', ascending=False)
+
+            self.feature_importance_ = coefs
+            self.selector_ = lasso
+
+            # Select features with non-zero coefficients
+            if self.threshold:
+                self.selected_features_ = coefs[coefs['coefficient'] > self.threshold]['feature'].tolist()
+            elif self.n_features:
+                self.selected_features_ = coefs.head(self.n_features)['feature'].tolist()
+            else:
+                self.selected_features_ = coefs[coefs['coefficient'] > 0]['feature'].tolist()
+
+        elif self.selection_method == 'tree':
+            # Tree-based feature importance
+            if self.task_type == 'classification':
+                model = RandomForestClassifier(n_estimators=100, random_state=42)
+            else:
+                model = RandomForestRegressor(n_estimators=100, random_state=42)
+
+            model.fit(X, y)
+
+            importances = pd.DataFrame({
+                'feature': feature_names,
+                'importance': model.feature_importances_
+            }).sort_values('importance', ascending=False)
+
+            self.feature_importance_ = importances
+            self.selector_ = model
+
+            if self.n_features:
+                self.selected_features_ = importances.head(self.n_features)['feature'].tolist()
+            elif self.threshold:
+                self.selected_features_ = importances[
+                    importances['importance'] > self.threshold
+                ]['feature'].tolist()
+            else:
+                self.selected_features_ = feature_names
+
+        else:
+            raise ValueError(f"Unknown selection method: {self.selection_method}")
+
+        self.logger.info(f"Selected {len(self.selected_features_)} features using {self.selection_method}")
+
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        Transform data by selecting features.
+
+        Args:
+            X: Features
+
+        Returns:
+            DataFrame with selected features
+        """
+        if self.selected_features_ is None:
+            raise ValueError("Selector must be fitted before transform")
+
+        return X[self.selected_features_]
+
+    def fit_transform(self, X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
+        """Fit and transform in one step."""
+        return self.fit(X, y).transform(X)
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        """Get feature importance scores."""
+        if self.feature_importance_ is None:
+            raise ValueError("Selector must be fitted first")
+
+        return self.feature_importance_
+
+    def remove_correlated_features(
+        self,
+        X: pd.DataFrame,
+        threshold: float = 0.95
+    ) -> List[str]:
+        """
+        Remove highly correlated features.
+
+        Args:
+            X: Features
+            threshold: Correlation threshold
+
+        Returns:
+            List of features to keep
+        """
+        # Compute correlation matrix
+        corr_matrix = X.corr().abs()
+
+        # Find pairs of highly correlated features
+        upper_tri = corr_matrix.where(
+            np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+        )
+
+        # Find features to drop
+        to_drop = [
+            column for column in upper_tri.columns
+            if any(upper_tri[column] > threshold)
+        ]
+
+        features_to_keep = [f for f in X.columns if f not in to_drop]
+
+        self.logger.info(f"Removed {len(to_drop)} correlated features (threshold={threshold})")
+
+        return features_to_keep
+
+    def remove_low_variance_features(
+        self,
+        X: pd.DataFrame,
+        threshold: float = 0.01
+    ) -> List[str]:
+        """
+        Remove features with low variance.
+
+        Args:
+            X: Features
+            threshold: Variance threshold
+
+        Returns:
+            List of features to keep
+        """
+        from sklearn.feature_selection import VarianceThreshold
+
+        selector = VarianceThreshold(threshold=threshold)
+        selector.fit(X)
+
+        features_to_keep = X.columns[selector.get_support()].tolist()
+
+        self.logger.info(
+            f"Removed {X.shape[1] - len(features_to_keep)} low variance features"
+        )
+
+        return features_to_keep
+
+    def plot_feature_importance(self, top_n: int = 20, save_path: Optional[str] = None):
+        """Plot feature importance."""
+        if self.feature_importance_ is None:
+            raise ValueError("No feature importance available")
+
+        import matplotlib.pyplot as plt
+
+        top_features = self.feature_importance_.head(top_n)
+
+        plt.figure(figsize=(10, 8))
+        plt.barh(range(len(top_features)), top_features.iloc[:, 1].values)
+        plt.yticks(range(len(top_features)), top_features.iloc[:, 0].values)
+        plt.xlabel('Importance')
+        plt.title(f'Top {top_n} Features ({self.selection_method})')
+        plt.gca().invert_yaxis()
+        plt.tight_layout()
+
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        else:
+            plt.savefig('feature_importance.png', dpi=150, bbox_inches='tight')
+        plt.close()
+
+# Example usage
+if __name__ == "__main__":
+    from sklearn.datasets import make_classification
+
+    # Generate sample data
+    X, y = make_classification(
+        n_samples=1000,
+        n_features=50,
+        n_informative=20,
+        n_redundant=10,
+        random_state=42
+    )
+    X = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(50)])
+    y = pd.Series(y)
+
+    # Test different selection methods
+    methods = ['mutual_info', 'f_test', 'rfe', 'tree']
+
+    for method in methods:
+        print(f"\n=== {method.upper()} ===")
+
+        selector = FeatureSelector(
+            task_type='classification',
+            selection_method=method,
+            n_features=20
+        )
+
+        X_selected = selector.fit_transform(X, y)
+
+        print(f"Selected {X_selected.shape[1]} features")
+        print(f"\nTop 10 features:")
+        print(selector.get_feature_importance().head(10))
+
+        # Plot importance
+        selector.plot_feature_importance(top_n=15, save_path=f'importance_{method}.png')
+
+    # Remove correlated features
+    selector = FeatureSelector(task_type='classification')
+    features_to_keep = selector.remove_correlated_features(X, threshold=0.9)
+    print(f"\n{len(features_to_keep)} features after removing correlated (threshold=0.9)")
+\end{lstlisting}
+
+\section{Chapter Summary}
+
+This chapter presented comprehensive approaches to feature engineering at scale:
+
+\begin{itemize}
+    \item \textbf{Feature Engineering Framework:} Modular pipeline with versioning, metadata tracking, and train/test consistency
+
+    \item \textbf{Temporal Features:} Basic components, cyclical encodings, business calendar features, and relative time calculations
+
+    \item \textbf{Aggregation Features:} Group-by aggregations, rolling windows, expanding windows, lag features, and time-based aggregations
+
+    \item \textbf{Interaction Features:} Pairwise interactions, polynomial features, ratio features, and intelligent selection
+
+    \item \textbf{Categorical Encoding:} Label encoding, one-hot encoding, target encoding, frequency encoding, and hash encoding for high cardinality
+
+    \item \textbf{Feature Selection:} Filter methods, wrapper methods, embedded methods, correlation analysis, and variance thresholding
+\end{itemize}
+
+\subsection{Key Takeaways}
+
+\begin{enumerate}
+    \item \textbf{Systematic Approach:} Use structured frameworks for feature engineering to ensure reproducibility and maintainability
+
+    \item \textbf{Train-Test Consistency:} Always fit encoders and transformations on training data and apply to test/serving data
+
+    \item \textbf{Domain Knowledge:} Leverage business understanding to create meaningful domain-specific features
+
+    \item \textbf{Avoid Data Leakage:} Never use future information or target-derived features in ways that wouldn't be available at prediction time
+
+    \item \textbf{Manage Dimensionality:} Use feature selection to reduce curse of dimensionality and improve model performance
+
+    \item \textbf{Handle Missing Values:} Explicit strategy for missing data with indicator features when appropriate
+
+    \item \textbf{Monitor Features:} Track feature distributions and drift in production to detect data quality issues
+
+    \item \textbf{Optimize Computation:} Consider computational cost for real-time serving, especially for complex aggregations
+\end{enumerate}
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item Kuhn, M., \& Johnson, K. (2019). \textit{Feature Engineering and Selection: A Practical Approach for Predictive Models}
+    \item Zheng, A., \& Casari, A. (2018). \textit{Feature Engineering for Machine Learning}
+    \item Cerda, P., \& Varoquaux, G. (2020). Encoding high-cardinality string categorical variables. \textit{IEEE TKDE}
+    \item Micci-Barreca, D. (2001). A preprocessing scheme for high-cardinality categorical attributes. \textit{SIGKDD Explorations}
+    \item Guyon, I., \& Elisseeff, A. (2003). An introduction to variable and feature selection. \textit{JMLR}
+\end{itemize}
+
+\section{Exercises}
+
+\begin{enumerate}
+    \item \textbf{Temporal Feature Engineering:}
+    \begin{itemize}
+        \item Create a comprehensive temporal feature set for a time series dataset
+        \item Include cyclical encodings for multiple time periods
+        \item Add business calendar features and holidays
+        \item Validate that cyclical features correctly handle period boundaries
+    \end{itemize}
+
+    \item \textbf{Aggregation Features:}
+    \begin{itemize}
+        \item Implement rolling window features with multiple window sizes
+        \item Create lag features at different time horizons
+        \item Compute expanding window statistics
+        \item Ensure proper handling of group-wise aggregations
+    \end{itemize}
+
+    \item \textbf{Feature Interactions:}
+    \begin{itemize}
+        \item Generate pairwise interaction features
+        \item Use feature importance to select top interactions
+        \item Create domain-specific interaction features based on problem knowledge
+        \item Manage dimensionality to avoid explosion
+    \end{itemize}
+
+    \item \textbf{Categorical Encoding:}
+    \begin{itemize}
+        \item Implement multiple encoding strategies for different categorical variables
+        \item Compare target encoding with and without smoothing
+        \item Use hash encoding for high-cardinality features
+        \item Evaluate impact of different encodings on model performance
+    \end{itemize}
+
+    \item \textbf{Feature Selection:}
+    \begin{itemize}
+        \item Apply multiple feature selection methods (filter, wrapper, embedded)
+        \item Compare selected features across different methods
+        \item Remove highly correlated features
+        \item Evaluate model performance vs. number of features
+    \end{itemize}
+
+    \item \textbf{End-to-End Feature Engineering:}
+    \begin{itemize}
+        \item Build a complete feature engineering pipeline from raw data to model-ready features
+        \item Include temporal, aggregation, interaction, and encoding features
+        \item Apply feature selection to reduce dimensionality
+        \item Ensure train/test consistency throughout
+        \item Track feature metadata and provenance
+    \end{itemize}
+
+    \item \textbf{Production Feature Pipeline:}
+    \begin{itemize}
+        \item Design a feature engineering pipeline for online serving
+        \item Optimize computation for low-latency requirements
+        \item Implement feature versioning and rollback capability
+        \item Add monitoring for feature drift
+        \item Document all features with metadata
+    \end{itemize}
+\end{enumerate}

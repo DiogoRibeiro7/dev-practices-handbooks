@@ -1,0 +1,953 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Define A/B testing and explain its fundamental principles
+    \item Trace the historical evolution from agricultural experiments to digital applications
+    \item Distinguish A/B testing from other experimental methodologies
+    \item Understand core terminology and concepts used throughout the book
+    \item Recognize different types of A/B tests and their appropriate applications
+    \item Implement basic A/B tests using Python and statistical libraries
+    \item Identify real-world scenarios where A/B testing adds value
+\end{itemize}
+
+\section{What is A/B Testing?}
+
+\subsection{Definition and Core Concepts}
+
+\begin{definition}[A/B Test]
+An A/B test is a randomized controlled experiment in which a population is randomly divided into two or more groups to compare the effects of different treatments, interventions, or variations on a measured outcome. The fundamental structure includes:
+\begin{itemize}
+    \item A \textbf{control group} (A) receiving the existing or baseline treatment
+    \item One or more \textbf{treatment groups} (B, C, etc.) receiving new variations
+    \item \textbf{Random assignment} ensuring unbiased allocation
+    \item \textbf{Quantifiable outcomes} measured consistently across groups
+\end{itemize}
+\end{definition}
+
+At its core, A/B testing operationalizes the scientific method for decision-making under uncertainty. Rather than relying on intuition, expert opinion, or observational data—all valuable but potentially misleading—we directly test hypotheses through controlled experimentation. This approach answers a deceptively simple question: \textit{Does this change actually work?}
+
+The elegance of A/B testing lies in its simplicity. By randomly assigning subjects to groups and measuring outcomes, we isolate the causal effect of our intervention from confounding variables. If users assigned to the new checkout flow convert at a higher rate than those in the control group, and this difference exceeds what we'd expect from random variation, we have evidence that the change caused the improvement.
+
+\subsection{From Agricultural Fields to Digital Platforms}
+
+The intellectual foundations of A/B testing trace back over a century, evolving through several distinct phases that reveal both continuity and transformation in experimental thinking.
+
+\subsubsection{Early Pioneers: Fisher and Agricultural Science}
+
+In the 1920s, Sir Ronald Fisher revolutionized experimental design while working at Rothamsted Experimental Station in England. Fisher confronted a practical problem: how to determine which fertilizers, crop varieties, and farming techniques produced the best yields when countless variables—soil quality, weather, pest pressure—varied unpredictably across fields and seasons.
+
+Fisher's solution introduced three principles that remain foundational today \citep{fisher1935design}:
+
+\begin{enumerate}
+    \item \textbf{Randomization:} Rather than systematically assigning treatments (which might confound treatment effects with field characteristics), Fisher advocated random assignment to eliminate systematic bias.
+
+    \item \textbf{Replication:} Testing each treatment on multiple plots enabled statistical estimation of variability and increased confidence in results.
+
+    \item \textbf{Blocking:} Grouping similar experimental units (e.g., adjacent plots) and randomizing within blocks reduced noise and improved precision.
+\end{enumerate}
+
+These principles solved the agricultural scientist's dilemma: how to draw valid causal inferences in the face of uncontrolled variation. They work equally well for digital experimentation, though the scale and speed have changed dramatically.
+
+\subsubsection{Clinical Trials and Medical Research}
+
+The mid-20th century saw experimental design principles migrate to medical research. The 1948 streptomycin tuberculosis trial is often cited as the first modern randomized controlled trial (RCT) \citep{lind1753treatise}. Medical researchers recognized that comparing treatments without randomization introduced selection bias—sicker patients might systematically receive more aggressive treatments, confounding causal inference.
+
+Clinical trials formalized concepts still central to A/B testing:
+\begin{itemize}
+    \item \textbf{Blinding:} Keeping subjects (and often researchers) unaware of treatment assignment to prevent expectation effects
+    \item \textbf{Intention-to-treat analysis:} Analyzing all randomized subjects regardless of compliance
+    \item \textbf{Power analysis:} Calculating required sample sizes before conducting experiments
+    \item \textbf{Interim monitoring:} Checking results during trials for ethical reasons, requiring special statistical methods
+\end{itemize}
+
+\subsubsection{The Digital Revolution}
+
+The internet transformed experimentation. What took months or years in agricultural or medical research could now happen in hours. Early online experiments at Amazon, Google, and Microsoft in the late 1990s and early 2000s demonstrated that digital platforms offered unprecedented advantages:
+
+\begin{itemize}
+    \item \textbf{Massive scale:} Millions of subjects available
+    \item \textbf{Low cost:} Marginal cost of adding one more subject approaches zero
+    \item \textbf{Rapid iteration:} Tests complete in days or weeks, not months or years
+    \item \textbf{Precise measurement:} Every click, view, and conversion tracked automatically
+    \item \textbf{Perfect randomization:} Computers execute random assignment flawlessly
+\end{itemize}
+
+However, digital experimentation also introduced new challenges that Fisher never contemplated:
+\begin{itemize}
+    \item \textbf{Implementation bugs:} Code errors can invalidate experiments
+    \item \textbf{Network effects:} One user's treatment may affect others
+    \item \textbf{Novelty effects:} Users respond differently to new features initially
+    \item \textbf{Metric dilution:} Measuring too many outcomes increases false positives
+    \item \textbf{Continuous monitoring:} "Peeking" at results invalidates classical statistics
+\end{itemize}
+
+Modern A/B testing inherits Fisher's foundational principles while adapting them to digital contexts. This synthesis—classical rigor meets contemporary scale—defines the field today.
+
+\subsection{A/B Testing vs. Other Methodologies}
+
+Understanding A/B testing requires distinguishing it from alternative approaches to learning and decision-making.
+
+\subsubsection{Observational Studies}
+
+Observational studies analyze existing data without intervention. For example, examining whether users who engage with a particular feature have higher retention. While valuable for hypothesis generation, observational studies suffer from confounding: perhaps engaged users were already more loyal, and feature usage is a symptom rather than a cause.
+
+\begin{example}[Simpson's Paradox]
+An e-commerce platform observes that customers who use the mobile app spend 50\% more than website-only customers. However, randomizing users to receive an app download prompt shows no effect on spending. Why?
+
+The observational data confounds app usage with customer type. High-value customers independently discovered and adopted the app. The app didn't cause higher spending; higher-spending customers chose to use it. Randomization eliminates this confounding.
+\end{example}
+
+\subsubsection{Multi-Armed Bandits}
+
+Multi-armed bandit (MAB) algorithms dynamically allocate more traffic to better-performing variants, optimizing cumulative performance during the test. Unlike A/B tests with fixed allocation, bandits adapt.
+
+Consider testing $K$ variants with unknown success rates $\theta_1, \ldots, \theta_K$. The regret after $T$ trials is:
+
+\begin{equation}
+R(T) = T \cdot \max_k \theta_k - \sum_{t=1}^T \mathbb{E}[r_t]
+\end{equation}
+
+where $r_t$ is the reward at trial $t$.
+
+MAB algorithms like Thompson Sampling or Upper Confidence Bound (UCB) minimize regret by balancing exploration (testing uncertain variants) and exploitation (favoring likely winners).
+
+\textbf{Trade-offs:}
+\begin{itemize}
+    \item A/B tests provide clean statistical inference but sacrifice performance during testing
+    \item MABs optimize during testing but complicate inference (non-uniform assignment probabilities)
+    \item A/B tests suit scenarios where learning is the goal
+    \item MABs suit scenarios where optimization during testing matters (e.g., ad selection)
+\end{itemize}
+
+We explore bandits in depth in Chapter 8.
+
+\subsubsection{Quasi-Experimental Methods}
+
+When randomization is infeasible, quasi-experimental designs attempt causal inference from observational data under assumptions. Methods include:
+
+\begin{itemize}
+    \item \textbf{Difference-in-differences:} Comparing trends before/after intervention in treatment vs. control groups
+    \item \textbf{Regression discontinuity:} Exploiting arbitrary cutoffs (e.g., test score thresholds) for assignment
+    \item \textbf{Instrumental variables:} Using variables that affect treatment but not outcomes directly
+    \item \textbf{Propensity score matching:} Creating matched pairs with similar characteristics
+\end{itemize}
+
+These methods complement A/B testing when experimentation is impractical but carry stronger assumptions.
+
+\section{Why A/B Testing Matters}
+
+\subsection{The Business Case for Experimentation}
+
+A/B testing delivers measurable value through better decision-making, risk mitigation, and organizational learning.
+
+\subsubsection{Quantifiable Return on Investment}
+
+Consider a concrete example. An e-commerce company with 1 million monthly visitors and 3\% conversion rate generates 30,000 orders monthly. An A/B test finds that a new checkout flow increases conversion to 3.3\%—a 10\% relative lift.
+
+\textbf{Annual impact:}
+\begin{align}
+\text{Additional conversions} &= 1{,}000{,}000 \times 12 \times (0.033 - 0.030) = 36{,}000 \\
+\text{Revenue (at \$50 AOV)} &= 36{,}000 \times \$50 = \$1{,}800{,}000
+\end{align}
+
+If the test cost \$10,000 to design, implement, and analyze, the ROI is 180x. Even conservative estimates assuming 5\% lift still yield \$900,000 annually.
+
+\subsubsection{De-Risking Product Changes}
+
+Not all changes improve outcomes. Experimentation prevents costly mistakes:
+
+\begin{example}[Microsoft Bing]
+Microsoft tested displaying ads more prominently, hypothesizing increased revenue. The test showed short-term revenue gains but significant user satisfaction declines and reduced search quality metrics. Without testing, full deployment would have damaged the product and brand \citep{kohavi2009online}.
+\end{example}
+
+Failures are valuable. Learning that an idea doesn't work before full rollout saves development resources and protects user experience.
+
+\subsubsection{Compound Returns from Iteration}
+
+Individual experiments often yield small improvements—2-5\% lifts. The power comes from compounding many improvements over time.
+
+If a team runs one experiment weekly, each improving a key metric by 2\%, annual compound growth is:
+
+\begin{equation}
+(1.02)^{52} - 1 \approx 1.83 = 183\%
+\end{equation}
+
+This calculation oversimplifies (not all tests succeed, metrics may not be independent), but illustrates how systematic experimentation drives dramatic cumulative gains.
+
+\subsection{Evidence-Based Culture}
+
+Beyond individual tests, A/B testing transforms organizational decision-making.
+
+\subsubsection{Objective Evaluation of Ideas}
+
+Experimentation democratizes decision-making. Good ideas can come from anywhere—junior engineers, customer support, users themselves—and all receive objective evaluation. This meritocracy of ideas contrasts with authority-based or seniority-based decision-making.
+
+\subsubsection{Learning from Surprises}
+
+The most valuable experiments challenge assumptions. When results contradict expert opinion or conventional wisdom, we learn something fundamental about user behavior, market dynamics, or product mechanics.
+
+\begin{example}[Netflix Personalization]
+Netflix hypothesized that showing personalized movie thumbnails would increase engagement. Testing revealed the effect was far larger than anticipated—personalized images increased viewing by 20-30\% for some content. This insight led to broader personalization initiatives worth billions in subscriber value \citep{kohavi2020trustworthy}.
+\end{example}
+
+\subsection{Examples from Industry Leaders}
+
+\subsubsection{Google: Search Result Optimization}
+
+Google runs over 10,000 experiments annually on Search alone. A famous 2009 experiment tested displaying 10, 20, or 30 search results per page. The hypothesis: more results would reduce pagination and improve user experience.
+
+Results showed that increasing results to 30 caused a 20\% increase in page load time (from 0.4s to 0.9s). This seemingly small delay significantly reduced searches per user—users abandoned searches rather than wait. The test demonstrated that even half-second delays meaningfully impact behavior at scale.
+
+\subsubsection{Amazon: Everything is Testable}
+
+Amazon's culture of experimentation is legendary. The company tests nearly every product change before deployment. Examples include:
+
+\begin{itemize}
+    \item Testing "Customers who bought this also bought" recommendation algorithms
+    \item Optimizing product page layouts
+    \item Testing checkout flows and payment options
+    \item Evaluating search result ranking algorithms
+\end{itemize}
+
+Amazon founder Jeff Bezos famously said, "Our success at Amazon is a function of how many experiments we do per year, per month, per week, per day."
+
+\subsubsection{Facebook: Continuous Optimization}
+
+Facebook treats its platform as a continuous experiment. The company tests features on small user subsets before gradual rollout. Notable examples:
+
+\begin{itemize}
+    \item News Feed ranking algorithms optimizing for engagement
+    \item Ad formats and placement testing
+    \item Like button variations and reactions
+    \item Video autoplay behavior
+\end{itemize}
+
+However, Facebook also illustrates ethical challenges—a 2014 "emotional contagion" study manipulating News Feed content sparked controversy about informed consent in experimentation.
+
+\section{Basic Terminology and Concepts}
+
+Precise language enables clear thinking about experiments. This section establishes terminology used throughout the book.
+
+\subsection{Experimental Units and Assignment}
+
+\begin{definition}[Experimental Unit]
+The experimental unit is the entity randomized to treatment. Common units include:
+\begin{itemize}
+    \item \textbf{Users:} Individual people (most common in digital experiments)
+    \item \textbf{Sessions:} Individual visits or browsing sessions
+    \item \textbf{Page views:} Individual page loads
+    \item \textbf{Clusters:} Groups (e.g., geographic regions, schools, stores)
+\end{itemize}
+\end{definition}
+
+The choice of experimental unit affects both implementation and analysis. User-level randomization ensures consistency across sessions but requires persistent identifiers. Session-level randomization is simpler but creates inconsistent experiences for repeat visitors.
+
+\subsection{Control and Treatment Groups}
+
+\begin{definition}[Control Group]
+The control group (often called variant A) receives the existing or baseline experience. It serves as the comparison benchmark for measuring treatment effects.
+\end{definition}
+
+\begin{definition}[Treatment Group]
+Treatment groups (B, C, etc.) receive new variations being tested. In simple A/B tests, there is one treatment group; multivariate tests have multiple.
+\end{definition}
+
+\textbf{Why maintain a control?} Even if we believe a change will improve outcomes, we need the counterfactual—what would have happened without the change? External factors (seasonality, marketing campaigns, news events) affect all users. Comparing treatment to control isolates the causal effect of our intervention.
+
+\subsection{Metrics and Key Performance Indicators}
+
+\begin{definition}[Metric]
+A metric is a quantifiable measure of user behavior or business outcome. Metrics can be:
+\begin{itemize}
+    \item \textbf{Binary:} Conversion (yes/no), click (yes/no)
+    \item \textbf{Continuous:} Revenue per user, time on site, pages viewed
+    \item \textbf{Count:} Number of purchases, search queries, shares
+\end{itemize}
+\end{definition}
+
+Effective metrics share several properties:
+\begin{enumerate}
+    \item \textbf{Measurable:} Can be tracked reliably and consistently
+    \item \textbf{Attributable:} Can be linked to experimental units
+    \item \textbf{Timely:} Observable within reasonable experimental duration
+    \item \textbf{Sensitive:} Responds to interventions we care about
+    \item \textbf{Aligned:} Correlates with long-term business goals
+\end{enumerate}
+
+\subsubsection{Metric Hierarchies}
+
+Mature experimentation programs organize metrics hierarchically:
+
+\begin{itemize}
+    \item \textbf{Primary metric:} The main outcome for decision-making (e.g., revenue per user)
+    \item \textbf{Secondary metrics:} Supporting measures providing context (e.g., conversion rate, average order value)
+    \item \textbf{Guardrail metrics:} Measures we monitor but don't want to degrade (e.g., page load time, error rate)
+\end{itemize}
+
+This hierarchy prevents "metric shopping"—testing many metrics until finding significance by chance.
+
+\subsection{Statistical Significance}
+
+\begin{definition}[Statistical Significance]
+A result is statistically significant if the observed difference between groups is unlikely to have occurred by chance alone under the null hypothesis of no effect. Conventionally, we use significance level $\alpha = 0.05$, meaning we tolerate a 5\% chance of false positives.
+\end{definition}
+
+The p-value quantifies this: $p = P(\text{observe data this extreme} \mid H_0 \text{ true})$. If $p < \alpha$, we reject the null hypothesis and conclude a statistically significant effect exists.
+
+\textbf{Critical distinction:} Statistical significance differs from practical significance. A tiny effect might be statistically significant with enough data but too small to matter. Conversely, a meaningful effect might not reach significance with limited data.
+
+\subsection{Effect Size}
+
+\begin{definition}[Effect Size]
+Effect size quantifies the magnitude of difference between groups, independent of sample size. Common measures include:
+\begin{itemize}
+    \item \textbf{Absolute difference:} $\hat{p}_B - \hat{p}_A$ (e.g., 10.5\% - 10.0\% = 0.5 percentage points)
+    \item \textbf{Relative lift:} $\frac{\hat{p}_B - \hat{p}_A}{\hat{p}_A}$ (e.g., 0.5\% / 10.0\% = 5\% relative increase)
+    \item \textbf{Cohen's d:} $d = \frac{\bar{x}_B - \bar{x}_A}{s_{\text{pooled}}}$ (standardized difference for continuous outcomes)
+\end{itemize}
+\end{definition}
+
+Effect sizes communicate practical importance and facilitate comparison across experiments. A 5\% relative lift in conversion rate from 10\% baseline has different business impact than the same lift from 1\% baseline, even if both are statistically significant.
+
+\section{Types of A/B Tests}
+
+Experimentation encompasses various designs suited to different objectives and constraints.
+
+\subsection{Simple A/B Tests}
+
+The canonical design compares one treatment against a control:
+\begin{itemize}
+    \item 50\% of users see control (A)
+    \item 50\% see treatment (B)
+    \item Measure and compare a primary metric
+\end{itemize}
+
+\textbf{When to use:}
+\begin{itemize}
+    \item Testing a single change (button color, headline, algorithm)
+    \item Clear hypothesis about improvement
+    \item Want clean statistical inference
+    \item First test of a new idea
+\end{itemize}
+
+\subsection{A/B/n Tests (Multiple Variants)}
+
+Testing multiple variations simultaneously:
+\begin{itemize}
+    \item Control (A): 50\%
+    \item Treatment 1 (B): 25\%
+    \item Treatment 2 (C): 25\%
+\end{itemize}
+
+\textbf{Trade-offs:}
+\begin{itemize}
+    \item \textbf{Efficiency:} Test multiple ideas with same traffic
+    \item \textbf{Complexity:} More comparisons increase multiple testing burden
+    \item \textbf{Power:} Splitting traffic reduces power for each comparison
+\end{itemize}
+
+Proper multiple testing corrections (Chapter 6) are essential to maintain valid error rates.
+
+\subsection{Multivariate Tests (Factorial Designs)}
+
+Factorial designs test multiple factors simultaneously. A $2^k$ factorial tests $k$ binary factors:
+
+\begin{example}[2×2 Factorial Design]
+Testing email subject line (A/B) and send time (morning/evening):
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+& \textbf{Morning} & \textbf{Evening} \\
+\midrule
+Subject A & 25\% & 25\% \\
+Subject B & 25\% & 25\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This design estimates:
+\begin{itemize}
+    \item Main effect of subject line
+    \item Main effect of send time
+    \item Interaction: does subject line effect depend on time?
+\end{itemize}
+\end{example}
+
+\textbf{Advantages:}
+\begin{itemize}
+    \item Test multiple factors with one experiment
+    \item Detect interactions between factors
+    \item More efficient than separate tests
+\end{itemize}
+
+\textbf{Challenges:}
+\begin{itemize}
+    \item Complexity grows exponentially ($2^k$ combinations)
+    \item Interpretation harder with many factors
+    \item Requires larger samples for interaction detection
+\end{itemize}
+
+Chapter 8 covers factorial designs comprehensively.
+
+\subsection{Sequential Testing}
+
+Traditional A/B tests fix sample size in advance and analyze once at the end. Sequential testing allows monitoring during the experiment with appropriate statistical controls.
+
+\textbf{Group sequential methods:} Pre-specify analysis times (e.g., 25\%, 50\%, 75\%, 100\% of planned sample) and use spending functions to control Type I error.
+
+\textbf{Advantages:}
+\begin{itemize}
+    \item Stop early if strong evidence emerges
+    \item Ethical in some contexts (e.g., medical trials)
+    \item Reduce time to decision
+\end{itemize}
+
+\textbf{Challenges:}
+\begin{itemize}
+    \item Requires special statistical methods
+    \item "Peeking" at results invalidates standard p-values
+    \item More complex implementation
+\end{itemize}
+
+\subsection{Multi-Armed Bandits}
+
+Rather than fixed allocation, bandit algorithms dynamically shift traffic toward better performers:
+
+\begin{algorithm}[H]
+\caption{Simple $\epsilon$-Greedy Bandit}
+\begin{algorithmic}
+\STATE Initialize: $N_i = 0$, $\hat{\mu}_i = 0$ for variants $i = 1, \ldots, K$
+\FOR{each user $t = 1, 2, \ldots$}
+    \STATE With probability $\epsilon$: select random variant (explore)
+    \STATE With probability $1-\epsilon$: select $\arg\max_i \hat{\mu}_i$ (exploit)
+    \STATE Observe outcome $r_t$
+    \STATE Update estimates for selected variant
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{When bandits outperform A/B tests:}
+\begin{itemize}
+    \item Many variants to test (e.g., ad creative)
+    \item Performance during testing matters (opportunity cost high)
+    \item Priors available from similar tests
+    \item Willing to trade inference clarity for optimization
+\end{itemize}
+
+\section{Real-World Examples}
+
+\subsection{Website Conversion Optimization}
+
+\subsubsection{E-commerce Checkout Flow}
+
+An online retailer redesigns the checkout process, reducing steps from 5 to 3 by combining shipping and billing information.
+
+\textbf{Hypothesis:} Fewer steps will reduce abandonment and increase completion rate.
+
+\textbf{Metrics:}
+\begin{itemize}
+    \item Primary: Checkout completion rate (conversions / checkout initiations)
+    \item Secondary: Revenue per session, average order value
+    \item Guardrails: Form errors, customer support contacts
+\end{itemize}
+
+\textbf{Results:}
+\begin{itemize}
+    \item Completion rate increased from 68\% to 71.5\% ($p < 0.01$)
+    \item Revenue per session up 6.2\%
+    \item No increase in form errors or support contacts
+\end{itemize}
+
+\textbf{Business impact:} With 100,000 monthly checkout initiations, 3.5 percentage point improvement yields 3,500 additional monthly conversions. At \$80 average order value: \$280,000 monthly revenue increase, or \$3.36M annually.
+
+\lstset{language=Python, caption=Basic A/B Test Analysis for Conversion Rates}
+\begin{lstlisting}
+import numpy as np
+from scipy import stats
+import pandas as pd
+
+def analyze_conversion_test(control_conversions, control_total,
+                            treatment_conversions, treatment_total,
+                            alpha=0.05):
+    """
+    Analyze A/B test for conversion rates.
+
+    Parameters:
+    -----------
+    control_conversions : int
+        Number of conversions in control
+    control_total : int
+        Total users in control
+    treatment_conversions : int
+        Number of conversions in treatment
+    treatment_total : int
+        Total users in treatment
+    alpha : float
+        Significance level (default 0.05)
+
+    Returns:
+    --------
+    dict : Test results including statistics and interpretation
+    """
+    # Calculate proportions
+    p_control = control_conversions / control_total
+    p_treatment = treatment_conversions / treatment_total
+
+    # Pooled proportion for null hypothesis
+    p_pooled = (control_conversions + treatment_conversions) / \
+               (control_total + treatment_total)
+
+    # Standard error under null
+    se_null = np.sqrt(p_pooled * (1 - p_pooled) *
+                     (1/control_total + 1/treatment_total))
+
+    # Z-statistic
+    z_stat = (p_treatment - p_control) / se_null
+
+    # Two-sided p-value
+    p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
+
+    # Confidence interval (using unpooled variance)
+    se_unpooled = np.sqrt(p_control*(1-p_control)/control_total +
+                         p_treatment*(1-p_treatment)/treatment_total)
+    z_crit = stats.norm.ppf(1 - alpha/2)
+    ci_lower = (p_treatment - p_control) - z_crit * se_unpooled
+    ci_upper = (p_treatment - p_control) + z_crit * se_unpooled
+
+    # Calculate effect sizes
+    absolute_lift = p_treatment - p_control
+    relative_lift = absolute_lift / p_control if p_control > 0 else np.nan
+
+    # Determine statistical significance
+    is_significant = p_value < alpha
+
+    results = {
+        'control_rate': p_control,
+        'treatment_rate': p_treatment,
+        'absolute_lift': absolute_lift,
+        'relative_lift': relative_lift,
+        'z_statistic': z_stat,
+        'p_value': p_value,
+        'ci_lower': ci_lower,
+        'ci_upper': ci_upper,
+        'is_significant': is_significant,
+        'alpha': alpha
+    }
+
+    return results
+
+# Example: Checkout flow test
+results = analyze_conversion_test(
+    control_conversions=6800,
+    control_total=10000,
+    treatment_conversions=7150,
+    treatment_total=10000
+)
+
+print("A/B Test Results")
+print("=" * 50)
+print(f"Control conversion rate: {results['control_rate']:.1%}")
+print(f"Treatment conversion rate: {results['treatment_rate']:.1%}")
+print(f"\nAbsolute lift: {results['absolute_lift']:.1%}")
+print(f"Relative lift: {results['relative_lift']:.1%}")
+print(f"\nZ-statistic: {results['z_statistic']:.3f}")
+print(f"P-value: {results['p_value']:.4f}")
+print(f"95% CI: [{results['ci_lower']:.1%}, {results['ci_upper']:.1%}]")
+print(f"\nStatistically significant: {results['is_significant']}")
+\end{lstlisting}
+
+\subsection{Email Marketing Campaigns}
+
+\subsubsection{Subject Line Testing}
+
+An e-commerce company tests three email subject lines for a promotional campaign:
+\begin{itemize}
+    \item A (Control): "Weekend Sale - 20\% Off"
+    \item B: "Flash Sale: Save 20\% This Weekend Only"
+    \item C: "Your Exclusive 20\% Weekend Discount"
+\end{itemize}
+
+\textbf{Experimental design:}
+\begin{itemize}
+    \item Randomly assign 100,000 subscribers equally to three variants
+    \item Send simultaneously (Saturday 9 AM)
+    \item Measure open rate, click-through rate, conversion rate
+\end{itemize}
+
+\lstset{language=Python, caption=Multi-Variant Email Test Analysis}
+\begin{lstlisting}
+def analyze_email_test(variants_data, metric='open_rate', alpha=0.05):
+    """
+    Analyze multi-variant email test with Bonferroni correction.
+
+    Parameters:
+    -----------
+    variants_data : dict
+        Dictionary mapping variant names to (successes, total) tuples
+    metric : str
+        Metric name for reporting
+    alpha : float
+        Family-wise error rate
+
+    Returns:
+    --------
+    DataFrame : Comparison of all variants with adjusted p-values
+    """
+    variant_names = list(variants_data.keys())
+    n_variants = len(variant_names)
+    n_comparisons = n_variants * (n_variants - 1) // 2
+
+    # Bonferroni correction
+    alpha_adjusted = alpha / n_comparisons
+
+    results = []
+
+    # Pairwise comparisons
+    for i in range(n_variants):
+        for j in range(i + 1, n_variants):
+            var1, var2 = variant_names[i], variant_names[j]
+
+            successes1, total1 = variants_data[var1]
+            successes2, total2 = variants_data[var2]
+
+            # Perform test
+            test_results = analyze_conversion_test(
+                successes1, total1, successes2, total2, alpha_adjusted
+            )
+
+            results.append({
+                'comparison': f'{var2} vs {var1}',
+                f'{var1}_{metric}': test_results['control_rate'],
+                f'{var2}_{metric}': test_results['treatment_rate'],
+                'absolute_diff': test_results['absolute_lift'],
+                'relative_lift': test_results['relative_lift'],
+                'p_value': test_results['p_value'],
+                'significant': test_results['is_significant']
+            })
+
+    df = pd.DataFrame(results)
+
+    print(f"Email Test Results - {metric}")
+    print("=" * 70)
+    print(f"Number of comparisons: {n_comparisons}")
+    print(f"Bonferroni-adjusted alpha: {alpha_adjusted:.4f}")
+    print()
+
+    return df
+
+# Example data
+email_data = {
+    'A_Control': (4200, 33333),      # Open rate ~12.6%
+    'B_Flash': (4500, 33333),         # Open rate ~13.5%
+    'C_Exclusive': (4800, 33334)      # Open rate ~14.4%
+}
+
+results_df = analyze_email_test(email_data, metric='open_rate')
+print(results_df.to_string(index=False))
+\end{lstlisting}
+
+\subsection{Product Feature Testing}
+
+\subsubsection{Recommendation Algorithm}
+
+A streaming platform tests a new content recommendation algorithm against the existing system.
+
+\textbf{Hypothesis:} Machine learning-based personalized recommendations will increase viewing time compared to popularity-based recommendations.
+
+\textbf{Experimental design:}
+\begin{itemize}
+    \item User-level randomization (consistent experience across sessions)
+    \item 50/50 split: 5 million users per variant
+    \item Duration: 4 weeks (capture weekly patterns, reduce novelty effects)
+\end{itemize}
+
+\textbf{Metrics:}
+\begin{itemize}
+    \item Primary: Hours watched per user per week
+    \item Secondary: Content diversity (unique titles watched), completion rate
+    \item Guardrails: Churn rate, customer satisfaction scores
+\end{itemize}
+
+\textbf{Results demonstrate heterogeneous treatment effects:}
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{User Segment} & \textbf{Control} & \textbf{Treatment} & \textbf{Lift} \\
+\midrule
+New users (< 1 month) & 8.2 hrs & 10.1 hrs & +23\% \\
+Established (1-6 months) & 12.5 hrs & 13.8 hrs & +10\% \\
+Long-term (> 6 months) & 15.3 hrs & 15.1 hrs & -1\% \\
+\midrule
+\textbf{Overall} & 12.4 hrs & 13.2 hrs & +6.5\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+New algorithm benefits new and moderately engaged users but provides no value (or slight harm) to long-term users who have strong preferences. This insight suggests opportunities for segment-specific optimization.
+
+\subsection{Pricing Experiments}
+
+Pricing is perhaps the most sensitive area for experimentation, requiring careful ethical and business considerations.
+
+\subsubsection{Subscription Tier Testing}
+
+A SaaS company tests two pricing strategies:
+\begin{itemize}
+    \item Control: \$29/month, \$290/year (17\% annual discount)
+    \item Treatment: \$29/month, \$249/year (28\% annual discount)
+\end{itemize}
+
+\textbf{Hypothesis:} Larger annual discount will increase annual plan adoption without significantly reducing revenue.
+
+\textbf{Key considerations:}
+\begin{itemize}
+    \item \textbf{Ethics:} All users see both options; no one charged different prices for same product
+    \item \textbf{Segment:} Test on new signups only (existing customers unaffected)
+    \item \textbf{Duration:} 8 weeks to capture full subscription cycle
+\end{itemize}
+
+\lstset{language=Python, caption=Revenue Analysis for Pricing Test}
+\begin{lstlisting}
+def analyze_pricing_test(control_monthly, control_annual,
+                         treatment_monthly, treatment_annual,
+                         avg_months_subscribed=12):
+    """
+    Analyze pricing experiment considering customer lifetime value.
+
+    Parameters:
+    -----------
+    control_monthly, treatment_monthly : tuple
+        (count, price) for monthly subscribers
+    control_annual, treatment_annual : tuple
+        (count, price) for annual subscribers
+    avg_months_subscribed : int
+        Average subscription duration in months
+
+    Returns:
+    --------
+    dict : Revenue metrics and comparison
+    """
+    # Unpack data
+    c_monthly_count, c_monthly_price = control_monthly
+    c_annual_count, c_annual_price = control_annual
+    t_monthly_count, t_monthly_price = treatment_monthly
+    t_annual_count, t_annual_price = treatment_annual
+
+    # Calculate annual plan adoption rate
+    control_total = c_monthly_count + c_annual_count
+    treatment_total = t_monthly_count + t_annual_count
+
+    c_annual_rate = c_annual_count / control_total
+    t_annual_rate = t_annual_count / treatment_total
+
+    # Calculate average revenue per customer (annualized)
+    c_avg_revenue = (
+        (c_monthly_count * c_monthly_price * avg_months_subscribed +
+         c_annual_count * c_annual_price) / control_total
+    )
+
+    t_avg_revenue = (
+        (t_monthly_count * t_monthly_price * avg_months_subscribed +
+         t_annual_count * t_annual_price) / treatment_total
+    )
+
+    # Statistical test on annual adoption rate
+    from scipy.stats import chi2_contingency
+
+    contingency_table = [
+        [c_annual_count, c_monthly_count],
+        [t_annual_count, t_monthly_count]
+    ]
+    chi2, p_value, dof, expected = chi2_contingency(contingency_table)
+
+    results = {
+        'control_annual_rate': c_annual_rate,
+        'treatment_annual_rate': t_annual_rate,
+        'annual_adoption_lift': (t_annual_rate - c_annual_rate) / c_annual_rate,
+        'control_avg_revenue': c_avg_revenue,
+        'treatment_avg_revenue': t_avg_revenue,
+        'revenue_diff': t_avg_revenue - c_avg_revenue,
+        'revenue_diff_pct': (t_avg_revenue - c_avg_revenue) / c_avg_revenue,
+        'chi2_statistic': chi2,
+        'p_value': p_value,
+        'significant': p_value < 0.05
+    }
+
+    return results
+
+# Example: Pricing test data
+pricing_results = analyze_pricing_test(
+    control_monthly=(2800, 29),      # 2800 monthly at $29
+    control_annual=(1200, 290),      # 1200 annual at $290
+    treatment_monthly=(2400, 29),    # 2400 monthly at $29
+    treatment_annual=(1600, 249)     # 1600 annual at $249
+)
+
+print("Pricing Test Results")
+print("=" * 60)
+print(f"Control annual adoption: {pricing_results['control_annual_rate']:.1%}")
+print(f"Treatment annual adoption: {pricing_results['treatment_annual_rate']:.1%}")
+print(f"Lift in annual adoption: {pricing_results['annual_adoption_lift']:+.1%}")
+print()
+print(f"Control avg revenue: ${pricing_results['control_avg_revenue']:.2f}")
+print(f"Treatment avg revenue: ${pricing_results['treatment_avg_revenue']:.2f}")
+print(f"Revenue difference: ${pricing_results['revenue_diff']:+.2f} "
+      f"({pricing_results['revenue_diff_pct']:+.1%})")
+print()
+print(f"Chi-squared: {pricing_results['chi2_statistic']:.2f}, "
+      f"p-value: {pricing_results['p_value']:.4f}")
+print(f"Statistically significant: {pricing_results['significant']}")
+\end{lstlisting}
+
+\textbf{Results interpretation:} Treatment increased annual plan adoption from 30\% to 40\%, but the lower price point resulted in slight decrease in average revenue per customer (from \$319.20 to \$314.10 annually). However, higher adoption of annual plans improves retention and reduces churn, making this a strategic win despite short-term revenue impact.
+
+\section{When A/B Testing Works (and When It Doesn't)}
+
+\subsection{Ideal Scenarios for A/B Testing}
+
+A/B testing excels when:
+
+\begin{enumerate}
+    \item \textbf{Sufficient traffic:} Adequate users/events to detect meaningful effects
+    \item \textbf{Clear metrics:} Quantifiable outcomes observable in reasonable timeframe
+    \item \textbf{Reversible changes:} Can easily roll back if needed
+    \item \textbf{Limited network effects:} Users' experiences are independent
+    \item \textbf{Ethical feasibility:} Randomization and experimentation are appropriate
+\end{enumerate}
+
+\subsection{When A/B Testing Struggles}
+
+\textbf{Insufficient Sample Size}
+
+If your website receives 100 visitors weekly and conversion rate is 2\%, detecting a 25\% relative improvement (from 2\% to 2.5\%) requires approximately 6,300 users per variant—over a year of testing.
+
+\textbf{Long-Term Effects}
+
+Some interventions show different short-term and long-term effects. A/B tests typically run weeks to months. Evaluating impacts on 5-year customer lifetime value requires different approaches.
+
+\textbf{Rare Events}
+
+Testing impacts on events occurring once per 10,000 users requires enormous samples. Consider proxy metrics or specialized methods.
+
+\textbf{Fundamental Redesigns}
+
+Radical changes create such different experiences that incremental testing may not apply. Qualitative research, gradual rollouts, and careful monitoring complement experimentation.
+
+\textbf{Network Effects}
+
+Social networks, marketplaces, and communication platforms violate the "no interference" assumption. One user's treatment affects others. Specialized designs (Chapter 8) address this.
+
+\section{Summary}
+
+A/B testing provides a rigorous framework for learning from data and making evidence-based decisions. Its core principles—randomization, controlled comparison, statistical inference—enable causal conclusions that observational studies cannot support.
+
+Key takeaways:
+\begin{itemize}
+    \item A/B testing evolved from Fisher's agricultural experiments to become central to digital product development
+    \item Randomization eliminates confounding and enables causal inference
+    \item Proper terminology (control/treatment, metrics, significance, effect size) enables precise thinking
+    \item Multiple test types (simple A/B, multivariate, sequential, bandits) suit different objectives
+    \item Real-world applications span e-commerce, marketing, product features, and pricing
+    \item Understanding both capabilities and limitations guides appropriate application
+\end{itemize}
+
+The subsequent chapters develop the statistical theory, implementation practices, and analytical techniques necessary for rigorous experimentation. We begin in Chapter 2 with probability and statistical foundations.
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \cite{fisher1935design}: Original exposition of experimental design principles
+    \item \cite{kohavi2020trustworthy}: Comprehensive modern treatment from industry leaders
+    \item \cite{box2005statistics}: Classical text bridging theory and practice
+    \item \cite{imbens2015causal}: Rigorous causal inference framework
+\end{itemize}
+
+\section{Exercises}
+
+\subsection{Conceptual Questions}
+
+\begin{enumerate}
+    \item \textbf{Understanding Randomization}
+    \begin{enumerate}
+        \item Explain in your own words why randomization is essential for causal inference.
+        \item Describe a scenario where observational data would be misleading but a randomized experiment would reveal the truth.
+        \item What could go wrong if we assigned users to variants based on the first letter of their username instead of random assignment?
+    \end{enumerate}
+
+    \item \textbf{Metrics and Business Impact}
+    \begin{enumerate}
+        \item A test shows 10\% increase in clicks but no change in revenue. What might explain this? Would you ship the change?
+        \item Propose a complete metric hierarchy (primary, secondary, guardrails) for testing a new mobile app checkout flow.
+        \item Explain the difference between statistical significance and practical significance with a concrete example.
+    \end{enumerate}
+
+    \item \textbf{Experimental Design}
+    \begin{enumerate}
+        \item When would you choose user-level over session-level randomization? Provide three scenarios for each.
+        \item A social network wants to test a new feature but worries about network effects. How would this concern affect their experimental design?
+        \item Describe the trade-offs between A/B testing and multi-armed bandits for selecting email subject lines.
+    \end{enumerate}
+\end{enumerate}
+
+\subsection{Quantitative Problems}
+
+\begin{enumerate}
+    \item \textbf{Sample Size Intuition}
+    \begin{enumerate}
+        \item Your website has 10,000 daily visitors. How long must a test run to accumulate 20,000 users per variant?
+        \item If detecting a 5\% effect requires 10,000 users per variant, approximately how many users are needed to detect a 2.5\% effect (half as large)?
+        \item Explain why detecting small effects requires disproportionately more data.
+    \end{enumerate}
+
+    \item \textbf{Effect Size Calculations}
+    \begin{enumerate}
+        \item Control: 8.2\% conversion. Treatment: 9.0\% conversion. Calculate absolute and relative lift.
+        \item A test increases average order value from \$45 to \$48. Express as absolute difference, relative lift, and Cohen's d (assume SD = \$15).
+        \item Why might the same 10\% relative improvement have different business value at different baseline rates?
+    \end{enumerate}
+\end{enumerate}
+
+\subsection{Programming Exercises}
+
+\begin{enumerate}
+    \item \textbf{Basic Analysis}
+    \begin{enumerate}
+        \item Use the provided code to analyze: Control (450 conversions / 5000 users), Treatment (520 conversions / 5000 users). Interpret all outputs.
+        \item Modify the code to calculate 90\% confidence intervals instead of 95\%. How does this change affect the width?
+        \item Implement a function that determines if an observed difference could plausibly be due to chance (p-value interpretation).
+    \end{enumerate}
+
+    \item \textbf{Simulation Study}
+    \begin{enumerate}
+        \item Simulate 10,000 A/B tests where the null hypothesis is true (no effect). What proportion show p < 0.05? Why?
+        \item Simulate tests with 10\% true relative lift. What proportion correctly detect this effect (statistical power)?
+        \item Create a visualization showing how power changes with sample size for a fixed effect size.
+    \end{enumerate}
+
+    \item \textbf{Real Data Analysis}
+    \begin{enumerate}
+        \item Download a public A/B test dataset (e.g., from Kaggle). Perform complete analysis including data validation, statistical testing, and business recommendation.
+        \item Implement pre-analysis checks: sample ratio mismatch detection, temporal patterns, outlier identification.
+        \item Create a reusable analysis template you could apply to future experiments.
+    \end{enumerate}
+\end{enumerate}
+
+\subsection{Critical Thinking}
+
+\begin{enumerate}
+    \item \textbf{Case Analysis}
+    \begin{enumerate}
+        \item Microsoft Bing's experiment (mentioned earlier) showed short-term revenue gains but long-term user satisfaction declines. Design an experimental protocol that would have detected this issue earlier.
+        \item A company runs 100 experiments simultaneously. Several show statistically significant improvements. What concerns should you have? How would you address them?
+        \item Critics argue that A/B testing leads to incremental optimization rather than breakthrough innovation. How would you respond? When is this criticism valid?
+    \end{enumerate}
+
+    \item \textbf{Ethical Considerations}
+    \begin{enumerate}
+        \item A dating app wants to test whether showing fewer high-quality matches increases engagement (by creating scarcity). Is this ethical? What principles guide your answer?
+        \item When, if ever, should informed consent be required for A/B tests in commercial products?
+        \item Design ethical guidelines for experimentation in your domain of interest.
+    \end{enumerate}
+\end{enumerate}

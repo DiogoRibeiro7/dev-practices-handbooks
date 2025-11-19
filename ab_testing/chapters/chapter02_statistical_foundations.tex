@@ -1,0 +1,2104 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Apply probability theory fundamentals to experimental design and analysis
+    \item Work with probability distributions essential for A/B testing
+    \item Understand and apply the Central Limit Theorem to justify normal approximations
+    \item Construct and interpret confidence intervals for common metrics
+    \item Distinguish between frequentist and Bayesian inference frameworks
+    \item Formulate and test statistical hypotheses rigorously
+    \item Calculate and interpret effect size measures for practical significance
+    \item Implement statistical analyses using Python and R
+\end{itemize}
+
+\section{Introduction}
+
+A/B testing rests on a foundation of probability theory and statistical inference. While modern software makes running experiments trivially easy, understanding the underlying mathematics is essential for:
+
+\begin{enumerate}
+    \item \textbf{Correct Implementation:} Knowing when assumptions are violated
+    \item \textbf{Proper Interpretation:} Understanding what results actually mean
+    \item \textbf{Sound Decisions:} Distinguishing statistical significance from practical importance
+    \item \textbf{Effective Communication:} Explaining uncertainty to stakeholders
+\end{enumerate}
+
+This chapter develops these foundations systematically, connecting abstract theory to concrete experimental practice. We emphasize not just the mechanics of calculation but the reasoning that justifies each method.
+
+\section{Probability Theory Fundamentals}
+
+Probability provides the language for reasoning about uncertainty—the fundamental challenge in A/B testing where we observe samples but want to make inferences about populations.
+
+\subsection{Probability Spaces and Random Variables}
+
+\begin{definition}[Probability Space]
+A probability space is a triple $(\Omega, \mathcal{F}, P)$ where:
+\begin{itemize}
+    \item $\Omega$ is the sample space (set of all possible outcomes)
+    \item $\mathcal{F}$ is a $\sigma$-algebra of events (subsets of $\Omega$)
+    \item $P: \mathcal{F} \rightarrow [0,1]$ is a probability measure satisfying:
+    \begin{enumerate}
+        \item $P(\Omega) = 1$ (normalization)
+        \item For disjoint events $A_1, A_2, \ldots$: $P(\bigcup_{i=1}^{\infty} A_i) = \sum_{i=1}^{\infty} P(A_i)$ (countable additivity)
+    \end{enumerate}
+\end{itemize}
+\end{definition}
+
+\begin{example}[A/B Test Sample Space]
+In a simple A/B test where we observe whether a user converts:
+\begin{itemize}
+    \item $\Omega = \{\text{convert}, \text{no convert}\}$
+    \item $\mathcal{F} = \{\emptyset, \{\text{convert}\}, \{\text{no convert}\}, \Omega\}$
+    \item $P(\{\text{convert}\}) = p$, $P(\{\text{no convert}\}) = 1-p$
+\end{itemize}
+
+For $n$ users, $\Omega$ becomes the set of all possible sequences of conversions and non-conversions, containing $2^n$ elements.
+\end{example}
+
+\begin{definition}[Random Variable]
+A random variable $X$ is a measurable function $X: \Omega \rightarrow \mathbb{R}$ that maps outcomes to real numbers. We distinguish:
+\begin{itemize}
+    \item \textbf{Discrete random variables:} Taking countable values with probability mass function (PMF) $p(x) = P(X = x)$
+    \item \textbf{Continuous random variables:} Taking uncountable values with probability density function (PDF) $f(x)$ where $P(a \leq X \leq b) = \int_a^b f(x) dx$
+\end{itemize}
+\end{definition}
+
+\subsection{Expected Value and Variance}
+
+The expected value and variance are the most important summary statistics of a distribution, characterizing location and spread respectively.
+
+\begin{definition}[Expected Value]
+For discrete $X$:
+\begin{equation}
+\mathbb{E}[X] = \sum_x x \cdot p(x)
+\end{equation}
+
+For continuous $X$:
+\begin{equation}
+\mathbb{E}[X] = \int_{-\infty}^{\infty} x \cdot f(x) dx
+\end{equation}
+
+The expected value represents the long-run average if we could repeat the experiment infinitely many times.
+\end{definition}
+
+\begin{definition}[Variance and Standard Deviation]
+\begin{equation}
+\text{Var}(X) = \mathbb{E}[(X - \mathbb{E}[X])^2] = \mathbb{E}[X^2] - (\mathbb{E}[X])^2
+\end{equation}
+
+The standard deviation is $\sigma = \sqrt{\text{Var}(X)}$.
+
+Variance measures the expected squared deviation from the mean—how spread out the distribution is. Standard deviation has the same units as $X$, making it more interpretable.
+\end{definition}
+
+\subsubsection{Essential Properties for A/B Testing}
+
+\begin{proposition}[Linearity of Expectation]
+For random variables $X_1, \ldots, X_n$ and constants $a_1, \ldots, a_n, b$:
+\begin{equation}
+\mathbb{E}\left[b + \sum_{i=1}^n a_i X_i\right] = b + \sum_{i=1}^n a_i \mathbb{E}[X_i]
+\end{equation}
+This holds \textbf{regardless of dependence} between variables—a remarkable fact that greatly simplifies calculations.
+\end{proposition}
+
+\begin{proposition}[Variance of Linear Combinations]
+For independent random variables $X_1, \ldots, X_n$ and constants $a_1, \ldots, a_n, b$:
+\begin{equation}
+\text{Var}\left(b + \sum_{i=1}^n a_i X_i\right) = \sum_{i=1}^n a_i^2 \text{Var}(X_i)
+\end{equation}
+Note: The constant $b$ vanishes (shifting doesn't change spread), and independence is crucial.
+\end{proposition}
+
+\begin{corollary}[Variance of Sample Mean]
+For $X_1, \ldots, X_n$ independent with $\mathbb{E}[X_i] = \mu$ and $\text{Var}(X_i) = \sigma^2$:
+\begin{equation}
+\text{Var}(\bar{X}) = \text{Var}\left(\frac{1}{n}\sum_{i=1}^n X_i\right) = \frac{1}{n^2} \sum_{i=1}^n \text{Var}(X_i) = \frac{\sigma^2}{n}
+\end{equation}
+
+This fundamental result shows uncertainty decreases with $\sqrt{n}$, not $n$. Quadrupling sample size only halves standard error.
+\end{corollary}
+
+\begin{example}[Computing Means and Variances]
+Consider an A/B test where users spend time on site. Let $X_i$ represent time spent by user $i$, with individual $\mathbb{E}[X_i] = 5$ minutes and $\text{Var}(X_i) = 4$ minutes$^2$.
+
+For $n = 100$ users:
+\begin{align}
+\mathbb{E}[\bar{X}] &= \mathbb{E}\left[\frac{1}{100}\sum_{i=1}^{100} X_i\right] = \frac{1}{100}\sum_{i=1}^{100} \mathbb{E}[X_i] = 5 \text{ minutes}\\
+\text{Var}(\bar{X}) &= \frac{4}{100} = 0.04 \text{ minutes}^2 \\
+\text{SD}(\bar{X}) &= \sqrt{0.04} = 0.2 \text{ minutes}
+\end{align}
+
+The sample mean has the same expected value as individual observations, but much less variability.
+\end{example}
+
+\lstset{language=Python, caption=Simulating Expected Value and Variance, label=lst:expectation_sim}
+\begin{lstlisting}
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+
+sns.set_style("whitegrid")
+np.random.seed(42)
+
+# Simulate time spent on site (exponential distribution)
+true_mean = 5  # minutes
+n_users = 100
+n_simulations = 10000
+
+# Individual observations
+individual_times = np.random.exponential(true_mean, size=(n_simulations, n_users))
+
+# Sample means
+sample_means = individual_times.mean(axis=1)
+
+# Theoretical values
+theoretical_var_individual = true_mean**2  # For exponential
+theoretical_var_sample_mean = theoretical_var_individual / n_users
+theoretical_sd_sample_mean = np.sqrt(theoretical_var_sample_mean)
+
+# Empirical values
+empirical_mean = sample_means.mean()
+empirical_sd = sample_means.std()
+
+# Visualization
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Individual observations
+axes[0].hist(individual_times[0, :], bins=50, density=True, alpha=0.7,
+             label='Sample data', color='steelblue')
+x = np.linspace(0, 25, 1000)
+axes[0].plot(x, stats.expon.pdf(x, scale=true_mean), 'r-', linewidth=2,
+            label=f'Theoretical PDF')
+axes[0].axvline(true_mean, color='green', linestyle='--', linewidth=2,
+               label=f'True mean = {true_mean}')
+axes[0].set_xlabel('Time Spent (minutes)', fontsize=12)
+axes[0].set_ylabel('Density', fontsize=12)
+axes[0].set_title('Individual User Times', fontsize=14, fontweight='bold')
+axes[0].legend()
+axes[0].grid(alpha=0.3)
+
+# Sample means
+axes[1].hist(sample_means, bins=50, density=True, alpha=0.7,
+            label=f'Simulated sample means (n={n_simulations:,})', color='steelblue')
+axes[1].axvline(empirical_mean, color='red', linestyle='-', linewidth=2,
+               label=f'Empirical mean = {empirical_mean:.3f}')
+axes[1].axvline(true_mean, color='green', linestyle='--', linewidth=2,
+               label=f'True mean = {true_mean}')
+axes[1].set_xlabel('Sample Mean (minutes)', fontsize=12)
+axes[1].set_ylabel('Density', fontsize=12)
+axes[1].set_title(f'Distribution of Sample Means (n={n_users})',
+                 fontsize=14, fontweight='bold')
+axes[1].legend()
+axes[1].grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('expectation_variance_demo.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+
+# Print comparison
+print(f"Theoretical SD of sample mean: {theoretical_sd_sample_mean:.4f}")
+print(f"Empirical SD of sample mean:   {empirical_sd:.4f}")
+print(f"Ratio (should be ~1):          {empirical_sd/theoretical_sd_sample_mean:.4f}")
+\end{lstlisting}
+
+\subsection{The Central Limit Theorem}
+
+The Central Limit Theorem (CLT) is arguably the most important result in statistics. It justifies using normal approximations in A/B testing, enabling inference even when individual observations are far from normally distributed.
+
+\begin{theorem}[Central Limit Theorem]
+\label{thm:clt}
+Let $X_1, X_2, \ldots, X_n$ be independent, identically distributed random variables with $\mathbb{E}[X_i] = \mu$ and $\text{Var}(X_i) = \sigma^2 < \infty$. Define the sample mean:
+\begin{equation}
+\bar{X}_n = \frac{1}{n}\sum_{i=1}^n X_i
+\end{equation}
+
+Then as $n \rightarrow \infty$:
+\begin{equation}
+\frac{\bar{X}_n - \mu}{\sigma/\sqrt{n}} \xrightarrow{d} \mathcal{N}(0, 1)
+\end{equation}
+
+Equivalently, for large $n$:
+\begin{equation}
+\bar{X}_n \approx \mathcal{N}\left(\mu, \frac{\sigma^2}{n}\right)
+\end{equation}
+\end{theorem}
+
+\textbf{Interpretation:} The sample mean of \textit{any} distribution (with finite variance) becomes approximately normally distributed for large sample sizes. The approximation quality improves as $n$ increases.
+
+\subsubsection{Implications for A/B Testing}
+
+The CLT has profound practical consequences:
+
+\begin{enumerate}
+    \item \textbf{Universality:} Whether testing conversions (Bernoulli), revenue (right-skewed), or engagement time (exponential), sample means are approximately normal for sufficient $n$.
+
+    \item \textbf{Quantifiable Uncertainty:} The standard error $\text{SE}(\bar{X}) = \sigma/\sqrt{n}$ precisely quantifies estimation uncertainty.
+
+    \item \textbf{Confidence Intervals:} Normal approximation enables constructing confidence intervals: $\bar{X} \pm z_{\alpha/2} \cdot \text{SE}(\bar{X})$.
+
+    \item \textbf{Hypothesis Testing:} Test statistics become approximately normal, enabling p-value calculation.
+\end{enumerate}
+
+\begin{example}[CLT for Conversion Rates]
+Users convert with probability $p = 0.05$. Individual conversions $X_i \sim \text{Bernoulli}(0.05)$ take only values 0 and 1—decidedly non-normal! The PMF is:
+\begin{equation}
+P(X_i = 0) = 0.95, \quad P(X_i = 1) = 0.05
+\end{equation}
+
+However, with $n = 1000$ users, the sample conversion rate $\hat{p} = \bar{X}_n$ is approximately:
+\begin{equation}
+\hat{p} \sim \mathcal{N}\left(0.05, \frac{0.05 \times 0.95}{1000}\right) = \mathcal{N}(0.05, 0.0000475)
+\end{equation}
+
+Standard error: $\text{SE}(\hat{p}) = \sqrt{0.0000475} \approx 0.0069$ or about 0.69 percentage points.
+
+A 95\% confidence interval:
+\begin{equation}
+0.05 \pm 1.96 \times 0.0069 = [0.0365, 0.0635]
+\end{equation}
+\end{example}
+
+\subsubsection{How Large is "Large Enough"?}
+
+A practical question: when is the normal approximation accurate? Rules of thumb:
+
+\begin{itemize}
+    \item \textbf{For proportions:} $np \geq 5$ and $n(1-p) \geq 5$
+    \item \textbf{For symmetric distributions:} $n \geq 30$ often sufficient
+    \item \textbf{For highly skewed distributions:} May need $n \geq 100$ or more
+\end{itemize}
+
+These are guidelines, not hard rules. Simulation can verify adequacy for specific cases.
+
+\lstset{language=Python, caption=Demonstrating the Central Limit Theorem, label=lst:clt_demo}
+\begin{lstlisting}
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import norm, bernoulli, expon, kstest
+
+sns.set_style("whitegrid")
+np.random.seed(42)
+
+def demonstrate_clt(distribution, params, sample_sizes, n_simulations=10000):
+    """
+    Demonstrate CLT for different distributions and sample sizes.
+
+    Parameters:
+    -----------
+    distribution : str
+        'bernoulli', 'exponential', or 'uniform'
+    params : dict
+        Distribution parameters
+    sample_sizes : list
+        List of sample sizes to demonstrate
+    n_simulations : int
+        Number of simulations per sample size
+    """
+    n_plots = len(sample_sizes)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    axes = axes.flatten()
+
+    # Generate data based on distribution
+    if distribution == 'bernoulli':
+        p = params['p']
+        true_mean = p
+        true_std = np.sqrt(p * (1-p))
+        generate_sample = lambda size: bernoulli.rvs(p, size=size)
+        title_prefix = f"Bernoulli(p={p})"
+    elif distribution == 'exponential':
+        scale = params['scale']
+        true_mean = scale
+        true_std = scale
+        generate_sample = lambda size: expon.rvs(scale=scale, size=size)
+        title_prefix = f"Exponential(λ=1/{scale})"
+    elif distribution == 'uniform':
+        a, b = params['a'], params['b']
+        true_mean = (a + b) / 2
+        true_std = np.sqrt((b - a)**2 / 12)
+        generate_sample = lambda size: np.random.uniform(a, b, size)
+        title_prefix = f"Uniform({a}, {b})"
+
+    ks_results = []
+
+    for idx, n in enumerate(sample_sizes):
+        # Simulate sample means
+        sample_means = np.array([
+            generate_sample(n).mean()
+            for _ in range(n_simulations)
+        ])
+
+        # Theoretical normal distribution for sample mean
+        theoretical_mean = true_mean
+        theoretical_std = true_std / np.sqrt(n)
+
+        # Standardize for normality test
+        standardized = (sample_means - theoretical_mean) / theoretical_std
+        ks_stat, p_value = kstest(standardized, 'norm')
+        ks_results.append((n, ks_stat, p_value))
+
+        # Create theoretical normal curve
+        x_range = np.linspace(
+            theoretical_mean - 4*theoretical_std,
+            theoretical_mean + 4*theoretical_std,
+            1000
+        )
+        theoretical_pdf = norm.pdf(x_range, theoretical_mean, theoretical_std)
+
+        # Plot
+        ax = axes[idx]
+        ax.hist(sample_means, bins=50, density=True, alpha=0.7,
+                color='steelblue', label='Simulated sample means', edgecolor='black')
+        ax.plot(x_range, theoretical_pdf, 'r-', linewidth=2.5,
+                label='Theoretical Normal', alpha=0.9)
+        ax.axvline(true_mean, color='green', linestyle='--', linewidth=2,
+                   label=f'True mean = {true_mean:.3f}')
+
+        ax.set_title(f'{title_prefix}, n = {n}\nSE = {theoretical_std:.4f}, ' +
+                    f'KS p-value = {p_value:.4f}',
+                    fontsize=11, fontweight='bold')
+        ax.set_xlabel('Sample Mean', fontsize=10)
+        ax.set_ylabel('Density', fontsize=10)
+        ax.legend(fontsize=9)
+        ax.grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(f'clt_demonstration_{distribution}.pdf', dpi=300, bbox_inches='tight')
+    plt.show()
+
+    # Print normality test results
+    print(f"\nKolmogorov-Smirnov test for normality ({title_prefix}):")
+    print(f"{'n':>6} {'KS statistic':>15} {'p-value':>10} {'Assessment':>20}")
+    print("-" * 55)
+    for n, ks_stat, p_val in ks_results:
+        assessment = "Excellent fit" if p_val > 0.05 else "Poor fit"
+        print(f"{n:>6} {ks_stat:>15.4f} {p_val:>10.4f} {assessment:>20}")
+
+# Demonstrate for different distributions
+print("=" * 70)
+print("CLT Demonstration: Bernoulli Distribution (conversion rates)")
+print("=" * 70)
+demonstrate_clt('bernoulli', {'p': 0.05}, [10, 50, 200, 1000])
+
+print("\n" + "=" * 70)
+print("CLT Demonstration: Exponential Distribution (session times)")
+print("=" * 70)
+demonstrate_clt('exponential', {'scale': 5}, [10, 50, 200, 1000])
+
+print("\n" + "=" * 70)
+print("CLT Demonstration: Uniform Distribution")
+print("=" * 70)
+demonstrate_clt('uniform', {'a': 0, 'b': 10}, [10, 50, 200, 1000])
+\end{lstlisting}
+
+\subsection{Law of Large Numbers}
+
+Closely related to the CLT is the Law of Large Numbers, which formalizes the intuition that sample averages converge to population means.
+
+\begin{theorem}[Weak Law of Large Numbers]
+Let $X_1, X_2, \ldots$ be independent, identically distributed with $\mathbb{E}[X_i] = \mu$. Then for any $\epsilon > 0$:
+\begin{equation}
+P(|\bar{X}_n - \mu| > \epsilon) \rightarrow 0 \text{ as } n \rightarrow \infty
+\end{equation}
+
+In words: the sample mean converges in probability to the population mean.
+\end{theorem}
+
+\textbf{Distinction from CLT:} The Law of Large Numbers tells us sample means get close to the truth. The CLT tells us how the sample mean is distributed around the truth, enabling quantification of uncertainty.
+
+\section{Key Probability Distributions for A/B Testing}
+
+Several distributions arise repeatedly in experimental analysis. Understanding their properties and relationships is essential for correct application.
+
+\subsection{Bernoulli and Binomial Distributions}
+
+\begin{definition}[Bernoulli Distribution]
+A random variable $X \sim \text{Bernoulli}(p)$ represents a single binary trial, taking value 1 (success) with probability $p$ and 0 (failure) with probability $1-p$.
+
+\begin{align}
+P(X = 1) &= p, \quad P(X = 0) = 1-p \\
+\mathbb{E}[X] &= p \\
+\text{Var}(X) &= p(1-p)
+\end{align}
+\end{definition}
+
+Note that variance is maximized at $p = 0.5$ (maximum uncertainty) and approaches 0 as $p \to 0$ or $p \to 1$ (near certainty).
+
+\begin{definition}[Binomial Distribution]
+If $X_1, \ldots, X_n$ are independent $\text{Bernoulli}(p)$ variables, their sum $Y = \sum_{i=1}^n X_i$ follows $\text{Binomial}(n, p)$, representing the number of successes in $n$ trials.
+
+\begin{align}
+P(Y = k) &= \binom{n}{k} p^k (1-p)^{n-k}, \quad k = 0, 1, \ldots, n \\
+\mathbb{E}[Y] &= np \\
+\text{Var}(Y) &= np(1-p)
+\end{align}
+\end{definition}
+
+\textbf{Practical Application:} In A/B testing:
+\begin{itemize}
+    \item $X_i$ = whether user $i$ converts (Bernoulli)
+    \item $Y$ = total number of conversions (Binomial)
+    \item $\hat{p} = Y/n$ = observed conversion rate
+\end{itemize}
+
+\subsection{Normal (Gaussian) Distribution}
+
+The normal distribution is ubiquitous in A/B testing, justified by the CLT.
+
+\begin{definition}[Normal Distribution]
+A random variable $X \sim \mathcal{N}(\mu, \sigma^2)$ has probability density function:
+\begin{equation}
+f(x) = \frac{1}{\sigma\sqrt{2\pi}} \exp\left(-\frac{(x-\mu)^2}{2\sigma^2}\right), \quad x \in \mathbb{R}
+\end{equation}
+
+Properties:
+\begin{itemize}
+    \item $\mathbb{E}[X] = \mu$ (location parameter)
+    \item $\text{Var}(X) = \sigma^2$ (scale parameter)
+    \item Symmetric around $\mu$
+    \item $\approx$ 68\% of mass within $\mu \pm \sigma$, 95\% within $\mu \pm 2\sigma$, 99.7\% within $\mu \pm 3\sigma$
+\end{itemize}
+\end{definition}
+
+The \textbf{standard normal distribution} $Z \sim \mathcal{N}(0, 1)$ serves as reference. Any normal variable can be standardized:
+\begin{equation}
+Z = \frac{X - \mu}{\sigma} \sim \mathcal{N}(0, 1)
+\end{equation}
+
+\begin{proposition}[Properties of Normal Distribution]
+\begin{enumerate}
+    \item \textbf{Linear transformation:} If $X \sim \mathcal{N}(\mu, \sigma^2)$ and $Y = aX + b$, then:
+    \begin{equation}
+    Y \sim \mathcal{N}(a\mu + b, a^2\sigma^2)
+    \end{equation}
+
+    \item \textbf{Sum of independent normals:} If $X_i \sim \mathcal{N}(\mu_i, \sigma_i^2)$ independently, then:
+    \begin{equation}
+    \sum_{i=1}^n X_i \sim \mathcal{N}\left(\sum_{i=1}^n \mu_i, \sum_{i=1}^n \sigma_i^2\right)
+    \end{equation}
+
+    \item \textbf{Difference of independent normals:} Crucial for A/B testing:
+    \begin{equation}
+    X_1 - X_2 \sim \mathcal{N}(\mu_1 - \mu_2, \sigma_1^2 + \sigma_2^2)
+    \end{equation}
+\end{enumerate}
+\end{proposition}
+
+\subsection{Student's t-Distribution}
+
+When population variance is unknown (the usual case) and must be estimated from data, the t-distribution provides more accurate inference than the normal distribution, especially for small samples.
+
+\begin{definition}[Student's t-Distribution]
+If $Z \sim \mathcal{N}(0,1)$ and $V \sim \chi^2_\nu$ independently, then:
+\begin{equation}
+T = \frac{Z}{\sqrt{V/\nu}} \sim t_\nu
+\end{equation}
+
+where $\nu$ is the degrees of freedom parameter.
+\end{definition}
+
+Key properties:
+\begin{itemize}
+    \item Symmetric around 0, like the normal distribution
+    \item Heavier tails than normal (more probability in extremes)
+    \item As $\nu \rightarrow \infty$, $t_\nu \to \mathcal{N}(0,1)$
+    \item For $\nu \geq 30$, practically indistinguishable from normal
+\end{itemize}
+
+\textbf{When to use:}
+\begin{itemize}
+    \item Comparing means when variance is estimated from data
+    \item Small to moderate sample sizes ($n < 30$ per group)
+    \item Constructing confidence intervals for means
+    \item Two-sample t-tests in A/B experiments
+\end{itemize}
+
+\begin{example}[t-Distribution in Practice]
+Comparing average order value between variants with $n_1 = 25$ and $n_2 = 25$:
+\begin{itemize}
+    \item Degrees of freedom: $\nu = n_1 + n_2 - 2 = 48$
+    \item Use $t_{48}$ critical values, not $\mathcal{N}(0,1)$
+    \item For 95\% CI: $t_{0.025, 48} = 2.011$ vs. $z_{0.025} = 1.96$
+\end{itemize}
+
+The difference is small but matters for proper uncertainty quantification.
+
+With $n_1 = n_2 = 1000$, we'd have $\nu = 1998$, and $t_{0.025, 1998} \approx 1.961$ — essentially identical to the normal quantile.
+\end{example}
+
+\subsection{Beta Distribution}
+
+The Beta distribution is the conjugate prior for the Bernoulli/Binomial likelihood in Bayesian A/B testing (Chapter \ref{ch:bayesian}).
+
+\begin{definition}[Beta Distribution]
+A random variable $X \sim \text{Beta}(\alpha, \beta)$ has support on $[0,1]$ with PDF:
+\begin{equation}
+f(x) = \frac{\Gamma(\alpha + \beta)}{\Gamma(\alpha)\Gamma(\beta)} x^{\alpha-1}(1-x)^{\beta-1}, \quad 0 \leq x \leq 1
+\end{equation}
+
+Properties:
+\begin{align}
+\mathbb{E}[X] &= \frac{\alpha}{\alpha + \beta} \\
+\text{Var}(X) &= \frac{\alpha\beta}{(\alpha+\beta)^2(\alpha+\beta+1)} \\
+\text{Mode} &= \frac{\alpha-1}{\alpha+\beta-2} \quad (\text{for } \alpha, \beta > 1)
+\end{align}
+\end{definition}
+
+The Beta distribution is extremely flexible:
+\begin{itemize}
+    \item $\text{Beta}(1,1) = \text{Uniform}(0,1)$ (non-informative prior)
+    \item $\alpha = \beta$ gives symmetric distributions
+    \item $\alpha < \beta$ skews left, $\alpha > \beta$ skews right
+    \item Large $\alpha + \beta$ gives narrow distributions (strong prior beliefs)
+\end{itemize}
+
+\lstset{language=Python, caption=Visualizing Key Distributions, label=lst:distributions_viz}
+\begin{lstlisting}
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import binom, norm, t, beta
+
+sns.set_style("whitegrid")
+np.random.seed(42)
+
+fig = plt.figure(figsize=(16, 10))
+
+# 1. Binomial distributions
+ax1 = plt.subplot(2, 3, 1)
+n = 100
+for p in [0.1, 0.3, 0.5]:
+    x = np.arange(0, n+1)
+    pmf = binom.pmf(x, n, p)
+    ax1.plot(x, pmf, marker='o', markersize=2, label=f'p = {p}', alpha=0.7)
+ax1.set_xlabel('Number of Successes', fontsize=11)
+ax1.set_ylabel('Probability', fontsize=11)
+ax1.set_title('Binomial(n=100, p) Distributions', fontsize=12, fontweight='bold')
+ax1.legend()
+ax1.grid(alpha=0.3)
+
+# 2. Normal distributions
+ax2 = plt.subplot(2, 3, 2)
+x = np.linspace(-8, 8, 1000)
+for mu, sigma in [(0, 1), (0, 2), (2, 1)]:
+    pdf = norm.pdf(x, mu, sigma)
+    ax2.plot(x, pdf, linewidth=2.5,
+            label=f'mu = {mu}, sigma = {sigma}', alpha=0.7)
+ax2.set_xlabel('x', fontsize=11)
+ax2.set_ylabel('Density', fontsize=11)
+ax2.set_title('Normal Distributions', fontsize=12, fontweight='bold')
+ax2.legend()
+ax2.grid(alpha=0.3)
+
+# 3. t-distributions
+ax3 = plt.subplot(2, 3, 3)
+x = np.linspace(-4, 4, 1000)
+ax3.plot(x, norm.pdf(x, 0, 1), linewidth=2.5,
+        label='Normal(0,1)', color='black', linestyle='--')
+for df in [1, 3, 10, 30]:
+    pdf = t.pdf(x, df)
+    ax3.plot(x, pdf, linewidth=2, label=f'df = {df}', alpha=0.7)
+ax3.set_xlabel('x', fontsize=11)
+ax3.set_ylabel('Density', fontsize=11)
+ax3.set_title("Student's t-Distributions", fontsize=12, fontweight='bold')
+ax3.legend()
+ax3.grid(alpha=0.3)
+
+# 4. Beta distributions
+ax4 = plt.subplot(2, 3, 4)
+x = np.linspace(0, 1, 1000)
+for alpha, beta_param in [(1, 1), (2, 5), (5, 2), (10, 10)]:
+    pdf = beta.pdf(x, alpha, beta_param)
+    ax4.plot(x, pdf, linewidth=2.5,
+            label=f'α = {alpha}, β = {beta_param}', alpha=0.7)
+ax4.set_xlabel('x', fontsize=11)
+ax4.set_ylabel('Density', fontsize=11)
+ax4.set_title('Beta Distributions', fontsize=12, fontweight='bold')
+ax4.legend()
+ax4.grid(alpha=0.3)
+
+# 5. Normal approximation to Binomial
+ax5 = plt.subplot(2, 3, 5)
+n, p = 100, 0.3
+x_binom = np.arange(0, n+1)
+pmf = binom.pmf(x_binom, n, p)
+ax5.bar(x_binom, pmf, alpha=0.6, label='Binomial(100, 0.3)', color='steelblue')
+
+mu = n * p
+sigma = np.sqrt(n * p * (1-p))
+x_norm = np.linspace(0, n, 1000)
+pdf_norm = norm.pdf(x_norm, mu, sigma)
+ax5.plot(x_norm, pdf_norm, 'r-', linewidth=2.5,
+        label=f'Normal({mu:.0f}, {sigma:.2f}²)', alpha=0.9)
+ax5.set_xlabel('Number of Successes', fontsize=11)
+ax5.set_ylabel('Probability/Density', fontsize=11)
+ax5.set_title('Normal Approximation to Binomial', fontsize=12, fontweight='bold')
+ax5.legend()
+ax5.grid(alpha=0.3)
+
+# 6. Comparison of confidence intervals: z vs t
+ax6 = plt.subplot(2, 3, 6)
+sample_sizes = np.arange(5, 101, 5)
+z_critical = norm.ppf(0.975)
+t_critical = [t.ppf(0.975, n-1) for n in sample_sizes]
+
+ax6.plot(sample_sizes, t_critical, 'b-', linewidth=2.5,
+        label='t critical value', marker='o', markersize=4)
+ax6.axhline(z_critical, color='red', linestyle='--', linewidth=2.5,
+           label=f'z critical value = {z_critical:.3f}')
+ax6.set_xlabel('Sample Size', fontsize=11)
+ax6.set_ylabel('Critical Value (two-tailed, α=0.05)', fontsize=11)
+ax6.set_title('t vs. Normal Critical Values', fontsize=12, fontweight='bold')
+ax6.legend()
+ax6.grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('distributions_visualization.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+
+# Print practical insights
+print("\n" + "="*70)
+print("Practical Insights on Distribution Selection")
+print("="*70)
+print(f"\nt-distribution vs Normal:")
+print(f"Sample size     t-critical (95% CI)     z-critical     Difference")
+print("-" * 70)
+for n in [5, 10, 20, 30, 50, 100]:
+    t_crit = t.ppf(0.975, n-1)
+    z_crit = norm.ppf(0.975)
+    diff = (t_crit - z_crit) / z_crit * 100
+    print(f"n = {n:3d}         {t_crit:.4f}                {z_crit:.4f}        {diff:+.2f}%")
+\end{lstlisting}
+
+\section{Statistical Inference}
+
+Statistical inference is the process of drawing conclusions about populations from samples. The fundamental challenge: we observe sample data but want to make statements about unobserved population parameters.
+
+\subsection{Population vs. Sample}
+
+\begin{itemize}
+    \item \textbf{Population:} The complete set of all individuals/units of interest
+    \begin{itemize}
+        \item Parameters (fixed, unknown): $\mu, \sigma, p$
+        \item What we want to know about
+    \end{itemize}
+
+    \item \textbf{Sample:} A subset of the population that we actually observe
+    \begin{itemize}
+        \item Statistics (random, observed): $\bar{x}, s, \hat{p}$
+        \item What we use to learn about parameters
+    \end{itemize}
+\end{itemize}
+
+\begin{example}[Population vs. Sample in A/B Testing]
+\begin{itemize}
+    \item \textbf{Population:} All potential users who could ever see our website
+    \item \textbf{Parameter:} True conversion rate $p$ for each variant
+    \item \textbf{Sample:} Users in our experiment (e.g., 10,000 users)
+    \item \textbf{Statistic:} Observed conversion rate $\hat{p} = 0.078$
+    \item \textbf{Goal:} Use $\hat{p}$ to infer $p$ and compare variants
+\end{itemize}
+\end{example}
+
+\subsection{Sampling Distributions}
+
+A sampling distribution is the probability distribution of a statistic over repeated samples from the same population.
+
+\begin{definition}[Sampling Distribution]
+If we:
+\begin{enumerate}
+    \item Draw a random sample of size $n$ from a population
+    \item Calculate a statistic (e.g., sample mean $\bar{X}$)
+    \item Repeat this process infinitely many times
+\end{enumerate}
+
+The distribution of all those statistics is the sampling distribution.
+\end{definition}
+
+\textbf{Key insight:} Even though we observe only one sample, we can deduce properties of the sampling distribution using probability theory (especially the CLT). This enables quantifying uncertainty.
+
+\subsection{Standard Error}
+
+The standard error (SE) is the standard deviation of a sampling distribution—it quantifies how much a statistic varies across repeated samples.
+
+\begin{definition}[Standard Error]
+For a statistic $\hat{\theta}$ with sampling distribution variance $\text{Var}(\hat{\theta})$:
+\begin{equation}
+\text{SE}(\hat{\theta}) = \sqrt{\text{Var}(\hat{\theta})}
+\end{equation}
+\end{definition}
+
+Common standard errors:
+\begin{itemize}
+    \item \textbf{Sample mean:} $\text{SE}(\bar{X}) = \sigma/\sqrt{n}$
+    \item \textbf{Sample proportion:} $\text{SE}(\hat{p}) = \sqrt{p(1-p)/n}$
+    \item \textbf{Difference in proportions:} $\text{SE}(\hat{p}_1 - \hat{p}_2) = \sqrt{\frac{p_1(1-p_1)}{n_1} + \frac{p_2(1-p_2)}{n_2}}$
+\end{itemize}
+
+In practice, we estimate SE by plugging in sample values for unknown parameters:
+\begin{equation}
+\widehat{\text{SE}}(\hat{p}) = \sqrt{\frac{\hat{p}(1-\hat{p})}{n}}
+\end{equation}
+
+\subsection{Confidence Intervals}
+
+Confidence intervals provide a range of plausible values for a parameter, quantifying estimation uncertainty.
+
+\begin{definition}[Confidence Interval]
+A $(1-\alpha) \times 100\%$ confidence interval for parameter $\theta$ is a random interval $[L, U]$ constructed from sample data such that:
+\begin{equation}
+P(L \leq \theta \leq U) = 1 - \alpha
+\end{equation}
+
+before we observe the data. Common choices: $\alpha = 0.05$ (95\% CI) or $\alpha = 0.01$ (99\% CI).
+\end{definition}
+
+\textbf{Correct interpretation:} "If we repeated this experiment many times and constructed a 95\% CI each time, approximately 95\% of those intervals would contain the true parameter value."
+
+\textbf{Common misinterpretation:} "There is a 95\% probability the true parameter is in this specific interval." (This is a Bayesian interpretation, not frequentist!)
+
+\subsubsection{Confidence Interval for a Proportion}
+
+For large $n$, by the CLT:
+\begin{equation}
+\hat{p} \sim \mathcal{N}\left(p, \frac{p(1-p)}{n}\right)
+\end{equation}
+
+A $(1-\alpha)$ confidence interval (Wald interval):
+\begin{equation}
+\hat{p} \pm z_{\alpha/2} \sqrt{\frac{\hat{p}(1-\hat{p})}{n}}
+\end{equation}
+
+where $z_{\alpha/2} = \Phi^{-1}(1-\alpha/2)$ is the standard normal quantile. For $\alpha = 0.05$: $z_{0.025} = 1.96$.
+
+\begin{example}[CI for Conversion Rate]
+Experiment results: 85 conversions from 1,000 users.
+
+\begin{align}
+\hat{p} &= 85/1000 = 0.085 \\
+\widehat{\text{SE}}(\hat{p}) &= \sqrt{\frac{0.085 \times 0.915}{1000}} = 0.00882
+\end{align}
+
+95\% CI:
+\begin{equation}
+0.085 \pm 1.96 \times 0.00882 = [0.0677, 0.1023]
+\end{equation}
+
+Interpretation: We are 95\% confident the true conversion rate is between 6.77\% and 10.23\%.
+\end{example}
+
+\subsubsection{Confidence Interval for Difference in Proportions}
+
+For comparing two independent proportions (the core of A/B testing):
+
+\begin{equation}
+(\hat{p}_2 - \hat{p}_1) \pm z_{\alpha/2} \sqrt{\frac{\hat{p}_1(1-\hat{p}_1)}{n_1} + \frac{\hat{p}_2(1-\hat{p}_2)}{n_2}}
+\end{equation}
+
+If the CI contains 0, we cannot conclude a significant difference at level $\alpha$.
+If the CI is entirely positive (or negative), we have evidence of a difference.
+
+\lstset{language=Python, caption=Computing Confidence Intervals, label=lst:confidence_intervals}
+\begin{lstlisting}
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.set_style("whitegrid")
+
+def proportion_ci(conversions, n, confidence=0.95, method='wald'):
+    """
+    Calculate confidence interval for a proportion.
+
+    Parameters:
+    -----------
+    conversions : int
+        Number of successes
+    n : int
+        Total number of trials
+    confidence : float
+        Confidence level (default 0.95)
+    method : str
+        'wald' (default), 'wilson', or 'agresti-coull'
+
+    Returns:
+    --------
+    dict with 'estimate', 'ci_lower', 'ci_upper', 'se'
+    """
+    p_hat = conversions / n
+    alpha = 1 - confidence
+    z = stats.norm.ppf(1 - alpha/2)
+
+    if method == 'wald':
+        # Standard Wald interval
+        se = np.sqrt(p_hat * (1 - p_hat) / n)
+        ci_lower = p_hat - z * se
+        ci_upper = p_hat + z * se
+
+    elif method == 'wilson':
+        # Wilson score interval (better for small p or n)
+        denominator = 1 + z**2/n
+        center = (p_hat + z**2/(2*n)) / denominator
+        margin = z * np.sqrt(p_hat*(1-p_hat)/n + z**2/(4*n**2)) / denominator
+        ci_lower = center - margin
+        ci_upper = center + margin
+        se = np.sqrt(p_hat * (1 - p_hat) / n)
+        p_hat = center  # Wilson estimate
+
+    elif method == 'agresti-coull':
+        # Agresti-Coull interval (add 2 successes and 2 failures)
+        n_tilde = n + z**2
+        p_tilde = (conversions + z**2/2) / n_tilde
+        se = np.sqrt(p_tilde * (1 - p_tilde) / n_tilde)
+        ci_lower = p_tilde - z * se
+        ci_upper = p_tilde + z * se
+        p_hat = p_tilde
+
+    return {
+        'estimate': p_hat,
+        'ci_lower': max(0, ci_lower),  # Ensure in [0,1]
+        'ci_upper': min(1, ci_upper),
+        'se': se
+    }
+
+
+def proportion_diff_ci(conv1, n1, conv2, n2, confidence=0.95):
+    """
+    Calculate confidence interval for difference in proportions.
+
+    Parameters:
+    -----------
+    conv1, conv2 : int
+        Number of conversions in each group
+    n1, n2 : int
+        Sample sizes
+    confidence : float
+        Confidence level
+
+    Returns:
+    --------
+    dict with difference estimates and CI
+    """
+    p1_hat = conv1 / n1
+    p2_hat = conv2 / n2
+    diff = p2_hat - p1_hat
+
+    se = np.sqrt(p1_hat * (1 - p1_hat) / n1 +
+                 p2_hat * (1 - p2_hat) / n2)
+
+    alpha = 1 - confidence
+    z = stats.norm.ppf(1 - alpha/2)
+
+    ci_lower = diff - z * se
+    ci_upper = diff + z * se
+
+    # Relative lift
+    relative_lift = (p2_hat - p1_hat) / p1_hat if p1_hat > 0 else np.nan
+
+    return {
+        'p1': p1_hat,
+        'p2': p2_hat,
+        'difference': diff,
+        'relative_lift': relative_lift,
+        'ci_lower': ci_lower,
+        'ci_upper': ci_upper,
+        'se': se,
+        'significant': not (ci_lower <= 0 <= ci_upper)
+    }
+
+
+# Example: Compare CI methods
+print("="*70)
+print("Comparing Confidence Interval Methods")
+print("="*70)
+
+scenarios = [
+    (50, 500, "Moderate p, large n"),
+    (5, 50, "Small p, small n"),
+    (250, 500, "p near 0.5, large n"),
+    (2, 100, "Very small p")
+]
+
+for conversions, n, description in scenarios:
+    print(f"\n{description}: {conversions}/{n} conversions")
+    print("-" * 70)
+
+    for method in ['wald', 'wilson', 'agresti-coull']:
+        result = proportion_ci(conversions, n, method=method)
+        width = result['ci_upper'] - result['ci_lower']
+        print(f"{method:15s}: [{result['ci_lower']:.4f}, {result['ci_upper']:.4f}]  " +
+              f"width = {width:.4f}")
+
+# Example: A/B test comparison
+print("\n" + "="*70)
+print("A/B Test: Confidence Interval for Difference")
+print("="*70)
+
+control_conv, control_n = 80, 1000
+treatment_conv, treatment_n = 95, 1000
+
+result = proportion_diff_ci(control_conv, control_n,
+                             treatment_conv, treatment_n)
+
+print(f"\nControl:   {result['p1']:.2%} conversion rate ({control_conv}/{control_n})")
+print(f"Treatment: {result['p2']:.2%} conversion rate ({treatment_conv}/{treatment_n})")
+print(f"\nAbsolute difference: {result['difference']:.4f} ({result['difference']*100:.2f} pp)")
+print(f"Relative lift:       {result['relative_lift']:.2%}")
+print(f"\n95% CI for difference: [{result['ci_lower']:.4f}, {result['ci_upper']:.4f}]")
+print(f"Significant at α=0.05: {result['significant']}")
+
+# Visualize confidence intervals
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Plot 1: CI comparison across methods
+ax1 = axes[0]
+methods = ['Wald', 'Wilson', 'Agresti-Coull']
+estimates = []
+lowers = []
+uppers = []
+
+for method in ['wald', 'wilson', 'agresti-coull']:
+    ci = proportion_ci(50, 500, method=method)
+    estimates.append(ci['estimate'])
+    lowers.append(ci['ci_lower'])
+    uppers.append(ci['ci_upper'])
+
+y_pos = np.arange(len(methods))
+errors = np.array([[est - low for est, low in zip(estimates, lowers)],
+                   [up - est for up, est in zip(uppers, estimates)]])
+
+ax1.errorbar(estimates, y_pos, xerr=errors, fmt='o', markersize=8, capsize=5, capthick=2)
+ax1.set_yticks(y_pos)
+ax1.set_yticklabels(methods)
+ax1.set_xlabel('Conversion Rate', fontsize=12)
+ax1.set_title('95% CI Methods Comparison (50/500 conversions)',
+             fontsize=12, fontweight='bold')
+ax1.grid(axis='x', alpha=0.3)
+
+# Plot 2: A/B test visualization
+ax2 = axes[1]
+groups = ['Control', 'Treatment']
+conversion_rates = [result['p1'], result['p2']]
+ci_control = proportion_ci(control_conv, control_n)
+ci_treatment = proportion_ci(treatment_conv, treatment_n)
+
+errors = np.array([
+    [ci_control['estimate'] - ci_control['ci_lower'],
+     ci_treatment['estimate'] - ci_treatment['ci_lower']],
+    [ci_control['ci_upper'] - ci_control['estimate'],
+     ci_treatment['ci_upper'] - ci_treatment['estimate']]
+])
+
+x_pos = np.arange(len(groups))
+ax2.bar(x_pos, conversion_rates, alpha=0.7, color=['steelblue', 'coral'])
+ax2.errorbar(x_pos, conversion_rates, yerr=errors, fmt='none',
+            ecolor='black', capsize=10, capthick=2)
+ax2.set_xticks(x_pos)
+ax2.set_xticklabels(groups, fontsize=12)
+ax2.set_ylabel('Conversion Rate', fontsize=12)
+ax2.set_title('A/B Test Comparison with 95% CIs', fontsize=12, fontweight='bold')
+ax2.grid(axis='y', alpha=0.3)
+
+# Add significance indicator
+if result['significant']:
+    ax2.text(0.5, max(conversion_rates)*1.1, 'Significant difference (p<0.05)',
+            ha='center', fontsize=11, bbox=dict(boxstyle='round', facecolor='lightgreen'))
+else:
+    ax2.text(0.5, max(conversion_rates)*1.1, 'No significant difference (p≥0.05)',
+            ha='center', fontsize=11, bbox=dict(boxstyle='round', facecolor='lightyellow'))
+
+plt.tight_layout()
+plt.savefig('confidence_intervals_comparison.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+\end{lstlisting}
+
+\section{Hypothesis Testing Framework}
+
+Hypothesis testing provides a formal framework for making decisions under uncertainty. It's the workhorse methodology for A/B testing analysis.
+
+\subsection{The Logic of Hypothesis Testing}
+
+Hypothesis testing uses proof by contradiction:
+\begin{enumerate}
+    \item Assume the null hypothesis (typically "no effect") is true
+    \item Calculate: "If null were true, how surprising is our observed data?"
+    \item If data is very surprising under the null, reject the null
+    \item Otherwise, fail to reject (we don't "accept" the null)
+\end{enumerate}
+
+\begin{definition}[Null and Alternative Hypotheses]
+\begin{itemize}
+    \item \textbf{Null hypothesis ($H_0$):} The default assumption, typically "no effect" or "no difference"
+    \item \textbf{Alternative hypothesis ($H_1$ or $H_A$):} What we suspect or want to demonstrate
+\end{itemize}
+
+In A/B testing:
+\begin{align}
+H_0&: p_{\text{treatment}} = p_{\text{control}} \quad \text{(no difference)} \\
+H_1&: p_{\text{treatment}} \neq p_{\text{control}} \quad \text{(two-sided)} \\
+\text{or } H_1&: p_{\text{treatment}} > p_{\text{control}} \quad \text{(one-sided)}
+\end{align}
+\end{definition}
+
+\subsection{Test Statistics and p-values}
+
+\begin{definition}[Test Statistic]
+A test statistic is a function of sample data used to test hypotheses. It quantifies how far the data deviates from what we'd expect under $H_0$.
+
+For comparing proportions:
+\begin{equation}
+z = \frac{(\hat{p}_2 - \hat{p}_1) - 0}{\text{SE}_0(\hat{p}_2 - \hat{p}_1)}
+\end{equation}
+
+where $\text{SE}_0$ is computed under the null hypothesis of equal proportions.
+\end{definition}
+
+\begin{definition}[p-value]
+The p-value is the probability of observing a test statistic at least as extreme as what we observed, assuming $H_0$ is true:
+\begin{equation}
+p\text{-value} = P(\text{test statistic} \geq \text{observed value} \mid H_0 \text{ true})
+\end{equation}
+
+\textbf{Interpretation:}
+\begin{itemize}
+    \item Small p-value (< 0.05): Data is surprising under $H_0$, reject $H_0$
+    \item Large p-value (≥ 0.05): Data is consistent with $H_0$, fail to reject
+\end{itemize}
+\end{definition}
+
+\textbf{Critical point:} The p-value is NOT the probability that $H_0$ is true. It's the probability of seeing data this extreme if $H_0$ were true—a subtle but crucial distinction.
+
+\subsection{Significance Level and Decision Rule}
+
+\begin{definition}[Significance Level]
+The significance level $\alpha$ is the threshold for rejecting $H_0$. Common choices:
+\begin{itemize}
+    \item $\alpha = 0.05$ (5\%): Standard in most applications
+    \item $\alpha = 0.01$ (1\%): More conservative, reduces false positives
+    \item $\alpha = 0.10$ (10\%): More liberal, increases power but more false positives
+\end{itemize}
+
+Decision rule: Reject $H_0$ if $p\text{-value} < \alpha$
+\end{definition}
+
+\subsection{Type I and Type II Errors}
+
+Hypothesis testing involves two types of errors:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{l|cc}
+\hline
+\textbf{Reality} & \textbf{Fail to Reject $H_0$} & \textbf{Reject $H_0$} \\
+\hline
+$H_0$ true & Correct decision (1-$\alpha$) & \textbf{Type I Error} ($\alpha$) \\
+$H_1$ true & \textbf{Type II Error} ($\beta$) & Correct decision (1-$\beta$) \\
+\hline
+\end{tabular}
+\caption{Type I and Type II errors in hypothesis testing}
+\end{table}
+
+\begin{definition}[Type I Error (False Positive)]
+Rejecting $H_0$ when it's actually true—declaring a difference when none exists.
+\begin{equation}
+P(\text{Type I Error}) = \alpha
+\end{equation}
+
+In A/B testing: Launching a "winning" variant that's actually no better (or worse) than control.
+\end{definition}
+
+\begin{definition}[Type II Error (False Negative)]
+Failing to reject $H_0$ when $H_1$ is true—missing a real effect.
+\begin{equation}
+P(\text{Type II Error}) = \beta
+\end{equation}
+
+In A/B testing: Abandoning a variant that would actually improve metrics.
+\end{definition}
+
+\begin{definition}[Statistical Power]
+Power is the probability of correctly rejecting $H_0$ when $H_1$ is true:
+\begin{equation}
+\text{Power} = 1 - \beta = P(\text{reject } H_0 \mid H_1 \text{ true})
+\end{equation}
+
+Desired power is typically 0.80 (80\%) or 0.90 (90\%). Chapter \ref{ch:sample_size} covers power analysis in depth.
+\end{definition}
+
+\textbf{Tradeoff:} Decreasing $\alpha$ (being more conservative about declaring significance) increases $\beta$ (reduces power) for fixed sample size. The only way to decrease both is to increase sample size.
+
+\subsection{Two-Sample Z-Test for Proportions}
+
+The workhorse test for A/B testing with binary outcomes.
+
+\textbf{Setup:}
+\begin{itemize}
+    \item Control: $n_1$ trials, $x_1$ successes, $\hat{p}_1 = x_1/n_1$
+    \item Treatment: $n_2$ trials, $x_2$ successes, $\hat{p}_2 = x_2/n_2$
+\end{itemize}
+
+\textbf{Hypotheses:}
+\begin{align}
+H_0&: p_1 = p_2 \\
+H_1&: p_1 \neq p_2 \quad \text{(two-sided)}
+\end{align}
+
+\textbf{Under $H_0$:} Pool data to estimate common proportion:
+\begin{equation}
+\hat{p} = \frac{x_1 + x_2}{n_1 + n_2}
+\end{equation}
+
+\textbf{Test statistic:}
+\begin{equation}
+z = \frac{\hat{p}_2 - \hat{p}_1}{\sqrt{\hat{p}(1-\hat{p})\left(\frac{1}{n_1} + \frac{1}{n_2}\right)}}
+\end{equation}
+
+Under $H_0$, $z \sim \mathcal{N}(0, 1)$ approximately (by CLT).
+
+\textbf{p-value (two-sided):}
+\begin{equation}
+p = 2 \cdot P(Z \geq |z|) = 2 \cdot (1 - \Phi(|z|))
+\end{equation}
+
+where $\Phi$ is the standard normal CDF.
+
+\begin{example}[Z-Test for A/B Experiment]
+\begin{itemize}
+    \item Control: 1,200 users, 96 conversions, $\hat{p}_1 = 0.08$
+    \item Treatment: 1,200 users, 120 conversions, $\hat{p}_2 = 0.10$
+\end{itemize}
+
+Pooled proportion:
+\begin{equation}
+\hat{p} = \frac{96 + 120}{1200 + 1200} = \frac{216}{2400} = 0.09
+\end{equation}
+
+Test statistic:
+\begin{equation}
+z = \frac{0.10 - 0.08}{\sqrt{0.09 \times 0.91 \times (1/1200 + 1/1200)}} = \frac{0.02}{0.01168} = 1.712
+\end{equation}
+
+p-value:
+\begin{equation}
+p = 2 \cdot P(Z \geq 1.712) = 2 \cdot (1 - 0.9566) = 0.0868
+\end{equation}
+
+\textbf{Conclusion:} With $p = 0.0868 > 0.05$, we fail to reject $H_0$ at the 5\% level. Insufficient evidence to conclude treatment differs from control, despite the 2 percentage point observed difference.
+\end{example}
+
+\lstset{language=Python, caption=Implementing Hypothesis Tests, label=lst:hypothesis_tests}
+\begin{lstlisting}
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.set_style("whitegrid")
+
+def z_test_proportions(conv1, n1, conv2, n2, alpha=0.05, alternative='two-sided'):
+    """
+    Two-sample z-test for proportions.
+
+    Parameters:
+    -----------
+    conv1, conv2 : int
+        Number of conversions in each group
+    n1, n2 : int
+        Sample sizes
+    alpha : float
+        Significance level
+    alternative : str
+        'two-sided', 'greater', or 'less'
+
+    Returns:
+    --------
+    dict with test results
+    """
+    p1_hat = conv1 / n1
+    p2_hat = conv2 / n2
+
+    # Pooled proportion under H0
+    p_pool = (conv1 + conv2) / (n1 + n2)
+
+    # Standard error under H0
+    se_null = np.sqrt(p_pool * (1 - p_pool) * (1/n1 + 1/n2))
+
+    # Test statistic
+    z_stat = (p2_hat - p1_hat) / se_null
+
+    # p-value
+    if alternative == 'two-sided':
+        p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
+    elif alternative == 'greater':
+        p_value = 1 - stats.norm.cdf(z_stat)
+    elif alternative == 'less':
+        p_value = stats.norm.cdf(z_stat)
+
+    # Critical value
+    if alternative == 'two-sided':
+        z_critical = stats.norm.ppf(1 - alpha/2)
+    else:
+        z_critical = stats.norm.ppf(1 - alpha)
+
+    # Decision
+    reject_null = p_value < alpha
+
+    # Effect size (relative lift)
+    relative_lift = (p2_hat - p1_hat) / p1_hat if p1_hat > 0 else np.nan
+
+    return {
+        'p1': p1_hat,
+        'p2': p2_hat,
+        'p_pool': p_pool,
+        'difference': p2_hat - p1_hat,
+        'relative_lift': relative_lift,
+        'z_statistic': z_stat,
+        'p_value': p_value,
+        'alpha': alpha,
+        'z_critical': z_critical,
+        'reject_null': reject_null,
+        'significant': reject_null
+    }
+
+
+def visualize_hypothesis_test(result):
+    """Visualize the hypothesis test result."""
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Plot 1: Conversion rates with error bars
+    ax1 = axes[0]
+    groups = ['Control', 'Treatment']
+    rates = [result['p1'], result['p2']]
+    colors = ['steelblue', 'coral']
+
+    bars = ax1.bar(groups, rates, color=colors, alpha=0.7, edgecolor='black', linewidth=1.5)
+    ax1.set_ylabel('Conversion Rate', fontsize=12)
+    ax1.set_title('Conversion Rates Comparison', fontsize=13, fontweight='bold')
+    ax1.grid(axis='y', alpha=0.3)
+
+    # Add value labels
+    for i, (bar, rate) in enumerate(zip(bars, rates)):
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height,
+                f'{rate:.2%}',
+                ha='center', va='bottom', fontsize=11, fontweight='bold')
+
+    # Add significance indicator
+    y_max = max(rates) * 1.15
+    if result['significant']:
+        ax1.plot([0, 1], [y_max, y_max], 'k-', linewidth=2)
+        ax1.text(0.5, y_max*1.02, f'p = {result["p_value"]:.4f} *',
+                ha='center', fontsize=11, fontweight='bold',
+                bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
+    else:
+        ax1.text(0.5, y_max, f'p = {result["p_value"]:.4f}\n(not significant)',
+                ha='center', fontsize=11,
+                bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.7))
+
+    # Plot 2: Standard normal distribution with test statistic
+    ax2 = axes[1]
+    x = np.linspace(-4, 4, 1000)
+    y = stats.norm.pdf(x, 0, 1)
+
+    ax2.plot(x, y, 'b-', linewidth=2, label='Null distribution N(0,1)')
+    ax2.fill_between(x, 0, y, where=(x <= -result['z_critical']) | (x >= result['z_critical']),
+                     alpha=0.3, color='red', label=f'Rejection region (α={result["alpha"]})')
+
+    # Mark observed z-statistic
+    ax2.axvline(result['z_statistic'], color='darkred', linestyle='--',
+               linewidth=2.5, label=f'Observed z = {result["z_statistic"]:.3f}')
+
+    ax2.set_xlabel('z-value', fontsize=12)
+    ax2.set_ylabel('Density', fontsize=12)
+    ax2.set_title('Hypothesis Test Visualization', fontsize=13, fontweight='bold')
+    ax2.legend(fontsize=10)
+    ax2.grid(alpha=0.3)
+
+    plt.tight_layout()
+    return fig
+
+
+# Example: Run multiple tests
+print("="*80)
+print("Hypothesis Testing Examples")
+print("="*80)
+
+test_scenarios = [
+    {
+        'name': 'Significant effect (large sample)',
+        'conv1': 80, 'n1': 1000,
+        'conv2': 120, 'n2': 1000
+    },
+    {
+        'name': 'Non-significant effect (large sample)',
+        'conv1': 80, 'n1': 1000,
+        'conv2': 95, 'n2': 1000
+    },
+    {
+        'name': 'Significant effect (small sample)',
+        'conv1': 8, 'n1': 50,
+        'conv2': 20, 'n2': 50
+    },
+    {
+        'name': 'Non-significant effect (small sample)',
+        'conv1': 4, 'n1': 40,
+        'conv2': 8, 'n2': 40
+    }
+]
+
+for i, scenario in enumerate(test_scenarios, 1):
+    print(f"\n{'='*80}")
+    print(f"Scenario {i}: {scenario['name']}")
+    print('='*80)
+
+    result = z_test_proportions(
+        scenario['conv1'], scenario['n1'],
+        scenario['conv2'], scenario['n2']
+    )
+
+    print(f"\nControl:   {result['p1']:.2%} ({scenario['conv1']}/{scenario['n1']} conversions)")
+    print(f"Treatment: {result['p2']:.2%} ({scenario['conv2']}/{scenario['n2']} conversions)")
+    print(f"\nAbsolute difference: {result['difference']:.4f} ({result['difference']*100:.2f} pp)")
+    print(f"Relative lift:       {result['relative_lift']:.2%}")
+    print(f"\nPooled proportion:   {result['p_pool']:.4f}")
+    print(f"z-statistic:         {result['z_statistic']:.4f}")
+    print(f"p-value:             {result['p_value']:.6f}")
+    print(f"Critical value (α=0.05): ±{result['z_critical']:.4f}")
+    print(f"\nDecision: {'REJECT H0 - Significant difference' if result['significant'] else 'FAIL TO REJECT H0 - No significant difference'}")
+
+    # Visualize first scenario
+    if i == 1:
+        fig = visualize_hypothesis_test(result)
+        plt.savefig(f'hypothesis_test_scenario_{i}.pdf', dpi=300, bbox_inches='tight')
+        plt.show()
+
+# Demonstrate power of test via simulation
+print("\n" + "="*80)
+print("Statistical Power Demonstration via Simulation")
+print("="*80)
+
+def simulate_power(p1, p2, n, alpha=0.05, n_sims=10000):
+    """
+    Simulate statistical power for given parameters.
+    """
+    significant_count = 0
+
+    for _ in range(n_sims):
+        # Generate data under H1 (p2 != p1)
+        conv1 = np.random.binomial(n, p1)
+        conv2 = np.random.binomial(n, p2)
+
+        # Perform test
+        result = z_test_proportions(conv1, n, conv2, n, alpha=alpha)
+        if result['significant']:
+            significant_count += 1
+
+    return significant_count / n_sims
+
+# Test different sample sizes
+p_control = 0.08
+p_treatment = 0.10  # 25% relative lift
+sample_sizes = [100, 300, 500, 1000, 2000, 5000]
+
+print(f"\nTrue conversion rates: Control = {p_control:.1%}, Treatment = {p_treatment:.1%}")
+print(f"True relative lift: {(p_treatment - p_control)/p_control:.1%}")
+print(f"\n{'Sample size (per group)':>25} {'Empirical power':>20}")
+print("-" * 50)
+
+powers = []
+for n in sample_sizes:
+    power = simulate_power(p_control, p_treatment, n)
+    powers.append(power)
+    print(f"{n:>25} {power:>20.3f}")
+
+# Plot power curve
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.plot(sample_sizes, powers, 'bo-', linewidth=2, markersize=8)
+ax.axhline(0.8, color='red', linestyle='--', linewidth=2, label='Target power = 0.80')
+ax.set_xlabel('Sample Size (per group)', fontsize=12)
+ax.set_ylabel('Statistical Power', fontsize=12)
+ax.set_title(f'Power Curve (p1={p_control:.1%}, p2={p_treatment:.1%}, α=0.05)',
+            fontsize=13, fontweight='bold')
+ax.grid(alpha=0.3)
+ax.legend(fontsize=11)
+plt.tight_layout()
+plt.savefig('power_curve_simulation.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+\end{lstlisting}
+
+\section{Effect Size Measures}
+
+Statistical significance tells us whether an effect exists; effect size tells us whether it matters. This distinction is crucial for A/B testing—a statistically significant result may be practically irrelevant, especially with large samples.
+
+\subsection{Why Effect Size Matters}
+
+Consider two scenarios:
+\begin{enumerate}
+    \item $n = 100,000$ per variant: 5.00\% vs. 5.05\% conversion, $p < 0.001$ (highly significant)
+    \item $n = 500$ per variant: 5.0\% vs. 7.5\% conversion, $p = 0.08$ (not significant)
+\end{enumerate}
+
+In Scenario 1, the difference is statistically significant but tiny (0.05 percentage points). Implementation costs may exceed benefits.
+
+In Scenario 2, the difference is large (2.5 percentage points, 50\% relative lift) but not statistically significant due to small sample. More data might be worthwhile.
+
+\textbf{Key principle:} Always report both statistical significance (p-value) and effect size. Make decisions considering both along with practical constraints.
+
+\subsection{Absolute vs. Relative Differences}
+
+\begin{definition}[Absolute Difference]
+\begin{equation}
+\text{Absolute difference} = p_2 - p_1
+\end{equation}
+
+Measured in the same units as the metric (e.g., percentage points for conversion rates).
+\end{definition}
+
+\begin{definition}[Relative Difference (Relative Lift)]
+\begin{equation}
+\text{Relative lift} = \frac{p_2 - p_1}{p_1} = \frac{p_2}{p_1} - 1
+\end{equation}
+
+Expressed as a percentage or decimal. Answers: "By what fraction did the metric change?"
+\end{definition}
+
+\begin{example}[Absolute vs. Relative]
+\begin{enumerate}
+    \item Control: 2\%, Treatment: 3\%
+    \begin{itemize}
+        \item Absolute difference: $3\% - 2\% = 1$ percentage point
+        \item Relative lift: $(3\% - 2\%)/2\% = 0.50 = 50\%$
+    \end{itemize}
+
+    \item Control: 20\%, Treatment: 21\%
+    \begin{itemize}
+        \item Absolute difference: $21\% - 20\% = 1$ percentage point
+        \item Relative lift: $(21\% - 20\%)/20\% = 0.05 = 5\%$
+    \end{itemize}
+\end{enumerate}
+
+Same absolute difference, vastly different relative lifts. Which matters more depends on context.
+\end{example}
+
+\subsection{Cohen's h for Proportions}
+
+Cohen's h standardizes the difference between proportions, enabling comparison across experiments with different baseline rates.
+
+\begin{definition}[Cohen's h]
+For proportions $p_1$ and $p_2$:
+\begin{equation}
+h = 2(\arcsin\sqrt{p_2} - \arcsin\sqrt{p_1})
+\end{equation}
+
+where $\arcsin$ is the inverse sine function (arcsine).
+\end{definition}
+
+\textbf{Interpretation guidelines} (Cohen, 1988):
+\begin{itemize}
+    \item $|h| < 0.2$: Small effect
+    \item $0.2 \leq |h| < 0.5$: Medium effect
+    \item $|h| \geq 0.5$: Large effect
+\end{itemize}
+
+\textbf{Advantage:} Unlike relative lift, Cohen's h behaves well for proportions near 0 or 1.
+
+\subsection{Odds Ratio}
+
+The odds ratio is commonly used in medical research and logistic regression contexts.
+
+\begin{definition}[Odds and Odds Ratio]
+The \textbf{odds} of an event with probability $p$ is:
+\begin{equation}
+\text{Odds} = \frac{p}{1-p}
+\end{equation}
+
+The \textbf{odds ratio} comparing two proportions:
+\begin{equation}
+\text{OR} = \frac{p_2/(1-p_2)}{p_1/(1-p_1)} = \frac{p_2(1-p_1)}{p_1(1-p_2)}
+\end{equation}
+\end{definition}
+
+\textbf{Interpretation:}
+\begin{itemize}
+    \item OR = 1: Equal odds (no effect)
+    \item OR > 1: Higher odds in treatment
+    \item OR < 1: Lower odds in treatment
+\end{itemize}
+
+\begin{example}[Odds Ratio Calculation]
+Control: 10\% conversion, Treatment: 15\% conversion
+
+\begin{align}
+\text{Odds}_{\text{control}} &= 0.10/0.90 = 0.111 \\
+\text{Odds}_{\text{treatment}} &= 0.15/0.85 = 0.176 \\
+\text{OR} &= 0.176/0.111 = 1.59
+\end{align}
+
+Interpretation: The odds of conversion are 1.59 times higher in treatment—or 59\% higher odds.
+\end{example}
+
+\textbf{Log odds ratio:} Often $\log(\text{OR})$ is reported because it's symmetric around 0 and unbounded.
+
+\subsection{Cohen's d for Continuous Metrics}
+
+For continuous metrics (e.g., revenue, session duration), Cohen's d measures effect size in standard deviation units.
+
+\begin{definition}[Cohen's d]
+\begin{equation}
+d = \frac{\bar{x}_2 - \bar{x}_1}{s_{\text{pooled}}}
+\end{equation}
+
+where the pooled standard deviation is:
+\begin{equation}
+s_{\text{pooled}} = \sqrt{\frac{(n_1-1)s_1^2 + (n_2-1)s_2^2}{n_1 + n_2 - 2}}
+\end{equation}
+\end{definition}
+
+\textbf{Interpretation guidelines:}
+\begin{itemize}
+    \item $|d| < 0.2$: Small effect
+    \item $0.2 \leq |d| < 0.5$: Small to medium effect
+    \item $0.5 \leq |d| < 0.8$: Medium to large effect
+    \item $|d| \geq 0.8$: Large effect
+\end{itemize}
+
+\begin{example}[Cohen's d for Revenue]
+Testing pricing change:
+\begin{itemize}
+    \item Control: $\bar{x}_1 = \$45$, $s_1 = \$20$, $n_1 = 500$
+    \item Treatment: $\bar{x}_2 = \$52$, $s_2 = \$22$, $n_2 = 500$
+\end{itemize}
+
+Pooled standard deviation:
+\begin{equation}
+s_{\text{pooled}} = \sqrt{\frac{499 \times 20^2 + 499 \times 22^2}{998}} = \sqrt{440.2} = 20.98
+\end{equation}
+
+Cohen's d:
+\begin{equation}
+d = \frac{52 - 45}{20.98} = \frac{7}{20.98} = 0.334
+\end{equation}
+
+This is a small to medium effect (between 0.2 and 0.5).
+\end{example}
+
+\lstset{language=Python, caption=Computing Effect Sizes, label=lst:effect_sizes}
+\begin{lstlisting}
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+
+sns.set_style("whitegrid")
+
+def compute_effect_sizes(conv1, n1, conv2, n2):
+    """
+    Compute multiple effect size measures for proportion comparison.
+
+    Returns:
+    --------
+    dict with various effect size measures
+    """
+    p1 = conv1 / n1
+    p2 = conv2 / n2
+
+    # Absolute difference
+    abs_diff = p2 - p1
+
+    # Relative lift
+    rel_lift = (p2 - p1) / p1 if p1 > 0 else np.nan
+
+    # Cohen's h
+    cohens_h = 2 * (np.arcsin(np.sqrt(p2)) - np.arcsin(np.sqrt(p1)))
+
+    # Odds ratio
+    odds1 = p1 / (1 - p1) if p1 < 1 else np.inf
+    odds2 = p2 / (1 - p2) if p2 < 1 else np.inf
+    odds_ratio = odds2 / odds1 if odds1 > 0 and np.isfinite(odds1) else np.nan
+    log_odds_ratio = np.log(odds_ratio) if odds_ratio > 0 and np.isfinite(odds_ratio) else np.nan
+
+    # Number needed to treat (NNT) - for proportions
+    nnt = 1 / abs_diff if abs_diff != 0 else np.inf
+
+    return {
+        'p1': p1,
+        'p2': p2,
+        'absolute_diff': abs_diff,
+        'relative_lift': rel_lift,
+        'cohens_h': cohens_h,
+        'odds_ratio': odds_ratio,
+        'log_odds_ratio': log_odds_ratio,
+        'nnt': nnt
+    }
+
+
+def cohens_d_continuous(mean1, std1, n1, mean2, std2, n2):
+    """
+    Compute Cohen's d for continuous metrics.
+    """
+    # Pooled standard deviation
+    pooled_std = np.sqrt(((n1-1)*std1**2 + (n2-1)*std2**2) / (n1 + n2 - 2))
+
+    # Cohen's d
+    d = (mean2 - mean1) / pooled_std
+
+    return {
+        'mean1': mean1,
+        'mean2': mean2,
+        'pooled_std': pooled_std,
+        'cohens_d': d,
+        'interpretation': interpret_cohens_d(abs(d))
+    }
+
+
+def interpret_cohens_h(h):
+    """Interpret Cohen's h effect size."""
+    h_abs = abs(h)
+    if h_abs < 0.2:
+        return "Small"
+    elif h_abs < 0.5:
+        return "Medium"
+    else:
+        return "Large"
+
+
+def interpret_cohens_d(d):
+    """Interpret Cohen's d effect size."""
+    d_abs = abs(d)
+    if d_abs < 0.2:
+        return "Negligible"
+    elif d_abs < 0.5:
+        return "Small"
+    elif d_abs < 0.8:
+        return "Medium"
+    else:
+        return "Large"
+
+
+# Example calculations
+print("="*80)
+print("Effect Size Examples for Proportions")
+print("="*80)
+
+scenarios = [
+    {
+        'name': 'Low baseline, small absolute diff',
+        'conv1': 20, 'n1': 1000,
+        'conv2': 30, 'n2': 1000
+    },
+    {
+        'name': 'Low baseline, large absolute diff',
+        'conv1': 20, 'n1': 1000,
+        'conv2': 60, 'n2': 1000
+    },
+    {
+        'name': 'High baseline, small absolute diff',
+        'conv1': 400, 'n1': 1000,
+        'conv2': 410, 'n2': 1000
+    },
+    {
+        'name': 'High baseline, large absolute diff',
+        'conv1': 400, 'n1': 1000,
+        'conv2': 500, 'n2': 1000
+    }
+]
+
+for scenario in scenarios:
+    print(f"\n{'-'*80}")
+    print(f"{scenario['name']}")
+    print('-'*80)
+
+    es = compute_effect_sizes(
+        scenario['conv1'], scenario['n1'],
+        scenario['conv2'], scenario['n2']
+    )
+
+    print(f"Control:   {es['p1']:.2%} ({scenario['conv1']}/{scenario['n1']})")
+    print(f"Treatment: {es['p2']:.2%} ({scenario['conv2']}/{scenario['n2']})")
+    print(f"\nEffect sizes:")
+    print(f"  Absolute difference: {es['absolute_diff']:.4f} ({es['absolute_diff']*100:.2f} pp)")
+    print(f"  Relative lift:       {es['relative_lift']:.2%}")
+    print(f"  Cohen's h:           {es['cohens_h']:.4f} ({interpret_cohens_h(es['cohens_h'])})")
+    print(f"  Odds ratio:          {es['odds_ratio']:.4f}")
+    print(f"  Log odds ratio:      {es['log_odds_ratio']:.4f}")
+    print(f"  NNT:                 {es['nnt']:.1f}")
+
+# Example for continuous metrics
+print("\n" + "="*80)
+print("Effect Size Examples for Continuous Metrics")
+print("="*80)
+
+continuous_scenarios = [
+    {
+        'name': 'Revenue per user',
+        'mean1': 45, 'std1': 20, 'n1': 500,
+        'mean2': 52, 'std2': 22, 'n2': 500,
+        'unit': '$'
+    },
+    {
+        'name': 'Session duration',
+        'mean1': 180, 'std1': 120, 'n1': 1000,
+        'mean2': 200, 'std2': 125, 'n2': 1000,
+        'unit': 'seconds'
+    }
+]
+
+for scenario in continuous_scenarios:
+    print(f"\n{'-'*80}")
+    print(f"{scenario['name']}")
+    print('-'*80)
+
+    result = cohens_d_continuous(
+        scenario['mean1'], scenario['std1'], scenario['n1'],
+        scenario['mean2'], scenario['std2'], scenario['n2']
+    )
+
+    print(f"Control:   {scenario['unit']}{result['mean1']:.2f} (SD = {scenario['std1']:.2f}, n = {scenario['n1']})")
+    print(f"Treatment: {scenario['unit']}{result['mean2']:.2f} (SD = {scenario['std2']:.2f}, n = {scenario['n2']})")
+    print(f"\nPooled SD: {scenario['unit']}{result['pooled_std']:.2f}")
+    print(f"Cohen's d: {result['cohens_d']:.4f} ({result['interpretation']} effect)")
+
+# Visualize effect size landscape
+print("\n" + "="*80)
+print("Visualizing Effect Size Landscape")
+print("="*80)
+
+# Create grid of p1 and p2 values
+p1_values = np.linspace(0.01, 0.5, 50)
+p2_values = np.linspace(0.01, 0.5, 50)
+P1, P2 = np.meshgrid(p1_values, p2_values)
+
+# Compute relative lift and Cohen's h for each combination
+relative_lift = (P2 - P1) / P1
+cohens_h_grid = 2 * (np.arcsin(np.sqrt(P2)) - np.arcsin(np.sqrt(P1)))
+
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+# Plot 1: Relative lift heatmap
+im1 = axes[0].contourf(P1, P2, relative_lift, levels=20, cmap='RdYlGn')
+axes[0].plot([0, 0.5], [0, 0.5], 'k--', linewidth=2, label='No effect line')
+axes[0].set_xlabel('Control Conversion Rate', fontsize=12)
+axes[0].set_ylabel('Treatment Conversion Rate', fontsize=12)
+axes[0].set_title('Relative Lift Landscape', fontsize=13, fontweight='bold')
+plt.colorbar(im1, ax=axes[0], label='Relative Lift')
+axes[0].legend()
+
+# Plot 2: Cohen's h heatmap
+im2 = axes[1].contourf(P1, P2, cohens_h_grid, levels=20, cmap='RdYlGn')
+axes[1].plot([0, 0.5], [0, 0.5], 'k--', linewidth=2, label='No effect line')
+# Add contour lines for small/medium/large thresholds
+axes[1].contour(P1, P2, np.abs(cohens_h_grid), levels=[0.2, 0.5],
+               colors='black', linewidths=2, linestyles=[':', '--'])
+axes[1].set_xlabel('Control Conversion Rate', fontsize=12)
+axes[1].set_ylabel('Treatment Conversion Rate', fontsize=12)
+axes[1].set_title("Cohen's h Landscape", fontsize=13, fontweight='bold')
+plt.colorbar(im2, ax=axes[1], label="Cohen's h")
+axes[1].legend()
+
+plt.tight_layout()
+plt.savefig('effect_size_landscape.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+\end{lstlisting}
+
+\subsection{Practical Guidelines for Effect Size Reporting}
+
+When reporting A/B test results, always include:
+
+\begin{enumerate}
+    \item \textbf{Sample sizes:} $n_1 = 1,000$, $n_2 = 1,000$
+
+    \item \textbf{Observed metrics:} Control = 8.0\%, Treatment = 10.0\%
+
+    \item \textbf{Absolute difference:} 2.0 percentage points [95\% CI: 0.5, 3.5 pp]
+
+    \item \textbf{Relative lift:} 25.0\% [95\% CI: 6.3\%, 43.8\%]
+
+    \item \textbf{Statistical significance:} $p = 0.009$ (significant at $\alpha = 0.05$)
+
+    \item \textbf{Effect size:} Cohen's $h = 0.15$ (small effect)
+
+    \item \textbf{Business impact:} Expected +200 conversions/day, \$10,000 additional revenue/month
+\end{enumerate}
+
+This comprehensive reporting enables stakeholders to judge both statistical and practical significance.
+
+\section{Frequentist vs. Bayesian Inference}
+
+Two philosophical frameworks underpin statistical inference. Understanding both perspectives enriches A/B testing practice.
+
+\subsection{Frequentist Framework}
+
+\textbf{Core philosophy:}
+\begin{itemize}
+    \item Parameters are fixed but unknown constants
+    \item Probability describes long-run frequencies of events
+    \item Inference focuses on procedures with good repeated sampling properties
+    \item Uncertainty is quantified through confidence intervals and p-values
+\end{itemize}
+
+\textbf{Key concepts:}
+\begin{itemize}
+    \item \textbf{Confidence intervals:} "95\% of such intervals contain the true parameter"
+    \item \textbf{p-values:} "Probability of data this extreme if null is true"
+    \item \textbf{Hypothesis testing:} Reject or fail to reject $H_0$ based on $\alpha$
+\end{itemize}
+
+\textbf{Strengths:}
+\begin{itemize}
+    \item Objective—no prior beliefs required
+    \item Well-established theory and widespread acceptance
+    \item Clear Type I and Type II error control
+    \item Standard in regulatory contexts (FDA, etc.)
+\end{itemize}
+
+\textbf{Limitations:}
+\begin{itemize}
+    \item Cannot make probability statements about parameters ("probability that $p > 0.05$")
+    \item P-values are frequently misinterpreted
+    \item Fixed sample size typically required for valid inference
+    \item Doesn't naturally incorporate prior information
+\end{itemize}
+
+\subsection{Bayesian Framework}
+
+\textbf{Core philosophy:}
+\begin{itemize}
+    \item Parameters are random variables with probability distributions
+    \item Probability describes degree of belief about unknowns
+    \item Prior beliefs are updated with data via Bayes' theorem
+    \item Inference produces posterior distributions for parameters
+\end{itemize}
+
+\begin{theorem}[Bayes' Theorem]
+For parameter $\theta$ and data $D$:
+\begin{equation}
+\underbrace{p(\theta | D)}_{\text{Posterior}} = \frac{\overbrace{p(D | \theta)}^{\text{Likelihood}} \times \overbrace{p(\theta)}^{\text{Prior}}}{\underbrace{p(D)}_{\text{Evidence}}}
+\end{equation}
+
+where $p(D) = \int p(D | \theta) p(\theta) d\theta$ normalizes the posterior.
+
+In words:
+\begin{equation}
+\text{Posterior} \propto \text{Likelihood} \times \text{Prior}
+\end{equation}
+\end{theorem}
+
+\textbf{Key concepts:}
+\begin{itemize}
+    \item \textbf{Prior distribution:} Encodes initial beliefs before seeing data
+    \item \textbf{Likelihood:} How probable the data is under different parameter values
+    \item \textbf{Posterior distribution:} Updated beliefs after observing data
+    \item \textbf{Credible intervals:} "95\% probability parameter is in this interval"
+\end{itemize}
+
+\textbf{Strengths:}
+\begin{itemize}
+    \item Direct probability statements about parameters
+    \item Natural incorporation of prior information
+    \item Coherent framework for sequential testing
+    \item Intuitive interpretation for decision-making
+\end{itemize}
+
+\textbf{Limitations:}
+\begin{itemize}
+    \item Requires specifying prior distributions (though this can be an advantage)
+    \item Computational complexity for complex models (mitigated by modern MCMC)
+    \item Results depend on prior choice
+    \item Less standard in regulatory contexts
+\end{itemize}
+
+\subsection{When to Use Each Approach}
+
+\textbf{Prefer frequentist when:}
+\begin{itemize}
+    \item Regulatory requirements demand it
+    \item You want objectivity without prior specification
+    \item You have fixed sample size and single analysis
+    \item Standard null hypothesis testing suffices
+\end{itemize}
+
+\textbf{Prefer Bayesian when:}
+\begin{itemize}
+    \item You have meaningful prior information to incorporate
+    \item You want direct probability statements about parameters
+    \item Sequential testing or early stopping is needed
+    \item Decision-making requires posterior distributions
+\end{itemize}
+
+\textbf{In practice:} Many modern A/B testing platforms use Bayesian methods because they handle sequential testing naturally and provide intuitive outputs for business stakeholders. Chapter \ref{ch:bayesian} covers Bayesian A/B testing comprehensively.
+
+\section{Summary}
+
+This chapter established the probabilistic and statistical foundations essential for rigorous A/B testing:
+
+\begin{itemize}
+    \item \textbf{Probability theory} provides the mathematical framework for quantifying uncertainty. Key results include the Central Limit Theorem, which justifies normal approximations for sample means regardless of underlying distributions.
+
+    \item \textbf{Key distributions}—Bernoulli, binomial, normal, t, beta, and chi-squared—model different aspects of experiments. Understanding their properties enables correct application.
+
+    \item \textbf{Statistical inference} uses sample data to draw conclusions about populations. Point estimates provide best guesses; confidence intervals quantify uncertainty.
+
+    \item \textbf{Hypothesis testing} offers a formal framework for decision-making. Understanding null hypotheses, p-values, Type I and Type II errors, and statistical power is essential for correct interpretation.
+
+    \item \textbf{Effect sizes} measure practical significance, complementing statistical significance. Always report both—a large p-value with large effect size may warrant more data; a small p-value with tiny effect size may be practically irrelevant.
+
+    \item \textbf{Frequentist and Bayesian frameworks} offer complementary perspectives. Frequentist methods dominate traditional practice; Bayesian methods offer advantages for sequential testing and direct probability statements.
+\end{itemize}
+
+These foundations enable the hypothesis testing procedures, sample size calculations, multiple testing corrections, and Bayesian methods developed in subsequent chapters. Mastery of these concepts distinguishes practitioners who merely run tests from those who design sound experiments and interpret results correctly.
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \citet{casella2002statistical}: Comprehensive treatment of statistical inference with mathematical rigor
+    \item \citet{wasserman2004all}: Modern theoretical statistics with clear exposition
+    \item \citet{rice2006mathematical}: Mathematical statistics emphasizing practical application
+    \item \citet{gelman2013bayesian}: Definitive text on Bayesian data analysis
+    \item \citet{cohen1988statistical}: Classic reference on statistical power and effect sizes
+    \item \citet{good2013permutation}: Permutation tests and resampling methods
+    \item \citet{wasserstein2016asa}: ASA statement on p-values and their interpretation
+\end{itemize}
+
+\section{Exercises}
+
+\subsection{Conceptual Questions}
+
+\begin{enumerate}
+    \item Explain the distinction between a parameter and a statistic. Why does this matter for A/B testing?
+
+    \item A colleague says: "We ran the experiment and got $p = 0.03$, so there's only a 3\% chance the null hypothesis is true." What is wrong with this interpretation? Provide the correct interpretation.
+
+    \item Why does the Central Limit Theorem matter for A/B testing? What would be different if it didn't hold?
+
+    \item Explain the difference between a 95\% confidence interval (frequentist) and a 95\% credible interval (Bayesian). When would each be appropriate?
+
+    \item An experiment shows a statistically significant difference ($p < 0.001$) with Cohen's $h = 0.05$. What does this tell you? Should you implement the change?
+
+    \item Why might Type II error be more costly than Type I error in A/B testing? Conversely, when might Type I error be more concerning?
+\end{enumerate}
+
+\subsection{Probability and Distributions}
+
+\begin{enumerate}
+    \item Prove that for $X \sim \text{Bernoulli}(p)$: $\text{Var}(X) = p(1-p)$.
+
+    \item Show that the binomial distribution $\text{Binomial}(n, p)$ has maximum variance at $p = 0.5$ for fixed $n$.
+
+    \item For $X \sim \mathcal{N}(\mu, \sigma^2)$, derive the distribution of:
+    \begin{enumerate}
+        \item $Y = aX + b$
+        \item $Z = (X - \mu)/\sigma$
+    \end{enumerate}
+
+    \item Simulate the CLT for an exponential distribution with $\lambda = 0.2$. Show convergence to normality for $n = 5, 20, 50, 200$. Use K-S test to assess normality.
+
+    \item A website has average session duration of 4 minutes, exponentially distributed. With 100 users, what is the approximate distribution of average session duration? Calculate a 95\% confidence interval.
+\end{enumerate}
+
+\subsection{Hypothesis Testing}
+
+\begin{enumerate}
+    \item Conduct a two-sample z-test by hand (show all steps):
+    \begin{itemize}
+        \item Control: 1,500 users, 120 conversions
+        \item Treatment: 1,500 users, 150 conversions
+        \item $\alpha = 0.05$
+    \end{itemize}
+    Include: hypotheses, test statistic, p-value, decision, interpretation.
+
+    \item For the scenario above, construct a 95\% confidence interval for the difference in proportions. Is it consistent with your hypothesis test conclusion?
+
+    \item Verify by simulation that Type I error rate is controlled at $\alpha = 0.05$ when testing $H_0: p_1 = p_2 = 0.1$ with $n_1 = n_2 = 500$. Run 10,000 simulations.
+
+    \item Simulate power for detecting a difference from $p_1 = 0.08$ to $p_2 = 0.10$ with $\alpha = 0.05$. Plot power vs. sample size for $n = 100, 200, \ldots, 2000$ (per group).
+
+    \item Investigate the relationship between $\alpha$, $\beta$, effect size, and sample size via simulation. Fix three and vary the fourth.
+\end{enumerate}
+
+\subsection{Confidence Intervals}
+
+\begin{enumerate}
+    \item Construct 90\%, 95\%, and 99\% confidence intervals for conversion rate given 75 conversions from 1,000 users. How does interval width change with confidence level?
+
+    \item Implement and compare three CI methods for proportions: Wald, Wilson score, and Agresti-Coull. For which scenarios (n, p combinations) do they differ substantially?
+
+    \item Verify by simulation that 95\% confidence intervals contain the true parameter approximately 95\% of the time. Test for $p = 0.05, 0.1, 0.3, 0.5$ and $n = 50, 200, 1000$.
+
+    \item Two variants show: A (145/2000 = 7.25\%), B (170/2000 = 8.50\%). Construct:
+    \begin{enumerate}
+        \item 95\% CI for each proportion
+        \item 95\% CI for difference in proportions
+        \item 95\% CI for relative lift
+    \end{enumerate}
+\end{enumerate}
+
+\subsection{Effect Sizes}
+
+\begin{enumerate}
+    \item Calculate all effect size measures (absolute difference, relative lift, Cohen's h, odds ratio) for:
+    \begin{enumerate}
+        \item $p_1 = 0.05$, $p_2 = 0.07$
+        \item $p_1 = 0.20$, $p_2 = 0.22$
+        \item $p_1 = 0.40$, $p_2 = 0.50$
+    \end{enumerate}
+    Compare and interpret the measures across scenarios.
+
+    \item For continuous metrics, compute Cohen's d:
+    \begin{itemize}
+        \item Control: $\bar{x}_1 = 100$, $s_1 = 30$, $n_1 = 250$
+        \item Treatment: $\bar{x}_2 = 110$, $s_2 = 32$, $n_2 = 250$
+    \end{itemize}
+    Interpret the effect size. How many additional observations would be needed to detect this effect with 80\% power at $\alpha = 0.05$?
+
+    \item Create a visualization showing the "landscape" of effect sizes: For $p_1 \in [0.01, 0.5]$ and $p_2 \in [0.01, 0.5]$, plot heatmaps of (a) relative lift, (b) Cohen's h, and (c) log odds ratio. Identify regions of small/medium/large effects.
+
+    \item A company runs 100 A/B tests per year. Each test has a true effect size of Cohen's $h = 0.1$ (small). With $n = 1000$ per variant and $\alpha = 0.05$, what fraction of tests will:
+    \begin{enumerate}
+        \item Correctly detect the effect (power)?
+        \item Fail to detect the effect (Type II error)?
+        \item Show a "significant" effect in the wrong direction?
+    \end{enumerate}
+    Verify via simulation.
+\end{enumerate}
+
+\subsection{Programming Projects}
+
+\begin{enumerate}
+    \item \textbf{A/B Test Analysis Package:} Implement a comprehensive Python class \texttt{ABTest} that:
+    \begin{itemize}
+        \item Accepts control and treatment data
+        \item Computes all relevant statistics (proportions, SEs, CIs)
+        \item Performs hypothesis tests (z-test, chi-squared test, permutation test)
+        \item Calculates effect sizes
+        \item Generates publication-quality visualizations
+        \item Outputs formatted report with interpretation
+    \end{itemize}
+    Include docstrings, type hints, unit tests, and example usage.
+
+    \item \textbf{Interactive Dashboard:} Create a web dashboard (using Streamlit, Dash, or Shiny) that:
+    \begin{itemize}
+        \item Allows users to input A/B test data
+        \item Computes and displays all statistics
+        \item Visualizes confidence intervals, power curves
+        \item Provides interpretation and recommendations
+        \item Includes sample size calculator
+    \end{itemize}
+
+    \item \textbf{Simulation Study:} Design and execute a comprehensive simulation investigating:
+    \begin{itemize}
+        \item Coverage of different CI methods across parameter space
+        \item Power as a function of effect size, sample size, baseline rate
+        \item Impact of unequal sample sizes on test properties
+        \item Consequences of peeking (sequential testing without correction)
+    \end{itemize}
+    Write a report summarizing findings with visualizations.
+
+    \item \textbf{Bayesian vs. Frequentist Comparison:} Implement both frameworks for A/B testing:
+    \begin{itemize}
+        \item Frequentist: Confidence intervals and hypothesis tests
+        \item Bayesian: Posterior distributions with Beta-Binomial conjugacy
+    \end{itemize}
+    Compare results across scenarios varying sample size, effect size, and prior specification. When do they agree/disagree?
+\end{enumerate}

@@ -1,0 +1,182 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Set up reproducible development environments
+    \item Use containerization for ML projects
+    \item Configure version control for ML artifacts
+    \item Implement environment management best practices
+    \item Choose appropriate development tools and IDEs
+\end{itemize}
+
+\section{Development Environment Fundamentals}
+
+\subsection{Reproducibility Requirements}
+
+ML projects require reproducible environments to ensure consistent results across development, testing, and production.
+
+\section{Python Environment Management}
+
+\subsection{Virtual Environments}
+
+\begin{lstlisting}[style=shell]
+# Create virtual environment
+python -m venv ml_env
+
+# Activate environment
+# Windows
+ml_env\Scripts\activate
+# Linux/Mac
+source ml_env/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Export dependencies
+pip freeze > requirements.txt
+\end{lstlisting}
+
+\subsection{Conda Environments}
+
+\begin{lstlisting}[style=shell]
+# Create conda environment
+conda create -n ml_project python=3.9
+
+# Activate environment
+conda activate ml_project
+
+# Install packages
+conda install numpy pandas scikit-learn
+
+# Export environment
+conda env export > environment.yml
+
+# Create from file
+conda env create -f environment.yml
+\end{lstlisting}
+
+\section{Containerization with Docker}
+
+\subsection{Docker for ML}
+
+\begin{lstlisting}[style=docker, caption=Dockerfile for ML project]
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy project files
+COPY . .
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+
+# Run application
+CMD ["python", "train.py"]
+\end{lstlisting}
+
+\subsection{Docker Compose for Multi-Container Setup}
+
+\begin{lstlisting}[style=yaml, caption=docker-compose.yml]
+version: '3.8'
+
+services:
+  jupyter:
+    build: .
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/app/notebooks
+      - ./data:/app/data
+    command: jupyter lab --ip=0.0.0.0 --allow-root
+
+  mlflow:
+    image: mlflow/mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    command: mlflow server --host 0.0.0.0
+
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: mluser
+      POSTGRES_PASSWORD: mlpass
+      POSTGRES_DB: mldb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+\end{lstlisting}
+
+\section{Version Control for ML}
+
+\subsection{Git Configuration}
+
+\begin{lstlisting}[style=shell]
+# Initialize repository
+git init
+
+# Configure .gitignore
+cat > .gitignore << EOF
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+env/
+venv/
+
+# ML artifacts
+*.pkl
+*.h5
+*.ckpt
+models/
+data/raw/
+
+# IDE
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+EOF
+
+# Initial commit
+git add .
+git commit -m "Initial project setup"
+\end{lstlisting}
+
+\section{IDE and Development Tools}
+
+\subsection{Recommended Tools}
+
+\begin{itemize}
+    \item \textbf{VS Code:} Excellent Python support, Jupyter integration
+    \item \textbf{PyCharm:} Professional Python IDE with ML features
+    \item \textbf{Jupyter Lab:} Interactive development and exploration
+\end{itemize}
+
+\section{Chapter Summary}
+
+A well-configured development environment is essential for productive and reproducible ML engineering. This chapter covered environment management, containerization, and version control basics.
+
+\section{Exercises}
+
+\begin{exercise}
+Create a Docker container for a simple ML project with scikit-learn. Test that it produces consistent results across different machines.
+\end{exercise}
+
+\begin{exercise}
+Set up a complete development environment using Docker Compose with Jupyter, MLflow, and a database.
+\end{exercise}

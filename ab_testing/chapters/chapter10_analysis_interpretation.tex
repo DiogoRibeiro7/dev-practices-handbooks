@@ -1,0 +1,443 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Conduct end-to-end analysis of A/B test results
+    \item Handle missing data and outliers appropriately
+    \item Perform variance reduction techniques
+    \item Interpret results for stakeholders
+    \item Make sound business decisions from statistical evidence
+\end{itemize}
+
+\section{Analysis Workflow}
+
+A systematic approach ensures thorough and accurate analysis.
+
+\subsection{Pre-Analysis Checks}
+
+Before analyzing results, verify data quality:
+
+\begin{enumerate}
+    \item \textbf{Sample Ratio Mismatch:} Check allocation matches design
+    \item \textbf{Assignment Consistency:} Verify users don't switch variants
+    \item \textbf{Novelty Effects:} Examine temporal patterns
+    \item \textbf{External Validity Threats:} Check for anomalous events
+    \item \textbf{Data Completeness:} Assess missing data patterns
+\end{enumerate}
+
+\lstset{language=Python, caption=Pre-Analysis Data Quality Checks}
+\begin{lstlisting}
+import pandas as pd
+import numpy as np
+from scipy.stats import chisquare
+import matplotlib.pyplot as plt
+
+def preanalysis_checks(data):
+    """
+    Run comprehensive pre-analysis checks.
+
+    Parameters:
+    -----------
+    data : DataFrame
+        Must contain: user_id, variant, timestamp, conversion
+
+    Returns:
+    --------
+    dict : Check results and warnings
+    """
+    warnings = []
+
+    # 1. Sample Ratio Mismatch
+    variant_counts = data['variant'].value_counts()
+    expected = [len(data) / len(variant_counts)] * len(variant_counts)
+    chi2, srm_p_value = chisquare(variant_counts.values, expected)
+
+    if srm_p_value < 0.01:
+        warnings.append(f"SRM detected: p-value = {srm_p_value:.4f}")
+
+    # 2. Temporal patterns
+    data['date'] = pd.to_datetime(data['timestamp']).dt.date
+    daily_data = data.groupby(['date', 'variant'])['conversion'].mean().unstack()
+
+    # Check for systematic time trends
+    daily_variance = daily_data.var()
+    if (daily_variance > 0.01).any():
+        warnings.append("High temporal variance detected")
+
+    # 3. Multiple assignments
+    multi_assigned = data.groupby('user_id')['variant'].nunique()
+    n_multi = (multi_assigned > 1).sum()
+
+    if n_multi > 0:
+        warnings.append(f"{n_multi} users with multiple variant assignments")
+
+    # 4. Missing data
+    missing_pct = data.isnull().sum() / len(data) * 100
+    if (missing_pct > 5).any():
+        warnings.append(f"High missing data: {dict(missing_pct[missing_pct > 5])}")
+
+    return {
+        'srm_p_value': srm_p_value,
+        'variant_counts': dict(variant_counts),
+        'warnings': warnings,
+        'passed': len(warnings) == 0
+    }
+
+# Example usage
+# data = pd.read_csv('experiment_data.csv')
+# checks = preanalysis_checks(data)
+# print(f"Pre-analysis checks: {'PASSED' if checks['passed'] else 'WARNINGS'}")
+# for warning in checks['warnings']:
+#     print(f"  - {warning}")
+\end{lstlisting}
+
+\subsection{Exploratory Data Analysis}
+
+Visualize and summarize data before formal testing.
+
+\lstset{language=Python, caption=Exploratory Analysis Dashboard}
+\begin{lstlisting}
+def create_eda_dashboard(data):
+    """Create exploratory analysis visualizations."""
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # 1. Overall conversion rates
+    conversion_by_variant = data.groupby('variant')['conversion'].agg([
+        ('mean', 'mean'),
+        ('std', 'std'),
+        ('count', 'count')
+    ])
+
+    axes[0, 0].bar(conversion_by_variant.index,
+                   conversion_by_variant['mean'],
+                   yerr=conversion_by_variant['std'] /
+                        np.sqrt(conversion_by_variant['count']))
+    axes[0, 0].set_xlabel('Variant')
+    axes[0, 0].set_ylabel('Conversion Rate')
+    axes[0, 0].set_title('Conversion Rate by Variant')
+    axes[0, 0].grid(alpha=0.3)
+
+    # 2. Time series
+    data['date'] = pd.to_datetime(data['timestamp']).dt.date
+    daily_cr = data.groupby(['date', 'variant'])['conversion'].mean().unstack()
+
+    for variant in daily_cr.columns:
+        axes[0, 1].plot(daily_cr.index, daily_cr[variant],
+                       marker='o', label=f'Variant {variant}')
+
+    axes[0, 1].set_xlabel('Date')
+    axes[0, 1].set_ylabel('Daily Conversion Rate')
+    axes[0, 1].set_title('Conversion Rate Over Time')
+    axes[0, 1].legend()
+    axes[0, 1].grid(alpha=0.3)
+    plt.setp(axes[0, 1].xaxis.get_majorticklabels(), rotation=45)
+
+    # 3. Distribution of continuous metric (if available)
+    if 'value' in data.columns:
+        for variant in data['variant'].unique():
+            variant_data = data[data['variant'] == variant]['value'].dropna()
+            axes[1, 0].hist(variant_data, bins=50, alpha=0.5,
+                           label=f'Variant {variant}')
+
+        axes[1, 0].set_xlabel('Value')
+        axes[1, 0].set_ylabel('Frequency')
+        axes[1, 0].set_title('Distribution of Values by Variant')
+        axes[1, 0].legend()
+        axes[1, 0].grid(alpha=0.3)
+
+    # 4. Sample size accumulation
+    data_sorted = data.sort_values('timestamp')
+    data_sorted['cumulative'] = range(1, len(data_sorted) + 1)
+
+    for variant in data['variant'].unique():
+        variant_data = data_sorted[data_sorted['variant'] == variant]
+        axes[1, 1].plot(variant_data['timestamp'],
+                       variant_data['cumulative'],
+                       label=f'Variant {variant}')
+
+    axes[1, 1].set_xlabel('Time')
+    axes[1, 1].set_ylabel('Cumulative Sample Size')
+    axes[1, 1].set_title('Sample Size Accumulation')
+    axes[1, 1].legend()
+    axes[1, 1].grid(alpha=0.3)
+
+    plt.tight_layout()
+    return fig
+\end{lstlisting}
+
+\section{Handling Data Issues}
+
+\subsection{Missing Data}
+
+\textbf{Missing completely at random (MCAR):} Missing mechanism independent of data
+
+\textbf{Missing at random (MAR):} Missing depends on observed data
+
+\textbf{Missing not at random (MNAR):} Missing depends on unobserved data
+
+\textbf{Strategies:}
+\begin{enumerate}
+    \item \textbf{Complete case analysis:} Drop missing (if MCAR and limited missingness)
+    \item \textbf{Imputation:} Fill with mean, median, or model predictions
+    \item \textbf{Multiple imputation:} Account for imputation uncertainty
+    \item \textbf{Sensitivity analysis:} Test robustness to missing data assumptions
+\end{enumerate}
+
+\subsection{Outliers}
+
+Extreme values can bias estimates, especially for means.
+
+\textbf{Detection methods:}
+\begin{itemize}
+    \item Visual inspection (box plots, scatter plots)
+    \item Statistical rules (e.g., beyond 3 standard deviations)
+    \item Domain knowledge (impossible or implausible values)
+\end{itemize}
+
+\textbf{Handling approaches:}
+\begin{enumerate}
+    \item \textbf{Winsorization:} Cap at percentiles (e.g., 1st and 99th)
+    \item \textbf{Transformation:} Log transform to reduce skewness
+    \item \textbf{Robust statistics:} Use median instead of mean
+    \item \textbf{Separate analysis:} Analyze with and without outliers
+\end{enumerate}
+
+\lstset{language=Python, caption=Outlier Treatment}
+\begin{lstlisting}
+def winsorize_data(data, column, lower_percentile=1, upper_percentile=99):
+    """
+    Winsorize data by capping at specified percentiles.
+
+    Parameters:
+    -----------
+    data : DataFrame
+        Data to winsorize
+    column : str
+        Column to winsorize
+    lower_percentile, upper_percentile : float
+        Percentile thresholds
+
+    Returns:
+    --------
+    DataFrame : Data with winsorized column
+    """
+    lower_bound = np.percentile(data[column], lower_percentile)
+    upper_bound = np.percentile(data[column], upper_percentile)
+
+    data[f'{column}_winsorized'] = data[column].clip(
+        lower=lower_bound,
+        upper=upper_bound
+    )
+
+    n_capped = ((data[column] < lower_bound) |
+                (data[column] > upper_bound)).sum()
+
+    print(f"Winsorized {n_capped} values ({n_capped/len(data)*100:.2f}%)")
+    print(f"  Bounds: [{lower_bound:.2f}, {upper_bound:.2f}]")
+
+    return data
+
+# Compare analyses
+def compare_outlier_treatment(data, metric_col):
+    """Compare results with different outlier treatments."""
+    results = {}
+
+    # Original data
+    for variant in data['variant'].unique():
+        variant_data = data[data['variant'] == variant][metric_col]
+        results[f'variant_{variant}_original'] = {
+            'mean': variant_data.mean(),
+            'median': variant_data.median(),
+            'std': variant_data.std()
+        }
+
+    # Winsorized data
+    data_winsorized = winsorize_data(data.copy(), metric_col)
+    for variant in data['variant'].unique():
+        variant_data = data_winsorized[
+            data_winsorized['variant'] == variant
+        ][f'{metric_col}_winsorized']
+        results[f'variant_{variant}_winsorized'] = {
+            'mean': variant_data.mean(),
+            'median': variant_data.median(),
+            'std': variant_data.std()
+        }
+
+    return pd.DataFrame(results).T
+\end{lstlisting}
+
+\section{Variance Reduction Techniques}
+
+Reducing variance increases power without additional sample size.
+
+\subsection{CUPED (Controlled-Experiment Using Pre-Experiment Data)}
+
+Use pre-experiment covariates to reduce variance.
+
+\begin{equation}
+Y_{\text{adjusted}} = Y - \theta(X - \mathbb{E}[X])
+\end{equation}
+
+where $X$ is pre-experiment covariate and $\theta = \frac{\text{Cov}(Y, X)}{\text{Var}(X)}$.
+
+\textbf{Variance reduction:}
+\begin{equation}
+\text{Var}(Y_{\text{adjusted}}) = \text{Var}(Y)(1 - \rho^2)
+\end{equation}
+
+where $\rho = \text{Cor}(Y, X)$.
+
+\lstset{language=R, caption=CUPED Implementation}
+\begin{lstlisting}
+cuped_adjustment <- function(y, x) {
+  # y: outcome metric
+  # x: pre-experiment covariate
+
+  # Estimate theta
+  theta <- cov(y, x) / var(x)
+
+  # Adjust outcome
+  y_adjusted <- y - theta * (x - mean(x))
+
+  # Calculate variance reduction
+  variance_reduction <- 1 - (var(y_adjusted) / var(y))
+
+  list(
+    y_adjusted = y_adjusted,
+    theta = theta,
+    variance_reduction = variance_reduction,
+    original_var = var(y),
+    adjusted_var = var(y_adjusted)
+  )
+}
+
+# Example
+set.seed(123)
+n <- 1000
+
+# Pre-experiment metric (e.g., baseline conversion)
+x_pre <- rbinom(n, 1, 0.10)
+
+# Experiment outcome (correlated with baseline)
+y <- rbinom(n, 1, 0.10 + 0.2 * x_pre)
+
+# Apply CUPED
+result <- cuped_adjustment(y, x_pre)
+
+cat("Variance reduction:", result$variance_reduction, "\n")
+cat("Original variance:", result$original_var, "\n")
+cat("Adjusted variance:", result$adjusted_var, "\n")
+\end{lstlisting}
+
+\subsection{Stratification}
+
+Analyze within strata and combine results.
+
+\textbf{Benefits:}
+\begin{itemize}
+    \item Increases precision
+    \item Ensures balance on stratification variables
+    \item Enables subgroup analysis
+\end{itemize}
+
+\section{Result Interpretation}
+
+\subsection{Statistical vs. Practical Significance}
+
+Report both:
+
+\begin{enumerate}
+    \item \textbf{Statistical significance:} P-value and confidence interval
+
+    \item \textbf{Effect size:} Absolute and relative differences
+
+    \item \textbf{Business impact:} Expected revenue/user impact
+
+    \item \textbf{Confidence interval:} Range of plausible effects
+\end{enumerate}
+
+\begin{example}[Interpretation Template]
+"The treatment increased conversion rate from 8.0\% to 8.5\%, a relative increase of 6.25\% (95\% CI: [2\%, 11\%], p = 0.01). This translates to an estimated 500 additional conversions per month and \$25,000 in additional revenue (95\% CI: [\$10,000, \$40,000])."
+\end{example}
+
+\subsection{Communicating Uncertainty}
+
+Always quantify uncertainty:
+
+\begin{itemize}
+    \item Report confidence intervals, not just point estimates
+    \item Visualize uncertainty with error bars
+    \item Discuss what we cannot conclude
+    \item Consider robustness under different assumptions
+\end{itemize}
+
+\section{Decision Making Framework}
+
+\subsection{Quantitative Criteria}
+
+\begin{enumerate}
+    \item \textbf{Statistical significance:} $p < 0.05$ (or chosen $\alpha$)
+
+    \item \textbf{Practical significance:} Effect exceeds minimum meaningful threshold
+
+    \item \textbf{Guardrail metrics:} No degradation on critical metrics
+
+    \item \textbf{Cost-benefit:} Expected value exceeds implementation cost
+\end{enumerate}
+
+\subsection{Qualitative Factors}
+
+\begin{itemize}
+    \item \textbf{Strategic alignment:} Fits product vision
+    \item \textbf{User experience:} Beyond measured metrics
+    \item \textbf{Technical debt:} Long-term maintainability
+    \item \textbf{Competitive dynamics:} Market positioning
+    \item \textbf{Brand considerations:} Perception and values
+\end{itemize}
+
+\subsection{Decision Matrix}
+
+\begin{center}
+\begin{tabular}{lccl}
+\toprule
+\textbf{Statistical} & \textbf{Practical} & \textbf{Decision} & \textbf{Action} \\
+\midrule
+Significant & Significant & Ship & Implement \\
+Significant & Not significant & Hold & More investigation \\
+Not significant & Significant & Iterate & Refine and retest \\
+Not significant & Not significant & Kill & Abandon \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Summary}
+
+Thorough analysis and interpretation are critical:
+
+\begin{itemize}
+    \item Conduct pre-analysis quality checks
+    \item Handle missing data and outliers appropriately
+    \item Apply variance reduction techniques
+    \item Report both statistical and practical significance
+    \item Communicate uncertainty clearly
+    \item Make decisions combining quantitative and qualitative factors
+\end{itemize}
+
+Good analysis transforms data into actionable insights.
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \cite{deng2013improving}: CUPED methodology
+    \item \cite{kohavi2020trustworthy}: Interpretation best practices
+    \item \cite{little2019statistical}: Missing data analysis
+\end{itemize}
+
+\section{Exercises}
+
+\begin{enumerate}
+    \item Implement complete analysis pipeline including quality checks and variance reduction
+    \item Compare power with and without CUPED for varying correlations
+    \item Create stakeholder report template with visualizations
+    \item Build decision framework incorporating business constraints
+\end{enumerate}

@@ -179,7 +179,71 @@ python tools/experiment_planner.py --mode report \
 
 Outputs are written to \texttt{tools/generated/}, ready to paste into PRDs, experiment tickets, or post-analysis docs.
 
+\section{Industry Scenarios}
+\label{sec:hypotheses-examples}
+
+\paragraph{Fintech.} A neobank tested ``If we pre-fill loan applications from payroll data, completion rates rise because friction drops'' and ran an A/B test with guardrails on default rates. Success stemmed from explicitly stating the causal mechanism and rollback triggers. A fee-notification experiment failed when the hypothesis simply said ``Users like clarity''—no measurable outcome meant inconclusive data and executive frustration.
+
+\paragraph{Healthcare.} A virtual-care startup hypothesized ``If nurses receive symptom checklists before calls, triage accuracy improves because they capture structured data,'' measuring misclassification rates and patient satisfaction. Another team hypothesized ``AI assistant will help doctors'' without defining behaviors; the vague statement led to scope creep and no production decision.
+
+\paragraph{E-commerce.} A retailer posited ``If we show inventory scarcity for limited items, conversion increases because urgency nudges action,'' tracking both conversion lift and returns as guardrails, which revealed a sustainable tactic. A contrasting ``Personalize homepage'' hypothesis lacked a concrete mechanism or metric, causing endless iteration with no learning.
+
 \section{Summary}
 \label{sec:hypotheses-summary}
 
 Writing testable hypotheses refocuses product work on learning and impact. By pairing structured hypotheses with rigorous experiments, teams can make confident decisions even when navigating uncertainty. The next chapter deepens the discussion with statistical techniques for evaluating acceptance criteria.
+
+\subsection{Action Checklist}
+\begin{enumerate}
+    \item Rewrite upcoming backlog items as explicit hypotheses using the If-Then-Because structure.
+    \item Define primary metric, guardrail metric, and decision criteria before scheduling an experiment.
+    \item Store hypotheses in a shared log with status (untested, running, validated, invalidated).
+\end{enumerate}
+
+\paragraph{Try this now (5 min).} Choose one assumption about your product and express it as ``If we do X, then Y will happen, because Z.'' Add the success threshold and share it with your team to align on the next test.
+
+\section{Day in the Life: Rowan Runs a Learning Loop}
+Rowan spends the morning prepping for a pricing experiment. Instead of arguing in circles, he gathers marketing, finance, and engineering to write the hypothesis together: ``If we highlight bundled shipping during checkout, conversion of multi-item carts will increase from 24\% to 28\% because the perceived value offsets shipping friction.'' They define guardrails (refund rate, CS complaints) and pre-register the analysis. After launch, Rowan blocks time daily to review telemetry and writes quick Loom updates showing the hypothesis status. When results come back flat, he closes the loop with leadership, noting the falsified assumption and teeing up the next experiment. The discipline turns a potential blame game into rapid learning.
+
+\section{Visual Guide}
+\label{sec:hypothesis-visuals}
+\begin{itemize}
+    \item \textbf{Experiment Loop Flowchart}—define hypothesis $\rightarrow$ set metrics $\rightarrow$ build instrumentation $\rightarrow$ run test $\rightarrow$ analyze $\rightarrow$ decide. Highlight guardrail checks and rollback moments.
+    \item \textbf{Hypothesis Log Template}—visual mockup showing columns for ``If,'' ``Then,'' ``Because,'' metrics, status, and decisions, referencing Rowan’s workflow.
+    \item \textbf{Before/After Graph}—compare a vanity experiment (no metrics) vs. the structured hypothesis, showing improved clarity and faster decisions.
+\end{itemize}
+
+\section{Interactive Elements}
+\label{sec:hypothesis-interactive}
+\begin{itemize}
+    \item \textbf{Self-Assessment}—quiz on hypothesis quality scoring specificity, measurability, and falsifiability of current backlog items.
+    \item \textbf{Reflection Prompt}—``List the last three assumptions you validated or invalidated.'' Note what evidence you used.
+    \item \textbf{Pause and Practice}—fillable hypothesis log starter kit for readers to track at least two live experiments.
+    \item \textbf{Implementation Planner}—template for instituting hypothesis reviews (cadence, owners, metrics, decision criteria).
+\end{itemize}
+\section{Industry Adaptations}
+\label{sec:hypotheses-industry}
+\paragraph{Regulated Industries.} Hypotheses must be paired with compliance approvals and data-governance plans. Document which sandbox or anonymized datasets will be used and how results feed into validation or filing processes.
+
+\paragraph{Startups vs. Enterprises.} Startups can run scrappier experiments but should still capture hypotheses in a shared log to avoid memory-based decisions. Enterprises can integrate hypotheses into stage-gate reviews, ensuring each gate demands evidence rather than opinion.
+
+\paragraph{B2B vs. B2C.} B2B hypotheses often hinge on customer-behavior change across accounts; include account-selection criteria and partner readiness. B2C tests need robust sample-size planning and user segmentation to avoid diluting signals across large populations.
+
+\paragraph{Hardware-Software Integration.} Hypotheses should include both digital and physical instrumentation—e.g., ``If firmware syncs every 6 hours, then battery life improves by X because radio usage drops.'' Plan controlled environments or lab setups for hardware components.
+\section{Warning Signs and Recovery}
+\label{sec:hypotheses-warning}
+\begin{description}
+    \item[\textbf{Warning sign}] Experiments launch with vague goals like ``improve engagement'' and lack falsifiable statements.
+    \item[\textbf{Recovery}] Force every experiment proposal through the If-Then-Because template and gate development until metrics are specified.
+    \item[\textbf{Warning sign}] Teams cherry-pick segments post hoc to declare victory.
+    \item[\textbf{Recovery}] Require pre-registered analysis plans and peer review before looking at results; if exploratory analysis is needed, clearly label it as such and schedule a follow-up confirmatory test.
+\end{description}
+
+\section{Triple-Lens Takeaways}
+\label{sec:hypotheses-triple}
+
+\begin{description}
+    \item[\textbf{Busy PM}] Lean on the If-Then-Because template and the planning tool to crank out experiment briefs quickly and keep stakeholders aligned on success/failure definitions.
+    \item[\textbf{Technical Lead}] Use the operational definition and sample-size guidance to ensure experiments capture the right telemetry, control confounders, and feed directly into deployment decisions.
+    \item[\textbf{Executive}] Review the hypothesis portfolio at a glance: the chapter’s hypothesis types map cleanly to investment bets, making it easier to see which strategic assumptions are being validated.
+\end{description}

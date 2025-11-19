@@ -1,0 +1,254 @@
+\section{Python Installation}
+
+\subsection{Installing Python 3.9+}
+
+\textbf{Windows:}
+\begin{lstlisting}[style=shell]
+# Download from python.org and run installer
+# Or use winget
+winget install Python.Python.3.9
+\end{lstlisting}
+
+\textbf{macOS:}
+\begin{lstlisting}[style=shell]
+# Using Homebrew
+brew install python@3.9
+\end{lstlisting}
+
+\textbf{Linux:}
+\begin{lstlisting}[style=shell]
+# Ubuntu/Debian
+sudo apt update
+sudo apt install python3.9 python3.9-venv python3-pip
+
+# CentOS/RHEL
+sudo yum install python39
+\end{lstlisting}
+
+\section{Docker Installation}
+
+\subsection{Docker Desktop}
+
+\textbf{Windows and macOS:}
+\begin{enumerate}
+    \item Download Docker Desktop from \url{https://www.docker.com/products/docker-desktop}
+    \item Run the installer
+    \item Start Docker Desktop
+    \item Verify installation:
+\end{enumerate}
+
+\begin{lstlisting}[style=shell]
+docker --version
+docker run hello-world
+\end{lstlisting}
+
+\textbf{Linux:}
+\begin{lstlisting}[style=shell]
+# Install Docker Engine
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Add user to docker group
+sudo usermod -aG docker $USER
+
+# Start Docker
+sudo systemctl start docker
+sudo systemctl enable docker
+\end{lstlisting}
+
+\section{Kubernetes Setup}
+
+\subsection{Minikube for Local Development}
+
+\begin{lstlisting}[style=shell]
+# Install minikube
+# macOS
+brew install minikube
+
+# Linux
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+sudo install minikube-linux-amd64 /usr/local/bin/minikube
+
+# Start minikube
+minikube start --cpus 4 --memory 8192
+\end{lstlisting}
+
+\section{Cloud Provider Setup}
+
+\subsection{AWS CLI}
+
+\begin{lstlisting}[style=shell]
+# Install AWS CLI
+pip install awscli
+
+# Configure credentials
+aws configure
+\end{lstlisting}
+
+\subsection{Google Cloud SDK}
+
+\begin{lstlisting}[style=shell]
+# Install gcloud CLI
+# Follow instructions at cloud.google.com/sdk/docs/install
+
+# Initialize
+gcloud init
+\end{lstlisting}
+
+\subsection{Azure CLI}
+
+\begin{lstlisting}[style=shell]
+# Install Azure CLI
+pip install azure-cli
+
+# Login
+az login
+\end{lstlisting}
+
+\section{ML Frameworks Installation}
+
+\subsection{PyTorch}
+
+\begin{lstlisting}[style=shell]
+# CPU version
+pip install torch torchvision torchaudio
+
+# GPU version (CUDA 11.8)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+\end{lstlisting}
+
+\subsection{TensorFlow}
+
+\begin{lstlisting}[style=shell]
+# CPU version
+pip install tensorflow
+
+# GPU version
+pip install tensorflow[and-cuda]
+\end{lstlisting}
+
+\subsection{Scikit-learn and Data Science Stack}
+
+\begin{lstlisting}[style=shell]
+pip install numpy pandas scikit-learn matplotlib seaborn jupyter
+\end{lstlisting}
+
+\section{MLOps Tools Installation}
+
+\subsection{MLflow}
+
+\begin{lstlisting}[style=shell]
+pip install mlflow
+
+# Start MLflow server
+mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlruns --host 0.0.0.0
+\end{lstlisting}
+
+\subsection{DVC}
+
+\begin{lstlisting}[style=shell]
+pip install dvc
+
+# Initialize DVC
+dvc init
+
+# Configure remote storage
+dvc remote add -d myremote s3://mybucket/dvc-storage
+\end{lstlisting}
+
+\subsection{Apache Airflow}
+
+\begin{lstlisting}[style=shell]
+pip install apache-airflow
+
+# Initialize database
+airflow db init
+
+# Create admin user
+airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com
+
+# Start webserver and scheduler
+airflow webserver -p 8080
+airflow scheduler
+\end{lstlisting}
+
+\section{GPU Drivers}
+
+\subsection{NVIDIA Drivers and CUDA}
+
+\textbf{Ubuntu/Debian:}
+\begin{lstlisting}[style=shell]
+# Install NVIDIA drivers
+sudo apt install nvidia-driver-525
+
+# Install CUDA Toolkit
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
+sudo dpkg -i cuda-keyring_1.0-1_all.deb
+sudo apt update
+sudo apt install cuda
+
+# Verify installation
+nvidia-smi
+nvcc --version
+\end{lstlisting}
+
+\section{Development Tools}
+
+\subsection{VS Code Extensions for ML}
+
+Recommended VS Code extensions:
+\begin{itemize}
+    \item Python
+    \item Jupyter
+    \item Docker
+    \item Kubernetes
+    \item YAML
+    \item GitLens
+    \item Remote - SSH
+    \item Remote - Containers
+\end{itemize}
+
+\section{Complete Environment Setup Script}
+
+\begin{lstlisting}[style=shell, caption=setup.sh]
+#!/bin/bash
+
+# Create project directory
+mkdir -p ml_project
+cd ml_project
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install --upgrade pip
+pip install torch torchvision torchaudio
+pip install tensorflow
+pip install scikit-learn pandas numpy matplotlib seaborn
+pip install mlflow dvc
+pip install jupyter jupyterlab
+pip install fastapi uvicorn
+pip install pytest pytest-cov
+pip install black flake8 mypy
+
+# Initialize git
+git init
+curl https://raw.githubusercontent.com/github/gitignore/main/Python.gitignore -o .gitignore
+
+# Initialize DVC
+dvc init
+
+# Create project structure
+mkdir -p data/{raw,processed,features}
+mkdir -p models
+mkdir -p notebooks
+mkdir -p src/{data,features,models,utils}
+mkdir -p tests
+mkdir -p config
+
+# Create requirements.txt
+pip freeze > requirements.txt
+
+echo "Setup complete!"
+\end{lstlisting}

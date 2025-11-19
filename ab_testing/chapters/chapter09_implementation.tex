@@ -1,0 +1,471 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Design robust experimentation infrastructure
+    \item Implement randomization and assignment systems
+    \item Build reliable logging and data collection pipelines
+    \item Integrate A/B testing into applications
+    \item Debug common implementation issues
+\end{itemize}
+
+\section{Experimentation Infrastructure}
+
+A robust A/B testing system requires careful technical implementation.
+
+\subsection{Core Components}
+
+\begin{enumerate}
+    \item \textbf{Randomization Service}: Assigns users to variants
+    \item \textbf{Configuration Management}: Stores experiment definitions
+    \item \textbf{Logging System}: Records assignments and events
+    \item \textbf{Analysis Pipeline}: Computes metrics and statistical tests
+    \item \textbf{Monitoring Dashboard}: Tracks experiment health
+\end{enumerate}
+
+\subsection{Architecture Patterns}
+
+\textbf{Client-side randomization:}
+\begin{itemize}
+    \item Randomization happens in browser/app
+    \item Lightweight, no server dependency
+    \item Risk of manipulation
+\end{itemize}
+
+\textbf{Server-side randomization:}
+\begin{itemize}
+    \item Centralized assignment service
+    \item More secure and consistent
+    \item Requires infrastructure
+\end{itemize}
+
+\textbf{Hybrid approach:}
+\begin{itemize}
+    \item Server assigns, client implements
+    \item Balance of benefits
+\end{itemize}
+
+\section{Randomization Implementation}
+
+\subsection{Hash-Based Randomization}
+
+Use deterministic hashing for consistent assignments across sessions.
+
+\lstset{language=Python, caption=Hash-Based User Assignment}
+\begin{lstlisting}
+import hashlib
+
+def assign_variant(user_id, experiment_id, num_variants=2,
+                  traffic_allocation=1.0, salt=''):
+    """
+    Assign user to variant using deterministic hashing.
+
+    Parameters:
+    -----------
+    user_id : str
+        Unique user identifier
+    experiment_id : str
+        Unique experiment identifier
+    num_variants : int
+        Number of variants
+    traffic_allocation : float
+        Fraction of users to include (0.0-1.0)
+    salt : str
+        Random salt for security
+
+    Returns:
+    --------
+    variant : int or None
+        Assigned variant (0 to num_variants-1) or None if not allocated
+    """
+    # Create hash input
+    hash_input = f"{user_id}:{experiment_id}:{salt}".encode('utf-8')
+
+    # Generate hash
+    hash_output = hashlib.md5(hash_input).hexdigest()
+
+    # Convert to integer and normalize to [0, 1]
+    hash_int = int(hash_output, 16)
+    hash_fraction = (hash_int % 10000) / 10000.0
+
+    # Check traffic allocation
+    if hash_fraction >= traffic_allocation:
+        return None  # User not in experiment
+
+    # Assign to variant
+    variant_fraction = hash_fraction / traffic_allocation
+    variant = int(variant_fraction * num_variants)
+
+    return variant
+
+# Example usage
+user_id = "user_12345"
+experiment_id = "button_color_test"
+
+# Consistent assignment
+for _ in range(3):
+    variant = assign_variant(user_id, experiment_id, num_variants=2)
+    print(f"User {user_id} assigned to variant: {variant}")
+
+# Different experiments give different assignments
+for exp_id in ["exp_1", "exp_2", "exp_3"]:
+    variant = assign_variant(user_id, exp_id)
+    print(f"Experiment {exp_id}: variant {variant}")
+\end{lstlisting}
+
+\textbf{Key properties:}
+\begin{itemize}
+    \item Deterministic: same user always gets same variant
+    \item Independent: different experiments independent
+    \item Uniform: variants equally likely
+    \item Secure: hard to game with salt
+\end{itemize}
+
+\subsection{Handling Edge Cases}
+
+\begin{enumerate}
+    \item \textbf{New vs. returning users:} Ensure consistent assignment
+
+    \item \textbf{Logged out users:} Use cookies with careful handling
+
+    \item \textbf{Multi-device users:} Decision: device-level or user-level?
+
+    \item \textbf{Bots and crawlers:} Filter before assignment
+
+    \item \textbf{Internal traffic:} Exclude or separate analysis
+\end{enumerate}
+
+\section{Configuration Management}
+
+Store experiment definitions in a centralized system.
+
+\lstset{language=Python, caption=Experiment Configuration Schema}
+\begin{lstlisting}
+import json
+from datetime import datetime
+
+class ExperimentConfig:
+    """Experiment configuration manager."""
+
+    def __init__(self, config_path):
+        with open(config_path, 'r') as f:
+            self.config = json.load(f)
+
+    def get_experiment(self, experiment_id):
+        """Retrieve experiment configuration."""
+        return self.config.get('experiments', {}).get(experiment_id)
+
+    def is_active(self, experiment_id):
+        """Check if experiment is currently active."""
+        exp = self.get_experiment(experiment_id)
+        if not exp:
+            return False
+
+        now = datetime.now()
+        start = datetime.fromisoformat(exp.get('start_date'))
+        end = datetime.fromisoformat(exp.get('end_date'))
+
+        return start <= now <= end and exp.get('status') == 'active'
+
+# Example configuration file (JSON)
+example_config = {
+    "experiments": {
+        "checkout_button_test": {
+            "name": "Checkout Button Color Test",
+            "description": "Testing red vs blue checkout button",
+            "owner": "product_team@example.com",
+            "start_date": "2025-01-01T00:00:00",
+            "end_date": "2025-01-31T23:59:59",
+            "status": "active",
+            "variants": [
+                {"id": 0, "name": "control", "allocation": 0.5},
+                {"id": 1, "name": "treatment", "allocation": 0.5}
+            ],
+            "metrics": {
+                "primary": "conversion_rate",
+                "secondary": ["revenue_per_user", "bounce_rate"],
+                "guardrails": ["page_load_time", "error_rate"]
+            },
+            "targeting": {
+                "countries": ["US", "CA", "UK"],
+                "platforms": ["web", "mobile_web"]
+            }
+        }
+    }
+}
+\end{lstlisting}
+
+\section{Logging and Data Collection}
+
+\subsection{Event Schema}
+
+Design a comprehensive event schema capturing all necessary data.
+
+\lstset{language=Python, caption=Event Logging System}
+\begin{lstlisting}
+import uuid
+from datetime import datetime
+import json
+
+class ExperimentLogger:
+    """Log experiment assignments and events."""
+
+    def __init__(self, storage_backend):
+        self.storage = storage_backend
+
+    def log_assignment(self, user_id, experiment_id, variant,
+                      timestamp=None, metadata=None):
+        """Log user assignment to experiment variant."""
+        event = {
+            'event_id': str(uuid.uuid4()),
+            'event_type': 'assignment',
+            'timestamp': timestamp or datetime.utcnow().isoformat(),
+            'user_id': user_id,
+            'experiment_id': experiment_id,
+            'variant': variant,
+            'metadata': metadata or {}
+        }
+
+        self.storage.write(event)
+        return event
+
+    def log_conversion(self, user_id, experiment_id, conversion_type,
+                      value=None, timestamp=None, metadata=None):
+        """Log conversion event."""
+        event = {
+            'event_id': str(uuid.uuid4()),
+            'event_type': 'conversion',
+            'timestamp': timestamp or datetime.utcnow().isoformat(),
+            'user_id': user_id,
+            'experiment_id': experiment_id,
+            'conversion_type': conversion_type,
+            'value': value,
+            'metadata': metadata or {}
+        }
+
+        self.storage.write(event)
+        return event
+
+# Example: In-memory storage for demonstration
+class InMemoryStorage:
+    def __init__(self):
+        self.events = []
+
+    def write(self, event):
+        self.events.append(event)
+
+    def query(self, event_type=None, experiment_id=None):
+        results = self.events
+        if event_type:
+            results = [e for e in results if e['event_type'] == event_type]
+        if experiment_id:
+            results = [e for e in results
+                      if e.get('experiment_id') == experiment_id]
+        return results
+
+# Usage
+storage = InMemoryStorage()
+logger = ExperimentLogger(storage)
+
+# Log assignment
+logger.log_assignment('user_001', 'exp_123', variant=1,
+                     metadata={'device': 'mobile'})
+
+# Log conversion
+logger.log_conversion('user_001', 'exp_123', 'purchase',
+                     value=49.99, metadata={'product_id': 'SKU_789'})
+
+# Query events
+assignments = storage.query(event_type='assignment',
+                           experiment_id='exp_123')
+print(f"Found {len(assignments)} assignment events")
+\end{lstlisting}
+
+\subsection{Data Quality Checks}
+
+Implement automated checks:
+
+\begin{enumerate}
+    \item \textbf{Sample Ratio Mismatch (SRM):} Verify allocation matches expectations
+
+    \item \textbf{Assignment Consistency:} Users don't switch variants
+
+    \item \textbf{Timestamp Validity:} Events in reasonable order
+
+    \item \textbf{Data Completeness:} No missing critical fields
+
+    \item \textbf{Metric Sanity:} Values within expected ranges
+\end{enumerate}
+
+\lstset{language=Python, caption=Data Quality Validation}
+\begin{lstlisting}
+def validate_experiment_data(assignments_df, events_df):
+    """
+    Run data quality checks on experiment data.
+
+    Returns:
+    --------
+    dict : Validation results with issues flagged
+    """
+    issues = []
+
+    # Check 1: Sample Ratio Mismatch
+    variant_counts = assignments_df['variant'].value_counts()
+    expected_ratio = 1.0 / len(variant_counts)
+    actual_ratios = variant_counts / len(assignments_df)
+
+    from scipy.stats import chisquare
+    expected = [len(assignments_df) * expected_ratio] * len(variant_counts)
+    chi2, p_value = chisquare(variant_counts.values, expected)
+
+    if p_value < 0.01:
+        issues.append({
+            'type': 'SRM',
+            'severity': 'high',
+            'message': f'Sample ratio mismatch detected (p={p_value:.4f})',
+            'details': dict(variant_counts)
+        })
+
+    # Check 2: Multiple assignments
+    multi_assigned = assignments_df.groupby('user_id')['variant'].nunique()
+    multi_assigned_users = (multi_assigned > 1).sum()
+
+    if multi_assigned_users > 0:
+        issues.append({
+            'type': 'consistency',
+            'severity': 'high',
+            'message': f'{multi_assigned_users} users assigned to multiple variants',
+        })
+
+    # Check 3: Events before assignment
+    merged = events_df.merge(assignments_df, on='user_id', how='left')
+    merged['assignment_timestamp'] = pd.to_datetime(merged['assignment_timestamp'])
+    merged['event_timestamp'] = pd.to_datetime(merged['event_timestamp'])
+
+    early_events = (merged['event_timestamp'] <
+                   merged['assignment_timestamp']).sum()
+
+    if early_events > 0:
+        issues.append({
+            'type': 'timing',
+            'severity': 'medium',
+            'message': f'{early_events} events occurred before assignment'
+        })
+
+    return {
+        'valid': len(issues) == 0,
+        'issues': issues,
+        'checks_run': ['SRM', 'consistency', 'timing']
+    }
+\end{lstlisting}
+
+\section{Integration Patterns}
+
+\subsection{Feature Flags Integration}
+
+Combine experimentation with feature flag systems.
+
+\lstset{language=Python, caption=Feature Flag with A/B Testing}
+\begin{lstlisting}
+class FeatureFlagService:
+    """Combined feature flags and A/B testing."""
+
+    def __init__(self, experiment_service):
+        self.experiment_service = experiment_service
+        self.permanent_flags = {}
+
+    def is_enabled(self, flag_name, user_id, default=False):
+        """
+        Check if feature is enabled for user.
+
+        Supports:
+        - Boolean flags (on/off for all users)
+        - Percentage rollouts
+        - A/B test variants
+        """
+        # Check permanent flags first
+        if flag_name in self.permanent_flags:
+            return self.permanent_flags[flag_name]
+
+        # Check if it's an A/B test
+        if self.experiment_service.is_experiment(flag_name):
+            variant = self.experiment_service.get_variant(flag_name, user_id)
+            return variant == 1  # Treat variant 1 as "enabled"
+
+        return default
+
+    def get_variant(self, experiment_name, user_id):
+        """Get experiment variant for user."""
+        return self.experiment_service.get_variant(experiment_name, user_id)
+\end{lstlisting}
+
+\subsection{Metrics Collection}
+
+Integrate with existing analytics systems.
+
+\begin{enumerate}
+    \item \textbf{Passive tracking:} Automatic event capture
+
+    \item \textbf{Active instrumentation:} Explicit metric logging
+
+    \item \textbf{Computed metrics:} Derived from raw events
+
+    \item \textbf{Real-time aggregation:} Pre-compute for dashboards
+\end{enumerate}
+
+\section{Common Implementation Pitfalls}
+
+\subsection{Assignment Bugs}
+
+\begin{itemize}
+    \item \textbf{Issue:} Inconsistent assignments across sessions
+    \item \textbf{Cause:} Not using stable user IDs
+    \item \textbf{Fix:} Hash-based deterministic assignment
+\end{itemize}
+
+\subsection{Survivorship Bias}
+
+\begin{itemize}
+    \item \textbf{Issue:} Only analyzing users who complete flows
+    \item \textbf{Cause:} Filtering out non-converters
+    \item \textbf{Fix:} Intent-to-treat analysis
+\end{itemize}
+
+\subsection{Logging Failures}
+
+\begin{itemize}
+    \item \textbf{Issue:} Missing assignment or event data
+    \item \textbf{Cause:} Client-side logging dropped
+    \item \textbf{Fix:} Server-side logging, retry logic, monitoring
+\end{itemize}
+
+\section{Summary}
+
+Robust implementation is critical for trustworthy A/B testing:
+
+\begin{itemize}
+    \item Use deterministic hash-based randomization
+    \item Maintain centralized configuration management
+    \item Implement comprehensive logging with quality checks
+    \item Integrate with feature flags and analytics
+    \item Monitor for common implementation issues
+\end{itemize}
+
+Proper infrastructure enables scaling experimentation across the organization.
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \cite{kohavi2020trustworthy}: Implementation best practices
+    \item \cite{tang2010overlapping}: Experiment system architecture
+    \item Open source platforms: Optimizely, GrowthBook, Unleash
+\end{itemize}
+
+\section{Exercises}
+
+\begin{enumerate}
+    \item Implement complete hash-based randomization with traffic allocation and salting
+    \item Build logging system with SRM detection and automated alerts
+    \item Design experiment configuration schema supporting complex targeting
+    \item Create feature flag service integrating A/B tests and gradual rollouts
+\end{enumerate}

@@ -1,0 +1,2363 @@
+\chapter{Model Serving and Deployment}
+\label{ch:model_serving}
+
+\section*{Learning Objectives}
+
+By the end of this chapter, you will be able to:
+
+\begin{itemize}
+    \item Design scalable model serving architectures for production ML systems
+    \item Implement high-performance REST APIs using FastAPI with proper validation and error handling
+    \item Build gRPC services for low-latency model serving
+    \item Choose appropriate serving patterns for batch and real-time predictions
+    \item Containerize models using Docker and deploy to Kubernetes
+    \item Implement safe deployment strategies including blue-green and canary deployments
+    \item Optimize serving performance through caching, batching, and model optimization
+\end{itemize}
+
+\section{Introduction}
+
+Model serving is the process of making trained models available for prediction in production environments. While training focuses on maximizing model performance, serving emphasizes reliability, latency, throughput, and operational excellence.
+
+\subsection{Serving Architecture Considerations}
+
+\begin{table}[h]
+\centering
+\caption{Model Serving Design Considerations}
+\label{tab:serving_considerations}
+\begin{tabular}{|l|p{10cm}|}
+\hline
+\textbf{Consideration} & \textbf{Description} \\
+\hline
+Latency & Target response time (ms for real-time, minutes/hours for batch) \\
+Throughput & Requests per second the service must handle \\
+Availability & Uptime SLA (typically 99.9\% or higher) \\
+Scalability & Ability to handle traffic spikes and growth \\
+Cost & Infrastructure and operational costs \\
+Model Size & Memory and storage requirements \\
+Update Frequency & How often models need to be updated \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Serving Pattern Comparison}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=1.2cm,
+    box/.style={rectangle, draw, text width=2.5cm, align=center, minimum height=0.8cm},
+    arrow/.style={->, >=stealth}
+]
+    % Real-time serving
+    \node[box] (client1) {Client};
+    \node[box, right=of client1] (api1) {API Server};
+    \node[box, right=of api1] (model1) {Model};
+    \node[above=0.3cm of api1] (label1) {\textbf{Real-time (Synchronous)}};
+
+    \draw[arrow] (client1) -- node[above] {Request} (api1);
+    \draw[arrow] (api1) -- (model1);
+    \draw[arrow] (model1) -- (api1);
+    \draw[arrow] (api1) -- node[above] {Response} (client1);
+
+    % Batch serving
+    \node[box, below=2cm of client1] (client2) {Client};
+    \node[box, right=of client2] (queue) {Queue};
+    \node[box, right=of queue] (batch) {Batch Job};
+    \node[box, below=0.8cm of batch] (storage) {Storage};
+    \node[above=0.3cm of queue] (label2) {\textbf{Batch (Asynchronous)}};
+
+    \draw[arrow] (client2) -- (queue);
+    \draw[arrow] (queue) -- (batch);
+    \draw[arrow] (batch) -- (storage);
+    \draw[arrow] (storage) -| (client2);
+\end{tikzpicture}
+\caption{Real-time vs Batch Serving Patterns}
+\label{fig:serving_patterns}
+\end{figure}
+
+\section{Model Serving Architectures}
+
+\subsection{Serving Architecture Patterns}
+
+\begin{table}[h]
+\centering
+\caption{Common Serving Architecture Patterns}
+\label{tab:serving_architectures}
+\begin{tabular}{|l|l|l|l|}
+\hline
+\textbf{Pattern} & \textbf{Use Case} & \textbf{Latency} & \textbf{Complexity} \\
+\hline
+Model-in-Service & Simple models, low traffic & Low & Low \\
+Model Service & Dedicated model server & Low & Medium \\
+Model as Data & Dynamic model loading & Medium & High \\
+Model Ensemble & Multiple models, A/B testing & Medium & High \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{REST API Development with FastAPI}
+
+FastAPI is a modern, high-performance web framework for building APIs with Python, featuring automatic validation, serialization, and documentation.
+
+\subsection{Production FastAPI Model Server}
+
+\begin{lstlisting}[style=python, caption={Production-Grade FastAPI Model Serving}]
+from typing import List, Dict, Optional, Any
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, validator
+import numpy as np
+import joblib
+import logging
+import time
+from datetime import datetime
+from prometheus_client import Counter, Histogram, generate_latest, REGISTRY
+import uvicorn
+
+# Metrics
+REQUEST_COUNT = Counter('model_requests_total', 'Total model prediction requests', ['model_version', 'status'])
+REQUEST_LATENCY = Histogram('model_request_duration_seconds', 'Model request latency', ['model_version'])
+PREDICTION_COUNT = Counter('predictions_total', 'Total predictions made', ['model_version'])
+
+# Request/Response models
+class PredictionRequest(BaseModel):
+    """Request schema for predictions."""
+    features: Dict[str, float] = Field(..., description="Feature dictionary")
+    model_version: Optional[str] = Field(default="latest", description="Model version to use")
+
+    @validator('features')
+    def validate_features(cls, v):
+        """Validate features."""
+        if not v:
+            raise ValueError("Features cannot be empty")
+        return v
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "features": {
+                    "feature1": 1.0,
+                    "feature2": 2.0,
+                    "feature3": 3.0
+                },
+                "model_version": "v1.0"
+            }
+        }
+
+class PredictionResponse(BaseModel):
+    """Response schema for predictions."""
+    prediction: float
+    probability: Optional[List[float]] = None
+    model_version: str
+    timestamp: str
+    latency_ms: float
+
+class BatchPredictionRequest(BaseModel):
+    """Request schema for batch predictions."""
+    instances: List[Dict[str, float]]
+    model_version: Optional[str] = "latest"
+
+class BatchPredictionResponse(BaseModel):
+    """Response schema for batch predictions."""
+    predictions: List[float]
+    model_version: str
+    timestamp: str
+    total_latency_ms: float
+    num_instances: int
+
+class ModelServer:
+    """
+    Production model serving class.
+
+    Features:
+    - Model loading and caching
+    - Version management
+    - Preprocessing pipeline
+    - Error handling
+    - Metrics tracking
+    """
+
+    def __init__(self, model_dir: str = "./models"):
+        """
+        Initialize model server.
+
+        Args:
+            model_dir: Directory containing model files
+        """
+        self.model_dir = model_dir
+        self.models: Dict[str, Any] = {}
+        self.preprocessors: Dict[str, Any] = {}
+        self.logger = logging.getLogger(__name__)
+
+        # Load models
+        self.load_models()
+
+    def load_models(self):
+        """Load all available model versions."""
+        import os
+        from pathlib import Path
+
+        model_path = Path(self.model_dir)
+        if not model_path.exists():
+            self.logger.warning(f"Model directory {self.model_dir} not found")
+            return
+
+        # Load all model versions
+        for model_file in model_path.glob("model_*.pkl"):
+            version = model_file.stem.replace("model_", "")
+            try:
+                self.models[version] = joblib.load(model_file)
+                self.logger.info(f"Loaded model version: {version}")
+
+                # Load corresponding preprocessor if exists
+                preprocessor_file = model_path / f"preprocessor_{version}.pkl"
+                if preprocessor_file.exists():
+                    self.preprocessors[version] = joblib.load(preprocessor_file)
+                    self.logger.info(f"Loaded preprocessor for version: {version}")
+
+            except Exception as e:
+                self.logger.error(f"Failed to load model {version}: {e}")
+
+        # Set latest version
+        if self.models:
+            latest_version = sorted(self.models.keys())[-1]
+            self.models["latest"] = self.models[latest_version]
+            if latest_version in self.preprocessors:
+                self.preprocessors["latest"] = self.preprocessors[latest_version]
+            self.logger.info(f"Set latest model to version: {latest_version}")
+
+    def preprocess(self, features: Dict[str, float], version: str) -> np.ndarray:
+        """
+        Preprocess features.
+
+        Args:
+            features: Raw features
+            version: Model version
+
+        Returns:
+            Preprocessed feature array
+        """
+        # Apply preprocessing if available
+        if version in self.preprocessors:
+            preprocessor = self.preprocessors[version]
+            # Convert dict to DataFrame for preprocessing
+            import pandas as pd
+            df = pd.DataFrame([features])
+            processed = preprocessor.transform(df)
+            return processed
+        else:
+            # Convert dict to array (assuming features are ordered)
+            return np.array(list(features.values())).reshape(1, -1)
+
+    def predict(self, features: Dict[str, float], version: str = "latest") -> Dict[str, Any]:
+        """
+        Make prediction.
+
+        Args:
+            features: Input features
+            version: Model version
+
+        Returns:
+            Prediction result
+        """
+        start_time = time.time()
+
+        # Check model exists
+        if version not in self.models:
+            raise ValueError(f"Model version {version} not found")
+
+        try:
+            # Preprocess
+            X = self.preprocess(features, version)
+
+            # Predict
+            model = self.models[version]
+            prediction = model.predict(X)[0]
+
+            # Get probability if available
+            probability = None
+            if hasattr(model, 'predict_proba'):
+                probability = model.predict_proba(X)[0].tolist()
+
+            # Calculate latency
+            latency_ms = (time.time() - start_time) * 1000
+
+            # Record metrics
+            REQUEST_LATENCY.labels(model_version=version).observe(time.time() - start_time)
+            PREDICTION_COUNT.labels(model_version=version).inc()
+
+            return {
+                'prediction': float(prediction),
+                'probability': probability,
+                'model_version': version,
+                'timestamp': datetime.now().isoformat(),
+                'latency_ms': latency_ms
+            }
+
+        except Exception as e:
+            self.logger.error(f"Prediction failed: {e}")
+            REQUEST_COUNT.labels(model_version=version, status='error').inc()
+            raise
+
+    def predict_batch(
+        self,
+        instances: List[Dict[str, float]],
+        version: str = "latest"
+    ) -> Dict[str, Any]:
+        """
+        Make batch predictions.
+
+        Args:
+            instances: List of feature dictionaries
+            version: Model version
+
+        Returns:
+            Batch prediction results
+        """
+        start_time = time.time()
+
+        if version not in self.models:
+            raise ValueError(f"Model version {version} not found")
+
+        try:
+            # Preprocess all instances
+            X_list = [self.preprocess(inst, version) for inst in instances]
+            X = np.vstack(X_list)
+
+            # Batch predict
+            model = self.models[version]
+            predictions = model.predict(X).tolist()
+
+            # Calculate latency
+            total_latency_ms = (time.time() - start_time) * 1000
+
+            # Record metrics
+            PREDICTION_COUNT.labels(model_version=version).inc(len(instances))
+
+            return {
+                'predictions': predictions,
+                'model_version': version,
+                'timestamp': datetime.now().isoformat(),
+                'total_latency_ms': total_latency_ms,
+                'num_instances': len(instances)
+            }
+
+        except Exception as e:
+            self.logger.error(f"Batch prediction failed: {e}")
+            REQUEST_COUNT.labels(model_version=version, status='error').inc()
+            raise
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="ML Model Serving API",
+    description="Production-grade model serving with FastAPI",
+    version="1.0.0"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize model server
+model_server = ModelServer(model_dir="./models")
+
+# Middleware for logging
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all requests."""
+    start_time = time.time()
+    response = await call_next(request)
+    latency = time.time() - start_time
+
+    logging.info(
+        f"{request.method} {request.url.path} "
+        f"status={response.status_code} latency={latency:.3f}s"
+    )
+
+    return response
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "models_loaded": list(model_server.models.keys())
+    }
+
+# Readiness check endpoint
+@app.get("/ready")
+async def readiness_check():
+    """Readiness check endpoint."""
+    if not model_server.models:
+        raise HTTPException(status_code=503, detail="No models loaded")
+
+    return {
+        "status": "ready",
+        "timestamp": datetime.now().isoformat()
+    }
+
+# Prediction endpoint
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(request: PredictionRequest):
+    """
+    Make a single prediction.
+
+    Args:
+        request: Prediction request
+
+    Returns:
+        Prediction response
+    """
+    try:
+        result = model_server.predict(
+            features=request.features,
+            version=request.model_version
+        )
+
+        REQUEST_COUNT.labels(
+            model_version=request.model_version,
+            status='success'
+        ).inc()
+
+        return PredictionResponse(**result)
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+# Batch prediction endpoint
+@app.post("/predict_batch", response_model=BatchPredictionResponse)
+async def predict_batch(request: BatchPredictionRequest):
+    """
+    Make batch predictions.
+
+    Args:
+        request: Batch prediction request
+
+    Returns:
+        Batch prediction response
+    """
+    try:
+        result = model_server.predict_batch(
+            instances=request.instances,
+            version=request.model_version
+        )
+
+        REQUEST_COUNT.labels(
+            model_version=request.model_version,
+            status='success'
+        ).inc()
+
+        return BatchPredictionResponse(**result)
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch prediction failed: {str(e)}")
+
+# Model info endpoint
+@app.get("/models")
+async def list_models():
+    """List available model versions."""
+    return {
+        "models": list(model_server.models.keys()),
+        "timestamp": datetime.now().isoformat()
+    }
+
+# Metrics endpoint for Prometheus
+@app.get("/metrics")
+async def metrics():
+    """Expose Prometheus metrics."""
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(generate_latest(REGISTRY))
+
+# Example usage
+if __name__ == "__main__":
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
+    # Run server
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        workers=4,  # Number of worker processes
+        log_level="info"
+    )
+\end{lstlisting}
+
+\subsection{API Testing and Documentation}
+
+FastAPI automatically generates interactive API documentation:
+
+\begin{lstlisting}[style=python, caption={API Testing with pytest}]
+import pytest
+from fastapi.testclient import TestClient
+from main import app, model_server
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+import joblib
+from pathlib import Path
+
+@pytest.fixture
+def client():
+    """Create test client."""
+    return TestClient(app)
+
+@pytest.fixture(autouse=True)
+def setup_test_model(tmp_path):
+    """Setup test model."""
+    # Create dummy model
+    X = np.random.randn(100, 3)
+    y = np.random.randint(0, 2, 100)
+    model = RandomForestClassifier(n_estimators=10, random_state=42)
+    model.fit(X, y)
+
+    # Save model
+    model_dir = Path("./models")
+    model_dir.mkdir(exist_ok=True)
+    joblib.dump(model, model_dir / "model_v1.pkl")
+
+    # Reload models
+    model_server.load_models()
+
+    yield
+
+    # Cleanup
+    (model_dir / "model_v1.pkl").unlink(missing_ok=True)
+
+def test_health_check(client):
+    """Test health check endpoint."""
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
+
+def test_readiness_check(client):
+    """Test readiness check endpoint."""
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+
+def test_predict(client):
+    """Test prediction endpoint."""
+    request_data = {
+        "features": {"feature1": 1.0, "feature2": 2.0, "feature3": 3.0},
+        "model_version": "latest"
+    }
+
+    response = client.post("/predict", json=request_data)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "prediction" in data
+    assert "model_version" in data
+    assert "latency_ms" in data
+
+def test_predict_batch(client):
+    """Test batch prediction endpoint."""
+    request_data = {
+        "instances": [
+            {"feature1": 1.0, "feature2": 2.0, "feature3": 3.0},
+            {"feature1": 4.0, "feature2": 5.0, "feature3": 6.0}
+        ],
+        "model_version": "latest"
+    }
+
+    response = client.post("/predict_batch", json=request_data)
+    assert response.status_code == 200
+
+    data = response.json()
+    assert "predictions" in data
+    assert len(data["predictions"]) == 2
+    assert data["num_instances"] == 2
+
+def test_invalid_model_version(client):
+    """Test with invalid model version."""
+    request_data = {
+        "features": {"feature1": 1.0, "feature2": 2.0, "feature3": 3.0},
+        "model_version": "invalid"
+    }
+
+    response = client.post("/predict", json=request_data)
+    assert response.status_code == 400
+
+def test_list_models(client):
+    """Test listing models."""
+    response = client.get("/models")
+    assert response.status_code == 200
+    assert "models" in response.json()
+
+def test_metrics(client):
+    """Test metrics endpoint."""
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert "model_requests_total" in response.text
+\end{lstlisting}
+
+\section{gRPC for High Performance Serving}
+
+gRPC provides high-performance, low-latency communication using Protocol Buffers for serialization.
+
+\subsection{gRPC Service Implementation}
+
+\begin{lstlisting}[style=protobuf, caption={Protocol Buffer Definition}]
+syntax = "proto3";
+
+package ml_serving;
+
+// Prediction service
+service PredictionService {
+  rpc Predict(PredictionRequest) returns (PredictionResponse);
+  rpc PredictStream(stream PredictionRequest) returns (stream PredictionResponse);
+  rpc PredictBatch(BatchPredictionRequest) returns (BatchPredictionResponse);
+}
+
+// Single prediction request
+message PredictionRequest {
+  map<string, float> features = 1;
+  string model_version = 2;
+}
+
+// Single prediction response
+message PredictionResponse {
+  float prediction = 1;
+  repeated float probabilities = 2;
+  string model_version = 3;
+  int64 timestamp_ms = 4;
+  float latency_ms = 5;
+}
+
+// Batch prediction request
+message BatchPredictionRequest {
+  repeated PredictionRequest requests = 1;
+  string model_version = 2;
+}
+
+// Batch prediction response
+message BatchPredictionResponse {
+  repeated float predictions = 1;
+  string model_version = 2;
+  int64 timestamp_ms = 3;
+  float total_latency_ms = 4;
+  int32 num_instances = 5;
+}
+\end{lstlisting}
+
+\begin{lstlisting}[style=python, caption={gRPC Server Implementation}]
+import grpc
+from concurrent import futures
+import time
+import logging
+import numpy as np
+import joblib
+from typing import Dict, Any
+
+# Import generated protobuf code
+# import ml_serving_pb2
+# import ml_serving_pb2_grpc
+
+class PredictionServicer:
+    """gRPC prediction servicer."""
+
+    def __init__(self, model_path: str):
+        """
+        Initialize servicer.
+
+        Args:
+            model_path: Path to model file
+        """
+        self.model = joblib.load(model_path)
+        self.logger = logging.getLogger(__name__)
+
+    def Predict(self, request, context):
+        """Handle single prediction request."""
+        start_time = time.time()
+
+        try:
+            # Extract features
+            features = dict(request.features)
+            X = np.array(list(features.values())).reshape(1, -1)
+
+            # Predict
+            prediction = self.model.predict(X)[0]
+
+            # Get probabilities if available
+            probabilities = []
+            if hasattr(self.model, 'predict_proba'):
+                probabilities = self.model.predict_proba(X)[0].tolist()
+
+            # Calculate latency
+            latency_ms = (time.time() - start_time) * 1000
+
+            # Create response
+            response = ml_serving_pb2.PredictionResponse(
+                prediction=float(prediction),
+                probabilities=probabilities,
+                model_version=request.model_version,
+                timestamp_ms=int(time.time() * 1000),
+                latency_ms=latency_ms
+            )
+
+            return response
+
+        except Exception as e:
+            self.logger.error(f"Prediction failed: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Prediction failed: {str(e)}")
+            return ml_serving_pb2.PredictionResponse()
+
+    def PredictStream(self, request_iterator, context):
+        """Handle streaming predictions."""
+        for request in request_iterator:
+            response = self.Predict(request, context)
+            yield response
+
+    def PredictBatch(self, request, context):
+        """Handle batch prediction request."""
+        start_time = time.time()
+
+        try:
+            # Extract all features
+            X_list = []
+            for req in request.requests:
+                features = dict(req.features)
+                X_list.append(list(features.values()))
+
+            X = np.array(X_list)
+
+            # Batch predict
+            predictions = self.model.predict(X).tolist()
+
+            # Calculate latency
+            total_latency_ms = (time.time() - start_time) * 1000
+
+            # Create response
+            response = ml_serving_pb2.BatchPredictionResponse(
+                predictions=predictions,
+                model_version=request.model_version,
+                timestamp_ms=int(time.time() * 1000),
+                total_latency_ms=total_latency_ms,
+                num_instances=len(predictions)
+            )
+
+            return response
+
+        except Exception as e:
+            self.logger.error(f"Batch prediction failed: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"Batch prediction failed: {str(e)}")
+            return ml_serving_pb2.BatchPredictionResponse()
+
+def serve(model_path: str, port: int = 50051, max_workers: int = 10):
+    """
+    Start gRPC server.
+
+    Args:
+        model_path: Path to model file
+        port: Server port
+        max_workers: Maximum worker threads
+    """
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
+
+    # Add servicer
+    servicer = PredictionServicer(model_path)
+    ml_serving_pb2_grpc.add_PredictionServiceServicer_to_server(servicer, server)
+
+    # Start server
+    server.add_insecure_port(f'[::]:{port}')
+    server.start()
+
+    logging.info(f"gRPC server started on port {port}")
+
+    try:
+        server.wait_for_termination()
+    except KeyboardInterrupt:
+        server.stop(0)
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    serve(model_path="./models/model_latest.pkl", port=50051)
+\end{lstlisting}
+
+\begin{lstlisting}[style=python, caption={gRPC Client Implementation}]
+import grpc
+import time
+from typing import Dict, List
+
+# import ml_serving_pb2
+# import ml_serving_pb2_grpc
+
+class PredictionClient:
+    """gRPC prediction client."""
+
+    def __init__(self, host: str = "localhost", port: int = 50051):
+        """
+        Initialize client.
+
+        Args:
+            host: Server host
+            port: Server port
+        """
+        self.channel = grpc.insecure_channel(f'{host}:{port}')
+        self.stub = ml_serving_pb2_grpc.PredictionServiceStub(self.channel)
+
+    def predict(
+        self,
+        features: Dict[str, float],
+        model_version: str = "latest"
+    ) -> Dict:
+        """
+        Make single prediction.
+
+        Args:
+            features: Feature dictionary
+            model_version: Model version
+
+        Returns:
+            Prediction result
+        """
+        request = ml_serving_pb2.PredictionRequest(
+            features=features,
+            model_version=model_version
+        )
+
+        response = self.stub.Predict(request)
+
+        return {
+            'prediction': response.prediction,
+            'probabilities': list(response.probabilities),
+            'model_version': response.model_version,
+            'latency_ms': response.latency_ms
+        }
+
+    def predict_batch(
+        self,
+        instances: List[Dict[str, float]],
+        model_version: str = "latest"
+    ) -> Dict:
+        """
+        Make batch predictions.
+
+        Args:
+            instances: List of feature dictionaries
+            model_version: Model version
+
+        Returns:
+            Batch prediction results
+        """
+        requests = [
+            ml_serving_pb2.PredictionRequest(features=inst, model_version=model_version)
+            for inst in instances
+        ]
+
+        batch_request = ml_serving_pb2.BatchPredictionRequest(
+            requests=requests,
+            model_version=model_version
+        )
+
+        response = self.stub.PredictBatch(batch_request)
+
+        return {
+            'predictions': list(response.predictions),
+            'model_version': response.model_version,
+            'total_latency_ms': response.total_latency_ms,
+            'num_instances': response.num_instances
+        }
+
+    def predict_stream(
+        self,
+        instances: List[Dict[str, float]],
+        model_version: str = "latest"
+    ):
+        """
+        Make streaming predictions.
+
+        Args:
+            instances: List of feature dictionaries
+            model_version: Model version
+
+        Yields:
+            Prediction results
+        """
+        def request_generator():
+            for inst in instances:
+                yield ml_serving_pb2.PredictionRequest(
+                    features=inst,
+                    model_version=model_version
+                )
+
+        responses = self.stub.PredictStream(request_generator())
+
+        for response in responses:
+            yield {
+                'prediction': response.prediction,
+                'probabilities': list(response.probabilities),
+                'latency_ms': response.latency_ms
+            }
+
+    def close(self):
+        """Close channel."""
+        self.channel.close()
+
+# Example usage
+if __name__ == "__main__":
+    client = PredictionClient(host="localhost", port=50051)
+
+    # Single prediction
+    result = client.predict(
+        features={"feature1": 1.0, "feature2": 2.0, "feature3": 3.0}
+    )
+    print(f"Prediction: {result['prediction']}")
+    print(f"Latency: {result['latency_ms']}ms")
+
+    # Batch prediction
+    instances = [
+        {"feature1": 1.0, "feature2": 2.0, "feature3": 3.0},
+        {"feature1": 4.0, "feature2": 5.0, "feature3": 6.0}
+    ]
+    batch_result = client.predict_batch(instances)
+    print(f"\nBatch predictions: {batch_result['predictions']}")
+    print(f"Total latency: {batch_result['total_latency_ms']}ms")
+
+    # Streaming predictions
+    print("\nStreaming predictions:")
+    for result in client.predict_stream(instances):
+        print(f"  Prediction: {result['prediction']}, Latency: {result['latency_ms']}ms")
+
+    client.close()
+\end{lstlisting}
+
+\section{Batch vs Real-time Serving}
+
+Choosing between batch and real-time serving depends on latency requirements, data availability, and computational costs.
+
+\subsection{Batch Prediction Pipeline}
+
+\begin{lstlisting}[style=python, caption={Scalable Batch Prediction with Apache Beam}]
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions
+import joblib
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Any
+import logging
+
+class LoadModel(beam.DoFn):
+    """Load model (executed once per worker)."""
+
+    def __init__(self, model_path: str):
+        """
+        Initialize DoFn.
+
+        Args:
+            model_path: Path to model file
+        """
+        self.model_path = model_path
+        self.model = None
+
+    def setup(self):
+        """Load model during worker initialization."""
+        self.model = joblib.load(self.model_path)
+        logging.info(f"Loaded model from {self.model_path}")
+
+    def process(self, element: Dict[str, Any]):
+        """
+        Make prediction.
+
+        Args:
+            element: Feature dictionary
+
+        Yields:
+            Prediction result
+        """
+        # Extract features
+        features = {k: v for k, v in element.items() if k != 'id'}
+        X = np.array(list(features.values())).reshape(1, -1)
+
+        # Predict
+        prediction = self.model.predict(X)[0]
+
+        # Add prediction to element
+        element['prediction'] = float(prediction)
+
+        yield element
+
+class BatchPredictor:
+    """
+    Batch prediction pipeline using Apache Beam.
+
+    Supports local, Dataflow, and other runners.
+    """
+
+    def __init__(
+        self,
+        model_path: str,
+        input_pattern: str,
+        output_path: str,
+        batch_size: int = 1000
+    ):
+        """
+        Initialize batch predictor.
+
+        Args:
+            model_path: Path to model file
+            input_pattern: Input file pattern (e.g., "gs://bucket/data/*.json")
+            output_path: Output file path
+            batch_size: Batch size for processing
+        """
+        self.model_path = model_path
+        self.input_pattern = input_pattern
+        self.output_path = output_path
+        self.batch_size = batch_size
+
+    def run(self, pipeline_options: PipelineOptions = None):
+        """
+        Run batch prediction pipeline.
+
+        Args:
+            pipeline_options: Beam pipeline options
+        """
+        with beam.Pipeline(options=pipeline_options) as pipeline:
+            (
+                pipeline
+                | 'Read Input' >> beam.io.ReadFromText(self.input_pattern)
+                | 'Parse JSON' >> beam.Map(lambda x: eval(x))  # or json.loads
+                | 'Batch Elements' >> beam.BatchElements(
+                    min_batch_size=self.batch_size,
+                    max_batch_size=self.batch_size
+                )
+                | 'Predict' >> beam.ParDo(LoadModel(self.model_path))
+                | 'Format Output' >> beam.Map(lambda x: str(x))
+                | 'Write Output' >> beam.io.WriteToText(self.output_path)
+            )
+
+# Example usage
+if __name__ == "__main__":
+    # Configure pipeline
+    options = PipelineOptions([
+        '--runner=DirectRunner',  # Use DataflowRunner for GCP
+        '--project=my-project',
+        '--region=us-central1',
+        '--temp_location=gs://my-bucket/temp'
+    ])
+
+    # Run batch prediction
+    predictor = BatchPredictor(
+        model_path="./models/model_latest.pkl",
+        input_pattern="./data/input/*.json",
+        output_path="./data/output/predictions",
+        batch_size=1000
+    )
+
+    predictor.run(options)
+\end{lstlisting}
+
+\subsection{Offline Feature Computation}
+
+\begin{lstlisting}[style=python, caption={Offline Feature Computation for Batch Serving}]
+from typing import List, Dict, Any
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import logging
+
+class OfflineFeatureComputer:
+    """
+    Compute features offline for batch serving.
+
+    Features are precomputed and stored for fast batch prediction.
+    """
+
+    def __init__(self, feature_store_path: str = "./feature_store"):
+        """
+        Initialize offline feature computer.
+
+        Args:
+            feature_store_path: Path to feature store
+        """
+        self.feature_store_path = feature_store_path
+        self.logger = logging.getLogger(__name__)
+
+    def compute_aggregation_features(
+        self,
+        df: pd.DataFrame,
+        entity_column: str,
+        timestamp_column: str,
+        value_columns: List[str],
+        windows: List[int] = [7, 14, 30]
+    ) -> pd.DataFrame:
+        """
+        Compute aggregation features for batch prediction.
+
+        Args:
+            df: Input data
+            entity_column: Entity identifier column
+            timestamp_column: Timestamp column
+            value_columns: Columns to aggregate
+            windows: Window sizes in days
+
+        Returns:
+            DataFrame with aggregation features
+        """
+        df = df.sort_values([entity_column, timestamp_column])
+
+        for value_col in value_columns:
+            for window in windows:
+                # Rolling mean
+                df[f'{value_col}_rolling_{window}d_mean'] = (
+                    df.groupby(entity_column)[value_col]
+                    .rolling(window=window, min_periods=1)
+                    .mean()
+                    .reset_index(level=0, drop=True)
+                )
+
+                # Rolling std
+                df[f'{value_col}_rolling_{window}d_std'] = (
+                    df.groupby(entity_column)[value_col]
+                    .rolling(window=window, min_periods=1)
+                    .std()
+                    .reset_index(level=0, drop=True)
+                )
+
+        return df
+
+    def save_features(self, df: pd.DataFrame, feature_set_name: str):
+        """
+        Save computed features.
+
+        Args:
+            df: DataFrame with features
+            feature_set_name: Name of feature set
+        """
+        from pathlib import Path
+
+        path = Path(self.feature_store_path)
+        path.mkdir(parents=True, exist_ok=True)
+
+        output_path = path / f"{feature_set_name}.parquet"
+        df.to_parquet(output_path, compression='snappy')
+
+        self.logger.info(f"Saved {len(df)} rows to {output_path}")
+
+    def load_features(self, feature_set_name: str) -> pd.DataFrame:
+        """
+        Load precomputed features.
+
+        Args:
+            feature_set_name: Name of feature set
+
+        Returns:
+            DataFrame with features
+        """
+        from pathlib import Path
+
+        path = Path(self.feature_store_path) / f"{feature_set_name}.parquet"
+        df = pd.read_parquet(path)
+
+        self.logger.info(f"Loaded {len(df)} rows from {path}")
+
+        return df
+
+# Example usage
+if __name__ == "__main__":
+    # Generate sample data
+    dates = pd.date_range('2023-01-01', periods=365, freq='D')
+    entities = ['A', 'B', 'C']
+
+    df = pd.DataFrame({
+        'date': np.repeat(dates, len(entities)),
+        'entity_id': np.tile(entities, len(dates)),
+        'value': np.random.exponential(100, len(dates) * len(entities))
+    })
+
+    # Compute features
+    computer = OfflineFeatureComputer()
+    df_features = computer.compute_aggregation_features(
+        df,
+        entity_column='entity_id',
+        timestamp_column='date',
+        value_columns=['value'],
+        windows=[7, 14, 30]
+    )
+
+    # Save features
+    computer.save_features(df_features, "entity_features_2023")
+
+    # Load features
+    df_loaded = computer.load_features("entity_features_2023")
+    print(f"Loaded features shape: {df_loaded.shape}")
+\end{lstlisting}
+
+\section{Model Packaging and Containerization}
+
+Containerization ensures consistent deployment across environments and simplifies dependency management.
+
+\subsection{Docker Containerization}
+
+\begin{lstlisting}[language=docker, caption={Production Dockerfile for Model Serving}]
+# Multi-stage build for smaller image size
+FROM python:3.9-slim as builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# Production image
+FROM python:3.9-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -u 1000 appuser
+
+# Copy Python dependencies from builder
+COPY --from=builder /root/.local /home/appuser/.local
+
+# Set working directory
+WORKDIR /app
+
+# Copy application code
+COPY --chown=appuser:appuser . .
+
+# Switch to non-root user
+USER appuser
+
+# Add local bin to PATH
+ENV PATH=/home/appuser/.local/bin:$PATH
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8000/health')"
+
+# Run application
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+\end{lstlisting}
+
+\begin{lstlisting}[language=yaml, caption={Docker Compose for Local Development}]
+version: '3.8'
+
+services:
+  model-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models:ro  # Mount models as read-only
+      - ./logs:/app/logs
+    environment:
+      - MODEL_DIR=/app/models
+      - LOG_LEVEL=INFO
+      - WORKERS=4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:
+\end{lstlisting}
+
+\subsection{Kubernetes Deployment}
+
+\begin{lstlisting}[language=yaml, caption={Kubernetes Deployment Manifest}]
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-server
+  labels:
+    app: model-server
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: model-server
+  template:
+    metadata:
+      labels:
+        app: model-server
+        version: v1
+    spec:
+      containers:
+      - name: model-server
+        image: gcr.io/my-project/model-server:v1.0.0
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: MODEL_DIR
+          value: "/models"
+        - name: WORKERS
+          value: "4"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: model-storage
+          mountPath: /models
+          readOnly: true
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: model-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-server-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: model-server
+  ports:
+  - port: 80
+    targetPort: 8000
+    name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: model-server-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: model-server
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+\end{lstlisting}
+
+\section{Deployment Strategies}
+
+Safe deployment strategies minimize risk when rolling out new model versions.
+
+\subsection{Blue-Green Deployment}
+
+\begin{lstlisting}[style=python, caption={Blue-Green Deployment Controller}]
+from typing import Dict, Optional
+import requests
+import time
+import logging
+
+class BlueGreenDeployment:
+    """
+    Blue-Green deployment controller.
+
+    Maintains two identical environments (blue and green).
+    Traffic is switched atomically between environments.
+    """
+
+    def __init__(
+        self,
+        blue_endpoint: str,
+        green_endpoint: str,
+        load_balancer_url: str
+    ):
+        """
+        Initialize blue-green deployment.
+
+        Args:
+            blue_endpoint: Blue environment endpoint
+            green_endpoint: Green environment endpoint
+            load_balancer_url: Load balancer configuration URL
+        """
+        self.blue_endpoint = blue_endpoint
+        self.green_endpoint = green_endpoint
+        self.load_balancer_url = load_balancer_url
+        self.current_live = "blue"  # Currently serving traffic
+        self.logger = logging.getLogger(__name__)
+
+    def deploy_to_green(self, new_model_version: str):
+        """
+        Deploy new model version to green environment.
+
+        Args:
+            new_model_version: New model version to deploy
+        """
+        self.logger.info(f"Deploying {new_model_version} to green environment")
+
+        # Deploy to green (implementation depends on infrastructure)
+        # This could be updating a Kubernetes deployment, ECS task, etc.
+
+        # Wait for deployment to complete
+        self._wait_for_healthy(self.green_endpoint)
+
+        self.logger.info("Green environment is healthy")
+
+    def validate_green(self, test_requests: list) -> bool:
+        """
+        Validate green environment with test requests.
+
+        Args:
+            test_requests: List of test requests
+
+        Returns:
+            True if validation passes
+        """
+        self.logger.info("Validating green environment")
+
+        for i, request in enumerate(test_requests):
+            try:
+                response = requests.post(
+                    f"{self.green_endpoint}/predict",
+                    json=request,
+                    timeout=5
+                )
+
+                if response.status_code != 200:
+                    self.logger.error(f"Validation failed for request {i}: {response.status_code}")
+                    return False
+
+            except Exception as e:
+                self.logger.error(f"Validation failed for request {i}: {e}")
+                return False
+
+        self.logger.info("Green environment validation passed")
+        return True
+
+    def switch_traffic_to_green(self):
+        """Switch all traffic from blue to green."""
+        self.logger.info("Switching traffic to green environment")
+
+        # Update load balancer to point to green
+        # Implementation depends on load balancer (nginx, ALB, etc.)
+        self._update_load_balancer("green")
+
+        self.current_live = "green"
+
+        self.logger.info("Traffic switched to green")
+
+    def rollback_to_blue(self):
+        """Rollback traffic to blue environment."""
+        self.logger.info("Rolling back to blue environment")
+
+        self._update_load_balancer("blue")
+        self.current_live = "blue"
+
+        self.logger.info("Rolled back to blue")
+
+    def _wait_for_healthy(self, endpoint: str, timeout: int = 300):
+        """
+        Wait for endpoint to become healthy.
+
+        Args:
+            endpoint: Endpoint to check
+            timeout: Maximum wait time in seconds
+        """
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            try:
+                response = requests.get(f"{endpoint}/health", timeout=3)
+                if response.status_code == 200:
+                    return
+            except:
+                pass
+
+            time.sleep(5)
+
+        raise TimeoutError(f"Endpoint {endpoint} did not become healthy within {timeout}s")
+
+    def _update_load_balancer(self, target: str):
+        """
+        Update load balancer configuration.
+
+        Args:
+            target: Target environment ('blue' or 'green')
+        """
+        # Implementation depends on load balancer
+        # Example: Update nginx config, AWS ALB target group, etc.
+        pass
+
+# Example usage
+if __name__ == "__main__":
+    deployment = BlueGreenDeployment(
+        blue_endpoint="http://blue.example.com",
+        green_endpoint="http://green.example.com",
+        load_balancer_url="http://lb.example.com/config"
+    )
+
+    # Deploy to green
+    deployment.deploy_to_green("v2.0.0")
+
+    # Validate green
+    test_requests = [
+        {"features": {"f1": 1.0, "f2": 2.0}},
+        {"features": {"f1": 3.0, "f2": 4.0}}
+    ]
+
+    if deployment.validate_green(test_requests):
+        # Switch traffic
+        deployment.switch_traffic_to_green()
+    else:
+        # Keep blue active
+        logging.error("Validation failed, keeping blue environment active")
+\end{lstlisting}
+
+\subsection{Canary Deployment}
+
+\begin{lstlisting}[style=python, caption={Canary Deployment Controller}]
+from typing import Dict, Optional
+import requests
+import time
+import logging
+from dataclasses import dataclass
+
+@dataclass
+class CanaryMetrics:
+    """Metrics for canary evaluation."""
+    error_rate: float
+    p50_latency: float
+    p95_latency: float
+    p99_latency: float
+    request_count: int
+
+class CanaryDeployment:
+    """
+    Canary deployment controller.
+
+    Gradually rolls out new version to subset of traffic,
+    monitors metrics, and promotes or rolls back based on health.
+    """
+
+    def __init__(
+        self,
+        stable_endpoint: str,
+        canary_endpoint: str,
+        prometheus_url: str,
+        error_rate_threshold: float = 0.05,
+        latency_threshold_ms: float = 500
+    ):
+        """
+        Initialize canary deployment.
+
+        Args:
+            stable_endpoint: Stable version endpoint
+            canary_endpoint: Canary version endpoint
+            prometheus_url: Prometheus URL for metrics
+            error_rate_threshold: Maximum acceptable error rate
+            latency_threshold_ms: Maximum acceptable P95 latency
+        """
+        self.stable_endpoint = stable_endpoint
+        self.canary_endpoint = canary_endpoint
+        self.prometheus_url = prometheus_url
+        self.error_rate_threshold = error_rate_threshold
+        self.latency_threshold_ms = latency_threshold_ms
+        self.logger = logging.getLogger(__name__)
+
+    def deploy_canary(self, canary_traffic_percent: int = 10):
+        """
+        Deploy canary with specified traffic percentage.
+
+        Args:
+            canary_traffic_percent: Percentage of traffic to route to canary
+        """
+        self.logger.info(f"Deploying canary with {canary_traffic_percent}% traffic")
+
+        # Update traffic routing (implementation depends on infrastructure)
+        # Example: Update Istio VirtualService, AWS ALB weighted target groups, etc.
+        self._update_traffic_split(canary_traffic_percent)
+
+        self.logger.info("Canary deployed")
+
+    def monitor_canary(self, duration_minutes: int = 10) -> bool:
+        """
+        Monitor canary health.
+
+        Args:
+            duration_minutes: How long to monitor
+
+        Returns:
+            True if canary is healthy
+        """
+        self.logger.info(f"Monitoring canary for {duration_minutes} minutes")
+
+        end_time = time.time() + duration_minutes * 60
+
+        while time.time() < end_time:
+            # Get metrics
+            stable_metrics = self._get_metrics("stable")
+            canary_metrics = self._get_metrics("canary")
+
+            # Check error rate
+            if canary_metrics.error_rate > self.error_rate_threshold:
+                self.logger.error(
+                    f"Canary error rate too high: {canary_metrics.error_rate:.3f} > {self.error_rate_threshold}"
+                )
+                return False
+
+            # Compare error rate with stable
+            if canary_metrics.error_rate > stable_metrics.error_rate * 2:
+                self.logger.error(
+                    f"Canary error rate significantly higher than stable: "
+                    f"{canary_metrics.error_rate:.3f} vs {stable_metrics.error_rate:.3f}"
+                )
+                return False
+
+            # Check latency
+            if canary_metrics.p95_latency > self.latency_threshold_ms:
+                self.logger.error(
+                    f"Canary latency too high: {canary_metrics.p95_latency:.0f}ms > {self.latency_threshold_ms}ms"
+                )
+                return False
+
+            # Compare latency with stable
+            if canary_metrics.p95_latency > stable_metrics.p95_latency * 1.5:
+                self.logger.error(
+                    f"Canary latency significantly higher than stable: "
+                    f"{canary_metrics.p95_latency:.0f}ms vs {stable_metrics.p95_latency:.0f}ms"
+                )
+                return False
+
+            self.logger.info(
+                f"Canary healthy - Error rate: {canary_metrics.error_rate:.3f}, "
+                f"P95 latency: {canary_metrics.p95_latency:.0f}ms"
+            )
+
+            time.sleep(30)  # Check every 30 seconds
+
+        return True
+
+    def promote_canary(self):
+        """Promote canary to 100% traffic."""
+        self.logger.info("Promoting canary to 100% traffic")
+
+        # Gradually increase traffic
+        for traffic_percent in [25, 50, 75, 100]:
+            self._update_traffic_split(traffic_percent)
+            time.sleep(60)  # Wait between increases
+
+            # Monitor during ramp
+            if traffic_percent < 100:
+                if not self.monitor_canary(duration_minutes=5):
+                    self.logger.error("Canary unhealthy during promotion, rolling back")
+                    self.rollback_canary()
+                    return False
+
+        self.logger.info("Canary successfully promoted")
+        return True
+
+    def rollback_canary(self):
+        """Rollback canary deployment."""
+        self.logger.info("Rolling back canary")
+
+        self._update_traffic_split(0)  # Route 0% traffic to canary
+
+        self.logger.info("Canary rolled back")
+
+    def _get_metrics(self, version: str) -> CanaryMetrics:
+        """
+        Get metrics from Prometheus.
+
+        Args:
+            version: Version to get metrics for ('stable' or 'canary')
+
+        Returns:
+            Canary metrics
+        """
+        # Query Prometheus
+        # This is a simplified example - actual implementation would use promql
+        try:
+            # Error rate query
+            error_rate_query = f'rate(http_requests_total{{version="{version}",status=~"5.."}}[5m])'
+            error_rate = self._query_prometheus(error_rate_query)
+
+            # Latency queries
+            p50_query = f'histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{{version="{version}"}}[5m]))'
+            p95_query = f'histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{{version="{version}"}}[5m]))'
+            p99_query = f'histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{{version="{version}"}}[5m]))'
+
+            p50_latency = self._query_prometheus(p50_query) * 1000  # Convert to ms
+            p95_latency = self._query_prometheus(p95_query) * 1000
+            p99_latency = self._query_prometheus(p99_query) * 1000
+
+            # Request count
+            count_query = f'sum(rate(http_requests_total{{version="{version}"}}[5m]))'
+            request_count = self._query_prometheus(count_query)
+
+            return CanaryMetrics(
+                error_rate=error_rate,
+                p50_latency=p50_latency,
+                p95_latency=p95_latency,
+                p99_latency=p99_latency,
+                request_count=int(request_count)
+            )
+
+        except Exception as e:
+            self.logger.error(f"Failed to get metrics: {e}")
+            # Return safe defaults that will trigger rollback
+            return CanaryMetrics(
+                error_rate=1.0,
+                p50_latency=10000,
+                p95_latency=10000,
+                p99_latency=10000,
+                request_count=0
+            )
+
+    def _query_prometheus(self, query: str) -> float:
+        """Query Prometheus and return result."""
+        try:
+            response = requests.get(
+                f"{self.prometheus_url}/api/v1/query",
+                params={'query': query},
+                timeout=5
+            )
+            data = response.json()
+            if data['status'] == 'success' and data['data']['result']:
+                return float(data['data']['result'][0]['value'][1])
+            return 0.0
+        except:
+            return 0.0
+
+    def _update_traffic_split(self, canary_percent: int):
+        """
+        Update traffic split between stable and canary.
+
+        Args:
+            canary_percent: Percentage to route to canary
+        """
+        # Implementation depends on infrastructure
+        # Example: Update Istio, AWS ALB, nginx, etc.
+        pass
+
+# Example usage
+if __name__ == "__main__":
+    deployment = CanaryDeployment(
+        stable_endpoint="http://stable.example.com",
+        canary_endpoint="http://canary.example.com",
+        prometheus_url="http://prometheus.example.com",
+        error_rate_threshold=0.05,
+        latency_threshold_ms=500
+    )
+
+    # Deploy canary with 10% traffic
+    deployment.deploy_canary(canary_traffic_percent=10)
+
+    # Monitor canary
+    if deployment.monitor_canary(duration_minutes=10):
+        # Promote if healthy
+        deployment.promote_canary()
+    else:
+        # Rollback if unhealthy
+        deployment.rollback_canary()
+\end{lstlisting}
+
+\section{Serving Optimization and Caching}
+
+Optimizing serving performance reduces latency and costs through caching, batching, and model optimization.
+
+\subsection{Response Caching}
+
+\begin{lstlisting}[style=python, caption={Intelligent Response Caching}]
+from typing import Dict, Any, Optional, Callable
+import hashlib
+import json
+import time
+from functools import wraps
+import redis
+import logging
+
+class PredictionCache:
+    """
+    Intelligent caching for model predictions.
+
+    Features:
+    - Redis-based distributed caching
+    - TTL support
+    - Cache hit/miss tracking
+    - Automatic cache warming
+    """
+
+    def __init__(
+        self,
+        redis_host: str = "localhost",
+        redis_port: int = 6379,
+        default_ttl: int = 3600,  # 1 hour
+        enable_metrics: bool = True
+    ):
+        """
+        Initialize prediction cache.
+
+        Args:
+            redis_host: Redis host
+            redis_port: Redis port
+            default_ttl: Default TTL in seconds
+            enable_metrics: Enable cache metrics tracking
+        """
+        self.redis_client = redis.Redis(
+            host=redis_host,
+            port=redis_port,
+            decode_responses=True
+        )
+        self.default_ttl = default_ttl
+        self.enable_metrics = enable_metrics
+        self.logger = logging.getLogger(__name__)
+
+        # Metrics
+        self.cache_hits = 0
+        self.cache_misses = 0
+
+    def _generate_cache_key(self, features: Dict[str, Any], model_version: str) -> str:
+        """
+        Generate deterministic cache key.
+
+        Args:
+            features: Feature dictionary
+            model_version: Model version
+
+        Returns:
+            Cache key
+        """
+        # Sort features for deterministic key
+        sorted_features = json.dumps(features, sort_keys=True)
+        key_string = f"{model_version}:{sorted_features}"
+
+        # Hash for fixed-length key
+        return hashlib.sha256(key_string.encode()).hexdigest()
+
+    def get(self, features: Dict[str, Any], model_version: str) -> Optional[Dict[str, Any]]:
+        """
+        Get prediction from cache.
+
+        Args:
+            features: Feature dictionary
+            model_version: Model version
+
+        Returns:
+            Cached prediction or None
+        """
+        cache_key = self._generate_cache_key(features, model_version)
+
+        try:
+            cached_value = self.redis_client.get(cache_key)
+
+            if cached_value:
+                if self.enable_metrics:
+                    self.cache_hits += 1
+
+                self.logger.debug(f"Cache hit for key {cache_key}")
+                return json.loads(cached_value)
+            else:
+                if self.enable_metrics:
+                    self.cache_misses += 1
+
+                self.logger.debug(f"Cache miss for key {cache_key}")
+                return None
+
+        except Exception as e:
+            self.logger.error(f"Cache get failed: {e}")
+            return None
+
+    def set(
+        self,
+        features: Dict[str, Any],
+        model_version: str,
+        prediction: Dict[str, Any],
+        ttl: Optional[int] = None
+    ):
+        """
+        Store prediction in cache.
+
+        Args:
+            features: Feature dictionary
+            model_version: Model version
+            prediction: Prediction result
+            ttl: Time-to-live in seconds
+        """
+        cache_key = self._generate_cache_key(features, model_version)
+        ttl = ttl or self.default_ttl
+
+        try:
+            self.redis_client.setex(
+                cache_key,
+                ttl,
+                json.dumps(prediction)
+            )
+
+            self.logger.debug(f"Cached prediction for key {cache_key}")
+
+        except Exception as e:
+            self.logger.error(f"Cache set failed: {e}")
+
+    def invalidate(self, model_version: Optional[str] = None):
+        """
+        Invalidate cache entries.
+
+        Args:
+            model_version: Specific version to invalidate (None = all)
+        """
+        if model_version:
+            # Invalidate specific version (requires key pattern tracking)
+            pattern = f"*{model_version}*"
+            keys = self.redis_client.keys(pattern)
+            if keys:
+                self.redis_client.delete(*keys)
+                self.logger.info(f"Invalidated {len(keys)} cache entries for {model_version}")
+        else:
+            # Invalidate all
+            self.redis_client.flushdb()
+            self.logger.info("Invalidated all cache entries")
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get cache metrics."""
+        total_requests = self.cache_hits + self.cache_misses
+        hit_rate = self.cache_hits / total_requests if total_requests > 0 else 0
+
+        return {
+            'cache_hits': self.cache_hits,
+            'cache_misses': self.cache_misses,
+            'total_requests': total_requests,
+            'hit_rate': hit_rate
+        }
+
+def cached_prediction(cache: PredictionCache, ttl: Optional[int] = None):
+    """
+    Decorator for caching predictions.
+
+    Args:
+        cache: PredictionCache instance
+        ttl: Time-to-live for cache entry
+
+    Returns:
+        Decorated function
+    """
+    def decorator(predict_func: Callable):
+        @wraps(predict_func)
+        def wrapper(features: Dict[str, Any], model_version: str = "latest", **kwargs):
+            # Try cache first
+            cached_result = cache.get(features, model_version)
+            if cached_result is not None:
+                cached_result['from_cache'] = True
+                return cached_result
+
+            # Call actual prediction
+            result = predict_func(features, model_version, **kwargs)
+
+            # Cache result
+            cache.set(features, model_version, result, ttl=ttl)
+
+            result['from_cache'] = False
+            return result
+
+        return wrapper
+
+    return decorator
+
+# Example usage
+if __name__ == "__main__":
+    # Initialize cache
+    cache = PredictionCache(redis_host="localhost", redis_port=6379)
+
+    # Example prediction function
+    @cached_prediction(cache, ttl=3600)
+    def predict(features: Dict[str, Any], model_version: str = "latest"):
+        # Simulate expensive prediction
+        time.sleep(0.1)
+
+        return {
+            'prediction': 0.8,
+            'model_version': model_version,
+            'timestamp': time.time()
+        }
+
+    # First call - cache miss
+    features = {"feature1": 1.0, "feature2": 2.0}
+    result1 = predict(features)
+    print(f"First call - From cache: {result1.get('from_cache')}")
+
+    # Second call - cache hit
+    result2 = predict(features)
+    print(f"Second call - From cache: {result2.get('from_cache')}")
+
+    # Get metrics
+    metrics = cache.get_metrics()
+    print(f"\nCache metrics: {metrics}")
+\end{lstlisting}
+
+\subsection{Request Batching}
+
+\begin{lstlisting}[style=python, caption={Dynamic Request Batching}]
+from typing import List, Dict, Any, Callable
+import asyncio
+import time
+from dataclasses import dataclass
+import logging
+
+@dataclass
+class BatchConfig:
+    """Configuration for request batching."""
+    max_batch_size: int = 32
+    max_wait_time_ms: float = 10.0  # Maximum time to wait for batch
+    timeout_seconds: float = 30.0
+
+class RequestBatcher:
+    """
+    Dynamic request batching for efficient inference.
+
+    Collects requests and processes them in batches to maximize throughput.
+    """
+
+    def __init__(
+        self,
+        predict_func: Callable,
+        config: BatchConfig = None
+    ):
+        """
+        Initialize request batcher.
+
+        Args:
+            predict_func: Batch prediction function
+            config: Batch configuration
+        """
+        self.predict_func = predict_func
+        self.config = config or BatchConfig()
+
+        self.pending_requests: List[Dict[str, Any]] = []
+        self.pending_futures: List[asyncio.Future] = []
+        self.batch_lock = asyncio.Lock()
+        self.logger = logging.getLogger(__name__)
+
+        # Start batch processor
+        asyncio.create_task(self._process_batches())
+
+    async def predict(self, features: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Add prediction request to batch.
+
+        Args:
+            features: Feature dictionary
+
+        Returns:
+            Prediction result
+        """
+        # Create future for this request
+        future = asyncio.Future()
+
+        async with self.batch_lock:
+            self.pending_requests.append(features)
+            self.pending_futures.append(future)
+
+            # Trigger immediate batch if max size reached
+            if len(self.pending_requests) >= self.config.max_batch_size:
+                asyncio.create_task(self._execute_batch())
+
+        # Wait for result
+        try:
+            result = await asyncio.wait_for(future, timeout=self.config.timeout_seconds)
+            return result
+        except asyncio.TimeoutError:
+            self.logger.error("Request timeout")
+            raise
+
+    async def _process_batches(self):
+        """Background task to process batches periodically."""
+        while True:
+            await asyncio.sleep(self.config.max_wait_time_ms / 1000)
+
+            async with self.batch_lock:
+                if self.pending_requests:
+                    asyncio.create_task(self._execute_batch())
+
+    async def _execute_batch(self):
+        """Execute batch prediction."""
+        async with self.batch_lock:
+            if not self.pending_requests:
+                return
+
+            # Get current batch
+            batch_requests = self.pending_requests.copy()
+            batch_futures = self.pending_futures.copy()
+
+            # Clear pending
+            self.pending_requests.clear()
+            self.pending_futures.clear()
+
+        self.logger.info(f"Processing batch of {len(batch_requests)} requests")
+
+        try:
+            # Execute batch prediction
+            start_time = time.time()
+            predictions = await self._run_batch_prediction(batch_requests)
+            batch_time = (time.time() - start_time) * 1000
+
+            self.logger.info(f"Batch processed in {batch_time:.2f}ms")
+
+            # Distribute results to futures
+            for future, prediction in zip(batch_futures, predictions):
+                if not future.done():
+                    future.set_result(prediction)
+
+        except Exception as e:
+            self.logger.error(f"Batch prediction failed: {e}")
+
+            # Set exception for all futures
+            for future in batch_futures:
+                if not future.done():
+                    future.set_exception(e)
+
+    async def _run_batch_prediction(self, batch: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Run batch prediction.
+
+        Args:
+            batch: List of feature dictionaries
+
+        Returns:
+            List of predictions
+        """
+        # Run prediction in thread pool to avoid blocking
+        loop = asyncio.get_event_loop()
+        predictions = await loop.run_in_executor(None, self.predict_func, batch)
+
+        return predictions
+
+# Example usage
+if __name__ == "__main__":
+    import numpy as np
+    from sklearn.ensemble import RandomForestClassifier
+    import joblib
+
+    # Train dummy model
+    X = np.random.randn(100, 3)
+    y = np.random.randint(0, 2, 100)
+    model = RandomForestClassifier(n_estimators=10)
+    model.fit(X, y)
+
+    # Batch prediction function
+    def batch_predict(batch: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Process batch of requests."""
+        # Convert to array
+        X = np.array([[req['f1'], req['f2'], req['f3']] for req in batch])
+
+        # Batch predict
+        predictions = model.predict(X)
+
+        # Format results
+        results = [
+            {'prediction': float(pred), 'from_batch': True}
+            for pred in predictions
+        ]
+
+        return results
+
+    # Initialize batcher
+    batcher = RequestBatcher(
+        predict_func=batch_predict,
+        config=BatchConfig(max_batch_size=32, max_wait_time_ms=10)
+    )
+
+    # Simulate requests
+    async def simulate_requests():
+        tasks = []
+        for i in range(100):
+            features = {'f1': float(i), 'f2': float(i+1), 'f3': float(i+2)}
+            tasks.append(batcher.predict(features))
+
+        results = await asyncio.gather(*tasks)
+
+        print(f"Processed {len(results)} requests")
+        print(f"First result: {results[0]}")
+
+    # Run simulation
+    asyncio.run(simulate_requests())
+\end{lstlisting}
+
+\section{Chapter Summary}
+
+This chapter presented comprehensive approaches to model serving and deployment:
+
+\begin{itemize}
+    \item \textbf{REST API Serving:} Production FastAPI implementation with validation, error handling, and Prometheus metrics
+
+    \item \textbf{gRPC Serving:} High-performance serving using Protocol Buffers for low-latency applications
+
+    \item \textbf{Batch vs Real-time:} Scalable batch prediction with Apache Beam and offline feature computation
+
+    \item \textbf{Containerization:} Docker multi-stage builds and Kubernetes deployments with health checks and auto-scaling
+
+    \item \textbf{Deployment Strategies:} Blue-green deployments for atomic switches and canary deployments with automated rollback
+
+    \item \textbf{Serving Optimization:} Response caching with Redis and dynamic request batching for improved throughput
+\end{itemize}
+
+\subsection{Key Takeaways}
+
+\begin{enumerate}
+    \item \textbf{Choose the Right Pattern:} Real-time for low-latency requirements, batch for cost-effective bulk processing
+
+    \item \textbf{Validate Inputs:} Use Pydantic or similar for request validation to prevent errors and security issues
+
+    \item \textbf{Implement Health Checks:} Proper liveness and readiness probes for reliable orchestration
+
+    \item \textbf{Monitor Everything:} Track latency, error rates, and throughput to detect issues early
+
+    \item \textbf{Deploy Safely:} Use blue-green or canary deployments to minimize risk
+
+    \item \textbf{Optimize Performance:} Caching, batching, and model optimization reduce costs and improve UX
+
+    \item \textbf{Container Best Practices:} Multi-stage builds, non-root users, and health checks for security and reliability
+
+    \item \textbf{Plan for Scale:} Horizontal pod autoscaling and load balancing for handling traffic growth
+\end{enumerate}
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item Richardson, C. (2018). \textit{Microservices Patterns}
+    \item Burns, B., et al. (2019). \textit{Kubernetes: Up and Running}
+    \item Kleppmann, M. (2017). \textit{Designing Data-Intensive Applications}
+    \item Humble, J., \& Farley, D. (2010). \textit{Continuous Delivery}
+    \item Newman, S. (2021). \textit{Building Microservices, 2nd Edition}
+\end{itemize}
+
+\section{Exercises}
+
+\begin{enumerate}
+    \item \textbf{FastAPI Model Server:}
+    \begin{itemize}
+        \item Implement a complete FastAPI server with prediction endpoints
+        \item Add request validation using Pydantic
+        \item Implement health and readiness checks
+        \item Add Prometheus metrics
+        \item Write comprehensive tests with pytest
+    \end{itemize}
+
+    \item \textbf{gRPC Service:}
+    \begin{itemize}
+        \item Define Protocol Buffer service
+        \item Implement gRPC server and client
+        \item Add streaming prediction support
+        \item Compare performance with REST API
+    \end{itemize}
+
+    \item \textbf{Batch Prediction Pipeline:}
+    \begin{itemize}
+        \item Implement batch prediction using Apache Beam
+        \item Process large dataset (millions of rows)
+        \item Optimize for cost and throughput
+        \item Add error handling and retry logic
+    \end{itemize}
+
+    \item \textbf{Docker Containerization:}
+    \begin{itemize}
+        \item Create multi-stage Dockerfile
+        \item Optimize image size
+        \item Add health checks
+        \item Run security scanning
+        \item Deploy to Kubernetes
+    \end{itemize}
+
+    \item \textbf{Deployment Strategy:}
+    \begin{itemize}
+        \item Implement canary deployment controller
+        \item Monitor metrics and auto-rollback
+        \item Test with simulated traffic
+        \item Document rollback procedures
+    \end{itemize}
+
+    \item \textbf{Serving Optimization:}
+    \begin{itemize}
+        \item Implement Redis caching
+        \item Add request batching
+        \item Measure latency improvements
+        \item Analyze cache hit rates
+        \item Optimize for cost vs performance
+    \end{itemize}
+
+    \item \textbf{End-to-End Deployment:}
+    \begin{itemize}
+        \item Build complete serving pipeline from training to production
+        \item Implement REST and gRPC endpoints
+        \item Add caching and batching
+        \item Containerize and deploy to Kubernetes
+        \item Implement canary deployment
+        \item Monitor with Prometheus and Grafana
+    \end{itemize}
+\end{enumerate}
