@@ -1,0 +1,37 @@
+\chapter{Advanced Collaboration Patterns for Complex Organizations}
+
+\section{Chapter Overview}
+As teams scale, simple collaboration practices strain under the weight of multiple products, time zones, and compliance requirements. Advanced patterns help large organizations keep velocity without sacrificing quality. This chapter examines feature-flag driven delivery, trunk-based development at scale, cross-team review agreements, inner-source contributions, and incident-driven feedback loops.
+
+\section{Feature Flag Driven Development}
+Feature flags decouple release from deployment, enabling incremental delivery. Establish a taxonomy of flags (experiment, kill switch, permissions) and document ownership for each. Integrate flag status into PR templates so authors declare defaults, rollout stages, and retirement plans. Automate flag clean-up by linking each flag to an expiration review date. When reviewers see a flag, they should know exactly how and when it will be removed.
+
+\section{Trunk-Based Development at Scale}
+Trunk-based development delivers fast feedback but requires discipline when dozens of squads work in the same repository. Adopt short-lived branches, enforce green pipelines before merge, and use batch commits only for mechanical refactors. Implement ``yellow builds''---states where the build is flaky but still mergeable with caution---and define on-call rotations responsible for keeping trunk healthy. Encourage pairing or mobbing on high-risk changes to avoid integration surprises.
+
+\section{Cross-Team Review Agreements}
+Large organizations often share infrastructure components. Create formal agreements that define when one team must review another's changes (for example, database migrations touching shared schemas). Maintain CODEOWNERS maps that cover these interfaces and include escalation rules for urgent fixes. To avoid blocking incidents, empower teams with ``break glass'' procedures: they may merge without approval if they follow documented rollback steps and notify owners post-merge.
+
+\section{Inner-Source Contribution Model}
+Inner-source encourages engineers to contribute outside their primary team. Successful models provide clear contribution guides, label issues as ``Good first PR,'' and pair contributors with component mentors. Review SLA expectations shift: core maintainers commit to timely feedback while contributors are expected to write thorough PR descriptions. Track contributor experience via surveys and reduce friction by providing scripts that set up local environments automatically.
+
+\section{Asynchronous Review in Distributed Teams}
+When teams span time zones, synchronous review conversations slow everything down. Adopt asynchronous rituals: reviewers leave detailed rationale, authors summarize updates in ``Change since last review'' sections, and contentious debates move to scheduled calls with notes posted afterward. Use discussion threads per topic to avoid interleaving multiple conversations. Automate reminders that ping reviewers after 24 hours of inactivity to keep async loops moving.
+
+\section{Incident-Driven Feedback Loops}
+Post-incident reviews reveal collaboration gaps. Build a habit of tracing each incident to the collaboration artifact that failed (missing tests, weak PR documentation, reviewer oversight). Capture remediation tasks that upgrade collaboration tooling or standards---like improving commit templates or adding deployment runbooks. Close the loop by referencing incidents in subsequent PRs so reviewers understand the stakes: ``This change prevents INC-4567 by adding rate limiting.'' Over time, incident retros feed directly into collaboration practice upgrades.
+
+\section{Knowledge Stewardship Rotations}
+To prevent siloed expertise, run temporary rotations where engineers review and merge changes for components outside their comfort zone. Rotations include pairing sessions, shared review checklists, and documentation updates as learnings surface. Publish rotation reports highlighting knowledge gaps; use them to prioritize documentation or automation work. The goal is resilience: multiple engineers can review and maintain critical systems without heroics.
+
+\section*{Exercises}
+
+\paragraph{1. Flag lifecycle review} Audit three existing feature flags. Document their owners, rollout stages, and retirement plans. If the plan is missing, add an action item to track removal.
+
+\paragraph{2. Trunk health drill} Simulate a ``yellow build'' scenario. Outline the communication steps and mitigation responsibilities your team would follow to keep trunk usable while fixing the issue.
+
+\paragraph{3. Cross-team contract} Draft a lightweight agreement covering review expectations for a shared component. Include escalation paths and break-glass rules, then share it with partner teams for feedback.
+
+\paragraph{4. Inner-source pilot} Identify one repository that could benefit from inner-source contributions. Create contributor documentation, label candidate issues, and recruit two volunteers to test the process.
+
+\paragraph{5. Incident linkage} Choose a past incident and map the collaboration artifacts that failed (commit, PR, review). Propose one automation or process change that would have prevented the issue and add it to your improvement backlog.

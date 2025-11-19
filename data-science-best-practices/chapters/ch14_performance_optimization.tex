@@ -2,7 +2,7 @@
 
 \section{Introduction}
 
-A fraud detection model with 92\% accuracy is worthless if it takes 5 seconds to make a prediction—fraudulent transactions complete in milliseconds. A recommendation engine trained on billions of interactions cannot serve millions of concurrent users if it requires 32GB of memory per instance. ML performance optimization transforms theoretically sound models into practical systems that deliver value at scale.
+A fraud detection model with 92\% accuracy is worthless if it takes 5 seconds to make a prediction---fraudulent transactions complete in milliseconds. A recommendation engine trained on billions of interactions cannot serve millions of concurrent users if it requires 32GB of memory per instance. ML performance optimization transforms theoretically sound models into practical systems that deliver value at scale.
 
 \subsection{The Performance Problem}
 
@@ -15,7 +15,7 @@ Consider a recommendation system serving 10 million daily active users. The init
     \item Cannot scale beyond 5M concurrent users
 \end{itemize}
 
-The business requires sub-100ms latency for 20M users during peak hours, but scaling the naive approach would cost \$500,000/month—economically infeasible.
+The business requires sub-100ms latency for 20M users during peak hours, but scaling the naive approach would cost \$500,000/month---economically infeasible.
 
 \subsection{Why Performance Optimization Matters}
 
@@ -55,7 +55,96 @@ This chapter provides production-grade optimization techniques:
 
 \section{Model Optimization Techniques}
 
-Model optimization reduces model size and improves inference speed while maintaining accuracy.
+Model optimization reduces model size and improves inference speed while maintaining accuracy. Production ML systems must balance multiple constraints: inference latency for user experience, memory footprint for deployment feasibility, throughput for handling concurrent requests, and computational cost for economic viability. Modern deep learning models with millions or billions of parameters often cannot meet these constraints without systematic optimization.
+
+\subsection{Quantization Techniques}
+
+Quantization reduces model size and accelerates inference by representing weights and activations with lower precision numeric formats. Neural networks trained with 32-bit floating point (FP32) typically contain redundant precision---most models maintain accuracy when quantized to 8-bit integers or even lower.
+
+\textbf{Post-Training Quantization} converts a trained FP32 model to lower precision without retraining. Dynamic quantization quantizes weights statically but converts activations to INT8 dynamically during inference, providing 2-4x speedup with negligible accuracy loss for LSTM and transformer models. Static quantization requires calibration data to determine optimal scaling factors for both weights and activations, achieving 4x memory reduction and 2-4x speedup. This method works best for convolutional networks and requires representative calibration data covering the input distribution.
+
+\textbf{Quantization-Aware Training (QAT)} simulates quantization during training by inserting fake quantization operations in the forward pass while maintaining FP32 gradients. The model learns to compensate for quantization error, often achieving accuracy within 1\% of the FP32 baseline. QAT enables aggressive quantization to INT4 or even lower, potentially achieving 8x memory reduction with acceptable accuracy trade-offs for specific applications.
+
+\textbf{Mixed Precision Quantization} applies different precision levels to different layers based on sensitivity analysis. Early layers and attention mechanisms often require higher precision (FP16 or INT8) while later classification layers tolerate INT4 or INT2. This approach optimizes the accuracy-efficiency trade-off by allocating precision budget where it matters most.
+
+Hardware acceleration amplifies quantization benefits. Modern CPUs include VNNI (Vector Neural Network Instructions) for INT8 matrix multiplication, GPUs provide Tensor Cores for mixed precision, and mobile processors include dedicated INT8 accelerators. A quantized INT8 model runs 2-4x faster than FP32 on CPU and achieves similar speedups on GPU when memory bandwidth becomes the bottleneck.
+
+\subsection{Pruning Strategies}
+
+Pruning removes redundant parameters from neural networks, reducing model size and potentially improving inference speed. The fundamental insight is that many neural network weights contribute minimally to final predictions---setting these to zero maintains accuracy while reducing computational requirements.
+
+\textbf{Unstructured Pruning} removes individual weights based on importance criteria. Magnitude-based pruning removes weights with smallest absolute values, typically pruning 50-90\% of parameters with minimal accuracy loss. This approach achieves maximum compression but provides limited speedup without specialized sparse matrix libraries, since irregular sparsity patterns don't map efficiently to standard dense matrix operations on GPUs.
+
+\textbf{Structured Pruning} removes entire neurons, channels, or attention heads, creating smaller dense networks that run efficiently on standard hardware. Channel pruning in CNNs identifies and removes entire convolutional filters based on L1-norm or gradient-based importance scores. Attention head pruning in transformers removes redundant attention heads---BERT often maintains 95\% accuracy with 40\% of heads removed. Structured pruning achieves 1.5-3x actual speedup compared to theoretical compression ratios.
+
+\textbf{Iterative Pruning with Fine-Tuning} applies gradual pruning over multiple rounds. Start by training the full model to convergence, prune 20-30\% of low-magnitude weights, fine-tune for a few epochs to recover accuracy, then repeat. This iterative approach reaches higher compression ratios (70-90\%) than one-shot pruning while maintaining accuracy. The lottery ticket hypothesis suggests that successful pruning discovers sparse subnetworks that could have been trained in isolation---though practical implementations still require initial dense training.
+
+\textbf{Gradient-Based Pruning} uses second-order information to identify truly unimportant weights. Taylor expansion estimates weight importance as $|w_i \cdot \frac{\partial L}{\partial w_i}|$---the product of weight magnitude and gradient magnitude. This captures both the weight value and its influence on the loss, often outperforming magnitude-only pruning. More sophisticated methods like Fisher pruning use the Fisher information matrix to estimate the impact of removing each weight on model predictions.
+
+Pruning and quantization combine synergistically. Prune 50\% of weights, fine-tune, then apply INT8 quantization for combined 8x compression with 1-2\% accuracy loss. This two-stage approach often outperforms either technique alone.
+
+\subsection{Knowledge Distillation}
+
+Knowledge distillation trains a compact student model to mimic a larger teacher model, often achieving similar accuracy with 5-10x fewer parameters. Unlike pruning which removes weights from an existing model, distillation trains a fundamentally smaller architecture from scratch using the teacher as a guide.
+
+\textbf{Teacher-Student Architecture} employs a two-stage process. First, train a large high-capacity teacher model to maximum accuracy without resource constraints. Second, train a smaller student model using both ground-truth labels and the teacher's predictions as soft targets. The teacher's softmax probabilities at temperature $T>1$ provide richer training signal than one-hot labels---the relative probabilities across classes convey similarity information that helps the student generalize.
+
+The distillation loss combines cross-entropy with hard labels and KL-divergence with soft teacher predictions:
+$$L = \alpha \cdot L_{CE}(y_{student}, y_{true}) + (1-\alpha) \cdot T^2 \cdot L_{KL}(y_{student}/T, y_{teacher}/T)$$
+
+Temperature $T$ softens the probability distribution, emphasizing relationships between classes. The $T^2$ scaling factor compensates for softened gradients. Typical values: $T=3-5$, $\alpha=0.3-0.5$.
+
+\textbf{Self-Distillation and Online Distillation} eliminate the need for a separate teacher. Self-distillation trains a model, then uses it as teacher to train a fresh initialization of the same architecture, often improving accuracy through regularization. Online distillation trains multiple models simultaneously, using predictions from all models to supervise each other through mutual learning. This approach achieves distillation benefits without the computational cost of training a teacher first.
+
+\textbf{Feature Distillation} matches intermediate representations between teacher and student, not just final predictions. Add auxiliary losses that minimize distance between student and teacher hidden states: $L_{feat} = ||h_{student} - h_{teacher}||^2$. This technique works especially well for transfer learning and domain adaptation, where matching internal representations helps the student learn better feature extractors.
+
+BERT distillation exemplifies practical impact. DistilBERT uses 6 layers instead of 12, reducing parameters from 110M to 66M while retaining 97\% of BERT's accuracy. TinyBERT and MobileBERT push further to 14M and 25M parameters respectively through aggressive distillation and architecture modifications, enabling transformer deployment on mobile devices.
+
+\subsection{Neural Architecture Search}
+
+Neural Architecture Search (NAS) automates model design by exploring architectural choices to find optimal accuracy-efficiency trade-offs. Rather than manually designing networks, NAS algorithms discover architectures tailored to specific hardware constraints and tasks.
+
+\textbf{Search Space Design} defines the architecture possibilities: layer types (convolution, attention, pooling), layer connections (skip connections, dense connections), hyperparameters (channel counts, kernel sizes). Clever search space design incorporates domain knowledge---mobile-focused spaces include depthwise separable convolutions and inverted residuals that work well on mobile hardware.
+
+\textbf{Search Strategies} explore the architecture space. Reinforcement learning treats architecture selection as a sequential decision problem, using accuracy as reward signal. Evolutionary algorithms maintain a population of architectures, mutating and selecting the fittest. Gradient-based methods like DARTS relax the discrete architecture search into continuous optimization, enabling efficient search through backpropagation.
+
+\textbf{Hardware-Aware NAS} explicitly optimizes for target hardware. Rather than maximizing accuracy alone, the objective function incorporates latency, energy consumption, or memory footprint: $Objective = Accuracy - \lambda \cdot Latency$. This produces Pareto-optimal architectures that achieve best accuracy under specific resource constraints. MobileNetV3 and EfficientNet were discovered through hardware-aware NAS, optimizing for mobile CPU and edge TPU respectively.
+
+\textbf{One-Shot NAS} amortizes search cost by training a supernetwork containing all possible architectures as subgraphs, then searching for the best subgraph without retraining. Weight sharing across architectures reduces search cost from thousands of GPU-days to tens of GPU-days. SPOS, FBNet, and ProxylessNAS enable practical NAS on academic research budgets.
+
+Once-for-all networks extend this further---train one supernet that can be deployed at multiple accuracy-latency points without retraining. At deployment time, select the architecture configuration that meets your specific constraints.
+
+\subsection{Performance Trade-offs Analysis}
+
+Each optimization technique offers distinct trade-offs between compression ratio, accuracy preservation, speedup, and ease of deployment:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Technique} & \textbf{Compression} & \textbf{Speedup} & \textbf{Accuracy Loss} & \textbf{Effort} \\
+\midrule
+Dynamic Quantization & 4x & 2-3x & <0.5\% & Low \\
+Static Quantization & 4x & 2-4x & 0.5-1\% & Medium \\
+INT4 Quantization & 8x & 3-6x & 1-3\% & High \\
+Unstructured Pruning & 2-5x & 1.2x & 0.5-2\% & Medium \\
+Structured Pruning & 2-3x & 1.5-2x & 1-2\% & Medium \\
+Knowledge Distillation & 5-10x & 5-10x & 1-3\% & High \\
+NAS & Varies & 2-5x & 0-1\% & Very High \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Quantization} provides the best effort-to-benefit ratio. Post-training dynamic quantization requires minimal effort (single function call) and achieves immediate speedup with negligible accuracy loss. Static quantization requires calibration data but delivers better speedup. These techniques should be the first optimization applied to any production model.
+
+\textbf{Pruning} offers moderate compression with structured pruning delivering better actual speedup than unstructured. The need for iterative fine-tuning increases implementation effort. Pruning works best when combined with quantization---prune first to reduce parameters, then quantize for additional memory reduction.
+
+\textbf{Knowledge Distillation} achieves the highest compression ratios by training fundamentally smaller architectures. This requires significant effort: designing student architectures, tuning hyperparameters, and training for many epochs. Use distillation when model size is critical (mobile deployment) and you have sufficient compute budget for extended training. The student's smaller size provides both inference speedup and reduced memory footprint.
+
+\textbf{NAS} offers the ultimate optimization potential by discovering novel architectures, but requires substantial computational resources and expertise. Reserved for scenarios where you're deploying millions of models (mobile apps) or when marginal performance improvements justify the search cost. Most practitioners should use published NAS-discovered architectures (EfficientNet, MobileNetV3) rather than conducting custom searches.
+
+\textbf{Practical Deployment Strategy}: Start with quantization (dynamic or static) for immediate 2-4x speedup. If further optimization is needed, apply structured pruning at 30-50\% sparsity and fine-tune. For mobile deployment, consider distillation to a purpose-designed small architecture, followed by quantization of the distilled model. This cascade achieves 10-20x compression with 2-3\% accuracy trade-off, enabling deployment on resource-constrained devices.
 
 \subsection{ModelOptimizer: Comprehensive Optimization Framework}
 
@@ -590,7 +679,47 @@ logger.info(f"Selected optimization: {deployment_model}")
 
 \section{Distributed Training}
 
-Distributed training enables training large models on multiple GPUs or machines.
+Distributed training enables training large models on multiple GPUs or machines, reducing training time from weeks to hours and enabling models too large to fit on a single device. Modern transformers with billions of parameters require distributed training---GPT-3's 175 billion parameters cannot fit in any single GPU's memory. Beyond enabling large models, distributed training provides linear or near-linear speedups: 8 GPUs can train a model 6-7x faster than a single GPU when properly optimized.
+
+\subsection{Parallelism Strategies}
+
+Three fundamental parallelism strategies solve different scaling bottlenecks:
+
+\textbf{Data Parallelism} replicates the model across multiple devices, with each device processing different data batches. After each forward-backward pass, devices synchronize gradients through all-reduce operations, then update model weights identically. This strategy scales efficiently to dozens of GPUs when the model fits in single-device memory and communication overhead remains manageable. The effective batch size multiplies by the number of devices---8 GPUs with local batch size 32 trains with effective batch size 256. Large batch training requires learning rate scaling and warmup to maintain convergence quality.
+
+Synchronous data parallelism updates all replicas together, ensuring consistent model state but requiring stragglers to complete before proceeding. Asynchronous data parallelism allows replicas to update independently, improving hardware utilization but introducing staleness that can hurt convergence. Modern production systems use synchronous data parallelism with gradient accumulation to handle stragglers.
+
+\textbf{Model Parallelism} splits a single model across multiple devices, with different layers or components on different GPUs. This enables training models larger than single-device memory. Vertical model parallelism splits layers sequentially---early layers on GPU 0, middle layers on GPU 1, late layers on GPU 2. Forward pass requires sequential execution across devices, creating pipeline bubbles where devices idle waiting for inputs. Horizontal model parallelism splits layers width-wise---attention heads or feed-forward neurons distributed across devices within each layer. This requires communication during both forward and backward passes but achieves better parallelization.
+
+Megatron-LM demonstrates production model parallelism for transformers, splitting attention heads and feed-forward layers across GPUs. A 24-layer transformer with 16 attention heads might assign 4 heads to each of 4 GPUs, requiring all-reduce operations to combine attention outputs. Communication volume scales with model dimension and sequence length, making fast interconnects (NVLink, InfiniBand) critical for efficiency.
+
+\textbf{Pipeline Parallelism} combines benefits of both strategies by splitting models into stages and processing multiple microbatches concurrently. Divide the model into N stages across N devices, then split each batch into M microbatches. While stage 1 processes microbatch 2, stage 2 processes microbatch 1, creating a pipeline with minimal idle time. GPipe and PipeDream achieve 80-90\% hardware efficiency by keeping all devices busy most of the time.
+
+Pipeline scheduling requires careful coordination. Forward passes flow through stages 1→N, backward passes flow N→1. The 1F1B (one-forward-one-backward) schedule interleaves forward and backward passes to minimize memory footprint. With 4 microbatches and 4 stages, the pipeline fills gradually but achieves steady-state where all stages compute simultaneously.
+
+\subsection{Communication Optimization}
+
+Distributed training performance depends critically on communication efficiency. Naive gradient synchronization scales poorly beyond 16-32 GPUs as communication time dominates computation.
+
+\textbf{Gradient Compression} reduces communication volume by compressing gradients before all-reduce. Quantization represents gradients as 8-bit or 16-bit integers instead of 32-bit floats, reducing bandwidth by 2-4x. Sparsification transmits only the largest K\% of gradients (top-k) or gradients exceeding threshold (threshold), achieving 10-100x compression. Error feedback accumulates dropped gradients across iterations, preventing information loss. Deep gradient compression combines these techniques, achieving 100-600x compression with negligible impact on final accuracy.
+
+\textbf{All-Reduce Algorithms} determine gradient synchronization efficiency. Ring all-reduce circulates gradients around a logical ring of devices, requiring 2(N-1) communication steps for N devices but achieving bandwidth-optimal communication. Tree all-reduce builds a reduction tree, requiring log(N) steps but higher bandwidth usage. Modern frameworks like NCCL (NVIDIA Collective Communications Library) automatically select optimal algorithms based on message size and network topology.
+
+\textbf{Gradient Accumulation} amortizes communication cost by accumulating gradients over multiple microbatches before synchronizing. Accumulating 4 microbatches reduces communication frequency by 4x, improving throughput when communication is the bottleneck. This enables training with larger effective batch sizes than GPU memory allows---accumulate 8 microbatches of 16 samples each for effective batch size 128 on a single GPU.
+
+\textbf{Mixed Precision Training} reduces memory and communication by computing in FP16 while maintaining FP32 master weights. FP16 forward and backward passes consume half the memory and bandwidth of FP32. Loss scaling prevents gradient underflow---multiply loss by large constant (typically 1024-65536) before backward pass, then unscale gradients before optimizer step. Mixed precision training achieves 2-3x speedup on Tensor Core GPUs with no accuracy loss when properly tuned.
+
+Dynamic loss scaling adapts the scaling factor automatically. If gradient overflow occurs (infinite or NaN values), reduce scaling factor. If gradients remain healthy for many iterations, increase scaling factor. This handles varying gradient magnitude across training, maintaining numerical stability without manual tuning.
+
+\subsection{Distributed Training Best Practices}
+
+Scaling beyond single-GPU training requires careful attention to numerical stability, convergence, and infrastructure:
+
+\textbf{Learning Rate Scaling}: Linear scaling rule adjusts learning rate proportionally to batch size. Doubling batch size doubles learning rate to maintain SGD trajectory. This works well for large batches but can hurt convergence for very large batch sizes (>8k). Warmup linearly increases learning rate from near-zero to target over first few epochs, stabilizing initial training when starting with large learning rates.
+
+\textbf{Batch Normalization}: Standard batch normalization computes statistics over per-device batches, reducing effective batch size for normalization. Synchronized batch normalization computes statistics across all devices, maintaining consistent behavior but requiring expensive all-reduce operations. Group normalization or layer normalization avoid cross-device communication while maintaining training stability.
+
+\textbf{Checkpoint Management}: Distributed training requires coordinated checkpointing. Save only from rank 0 to avoid race conditions and wasted I/O bandwidth. Use asynchronous checkpointing to overlap saving with computation. For large models, checkpoint sharded model states---each device saves its partition, enabling parallel loading during resumption.
 
 \subsection{DistributedTrainer: Data and Model Parallelism}
 
@@ -921,6 +1050,395 @@ if __name__ == "__main__":
     launch_distributed_training()
 \end{lstlisting}
 
+\section{Inference Optimization}
+
+Inference optimization focuses on serving predictions efficiently in production, where models process millions of requests daily with strict latency requirements. While training happens once, inference happens continuously---optimizing inference directly impacts user experience and infrastructure cost. A recommendation system serving 10 million daily users makes 10 million inferences per day; reducing latency from 100ms to 50ms saves 139 hours of cumulative user waiting time daily.
+
+\subsection{Batching Strategies}
+
+Batching amortizes model overhead by processing multiple requests together, dramatically improving GPU throughput. A transformer model might process a single request at 10 inferences/second but achieve 500 inferences/second with batch size 32---a 50x throughput improvement. However, batching introduces latency trade-offs: waiting to accumulate requests delays individual responses.
+
+\textbf{Static Batching} collects requests until reaching fixed batch size B, then processes them together. This maximizes throughput but creates unpredictable latency---the first request in a batch waits while B-1 additional requests arrive. With average arrival rate $\lambda$ and batch size B, average waiting time is B/(2$\lambda$). For 100 requests/second and batch size 32, average wait is 160ms---often unacceptable for user-facing services.
+
+\textbf{Dynamic Batching} processes batches when either batch size reaches B or timeout T expires, whichever comes first. This bounds maximum latency while maintaining high throughput during peak load. TensorFlow Serving and NVIDIA Triton implement dynamic batching with configurable timeout (typically 1-10ms) and maximum batch size. During high traffic, batches fill quickly and process at maximum throughput. During low traffic, timeout prevents excessive waiting.
+
+\textbf{Adaptive Batching} adjusts batch size based on current load and latency objectives. Monitor queue depth and recent latency; increase batch size when queue grows (prioritize throughput) and decrease when latency exceeds SLO (prioritize responsiveness). This automatically balances throughput and latency without manual tuning.
+
+\textbf{Continuous Batching} overlaps batch assembly with model execution for auto-regressive models like LLMs. Traditional batching waits for all sequences in a batch to complete before starting the next batch, wasting GPU cycles when sequences finish early. Continuous batching immediately replaces completed sequences with new requests, maintaining maximum GPU utilization. vLLM and TensorRT-LLM implement continuous batching, achieving 20x higher throughput than naive batching for LLM serving.
+
+\subsection{Model Serving Patterns}
+
+Production inference requires robust serving infrastructure beyond the model itself:
+
+\textbf{Model Server Architecture} typically includes request queue, preprocessing pipeline, model executor, and postprocessing pipeline. Requests enter a queue, preprocessing converts raw inputs to tensors (tokenization, image decoding), the model executor runs inference, and postprocessing converts outputs to API responses. Decoupling these stages enables independent scaling and optimization.
+
+\textbf{Multi-Model Serving} hosts multiple models on shared infrastructure, improving resource utilization. A recommendation service might serve user embedding model, item embedding model, and ranking model on the same GPU. Time-sharing interleaves models, processing user embeddings for 10ms, then item embeddings for 10ms, then rankings for 10ms. This works well when individual models don't fully utilize GPU. Multi-instance serving runs multiple model replicas per GPU, leveraging CUDA Multi-Process Service (MPS) to share GPU memory and compute.
+
+\textbf{Model Versioning} enables safe model updates without downtime. Blue-green deployment runs both old and new model versions, gradually shifting traffic to the new version while monitoring metrics. Canary deployment routes small traffic percentage (5-10\%) to the new version, validating quality before full rollout. A/B testing routes random subsets of users to different versions, enabling statistical comparison of model quality.
+
+\textbf{Request Queuing} manages load spikes without service degradation. Priority queues process critical requests first---paying customers or high-value predictions get preferential treatment. Circuit breakers reject requests when queue depth exceeds threshold, preventing cascading failures. Timeout management drops requests that cannot meet SLA, freeing resources for serveable requests.
+
+\subsection{GPU Memory Optimization}
+
+GPU memory constrains batch size and throughput. A 16GB GPU running a 4GB model has 12GB available for activations, limiting batch size to perhaps 32-64 samples. Optimizing memory enables larger batches and higher throughput.
+
+\textbf{Memory Pooling} preallocates memory buffers and reuses them across requests, avoiding expensive allocation/deallocation. CUDA memory allocation can take milliseconds; reusing buffers eliminates this overhead. Memory pools maintain buffers of common sizes (1KB, 4KB, 16KB, etc.) and assign appropriately sized buffers to requests. This trades memory utilization for latency predictability.
+
+\textbf{Kernel Fusion} combines multiple operations into single GPU kernels, reducing memory roundtrips. Separate LayerNorm and GELU operations require writing intermediate activations to memory then reading them back. Fused LayerNorm-GELU computes both in a single kernel without intermediate memory traffic, saving bandwidth and improving speed. TensorRT and XLA automatically fuse compatible operations.
+
+\textbf{Activation Checkpointing} trades compute for memory by recomputing activations during backward pass instead of storing them. For inference-only scenarios, activations aren't needed after the forward pass completes, but some serving frameworks eagerly store them. Disabling gradient computation and clearing activation buffers immediately after use maximizes available memory for batching.
+
+\textbf{KV Cache Optimization} for transformer models stores key and value tensors from previous tokens, avoiding redundant computation during autoregressive generation. For a 50-token sequence with 12-layer transformer, KV cache requires $2 \times 12 \times 50 \times d_{model}$ memory per sample. PagedAttention (used by vLLM) stores KV cache in non-contiguous memory pages, enabling efficient memory sharing across sequences and reducing fragmentation. This increases batch size by 2-5x compared to contiguous KV cache storage.
+
+\subsection{Runtime Optimization}
+
+Specialized runtimes accelerate inference beyond generic frameworks:
+
+\textbf{ONNX Runtime} provides cross-platform inference with graph optimizations. Converting PyTorch or TensorFlow models to ONNX enables optimizations like constant folding, operator fusion, and layout transformations. ONNX Runtime achieves 2-4x speedup compared to native PyTorch for many models through aggressive graph optimization and custom kernels.
+
+\textbf{TensorRT} optimizes models for NVIDIA GPUs through layer fusion, precision calibration, and kernel auto-tuning. Convolution-BatchNorm-ReLU sequences fuse into single kernels. TensorRT profiles multiple kernel implementations and selects the fastest for specific input shapes and GPU architecture. INT8 quantization with TensorRT achieves 4x throughput improvement on modern GPUs.
+
+\textbf{TorchScript} compiles PyTorch models to optimized intermediate representation, eliminating Python overhead and enabling mobile deployment. Tracing records operations during example execution; scripting converts Python code to TorchScript directly. TorchScript eliminates Python interpreter overhead, reducing CPU-side latency by 2-10x for small models where Python overhead dominates.
+
+\textbf{Graph Compilation} transforms computational graphs for optimal execution. XLA (Accelerated Linear Algebra) compiles TensorFlow and JAX models, fusing operations and optimizing memory layout. TVM and Apache TVM provide framework-agnostic compilation, targeting CPUs, GPUs, and specialized accelerators. Graph compilers analyze the entire computation graph, applying global optimizations impossible at the operation level.
+
+\subsection{InferenceOptimizer: Production Serving Framework}
+
+\begin{lstlisting}[language=Python, caption={Production Inference Optimization}]
+from typing import Dict, List, Optional, Any, Deque
+from dataclasses import dataclass
+from collections import deque
+import torch
+import torch.nn as nn
+import time
+import asyncio
+from queue import Queue, PriorityQueue
+import logging
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class InferenceRequest:
+    """
+    Single inference request.
+
+    Attributes:
+        request_id: Unique request identifier
+        input_data: Input tensor or data
+        priority: Request priority (higher = more important)
+        arrival_time: Request arrival timestamp
+        timeout_ms: Maximum acceptable latency
+    """
+    request_id: str
+    input_data: Any
+    priority: int = 0
+    arrival_time: float = None
+    timeout_ms: float = 1000
+
+    def __post_init__(self):
+        if self.arrival_time is None:
+            self.arrival_time = time.time()
+
+    def __lt__(self, other):
+        # Higher priority first
+        return self.priority > other.priority
+
+class DynamicBatcher:
+    """
+    Dynamic batching with timeout and max batch size.
+
+    Implements intelligent batching that balances throughput and latency.
+
+    Example:
+        >>> batcher = DynamicBatcher(max_batch_size=32, timeout_ms=10)
+        >>> batch = await batcher.get_batch()
+        >>> results = model(batch)
+    """
+
+    def __init__(
+        self,
+        max_batch_size: int = 32,
+        timeout_ms: float = 10,
+        use_priority: bool = False
+    ):
+        """
+        Initialize dynamic batcher.
+
+        Args:
+            max_batch_size: Maximum batch size
+            timeout_ms: Timeout for batch assembly
+            use_priority: Use priority queue instead of FIFO
+        """
+        self.max_batch_size = max_batch_size
+        self.timeout_ms = timeout_ms / 1000  # Convert to seconds
+
+        if use_priority:
+            self.queue = PriorityQueue()
+        else:
+            self.queue = Queue()
+
+        self.use_priority = use_priority
+
+        logger.info(
+            f"Initialized DynamicBatcher: "
+            f"max_batch_size={max_batch_size}, "
+            f"timeout_ms={timeout_ms}"
+        )
+
+    def add_request(self, request: InferenceRequest):
+        """Add request to batch queue."""
+        self.queue.put(request)
+
+    async def get_batch(self) -> List[InferenceRequest]:
+        """
+        Get batch of requests.
+
+        Waits until either:
+        1. Batch size reaches max_batch_size
+        2. Timeout expires
+
+        Returns:
+            List of requests to process together
+        """
+        batch = []
+        deadline = time.time() + self.timeout_ms
+
+        while len(batch) < self.max_batch_size:
+            timeout = max(0, deadline - time.time())
+
+            try:
+                # Try to get request with timeout
+                request = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, self.queue.get, True, timeout
+                    ),
+                    timeout=timeout
+                )
+
+                # Check if request timed out
+                if self._is_timed_out(request):
+                    logger.warning(f"Request {request.request_id} timed out")
+                    continue
+
+                batch.append(request)
+
+            except asyncio.TimeoutError:
+                # Timeout expired, return current batch
+                break
+
+        return batch
+
+    def _is_timed_out(self, request: InferenceRequest) -> bool:
+        """Check if request exceeded timeout."""
+        elapsed = (time.time() - request.arrival_time) * 1000
+        return elapsed > request.timeout_ms
+
+class InferenceOptimizer:
+    """
+    Production inference optimization with batching and serving.
+
+    Provides dynamic batching, request queuing, and optimized serving.
+
+    Example:
+        >>> optimizer = InferenceOptimizer(
+        ...     model=model,
+        ...     max_batch_size=32,
+        ...     timeout_ms=10
+        ... )
+        >>> await optimizer.start()
+        >>> result = await optimizer.predict(input_data)
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        max_batch_size: int = 32,
+        timeout_ms: float = 10,
+        device: str = "cuda" if torch.cuda.is_available() else "cpu",
+        enable_amp: bool = True
+    ):
+        """
+        Initialize inference optimizer.
+
+        Args:
+            model: Model to serve
+            max_batch_size: Maximum batch size
+            timeout_ms: Batching timeout
+            device: Device for inference
+            enable_amp: Enable automatic mixed precision
+        """
+        self.model = model.to(device).eval()
+        self.device = device
+        self.enable_amp = enable_amp
+
+        # Dynamic batcher
+        self.batcher = DynamicBatcher(
+            max_batch_size=max_batch_size,
+            timeout_ms=timeout_ms
+        )
+
+        # Response futures
+        self.pending_responses: Dict[str, asyncio.Future] = {}
+
+        # Metrics
+        self.total_requests = 0
+        self.total_batches = 0
+        self.latencies: Deque[float] = deque(maxlen=1000)
+
+        logger.info(f"Initialized InferenceOptimizer on {device}")
+
+    async def start(self):
+        """Start inference server."""
+        asyncio.create_task(self._process_batches())
+        logger.info("Inference server started")
+
+    async def predict(
+        self,
+        input_data: torch.Tensor,
+        priority: int = 0,
+        timeout_ms: float = 1000
+    ) -> torch.Tensor:
+        """
+        Make prediction with batching.
+
+        Args:
+            input_data: Input tensor
+            priority: Request priority
+            timeout_ms: Request timeout
+
+        Returns:
+            Model prediction
+        """
+        request_id = f"req_{self.total_requests}"
+        self.total_requests += 1
+
+        # Create request
+        request = InferenceRequest(
+            request_id=request_id,
+            input_data=input_data,
+            priority=priority,
+            timeout_ms=timeout_ms
+        )
+
+        # Create response future
+        future = asyncio.Future()
+        self.pending_responses[request_id] = future
+
+        # Add to batch queue
+        self.batcher.add_request(request)
+
+        # Wait for result
+        try:
+            result = await asyncio.wait_for(future, timeout=timeout_ms/1000)
+            return result
+        except asyncio.TimeoutError:
+            del self.pending_responses[request_id]
+            raise TimeoutError(f"Request {request_id} timed out")
+
+    async def _process_batches(self):
+        """Continuous batch processing loop."""
+        while True:
+            # Get batch
+            batch = await self.batcher.get_batch()
+
+            if not batch:
+                await asyncio.sleep(0.001)  # Small sleep to prevent busy waiting
+                continue
+
+            # Process batch
+            await self._execute_batch(batch)
+
+    async def _execute_batch(self, batch: List[InferenceRequest]):
+        """Execute inference on batch."""
+        start_time = time.time()
+
+        # Prepare batch tensor
+        batch_inputs = torch.stack([
+            req.input_data.to(self.device) for req in batch
+        ])
+
+        # Run inference
+        with torch.no_grad():
+            if self.enable_amp:
+                with torch.cuda.amp.autocast():
+                    outputs = self.model(batch_inputs)
+            else:
+                outputs = self.model(batch_inputs)
+
+        # Distribute results
+        for i, request in enumerate(batch):
+            if request.request_id in self.pending_responses:
+                future = self.pending_responses[request.request_id]
+                future.set_result(outputs[i])
+                del self.pending_responses[request.request_id]
+
+        # Update metrics
+        batch_latency = (time.time() - start_time) * 1000
+        self.latencies.append(batch_latency)
+        self.total_batches += 1
+
+        logger.debug(
+            f"Processed batch of {len(batch)} requests in {batch_latency:.2f}ms"
+        )
+
+    def get_metrics(self) -> Dict[str, float]:
+        """Get serving metrics."""
+        if not self.latencies:
+            return {}
+
+        import numpy as np
+        latencies = list(self.latencies)
+
+        return {
+            'total_requests': self.total_requests,
+            'total_batches': self.total_batches,
+            'avg_batch_size': self.total_requests / max(1, self.total_batches),
+            'latency_p50': np.percentile(latencies, 50),
+            'latency_p95': np.percentile(latencies, 95),
+            'latency_p99': np.percentile(latencies, 99),
+            'throughput_rps': self.total_requests / sum(latencies) * 1000
+        }
+
+# Example usage
+async def serve_model():
+    """Example inference serving."""
+    # Load model
+    model = load_model("model.pth")
+
+    # Initialize optimizer
+    optimizer = InferenceOptimizer(
+        model=model,
+        max_batch_size=32,
+        timeout_ms=10,
+        enable_amp=True
+    )
+
+    # Start server
+    await optimizer.start()
+
+    # Simulate requests
+    async def make_request():
+        input_data = torch.randn(3, 224, 224)
+        result = await optimizer.predict(input_data)
+        return result
+
+    # Process multiple concurrent requests
+    results = await asyncio.gather(*[
+        make_request() for _ in range(100)
+    ])
+
+    # Get metrics
+    metrics = optimizer.get_metrics()
+    print(f"Serving Metrics:")
+    print(f"  Total requests: {metrics['total_requests']}")
+    print(f"  Avg batch size: {metrics['avg_batch_size']:.1f}")
+    print(f"  Latency p95: {metrics['latency_p95']:.2f}ms")
+    print(f"  Throughput: {metrics['throughput_rps']:.1f} req/s")
+
+# Run server
+# asyncio.run(serve_model())
+\end{lstlisting}
+
 \section{Edge Deployment and Resource Optimization}
 
 Edge deployment requires aggressive optimization for mobile and IoT devices.
@@ -1097,6 +1615,932 @@ class EdgeDeployer:
         results['all_constraints_met'] = all_ok
 
         return results
+\end{lstlisting}
+
+\section{Caching Strategies}
+
+Caching stores frequently accessed predictions to avoid redundant model inference, reducing latency and computational cost. For recommendation systems where user preferences change slowly, caching 10-minute-old predictions is often acceptable and eliminates 70-90\% of inference requests. A recommendation system serving 1 million requests per hour with 75\% cache hit rate processes only 250k model inferences, reducing infrastructure cost by 75\%.
+
+\subsection{Cache Fundamentals}
+
+Effective caching requires balancing freshness, hit rate, and memory usage:
+
+\textbf{Cache Invalidation Strategies} determine when cached values become stale. Time-to-live (TTL) invalidation expires entries after fixed duration---recommendation predictions cached for 5 minutes, feature embeddings for 1 hour. Event-driven invalidation clears cache when underlying data changes---invalidate user embedding when user updates profile, invalidate product recommendations when new products arrive. Hybrid approaches combine both: 1-hour TTL but immediate invalidation on critical events.
+
+\textbf{Cache Eviction Policies} determine which entries to remove when cache is full. Least Recently Used (LRU) evicts entries not accessed recently, performing well when access patterns have temporal locality. Least Frequently Used (LFU) evicts entries with lowest access count, performing well when some items have persistently high popularity. Adaptive Replacement Cache (ARC) balances recency and frequency, adapting to workload patterns automatically.
+
+\textbf{Cache Hierarchies} use multiple cache tiers with different characteristics. L1 in-process cache (millisecond latency, small size) stores very hot data---recent user sessions. L2 distributed cache (5-10ms latency, large size) stores moderately popular data across all servers. L3 persistent cache (20-50ms latency, massive size) stores rarely accessed but expensive-to-compute results. Check L1, then L2, then L3, then compute and backfill all levels.
+
+\subsection{Distributed Caching}
+
+Production systems require distributed caching across multiple servers:
+
+\textbf{Redis} provides in-memory key-value storage with persistence, replication, and clustering. Store prediction results keyed by input hash, enabling fast lookup. Redis supports TTL at key level, automatic eviction policies (LRU, LFU), and pub/sub for cache invalidation coordination. Typical latency: 1-2ms for local Redis, 5-10ms for network Redis.
+
+\textbf{Memcached} offers simpler in-memory caching with lower overhead than Redis. Purely memory-based with no persistence, making it faster but less durable. Consistent hashing distributes keys across cluster nodes, enabling horizontal scaling. Use Memcached when cache is purely transient and persistence isn't needed---session data, temporary computation results.
+
+\textbf{Content Delivery Networks (CDN)} cache at edge locations near users, minimizing network latency. CloudFront, Cloudflare, and Fastly cache API responses close to users---US East user gets cached response from Virginia, EU user from Frankfurt. CDN caching works best for user-independent or user-segment-level predictions where many users share results.
+
+\subsection{Intelligent Prefetching}
+
+Prefetching predicts future requests and precomputes results before they're requested:
+
+\textbf{Pattern-Based Prefetching} learns common access sequences. Users who view product A often view product B next---when caching recommendations for A, also compute and cache B. Session history predicts next requests: after viewing 3 action movies, likely to request more action recommendations. Prefetch based on probability weighted by computation cost.
+
+\textbf{Predictive Prefetching} uses ML to predict future requests. Train a model on historical access logs to predict which users will request recommendations in the next hour. Batch-compute predictions for predicted users during low-traffic periods, populating cache before requests arrive. This shifts computation from peak to off-peak hours, reducing required capacity.
+
+\textbf{Cache Warming} preloads cache before traffic arrives. Before launching new product category, precompute recommendations for all user segments. Before marketing email send, precompute predictions for email recipients. This prevents cache stampede when thousands of users simultaneously request the same uncached data.
+
+\subsection{Cache Stampede Mitigation}
+
+Cache stampede occurs when popular cache entry expires and thousands of concurrent requests all try to recompute it simultaneously:
+
+\textbf{Probabilistic Early Expiration} randomly expires hot entries slightly before TTL, spreading recomputation over time instead of at exact TTL moment. Entry with 10-minute TTL might expire anywhere between 9-10 minutes with probability increasing linearly. This prevents synchronized expiration across distributed systems.
+
+\textbf{Lock-Based Computation} allows only one thread to recompute expired value while others wait. When cache miss detected, acquire distributed lock (using Redis SETNX or similar). If lock acquired, compute value and update cache. If lock held by another thread, wait briefly and retry cache lookup---the lock holder will populate cache shortly.
+
+\textbf{Stale-While-Revalidate} serves stale cached value while asynchronously recomputing fresh value. Mark cache entries as ``stale but usable`` for grace period after TTL. On access to stale entry, immediately return stale value while triggering background refresh. This maintains low latency during cache refresh.
+
+\subsection{CachingManager: Production Caching Framework}
+
+\begin{lstlisting}[language=Python, caption={Intelligent Caching System}]
+from typing import Dict, List, Optional, Any, Callable
+from dataclasses import dataclass
+import time
+import hashlib
+import json
+from collections import OrderedDict
+import redis
+import logging
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class CacheEntry:
+    """
+    Cache entry with metadata.
+
+    Attributes:
+        key: Cache key
+        value: Cached value
+        created_at: Creation timestamp
+        accessed_at: Last access timestamp
+        access_count: Total access count
+        ttl_seconds: Time to live
+    """
+    key: str
+    value: Any
+    created_at: float
+    accessed_at: float
+    access_count: int
+    ttl_seconds: float
+
+    def is_expired(self) -> bool:
+        """Check if entry expired."""
+        age = time.time() - self.created_at
+        return age > self.ttl_seconds
+
+    def is_stale(self, staleness_threshold: float = 0.9) -> bool:
+        """Check if entry is stale (close to expiration)."""
+        age = time.time() - self.created_at
+        return age > (self.ttl_seconds * staleness_threshold)
+
+class LRUCache:
+    """
+    Least Recently Used cache implementation.
+
+    Thread-safe LRU cache with TTL support.
+
+    Example:
+        >>> cache = LRUCache(max_size=1000, default_ttl=300)
+        >>> cache.put("key", "value")
+        >>> value = cache.get("key")
+    """
+
+    def __init__(self, max_size: int = 10000, default_ttl: float = 300):
+        """
+        Initialize LRU cache.
+
+        Args:
+            max_size: Maximum number of entries
+            default_ttl: Default TTL in seconds
+        """
+        self.max_size = max_size
+        self.default_ttl = default_ttl
+        self.cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        self.hits = 0
+        self.misses = 0
+
+        logger.info(f"Initialized LRUCache: max_size={max_size}, ttl={default_ttl}s")
+
+    def get(self, key: str) -> Optional[Any]:
+        """
+        Get value from cache.
+
+        Args:
+            key: Cache key
+
+        Returns:
+            Cached value or None if miss/expired
+        """
+        if key not in self.cache:
+            self.misses += 1
+            return None
+
+        entry = self.cache[key]
+
+        # Check expiration
+        if entry.is_expired():
+            del self.cache[key]
+            self.misses += 1
+            return None
+
+        # Update access metadata
+        entry.accessed_at = time.time()
+        entry.access_count += 1
+
+        # Move to end (most recently used)
+        self.cache.move_to_end(key)
+
+        self.hits += 1
+        return entry.value
+
+    def put(self, key: str, value: Any, ttl: Optional[float] = None):
+        """
+        Put value in cache.
+
+        Args:
+            key: Cache key
+            value: Value to cache
+            ttl: TTL in seconds (uses default if None)
+        """
+        ttl = ttl or self.default_ttl
+
+        # Remove existing entry
+        if key in self.cache:
+            del self.cache[key]
+
+        # Evict LRU if at capacity
+        elif len(self.cache) >= self.max_size:
+            # Remove first item (least recently used)
+            self.cache.popitem(last=False)
+
+        # Add new entry
+        entry = CacheEntry(
+            key=key,
+            value=value,
+            created_at=time.time(),
+            accessed_at=time.time(),
+            access_count=0,
+            ttl_seconds=ttl
+        )
+
+        self.cache[key] = entry
+
+    def invalidate(self, key: str):
+        """Invalidate cache entry."""
+        if key in self.cache:
+            del self.cache[key]
+
+    def clear(self):
+        """Clear entire cache."""
+        self.cache.clear()
+        self.hits = 0
+        self.misses = 0
+
+    @property
+    def hit_rate(self) -> float:
+        """Calculate cache hit rate."""
+        total = self.hits + self.misses
+        return self.hits / total if total > 0 else 0
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        return {
+            'size': len(self.cache),
+            'max_size': self.max_size,
+            'hits': self.hits,
+            'misses': self.misses,
+            'hit_rate': self.hit_rate,
+            'utilization': len(self.cache) / self.max_size
+        }
+
+class DistributedCache:
+    """
+    Distributed cache using Redis.
+
+    Multi-tier caching with local L1 and distributed L2.
+
+    Example:
+        >>> cache = DistributedCache(
+        ...     redis_url="redis://localhost:6379"
+        ... )
+        >>> await cache.put("key", "value", ttl=300)
+        >>> value = await cache.get("key")
+    """
+
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379",
+        l1_size: int = 1000,
+        l1_ttl: float = 60,
+        key_prefix: str = "ml_cache"
+    ):
+        """
+        Initialize distributed cache.
+
+        Args:
+            redis_url: Redis connection URL
+            l1_size: L1 cache size
+            l1_ttl: L1 cache TTL
+            key_prefix: Prefix for Redis keys
+        """
+        # L1: Local in-process cache
+        self.l1_cache = LRUCache(max_size=l1_size, default_ttl=l1_ttl)
+
+        # L2: Distributed Redis cache
+        self.redis_client = redis.from_url(redis_url, decode_responses=True)
+        self.key_prefix = key_prefix
+
+        logger.info(f"Initialized DistributedCache with L1 and Redis L2")
+
+    def _make_key(self, key: str) -> str:
+        """Generate Redis key with prefix."""
+        return f"{self.key_prefix}:{key}"
+
+    async def get(self, key: str) -> Optional[Any]:
+        """
+        Get value from cache (L1 then L2).
+
+        Args:
+            key: Cache key
+
+        Returns:
+            Cached value or None
+        """
+        # Try L1 first
+        value = self.l1_cache.get(key)
+        if value is not None:
+            return value
+
+        # Try L2 (Redis)
+        redis_key = self._make_key(key)
+        value_str = self.redis_client.get(redis_key)
+
+        if value_str is not None:
+            # Deserialize
+            value = json.loads(value_str)
+
+            # Backfill L1
+            self.l1_cache.put(key, value)
+
+            return value
+
+        return None
+
+    async def put(self, key: str, value: Any, ttl: float = 300):
+        """
+        Put value in cache (both L1 and L2).
+
+        Args:
+            key: Cache key
+            value: Value to cache
+            ttl: TTL in seconds
+        """
+        # Update L1
+        self.l1_cache.put(key, value, ttl=min(ttl, self.l1_cache.default_ttl))
+
+        # Update L2 (Redis)
+        redis_key = self._make_key(key)
+        value_str = json.dumps(value)
+        self.redis_client.setex(redis_key, int(ttl), value_str)
+
+    async def invalidate(self, key: str):
+        """Invalidate from both L1 and L2."""
+        self.l1_cache.invalidate(key)
+        redis_key = self._make_key(key)
+        self.redis_client.delete(redis_key)
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        l1_stats = self.l1_cache.get_stats()
+
+        return {
+            'l1': l1_stats,
+            'l2_connected': self.redis_client.ping()
+        }
+
+class CachingManager:
+    """
+    High-level caching manager with prefetching and stampede prevention.
+
+    Provides intelligent caching with stale-while-revalidate.
+
+    Example:
+        >>> manager = CachingManager(cache=distributed_cache)
+        >>> result = await manager.get_or_compute(
+        ...     key="user_123",
+        ...     compute_fn=lambda: model.predict(user_data)
+        ... )
+    """
+
+    def __init__(
+        self,
+        cache: DistributedCache,
+        staleness_threshold: float = 0.9,
+        enable_prefetch: bool = True
+    ):
+        """
+        Initialize caching manager.
+
+        Args:
+            cache: Cache backend
+            staleness_threshold: Threshold for stale-while-revalidate
+            enable_prefetch: Enable predictive prefetching
+        """
+        self.cache = cache
+        self.staleness_threshold = staleness_threshold
+        self.enable_prefetch = enable_prefetch
+
+        # Track pending computations to prevent stampede
+        self.pending_computations: Dict[str, asyncio.Lock] = {}
+
+        logger.info("Initialized CachingManager")
+
+    async def get_or_compute(
+        self,
+        key: str,
+        compute_fn: Callable,
+        ttl: float = 300
+    ) -> Any:
+        """
+        Get from cache or compute if missing.
+
+        Implements stale-while-revalidate for hot keys.
+
+        Args:
+            key: Cache key
+            compute_fn: Function to compute value if cache miss
+            ttl: TTL for cached value
+
+        Returns:
+            Cached or computed value
+        """
+        # Try cache
+        value = await self.cache.get(key)
+
+        if value is not None:
+            # Check if stale - trigger background refresh if needed
+            # (simplified: would need entry metadata in production)
+            return value
+
+        # Cache miss - compute with stampede prevention
+        return await self._compute_with_lock(key, compute_fn, ttl)
+
+    async def _compute_with_lock(
+        self,
+        key: str,
+        compute_fn: Callable,
+        ttl: float
+    ) -> Any:
+        """
+        Compute value with distributed lock to prevent stampede.
+
+        Args:
+            key: Cache key
+            compute_fn: Computation function
+            ttl: TTL for result
+
+        Returns:
+            Computed value
+        """
+        # Get or create lock for this key
+        if key not in self.pending_computations:
+            self.pending_computations[key] = asyncio.Lock()
+
+        lock = self.pending_computations[key]
+
+        # Try to acquire lock
+        if lock.locked():
+            # Another task is computing - wait and retry cache
+            await asyncio.sleep(0.1)
+            value = await self.cache.get(key)
+            if value is not None:
+                return value
+
+        async with lock:
+            # Double-check cache (another task may have computed)
+            value = await self.cache.get(key)
+            if value is not None:
+                return value
+
+            # Compute value
+            logger.info(f"Cache miss - computing value for {key}")
+            value = compute_fn()
+
+            # Cache result
+            await self.cache.put(key, value, ttl=ttl)
+
+            return value
+
+    async def prefetch(self, keys: List[str], compute_fn: Callable, ttl: float = 300):
+        """
+        Prefetch values for given keys.
+
+        Args:
+            keys: Keys to prefetch
+            compute_fn: Function to compute values
+            ttl: TTL for cached values
+        """
+        if not self.enable_prefetch:
+            return
+
+        logger.info(f"Prefetching {len(keys)} keys")
+
+        for key in keys:
+            # Check if already cached
+            value = await self.cache.get(key)
+            if value is None:
+                # Compute and cache
+                value = compute_fn(key)
+                await self.cache.put(key, value, ttl=ttl)
+
+# Example usage
+async def caching_example():
+    """Example caching usage."""
+    # Initialize cache
+    cache = DistributedCache(redis_url="redis://localhost:6379")
+    manager = CachingManager(cache=cache)
+
+    # Define expensive computation
+    def compute_recommendation(user_id):
+        # Expensive model inference
+        return model.predict(user_id)
+
+    # Get with caching
+    result = await manager.get_or_compute(
+        key=f"rec:user_123",
+        compute_fn=lambda: compute_recommendation("user_123"),
+        ttl=600  # 10 minutes
+    )
+
+    # Prefetch for predicted users
+    predicted_users = ["user_200", "user_201", "user_202"]
+    await manager.prefetch(
+        keys=[f"rec:{uid}" for uid in predicted_users],
+        compute_fn=lambda key: compute_recommendation(key.split(":")[1]),
+        ttl=600
+    )
+
+    # Get stats
+    stats = cache.get_stats()
+    print(f"Cache Stats: {stats}")
+
+# asyncio.run(caching_example())
+\end{lstlisting}
+
+\section{Auto-Scaling and Load Management}
+
+Auto-scaling dynamically adjusts computational resources based on demand, maintaining performance during traffic spikes while minimizing cost during quiet periods. A properly configured auto-scaling system handles 10x traffic increases automatically, preventing service degradation without over-provisioning infrastructure. For ML serving with variable daily patterns---morning surge, afternoon lull, evening peak---auto-scaling reduces average instance count by 40-60\% compared to static provisioning for peak load.
+
+\subsection{Scaling Strategies}
+
+Three fundamental approaches to auto-scaling balance responsiveness and stability:
+
+\textbf{Reactive Scaling} responds to current load metrics. When CPU utilization exceeds 70\%, add instances. When it drops below 30\%, remove instances. This approach is simple but creates lag---by the time high CPU triggers scaling, users already experience degraded performance. Cold start time (30-60 seconds for container initialization, 2-5 minutes for model loading) delays relief. Reactive scaling works for gradual load changes but fails for sudden spikes.
+
+\textbf{Proactive Scaling} predicts future load and scales preemptively. Train a time series model on historical traffic patterns to forecast load 5-10 minutes ahead. Scale up before predicted traffic arrives, eliminating cold start latency. This approach handles predictable patterns (daily cycles, weekly patterns, marketing campaigns) effectively. The prediction model continuously learns, adapting to changing traffic patterns.
+
+\textbf{Hybrid Scaling} combines reactive baseline with proactive adjustments. Use predictive scaling for anticipated load changes, plus reactive scaling as safety net for unexpected spikes. Set minimum instances based on minimum expected load, use predictions for normal scaling, and allow reactive metrics to trigger emergency scaling beyond predictions. This provides both efficiency and reliability.
+
+\subsection{Load Prediction}
+
+Accurate load prediction enables effective proactive scaling:
+
+\textbf{Time Series Forecasting} models historical load patterns. Seasonal ARIMA captures daily and weekly cycles---Monday morning surge, Friday afternoon dropoff. Prophet (Facebook's forecasting library) handles multiple seasonality levels and holiday effects. Gradient boosting models (XGBoost, LightGBM) incorporate external features---marketing events, weather, competitor actions---alongside historical load.
+
+Train on months of historical data with features: hour of day, day of week, is\_holiday, recent\_trend (last hour's growth rate), special\_event (marketing campaign, product launch). Forecast next 15 minutes to 2 hours depending on cold start duration. Retrain weekly to adapt to shifting patterns.
+
+\textbf{Anomaly Detection} identifies unusual patterns requiring different scaling behavior. Black Friday traffic differs from normal Friday---don't trust historical patterns. Detect anomalies using isolation forest or statistical methods (load >3$\sigma$ from predicted mean). Switch to conservative over-provisioning during detected anomalies.
+
+\textbf{Multi-Model Forecasting} combines multiple prediction models for robustness. Ensemble ARIMA, Prophet, and gradient boosting; use median prediction to reduce single-model bias. If models disagree significantly (high variance), increase safety buffer to handle uncertainty.
+
+\subsection{Scaling Policies}
+
+Effective policies prevent oscillation and handle edge cases:
+
+\textbf{Cooldown Periods} prevent rapid scaling cycles. After scaling action, wait cooldown period (5-10 minutes) before next scale. Without cooldown, momentary load spike triggers scale-up, load normalizes, system scales down, next spike triggers scale-up again---constant churn wastes resources and destabilizes service.
+
+\textbf{Rate Limiting} bounds scaling speed. Scale up by maximum 50\% per step (15→23 instances, not 15→50). Scale down by maximum 20\% per step. Gradual scaling prevents overwhelming downstream dependencies and allows monitoring for problems at each step.
+
+\textbf{Minimum and Maximum Constraints} define operational bounds. Minimum instances (typically 2-5) ensure availability and handle baseline load. Maximum instances (based on budget, downstream capacity, or license limits) prevent runaway costs from bugs or attacks. Breaching maximum instances triggers alerts for manual intervention.
+
+\textbf{Health-Based Scaling} considers instance health not just count. If 10 instances exist but 3 are unhealthy (failing health checks), effective capacity is 7. Scale based on healthy instance count and their utilization, not total instance count.
+
+\subsection{Cold Start Mitigation}
+
+Model serving cold start creates scaling lag:
+
+\textbf{Warm Instance Pool} maintains ready-to-serve instances before they're needed. Keep 2-3 instances warmed (model loaded, caches populated) but not receiving traffic. When scaling up, immediately activate warm instances while starting fresh ones. This provides instant capacity for first wave of scale-up.
+
+\textbf{Progressive Model Loading} stages initialization to serve requests faster. Load lightweight base model immediately (responds in 30 seconds), serve requests with it while loading full model in background (takes 2 minutes). Requests get slightly degraded accuracy initially but avoid timeout. Swap to full model when ready.
+
+\textbf{Lazy Cache Population} serves requests without cache initially, populating cache organically. Don't block instance startup waiting for cache warm-up. Accept higher latency for first N requests while cache fills from real traffic.
+
+\subsection{Cost Optimization}
+
+Auto-scaling should minimize cost while meeting SLAs:
+
+\textbf{Spot Instances for Batch Workload} use discounted spot instances for elastic capacity. Run minimum instances on on-demand for reliability, scale-up uses spot instances (60-80\% cheaper). ML inference tolerates occasional spot termination---shift traffic to other instances, terminate spot, request replacement. Avoid spot for stateful or latency-critical workloads.
+
+\textbf{Right-Sizing Instances} matches instance type to workload. CPU-intensive models use compute-optimized instances (C5), GPU models use P3/P4, memory-intensive models use memory-optimized (R5). Oversized instances (running small model on xlarge instance) wastes money; undersized creates artificial scale-up need.
+
+\textbf{Reserved Instance Planning} commits to baseline capacity at discount. Analyze minimum daily instances over past 3 months---if always \ensuremath{\geq}10 instances, purchase 10 reserved instances (30-60\% discount), use on-demand/spot for scale beyond baseline. Reserved instances provide cost efficiency without sacrificing elasticity.
+
+\subsection{AutoScaler: Production Implementation}
+
+\begin{lstlisting}[language=Python, caption={Intelligent Auto-Scaling Framework}]
+from typing import Dict, List, Optional, Deque
+from dataclasses import dataclass
+from collections import deque
+from datetime import datetime, timedelta
+import numpy as np
+from sklearn.ensemble import GradientBoostingRegressor
+import logging
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class ScalingMetrics:
+    """
+    Metrics for scaling decisions.
+
+    Attributes:
+        timestamp: Metric timestamp
+        request_rate: Requests per second
+        cpu_utilization: Average CPU utilization (0-1)
+        memory_utilization: Average memory utilization (0-1)
+        p95_latency: 95th percentile latency (ms)
+        error_rate: Error rate (0-1)
+        instance_count: Current instance count
+    """
+    timestamp: datetime
+    request_rate: float
+    cpu_utilization: float
+    memory_utilization: float
+    p95_latency: float
+    error_rate: float
+    instance_count: int
+
+class LoadPredictor:
+    """
+    Predict future load for proactive scaling.
+
+    Uses time series features and gradient boosting.
+
+    Example:
+        >>> predictor = LoadPredictor()
+        >>> predictor.train(historical_data)
+        >>> predicted_load = predictor.predict(minutes_ahead=10)
+    """
+
+    def __init__(self):
+        """Initialize load predictor."""
+        self.model = GradientBoostingRegressor(
+            n_estimators=100,
+            max_depth=5,
+            learning_rate=0.1,
+            random_state=42
+        )
+        self.is_trained = False
+        self.history: Deque[ScalingMetrics] = deque(maxlen=10000)
+
+        logger.info("Initialized LoadPredictor")
+
+    def _extract_features(self, timestamp: datetime) -> Dict[str, float]:
+        """
+        Extract features for prediction.
+
+        Args:
+            timestamp: Target timestamp
+
+        Returns:
+            Feature dictionary
+        """
+        # Time-based features
+        features = {
+            'hour': timestamp.hour,
+            'day_of_week': timestamp.weekday(),
+            'is_weekend': 1 if timestamp.weekday() >= 5 else 0,
+            'is_business_hours': 1 if 9 <= timestamp.hour <= 17 else 0,
+            'minute_of_day': timestamp.hour * 60 + timestamp.minute
+        }
+
+        # Recent history features
+        if len(self.history) > 0:
+            recent_loads = [m.request_rate for m in list(self.history)[-60:]]
+            features['recent_mean'] = np.mean(recent_loads)
+            features['recent_std'] = np.std(recent_loads)
+            features['recent_max'] = np.max(recent_loads)
+            features['trend'] = recent_loads[-1] - recent_loads[0] if len(recent_loads) > 1 else 0
+
+            # Same hour yesterday
+            target_window = timestamp - timedelta(days=1)
+            yesterday_loads = [
+                m.request_rate for m in self.history
+                if abs((m.timestamp - target_window).total_seconds()) < 1800
+            ]
+            features['yesterday_same_hour'] = np.mean(yesterday_loads) if yesterday_loads else features['recent_mean']
+
+        else:
+            # Default features when no history
+            features.update({
+                'recent_mean': 0,
+                'recent_std': 0,
+                'recent_max': 0,
+                'trend': 0,
+                'yesterday_same_hour': 0
+            })
+
+        return features
+
+    def record_metric(self, metric: ScalingMetrics):
+        """Record metric for history."""
+        self.history.append(metric)
+
+    def train(self, historical_metrics: List[ScalingMetrics]):
+        """
+        Train predictor on historical data.
+
+        Args:
+            historical_metrics: Historical metrics
+        """
+        logger.info(f"Training on {len(historical_metrics)} samples")
+
+        # Prepare training data
+        X = []
+        y = []
+
+        for i, metric in enumerate(historical_metrics):
+            features = self._extract_features(metric.timestamp)
+            X.append(list(features.values()))
+            y.append(metric.request_rate)
+
+        X = np.array(X)
+        y = np.array(y)
+
+        # Train model
+        self.model.fit(X, y)
+        self.is_trained = True
+
+        logger.info("Training complete")
+
+    def predict(self, minutes_ahead: int = 10) -> float:
+        """
+        Predict load N minutes in the future.
+
+        Args:
+            minutes_ahead: Minutes to forecast
+
+        Returns:
+            Predicted request rate
+        """
+        if not self.is_trained:
+            logger.warning("Predictor not trained, returning current load")
+            if self.history:
+                return self.history[-1].request_rate
+            return 0
+
+        target_time = datetime.now() + timedelta(minutes=minutes_ahead)
+        features = self._extract_features(target_time)
+
+        X = np.array([list(features.values())])
+        predicted_load = self.model.predict(X)[0]
+
+        return max(0, predicted_load)  # Ensure non-negative
+
+class AutoScaler:
+    """
+    Intelligent auto-scaling with predictive and reactive policies.
+
+    Combines load prediction with reactive safeguards.
+
+    Example:
+        >>> scaler = AutoScaler(
+        ...     min_instances=5,
+        ...     max_instances=50,
+        ...     target_utilization=0.7
+        ... )
+        >>> scaler.predictor.train(historical_data)
+        >>> action = scaler.decide_scaling(current_metrics)
+    """
+
+    def __init__(
+        self,
+        min_instances: int = 2,
+        max_instances: int = 100,
+        target_utilization: float = 0.7,
+        target_latency_ms: float = 100,
+        cooldown_seconds: int = 300,
+        max_scale_up_ratio: float = 0.5,
+        max_scale_down_ratio: float = 0.2
+    ):
+        """
+        Initialize auto-scaler.
+
+        Args:
+            min_instances: Minimum instances
+            max_instances: Maximum instances
+            target_utilization: Target CPU utilization
+            target_latency_ms: Target p95 latency
+            cooldown_seconds: Cooldown between scaling actions
+            max_scale_up_ratio: Maximum fraction to scale up
+            max_scale_down_ratio: Maximum fraction to scale down
+        """
+        self.min_instances = min_instances
+        self.max_instances = max_instances
+        self.target_utilization = target_utilization
+        self.target_latency_ms = target_latency_ms
+        self.cooldown_seconds = cooldown_seconds
+        self.max_scale_up_ratio = max_scale_up_ratio
+        self.max_scale_down_ratio = max_scale_down_ratio
+
+        self.predictor = LoadPredictor()
+        self.last_scale_time: Optional[datetime] = None
+
+        logger.info(
+            f"Initialized AutoScaler: "
+            f"instances=[{min_instances}, {max_instances}], "
+            f"target_util={target_utilization}"
+        )
+
+    def decide_scaling(
+        self,
+        current_metrics: ScalingMetrics,
+        use_prediction: bool = True
+    ) -> Dict[str, any]:
+        """
+        Decide scaling action.
+
+        Args:
+            current_metrics: Current system metrics
+            use_prediction: Use predictive scaling
+
+        Returns:
+            Scaling decision with target instance count
+        """
+        self.predictor.record_metric(current_metrics)
+
+        # Check cooldown
+        if self.last_scale_time is not None:
+            elapsed = (datetime.now() - self.last_scale_time).total_seconds()
+            if elapsed < self.cooldown_seconds:
+                return {
+                    'action': 'none',
+                    'reason': f'cooldown ({self.cooldown_seconds - elapsed:.0f}s remaining)',
+                    'current_instances': current_metrics.instance_count,
+                    'target_instances': current_metrics.instance_count
+                }
+
+        current_instances = current_metrics.instance_count
+
+        # Predictive scaling
+        predicted_target = None
+        if use_prediction and self.predictor.is_trained:
+            predicted_load = self.predictor.predict(minutes_ahead=10)
+            capacity_per_instance = current_metrics.request_rate / max(1, current_instances)
+
+            predicted_target = int(np.ceil(
+                predicted_load / (capacity_per_instance * self.target_utilization)
+            ))
+
+        # Reactive scaling based on current metrics
+        reactive_target = current_instances
+
+        # Scale up if CPU or latency exceeds threshold
+        if current_metrics.cpu_utilization > 0.8 or current_metrics.p95_latency > self.target_latency_ms * 1.5:
+            reactive_target = int(np.ceil(current_instances * 1.3))
+
+        # Scale down if CPU is low and latency is good
+        elif current_metrics.cpu_utilization < 0.4 and current_metrics.p95_latency < self.target_latency_ms * 0.8:
+            reactive_target = int(np.floor(current_instances * 0.8))
+
+        # Combine predictive and reactive
+        if predicted_target is not None:
+            # Use max of predictive and reactive for safety
+            target_instances = max(predicted_target, reactive_target)
+            scaling_mode = 'predictive+reactive'
+        else:
+            target_instances = reactive_target
+            scaling_mode = 'reactive'
+
+        # Apply constraints
+        target_instances = max(self.min_instances, min(self.max_instances, target_instances))
+
+        # Apply rate limiting
+        if target_instances > current_instances:
+            max_increase = int(current_instances * (1 + self.max_scale_up_ratio))
+            target_instances = min(target_instances, max_increase)
+        elif target_instances < current_instances:
+            max_decrease = int(current_instances * (1 - self.max_scale_down_ratio))
+            target_instances = max(target_instances, max_decrease)
+
+        # Determine action
+        if target_instances > current_instances:
+            action = 'scale_up'
+            self.last_scale_time = datetime.now()
+        elif target_instances < current_instances:
+            action = 'scale_down'
+            self.last_scale_time = datetime.now()
+        else:
+            action = 'none'
+
+        decision = {
+            'action': action,
+            'current_instances': current_instances,
+            'target_instances': target_instances,
+            'scaling_mode': scaling_mode,
+            'reason': self._get_reason(current_metrics, target_instances, current_instances)
+        }
+
+        if action != 'none':
+            logger.info(
+                f"Scaling decision: {action} from {current_instances} to {target_instances} "
+                f"({scaling_mode})"
+            )
+
+        return decision
+
+    def _get_reason(
+        self,
+        metrics: ScalingMetrics,
+        target: int,
+        current: int
+    ) -> str:
+        """Generate human-readable reason for scaling decision."""
+        if target > current:
+            reasons = []
+            if metrics.cpu_utilization > 0.8:
+                reasons.append(f"high CPU ({metrics.cpu_utilization:.1%})")
+            if metrics.p95_latency > self.target_latency_ms * 1.5:
+                reasons.append(f"high latency ({metrics.p95_latency:.0f}ms)")
+            if self.predictor.is_trained:
+                predicted = self.predictor.predict(10)
+                reasons.append(f"predicted load increase ({predicted:.0f} req/s)")
+            return ", ".join(reasons) if reasons else "proactive scaling"
+
+        elif target < current:
+            return f"low utilization (CPU: {metrics.cpu_utilization:.1%}, latency: {metrics.p95_latency:.0f}ms)"
+
+        else:
+            return "metrics within target"
+
+# Example usage
+def autoscaling_example():
+    """Example auto-scaling usage."""
+    # Initialize scaler
+    scaler = AutoScaler(
+        min_instances=5,
+        max_instances=50,
+        target_utilization=0.7,
+        target_latency_ms=100
+    )
+
+    # Train predictor on historical data
+    historical_data = load_historical_metrics()  # Load from monitoring system
+    scaler.predictor.train(historical_data)
+
+    # Scaling loop
+    while True:
+        # Get current metrics
+        current_metrics = ScalingMetrics(
+            timestamp=datetime.now(),
+            request_rate=get_current_request_rate(),
+            cpu_utilization=get_cpu_utilization(),
+            memory_utilization=get_memory_utilization(),
+            p95_latency=get_p95_latency(),
+            error_rate=get_error_rate(),
+            instance_count=get_instance_count()
+        )
+
+        # Decide scaling action
+        decision = scaler.decide_scaling(current_metrics, use_prediction=True)
+
+        # Execute scaling if needed
+        if decision['action'] == 'scale_up':
+            scale_up_to(decision['target_instances'])
+        elif decision['action'] == 'scale_down':
+            scale_down_to(decision['target_instances'])
+
+        # Log decision
+        logger.info(
+            f"Scaling decision: {decision['action']} "
+            f"({decision['current_instances']} -> {decision['target_instances']}) "
+            f"- {decision['reason']}"
+        )
+
+        # Wait before next check
+        time.sleep(60)
 \end{lstlisting}
 
 \section{Real-World Scenario: Scaling Recommendation System}
@@ -1515,7 +2959,7 @@ Optimize complete ML system:
 
 \begin{itemize}
     \item \textbf{Model Size Matters}: Quantization and distillation reduce size 4-10x with minimal accuracy loss
-    \item \textbf{Distributed Training}: Essential for large models—data parallelism provides linear speedup
+    \item \textbf{Distributed Training}: Essential for large models---data parallelism provides linear speedup
     \item \textbf{Edge Requires Aggression}: Mobile deployment needs multiple optimizations combined
     \item \textbf{Caching is Critical}: 70\% cache hit rate = 70\% cost reduction
     \item \textbf{Predict, Don't React}: Proactive scaling prevents latency spikes

@@ -946,7 +946,7 @@ class DVCManager:
         # Calculate actual hash
         hasher = hashlib.md5()
         with open(self.repo_path / data_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(4096), b''):
+            for chunk in iter(lambda: f.read(4096), b"):
                 hasher.update(chunk)
 
         actual_hash = hasher.hexdigest()
@@ -1474,7 +1474,7 @@ class DataLineageTracker:
                 node_id=node_id,
                 node_type=LineageNodeType(node_data['node_type']),
                 name=node_data['name'],
-                description=node_data.get('description', ''),
+                description=node_data.get('description', "),
                 schema=node_data.get('schema'),
                 location=node_data.get('location'),
                 owner=node_data.get('owner'),
@@ -2054,7 +2054,7 @@ class DataCatalog:
                         null_percentage=c.get('null_percentage'),
                         is_pii=c.get('is_pii', False),
                         pii_type=c.get('pii_type'),
-                        description=c.get('description', '')
+                        description=c.get('description', ")
                     )
                     for c in data.get('columns', [])
                 ]
@@ -2063,12 +2063,12 @@ class DataCatalog:
                     asset_id=data['asset_id'],
                     asset_type=DataAssetType(data['asset_type']),
                     name=data['name'],
-                    description=data.get('description', ''),
+                    description=data.get('description', "),
                     database=data.get('database'),
                     schema=data.get('schema'),
                     location=data.get('location'),
-                    owner=data.get('owner', ''),
-                    team=data.get('team', ''),
+                    owner=data.get('owner', "),
+                    team=data.get('team', "),
                     sensitivity=SensitivityLevel(
                         data.get('sensitivity', 'internal')
                     ),
@@ -2949,7 +2949,7 @@ class DataSchema:
                 max_value=f.get('max_value'),
                 pattern=f.get('pattern'),
                 enum_values=f.get('enum_values'),
-                description=f.get('description', '')
+                description=f.get('description', ")
             )
             for f in data['fields']
         ]
@@ -2959,7 +2959,7 @@ class DataSchema:
             version=data['version'],
             fields=fields,
             created_at=datetime.fromisoformat(data['created_at']),
-            description=data.get('description', ''),
+            description=data.get('description', "),
             metadata=data.get('metadata', {})
         )
 
@@ -4367,7 +4367,7 @@ Training data timeline:
     \item January-September 2023 - Spring/Summer cycles
 \end{itemize}
 
-The model learned that "December" was a post-holiday clearance month (based on Dec 2021 data from the 3-year window), not a high-demand period.
+The model learned that ``December`` was a post-holiday clearance month (based on Dec 2021 data from the 3-year window), not a high-demand period.
 
 Additional compounding factors:
 \begin{itemize}
@@ -4453,7 +4453,7 @@ Investigation revealed 127,000 defective parts had passed QC inspection due to s
     \item \textbf{Production waste}: \$4.2 million in good parts incorrectly rejected
     \item \textbf{Warranty claims}: \$2.8 million in replacement parts
     \item \textbf{Contract penalties}: \$5.1 million from auto manufacturer for quality violations
-    \item \textbf{Reputation}: Loss of "Preferred Supplier" status with largest customer
+    \item \textbf{Reputation}: Loss of ``Preferred Supplier`` status with largest customer
     \item \textbf{Legal}: Ongoing litigation from end consumers affected by recalls
 \end{itemize}
 

@@ -703,7 +703,7 @@ class ProjectTemplate:
 
     def _create_pyproject_toml(self):
         """Create pyproject.toml."""
-        content = f'''[tool.poetry]
+        content = f"'[tool.poetry]
 name = "{self.project_name}"
 version = "0.1.0"
 description = "ML project for {self.project_name}"
@@ -753,13 +753,13 @@ addopts = "--cov=src --cov-report=html --cov-report=term"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-'''
+"'
 
         (self.project_path / "pyproject.toml").write_text(content)
 
     def _create_requirements_txt(self):
         """Create requirements.txt."""
-        content = '''# Core ML Libraries
+        content = "'# Core ML Libraries
 numpy==1.24.0
 pandas==2.0.0
 scikit-learn==1.3.0
@@ -784,13 +784,13 @@ pytest-cov==4.1.0
 black==23.7.0
 flake8==6.0.0
 mypy==1.4.0
-'''
+"'
 
         (self.project_path / "requirements.txt").write_text(content)
 
     def _create_environment_yml(self):
         """Create environment.yml for conda."""
-        content = f'''name: {self.project_name}
+        content = f"'name: {self.project_name}
 channels:
   - conda-forge
   - defaults
@@ -799,13 +799,13 @@ dependencies:
   - pip
   - pip:
     - -r requirements.txt
-'''
+"'
 
         (self.project_path / "environment.yml").write_text(content)
 
     def _create_dockerfile(self):
         """Create Dockerfile."""
-        content = '''FROM python:3.9-slim
+        content = "'FROM python:3.9-slim
 
 WORKDIR /app
 
@@ -833,13 +833,13 @@ EXPOSE 8000
 
 # Run application
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
-'''
+"'
 
         (self.project_path / "Dockerfile").write_text(content)
 
     def _create_docker_compose(self):
         """Create docker-compose.yml."""
-        content = f'''version: '3.8'
+        content = f"'version: '3.8'
 
 services:
   {self.project_name}:
@@ -873,13 +873,13 @@ services:
 
 volumes:
   grafana-storage:
-'''
+"'
 
         (self.project_path / "docker-compose.yml").write_text(content)
 
     def _create_github_actions(self):
         """Create GitHub Actions CI/CD."""
-        content = '''name: CI/CD
+        content = "'name: CI/CD
 
 on:
   push:
@@ -924,7 +924,7 @@ jobs:
       uses: codecov/codecov-action@v3
       with:
         file: ./coverage.xml
-'''
+"'
 
         ci_path = self.project_path / ".github" / "workflows"
         ci_path.mkdir(parents=True, exist_ok=True)
@@ -933,7 +933,7 @@ jobs:
     def _create_src_structure(self):
         """Create initial source code structure."""
         # Main API file
-        api_content = '''"""Main API application."""
+        api_content = "'"""Main API application."""
 from fastapi import FastAPI
 from src.models.predictor import ModelPredictor
 
@@ -950,7 +950,7 @@ def predict(features: dict):
     """Make prediction."""
     prediction = predictor.predict(features)
     return {"prediction": prediction}
-'''
+"'
 
         api_path = self.project_path / "src" / "api"
         api_path.mkdir(exist_ok=True)
@@ -958,7 +958,7 @@ def predict(features: dict):
         (api_path / "main.py").write_text(api_content)
 
         # Model predictor
-        predictor_content = '''"""Model prediction logic."""
+        predictor_content = "'"""Model prediction logic."""
 import logging
 
 logger = logging.getLogger(__name__)
@@ -980,14 +980,14 @@ class ModelPredictor:
         """Make prediction."""
         # TODO: Implement prediction logic
         return 0.5
-'''
+"'
 
         (self.project_path / "src" / "models" / "__init__.py").touch()
         (self.project_path / "src" / "models" / "predictor.py").write_text(predictor_content)
 
     def _create_tests(self):
         """Create initial test files."""
-        test_content = '''"""Test model predictor."""
+        test_content = "'"""Test model predictor."""
 import pytest
 from src.models.predictor import ModelPredictor
 
@@ -1001,7 +1001,7 @@ def test_prediction():
     predictor = ModelPredictor()
     result = predictor.predict({"feature1": 1.0})
     assert isinstance(result, (int, float))
-'''
+"'
 
         (self.project_path / "tests" / "__init__.py").touch()
         (self.project_path / "tests" / "unit" / "__init__.py").touch()
@@ -1009,7 +1009,7 @@ def test_prediction():
 
     def _create_readme(self):
         """Create README.md."""
-        content = f'''# {self.project_name}
+        content = f"'# {self.project_name}
 
 ## Overview
 
@@ -1017,7 +1017,7 @@ ML project for {self.project_name}.
 
 ## Installation
 
-```bash
+"'bash
 # Using pip
 pip install -r requirements.txt
 
@@ -1027,34 +1027,34 @@ conda activate {self.project_name}
 
 # Using poetry
 poetry install
-```
+"'
 
 ## Usage
 
-```python
+"'python
 from src.models.predictor import ModelPredictor
 
 predictor = ModelPredictor()
 prediction = predictor.predict({{"feature1": 1.0}})
-```
+"'
 
 ### API
 
 Start the API server:
 
-```bash
+"'bash
 uvicorn src.api.main:app --reload
-```
+"'
 
 ### Docker
 
-```bash
+"'bash
 docker-compose up
-```
+"'
 
 ## Development
 
-```bash
+"'bash
 # Run tests
 pytest
 
@@ -1066,11 +1066,11 @@ flake8 src/ tests/
 
 # Type check
 mypy src/
-```
+"'
 
 ## Project Structure
 
-```
+"'
 {self.project_name}/
 |-- src/              # Source code
 |   |-- api/          # API endpoints
@@ -1083,32 +1083,32 @@ mypy src/
 |-- models/           # Trained models
 |-- config/           # Configuration
 +-- docs/             # Documentation
-```
+"'
 
 ## Contributing
 
 1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
+2. Create feature branch ('git checkout -b feature/amazing-feature')
+3. Commit changes ('git commit -m 'Add amazing feature'')
+4. Push to branch ('git push origin feature/amazing-feature')
 5. Open Pull Request
 
 ## License
 
 MIT License
-'''
+"'
 
         (self.project_path / "README.md").write_text(content)
 
     def _create_contributing(self):
         """Create CONTRIBUTING.md."""
-        content = '''# Contributing Guidelines
+        content = "'# Contributing Guidelines
 
 ## Development Setup
 
 1. Clone repository
-2. Install dependencies: `pip install -r requirements-dev.txt`
-3. Install pre-commit hooks: `pre-commit install`
+2. Install dependencies: 'pip install -r requirements-dev.txt'
+3. Install pre-commit hooks: 'pre-commit install'
 
 ## Code Standards
 
@@ -1121,9 +1121,9 @@ MIT License
 ## Testing
 
 - Write unit tests for all new code
-- Run tests before committing: `pytest`
+- Run tests before committing: 'pytest'
 - Ensure all tests pass
-- Check coverage: `pytest --cov=src`
+- Check coverage: 'pytest --cov=src'
 
 ## Pull Request Process
 
@@ -1131,14 +1131,14 @@ MIT License
 2. Update tests
 3. Ensure CI passes
 4. Request review from maintainers
-'''
+"'
 
         (self.project_path / "CONTRIBUTING.md").write_text(content)
 
     def _create_config_files(self):
         """Create configuration files."""
         # Development config
-        dev_config = '''# Development Configuration
+        dev_config = "'# Development Configuration
 environment: development
 
 model:
@@ -1158,12 +1158,12 @@ logging:
 monitoring:
   enabled: true
   prometheus_port: 9090
-'''
+"'
 
         (self.project_path / "config" / "development.yaml").write_text(dev_config)
 
         # Production config
-        prod_config = '''# Production Configuration
+        prod_config = "'# Production Configuration
 environment: production
 
 model:
@@ -1183,13 +1183,13 @@ logging:
 monitoring:
   enabled: true
   prometheus_port: 9090
-'''
+"'
 
         (self.project_path / "config" / "production.yaml").write_text(prod_config)
 
     def _create_precommit_config(self):
         """Create .pre-commit-config.yaml."""
-        content = '''repos:
+        content = "'repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
     hooks:
@@ -1216,12 +1216,12 @@ monitoring:
     hooks:
       - id: mypy
         additional_dependencies: [types-all]
-'''
+"'
 
         (self.project_path / ".pre-commit-config.yaml").write_text(content)
 
         # .gitignore
-        gitignore_content = '''# Python
+        gitignore_content = "'# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -1258,7 +1258,7 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
-'''
+"'
 
         (self.project_path / ".gitignore").write_text(gitignore_content)
 \end{lstlisting}
@@ -1707,7 +1707,7 @@ Set up a complete production-ready ML project:
 
 \section{Conclusion}
 
-This handbook has covered the complete lifecycle of production ML systems—from reproducible research environments to ethical deployment at scale. The templates, frameworks, and checklists in this appendix accelerate the journey from prototype to production.
+This handbook has covered the complete lifecycle of production ML systems---from reproducible research environments to ethical deployment at scale. The templates, frameworks, and checklists in this appendix accelerate the journey from prototype to production.
 
 \textbf{Key Principles}:
 \begin{itemize}

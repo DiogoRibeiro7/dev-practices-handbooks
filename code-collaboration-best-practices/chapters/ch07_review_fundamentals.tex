@@ -1,0 +1,48 @@
+\chapter{Code Review Fundamentals: From Gatekeeping to Collaboration}
+
+\section{Chapter Overview}
+Code review protects correctness, spreads knowledge, and reinforces team culture. When executed thoughtfully, it accelerates delivery instead of blocking it. This chapter explains the fundamentals of effective review: clarifying purpose, preparing for review, evaluating changes systematically, communicating feedback with empathy, and closing the loop with actionable outcomes.
+
+\section{Clarifying the Purpose of Review}
+Before leaving the first comment, reviewers should align on why the review exists. The primary goals are correctness, maintainability, security, and shared understanding; style enforcement or nitpicking is secondary and ideally automated. Reiterate these goals when you begin: a quick note such as ``I am focusing on error handling and concurrency'' sets expectations and keeps the discussion grounded. The shift from ``approve or reject'' to ``collaborate on quality'' changes how authors perceive feedback.
+
+\section{Preparing for Review}
+Preparation begins outside the diff. Skim the PR description, linked tickets, and evidence first so you know what problem the code solves. Reproduce context locally if needed---run the branch, execute the new tests, or load the UI. If the PR is large, plan a review strategy (file order, commit order, or top-down architecture first). Entering review with a plan prevents fatigue-driven mistakes such as skim-approving late sections.
+
+\section{Systematic Evaluation}
+Reviewers who rely on intuition miss edge cases. Instead, walk through a simple checklist:
+\begin{itemize}
+  \item Does the change satisfy the stated requirements and handle expected error conditions?
+  \item Are there obvious performance or scalability concerns?
+  \item Does the code respect existing abstractions and naming conventions?
+  \item Are tests adequate and aligned with the risk level?
+  \item Is documentation updated where behavior changed?
+\end{itemize}
+You can write the checklist in the PR comment thread or include it in personal notes; the act of checking each dimension keeps the review balanced.
+
+\section{Feedback Craft}
+High-signal feedback combines observation, rationale, and suggestion. A helpful pattern is: ``Observation (what you noticed), Impact (why it matters), Suggestion (what to change or consider).'' For example, ``The retry loop sleeps for a fixed 5 seconds; under load this can overwhelm the queue (impact). Consider exponential backoff or deferring to the shared retry helper (suggestion).'' This format avoids blunt directives and gives authors enough context to act. Reserve blocking comments for issues that must be resolved before merge; mark minor issues as optional to keep momentum.
+
+\section{Managing Tone and Empathy}
+Written feedback is easy to misinterpret. Assume positive intent from the author and be transparent about your own uncertainty by using phrases like ``I might be missing context, but...'' Recognize good work---if a clever optimization or clear test impressed you, say so. Praise builds trust and encourages authors to stay engaged with review rather than dreading it. When you find recurring issues, escalate to shared documentation or pairing sessions instead of repeating the same nit in every PR.
+
+\section{Handling Large or Risky Reviews}
+When faced with a large PR, resist the urge to rubber-stamp. Break the review into multiple sessions, focusing first on architecture and interfaces, then on implementation details. Communicate your plan in the PR discussion, e.g., ``First pass done on API layer; next pass tomorrow on data pipeline.'' If the PR truly exceeds reviewable size, suggest splitting it and provide actionable guidance on how to do so. For risky changes (migrations, security fixes), ask for extra evidence or staging replicas, and coordinate with QA or SRE before approval.
+
+\section{Balancing Speed and Quality}
+Teams often debate how quickly reviews should happen. Establish response-time expectations (for example, initial feedback within one business day) and use lightweight acknowledgment---``Looking now'' or emoji reactions---to show authors their PR is in queue. When you are blocked or traveling, reassign or communicate delays. Authors should reciprocate by responding promptly and summarizing updates so reviewers can resume quickly. Predictable cadence matters more than raw speed because it lets planners avoid review bottlenecks.
+
+\section{Closing the Loop}
+After discussions conclude, double-check that all blocking comments are resolved, tests have re-run if necessary, and follow-up tasks are tracked. Leave a final comment summarizing any important decisions or risks: ``Approved after verifying caching fix and noting that follow-up ticket ABC-123 will implement metrics.'' Such summaries become breadcrumbs for future readers scanning the timeline.
+
+\section*{Exercises}
+
+\paragraph{1. Personal checklist} Draft a five-point review checklist tailored to your team's priorities (correctness, security, performance, etc.). Use it on your next three reviews and record where it surfaced issues you would have otherwise missed.
+
+\paragraph{2. Feedback rewrite} Take a terse or unclear review comment you wrote recently and rewrite it using the Observation-Impact-Suggestion format. Compare how the new phrasing might be received.
+
+\paragraph{3. Large-PR triage} Find a historical large PR in your repository. Outline how you would review it today: which sections you would tackle first, what evidence you would request, and where you'd push for decomposition.
+
+\paragraph{4. Tone audit} Review the last week of your comments for praise versus criticism. Aim for at least one positive reinforcement per review and note whether that alters the tone of the discussion.
+
+\paragraph{5. Loop closure drill} Practice summarizing review decisions by leaving a final comment on a PR (even if it already merged) that restates key agreements and lists any follow-up work. Share the comment with your team to encourage the habit.

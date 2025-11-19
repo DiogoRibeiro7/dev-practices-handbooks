@@ -1,0 +1,411 @@
+\chapter{Atomic Commits and Logical Grouping}
+
+\section{Chapter Overview}
+A commit is atomic when it contains the minimal set of related changes needed to achieve one logical purpose. Atomic commits are self-contained, reversible, and comprehensible. They enable efficient code review, precise debugging with \texttt{git bisect}, and safe rollbacks. This chapter demonstrates how to decompose work into atomic units and explains why non-atomic commits create maintenance burdens.
+
+\section{Defining Atomicity in Version Control}
+
+An atomic commit satisfies three criteria:
+
+\begin{enumerate}
+  \item \textbf{Single Logical Purpose}: The commit accomplishes exactly one thing (fix one bug, add one feature, refactor one component)
+  \item \textbf{Completeness}: The codebase remains functional after applying the commit
+  \item \textbf{Minimal Scope}: No unrelated changes are included
+\end{enumerate}
+
+\subsection{Atomic Commit: Adding Input Validation}
+
+\begin{lstlisting}[style=code,language=Python,caption={A focused commit adding validation to one function}]
+# File: api/handlers/user.py
+def create_user(username: str, email: str, password: str):
++   # Validate inputs before processing
++   if not username or len(username) < 3:
++       raise ValueError("Username must be at least 3 characters")
++   if not email or '@' not in email:
++       raise ValueError("Invalid email address")
++   if not password or len(password) < 8:
++       raise ValueError("Password must be at least 8 characters")
++
+    user = User(username=username, email=email)
+    user.set_password(password)
+    return user
+\end{lstlisting}
+
+This commit has one purpose: add input validation to \texttt{create\_user}. The change is complete (no partial validation), minimal (only validation logic), and the system still works after applying it.
+
+\subsection{Non-Atomic Anti-Pattern: Mixed Concerns}
+
+\begin{lstlisting}[style=shell,caption={A commit mixing unrelated changes}]
+$ git show a3f9c2b --stat
+api/handlers/user.py          | 12 ++++++++++--
+api/handlers/payment.py       | 8 +++-----
+config/settings.py            | 2 +-
+frontend/components/Button.js | 45 ++++++++++++++++++++++++++++++++++++++++-
+README.md                     | 3 +--
+\end{lstlisting}
+
+This commit modifies five files across multiple concerns: user validation, payment refactoring, configuration change, UI component update, and documentation. If any part introduces a bug, the entire commit must be reverted, undoing unrelated improvements. Reviewers must context-switch between different domains, degrading review quality.
+
+\section{Benefits of Atomic Commits}
+
+\subsection{Simplified Code Review}
+Atomic commits are easier to review because reviewers need to understand only one concept at a time. Compare these two review experiences:
+
+\begin{tipbox}
+\textbf{Atomic Commit Review}: "This commit adds rate limiting to the login endpoint. I can verify the rate limit logic, test cases, and error handling in isolation."
+\end{tipbox}
+
+\begin{warningbox}
+\textbf{Non-Atomic Review}: "This commit changes authentication, refactors the database layer, updates the UI, and modifies deployment scripts. Where do I even start?"
+\end{warningbox}
+
+\subsection{Precise Debugging with Git Bisect}
+\texttt{git bisect} performs binary search through history to find the commit that introduced a bug. Atomic commits make this process efficient:
+
+\begin{lstlisting}[style=shell,caption={Using git bisect with atomic commits}]
+$ git bisect start
+$ git bisect bad HEAD
+$ git bisect good v1.2.0
+
+Bisecting: 15 revisions left to test after this (roughly 4 steps)
+[7a3f9c2] feat(auth): add rate limiting to login endpoint
+
+$ npm test  # Test fails
+$ git bisect bad
+
+Bisecting: 7 revisions left to test after this (roughly 3 steps)
+[4b2e8d1] refactor(db): extract connection pooling logic
+
+$ npm test  # Test passes
+$ git bisect good
+
+Bisecting: 3 revisions left to test after this (roughly 2 steps)
+[9f1a3c5] fix(payment): handle null transaction IDs
+
+$ npm test  # Test fails
+$ git bisect bad
+
+9f1a3c5 is the first bad commit
+\end{lstlisting}
+
+Because each commit has one purpose, bisect immediately identifies that the bug was introduced in the payment fix. With non-atomic commits, you'd still know \textit{which commit} caused the problem, but you'd have to manually investigate multiple unrelated changes within that commit.
+
+\subsection{Safe Rollbacks}
+When a production incident requires reverting a change, atomic commits allow surgical rollbacks:
+
+\begin{lstlisting}[style=shell,caption={Reverting an atomic commit cleanly}]
+$ git revert 9f1a3c5
+[develop 3e7f2a9] Revert "fix(payment): handle null transaction IDs"
+1 file changed, 3 deletions(-)
+
+# Only the payment fix is reverted; unrelated changes remain
+\end{lstlisting}
+
+With non-atomic commits, reverting requires either:
+\begin{itemize}
+  \item Reverting the entire commit (losing unrelated improvements)
+  \item Manually reverting specific parts (time-consuming and error-prone)
+\end{itemize}
+
+\section{Identifying Commit Boundaries}
+
+How do you determine what belongs in one commit versus multiple commits? Apply these heuristics:
+
+\subsection{The Single Responsibility Test}
+Can you describe the commit in one sentence without using "and"? If not, it should likely be multiple commits.
+
+\begin{itemize}
+  \item \textbf{Good}: "Add email validation to user registration"
+  \item \textbf{Bad}: "Add email validation and refactor the database layer and update documentation"
+\end{itemize}
+
+\subsection{The Review Test}
+Can a reviewer understand and approve this change in under 10 minutes? If the commit requires understanding multiple subsystems, it's too large.
+
+\subsection{The Revert Test}
+If this commit introduced a bug, would you be comfortable reverting it entirely? If parts of the commit should definitely stay, those parts belong in separate commits.
+
+\subsection{The Build Test}
+Does the code compile and pass tests after applying this commit? If not, the commit is incomplete and should include the fixes that make it buildable.
+
+\subsection{The Dependency Test}
+Ask whether downstream consumers can safely pull this commit in isolation. If configuration, schema, and code must land together, they belong in the same commit; if they can roll out independently, split them. This prevents scenarios where partially deployed code references resources that do not exist yet.
+
+\subsection{Commit Readiness Checklist}
+Before running \texttt{git commit}, pause long enough to confirm that the message explains intent, the change can be reverted without cascading rollbacks, the body mentions any manual steps or feature-flag concerns, and formatting or linting changes remain isolated from behavioral adjustments.
+
+\begin{tipbox}
+Add the checklist to your \texttt{.gitmessage} template or team handbook so reviewers can reference the same criteria when they request revisions.
+\end{tipbox}
+
+\section{Decomposing Work into Atomic Commits}
+
+\subsection{Example: Implementing a New API Endpoint}
+
+Suppose you're adding a new \texttt{/api/users/search} endpoint. The complete work spans a new database query function, the API route handler, input validation, unit and integration tests, plus documentation updates.
+
+\textbf{Non-Atomic Approach} (one large commit):
+\begin{lstlisting}[style=shell,caption={Single massive commit}]
+3f9a2b1 feat(api): add user search endpoint with tests and docs
+48 files changed, 872 insertions(+), 23 deletions(-)
+\end{lstlisting}
+
+\textbf{Atomic Approach} (logical sequence):
+\begin{lstlisting}[style=shell,caption={Decomposed into atomic commits}]
+7e3f1a2 feat(db): add user search query with pagination
+2 files changed, 87 insertions(+), 3 deletions(-)
+
+4b8c2e1 feat(api): add /users/search endpoint handler
+3 files changed, 124 insertions(+), 5 deletions(-)
+
+9a1f3d4 test(api): add unit tests for user search endpoint
+2 files changed, 156 insertions(+), 0 deletions(-)
+
+5c2e8f7 test(api): add integration tests for user search
+1 file changed, 89 insertions(+), 0 deletions(-)
+
+1d9a4b3 docs(api): document user search endpoint
+2 files changed, 47 insertions(+), 2 deletions(-)
+\end{lstlisting}
+
+Each commit is buildable, testable, and serves one purpose. During review, reviewers can approve the database logic independently from the API handler. If the integration tests reveal an issue, you know exactly which commit to investigate.
+
+\subsection{Example: Database Migration with Guard Rails}
+Complex migrations tempt engineers to ``just push it all together.'' Instead, orchestrate a series of atomic commits: first prepare the schema by adding nullable columns or new tables behind feature flags, then backfill historical data with idempotent jobs, update application logic to dual-write into both versions, switch reads once the flag is ready, and finally remove dual-write code plus deprecated columns when confidence is high.
+
+\begin{lstlisting}[style=shell,caption={Sequencing migration commits}]
+$ git log --oneline
+9d2c1fe feat(db): add address_v2 columns (behind feature flag)
+1c8a4dd chore(data): backfill address_v2 via background job
+4b7f2a1 feat(api): dual-write customer addresses to v1 and v2
+3f9e7dc feat(api): read addresses from v2 when FLAG_ADDRESS_V2 is on
+6e2a8f1 refactor(db): drop legacy address columns
+\end{lstlisting}
+
+If the new schema fails under load, you can revert only the read switch commit while keeping preparatory work in place.
+
+\section{Common Atomicity Violations}
+
+\subsection{The "While I'm Here" Commits}
+You're fixing a bug in \texttt{payment.py} and notice a typo in a nearby comment. You fix both in one commit.
+
+\begin{warningbox}
+\textbf{Problem}: The bug fix and typo correction are unrelated. If the bug fix needs to be reverted, the typo fix goes with it.
+
+\textbf{Solution}: Make two commits: one for the bug fix, one for the typo. Use \texttt{git add -p} to stage changes selectively.
+\end{warningbox}
+
+\begin{lstlisting}[style=shell,caption={Staging changes selectively}]
+$ git add -p payment.py
+# Select only the bug fix hunks, not the typo fix
+
+$ git commit -m "fix(payment): handle null transaction IDs"
+
+$ git add -p payment.py
+# Now select the typo fix hunk
+
+$ git commit -m "docs(payment): fix typo in transaction handling comment"
+\end{lstlisting}
+
+\subsection{The "Whitespace Cleanup" Commits}
+You're refactoring a function and simultaneously reformatting the entire file.
+
+\begin{warningbox}
+\textbf{Problem}: The functional change is hidden in hundreds of whitespace diffs. Reviewers cannot focus on the logic change.
+
+\textbf{Solution}: Two commits: first reformat, then refactor.
+\end{warningbox}
+
+\begin{lstlisting}[style=shell,caption={Separating formatting from logic changes}]
+$ npm run format  # Auto-format the file
+$ git add -A
+$ git commit -m "style(auth): reformat authentication module"
+
+# Now make the functional change
+$ git add -A
+$ git commit -m "refactor(auth): extract token validation into helper"
+\end{lstlisting}
+
+\subsection{The "Work in Progress" Commits}
+You commit incomplete work at the end of the day with the message "WIP" or "checkpoint."
+
+\begin{warningbox}
+\textbf{Problem}: These commits don't represent logical units of work and pollute history.
+
+\textbf{Solution}: Use \texttt{git stash} for temporary saves or create a local WIP branch. Before merging, squash WIP commits into logical units with \texttt{git rebase -i}.
+\end{warningbox}
+
+\subsection{Drive-by Refactors During Review}
+Another anti-pattern appears when authors respond to code review by batching every request, optional refactor, and opportunistic cleanup into a single ``address review comments'' commit. Future readers cannot tell which lines fixed bugs versus which lines restructured unrelated modules.
+
+\begin{warningbox}
+\textbf{Solution}: Group related review fixes into their own commits (e.g., ``fix: handle null IDs per review'') so reviewers can re-check the relevant sections quickly. Capture opportunistic refactors as separate follow-up PRs with their own context.
+\end{warningbox}
+
+\section{Tools and Techniques for Atomic Commits}
+
+\subsection{Interactive Staging with git add -p}
+\texttt{git add -p} (patch mode) lets you stage parts of files interactively:
+
+\begin{lstlisting}[style=shell,caption={Interactive staging workflow}]
+$ git add -p user.py
+diff --git a/user.py b/user.py
+@@ -10,6 +10,9 @@ def create_user(username, email):
++    if not username:
++        raise ValueError("Username required")
++
+     user = User(username=username, email=email)
+     return user
+
+Stage this hunk [y,n,q,a,d,s,e,?]? y
+
+@@ -45,7 +48,7 @@ def delete_user(user_id):
+-    # TODO: implement delete
++    # FIXME: implement delete with soft deletes
+     pass
+
+Stage this hunk [y,n,q,a,d,s,e,?]? n
+\end{lstlisting}
+
+You staged the validation logic but not the unrelated comment change. Now commit the validation, then stage and commit the comment separately.
+
+\subsection{Interactive Rebase for Cleanup}
+After finishing work, use \texttt{git rebase -i} to reorganize commits into atomic units:
+
+\begin{lstlisting}[style=shell,caption={Cleaning up commit history before pushing}]
+$ git log --oneline -5
+f3a9c2b WIP: more validation
+7e2b8d1 fix typo
+4c1f9a3 WIP: add validation
+2b8e3f7 WIP: checkpoint
+
+$ git rebase -i HEAD~4
+
+# In the editor, reorder and squash:
+pick 4c1f9a3 WIP: add validation
+squash f3a9c2b WIP: more validation
+pick 7e2b8d1 fix typo
+drop 2b8e3f7 WIP: checkpoint
+
+# Results in clean history:
+8d3f2a1 feat(user): add comprehensive input validation
+9e4b3c2 docs(user): fix typo in function comment
+\end{lstlisting}
+
+\subsection{Git Worktrees for Parallel Work}
+When working on multiple unrelated features, use worktrees to keep changes isolated:
+
+\begin{lstlisting}[style=shell,caption={Using worktrees to maintain focus}]
+$ git worktree add ../feature-search feature/user-search
+$ git worktree add ../bugfix-payment bugfix/null-transaction
+
+# Work in separate directories, avoiding mixed changes
+$ cd ../feature-search
+# Only work on search feature here
+
+$ cd ../bugfix-payment
+# Only work on payment bugfix here
+\end{lstlisting}
+
+\subsection{Commit Trailers Capture Operational Context}
+Atomic commits shine when their metadata explains why the granularity matters. Use trailers such as \texttt{Refs}, \texttt{Feature-flag}, or \texttt{Co-authored-by} to document operational details without bloating the subject line.
+
+\begin{lstlisting}[style=markdown,caption={Commit body with structured trailers}]
+fix(billing): guard zero-decimal currencies during capture
+
+Context:
+- Stripe incident #2221 showed rounding errors for JPY donations
+- regression introduced in 9f1a3c5
+
+Testing:
+- unit: BillingAmountFormatterSpec
+- integration: payment_flow.feature (JPY scenario)
+
+Feature-flag: BILLING_ZERO_DECIMAL
+Refs: INC-4471
+\end{lstlisting}
+
+Downstream tooling can parse these trailers to connect commits with incidents, flags, or rollout plans.
+
+\section{Atomic Commits in Different Workflows}
+
+\subsection{Trunk-Based Development}
+With trunk-based development (committing directly to main/trunk), atomic commits are essential. Every commit must be production-ready:
+
+\begin{lstlisting}[style=shell,caption={Atomic commits on trunk}]
+$ git log --oneline origin/main..HEAD
+9f3a2c1 feat(auth): add OAuth 2.0 support
+4e8b1d3 test(auth): add OAuth integration tests
+7c2f9a5 docs(auth): document OAuth configuration
+
+$ git push origin main  # Each commit is deployable
+\end{lstlisting}
+
+\subsection{Feature Branch Workflow}
+With feature branches, you have more flexibility. You can make messy commits locally, then clean them up before merging:
+
+\begin{lstlisting}[style=shell,caption={Messy local commits, cleaned before merge}]
+# Local feature branch (messy)
+$ git log --oneline
+a1b2c3d WIP: checkpoint
+e4f5g6h fix bug
+i7j8k9l more work
+m0n1o2p add feature
+
+# Clean up before merging
+$ git rebase -i origin/main
+# Squash and reorder into atomic commits
+
+# Clean history ready for PR
+$ git log --oneline
+3f9a2c1 feat(search): implement user search with pagination
+7e4b8d2 test(search): add comprehensive search tests
+\end{lstlisting}
+
+\subsection{Stacked Diffs and Change Stacks}
+Platforms like Gerrit, Phabricator, and GitHub's stacked PRs encourage chains of small commits that build on each other. Each diff depends on the previous one but is reviewable independently. Keep stacks healthy by ensuring every commit includes the minimal context a reviewer needs without relying on future commits, rebasing or restacking frequently so reviewers are not reading outdated diffs, and landing stacks sequentially while confirming that each commit keeps the build green before pushing the next link in the chain.
+
+\section{When to Break Atomicity Rules}
+
+\subsection{Coordinated Multi-File Refactors}
+Sometimes a refactor must touch many files simultaneously (e.g., renaming a widely-used function). These commits are large but still atomic---they have one purpose:
+
+\begin{lstlisting}[style=shell,caption={Large but atomic refactor}]
+4f8e2b1 refactor: rename getUserById to findUserById across codebase
+127 files changed, 384 insertions(+), 384 deletions(-)
+\end{lstlisting}
+
+This is acceptable because the change has one logical purpose (renaming), it's complete because every call site updates in the same commit, and it's minimal because no behavior changes slip in.
+
+\subsection{Generated Code}
+Commits including generated code (e.g., dependency lockfiles, compiled assets) may appear large but are still atomic if the generation is part of the logical change:
+
+\begin{lstlisting}[style=shell,caption={Atomic commit including generated files}]
+7c3f9a2 feat(ui): add new component library
+5 files changed, 12847 insertions(+), 89 deletions(-)
+
+# Includes source changes + package-lock.json + compiled bundle
+\end{lstlisting}
+
+\subsection{Vendor Drops and Submodules}
+Updating a vendored dependency or Git submodule can require a large single commit. Treat the vendor update as the atomic unit, commit \texttt{third\_party/lib} changes separately with a message like \texttt{chore(vendor): update libfoo to v2.4.1}, follow with a commit that adapts your code to the new version, and document any manual verification (fuzz tests, contract tests) in the vendor commit body.
+
+\section*{Exercises}
+
+\paragraph{1. Inspect your last ten commits} Determine how many commits are truly atomic, note the ones that mix concerns, and outline how you would decompose the noisy examples.
+
+\paragraph{2. Practice selective staging} Make multiple unrelated changes to one file, then use \texttt{git add -p} to create separate commits for each change.
+
+\paragraph{3. Audit a historical fix} Locate an old bug fix in your repository history. Evaluate whether it contains only the fix or sneaks in unrelated edits, and describe how you would separate them.
+
+\paragraph{4. Analyze large commits} Run \texttt{git log --stat} to identify the biggest commits in your project and decide whether their size reflects non-atomic habits or necessary coordinated refactors.
+
+\paragraph{5. Compare workflows} Build a new feature as one large non-atomic commit, reset, and rebuild it as a sequence of atomic commits. Reflect on which approach made review and debugging easier.
+
+\paragraph{6. Rehearse history cleanup} Create five ``WIP'' commits, then reorganize them with \texttt{git rebase -i} into two meaningful commits with polished messages.
+
+\paragraph{7. Bisect with intent} Use \texttt{git bisect} to find when a specific feature was introduced. Record how atomic history accelerates the search (or how non-atomic history slows it down).
+
+\paragraph{8. Experiment with trailers} Add structured trailers such as \texttt{Refs} or \texttt{Feature-flag} to your next three commits and gather feedback from reviewers about whether the additional context helped.
+
+\paragraph{9. Plan a migration} Design a schema change, feature flag rollout, or vendor update and map it to at least four atomic commits that follow the guard-rail example. Present the plan during your next team sync for critique.

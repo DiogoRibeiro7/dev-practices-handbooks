@@ -1,0 +1,43 @@
+\chapter{Automation That Amplifies Collaboration Discipline}
+
+\section{Chapter Overview}
+Manual discipline breaks down under pressure. Automation reinforces collaboration standards even when deadlines loom. This chapter covers automation strategies across commits, pull requests, and reviews: linters and formatters, commit and PR templates, CI/CD gates, bots that triage issues, and dashboards that reveal collaboration health. The goal is not to replace judgment but to free humans to focus on higher-order decisions.
+
+\section{Codifying Standards with Linters and Formatters}
+Start by automating style and correctness checks on developer machines. Tools like ESLint, Prettier, RuboCop, or gofmt eliminate formatting debates before review. Combine them with \texttt{pre-commit} frameworks so every commit runs the same suite locally. When teams adopt consistent automation, reviewers ignore whitespace noise and concentrate on architecture and logic.
+
+\section{Commit Automation}
+Commit templates, commitlint rules, and signed-off-by trailers ensure history stays parseable. Configure \texttt{.gitmessage} files that prompt for context, and enforce structure via commit-msg hooks or CI jobs. For repositories using Conventional Commits, pair commitlint with release tooling (semantic-release, Changesets) so changelogs and version bumps happen automatically. Automation is only valuable if it runs fast and provides actionable errors; keep hooks under one second and offer clear remediation tips.
+
+\section{PR Templates and Bots}
+Pull request templates remind authors to include summaries, motivations, testing, and rollout plans. Enhance templates with conditional sections (``Only fill out if this PR touches UI''). Layer bots such as Danger, Reviewpad, or GitHub Actions to check for missing evidence, verify that screenshots accompany CSS changes, or ensure migrations include reversible scripts. Bots should comment with context and links to remediation guides rather than cryptic failures.
+
+\section{CI/CD Gates for Collaboration}
+CI pipelines can enforce collaboration norms beyond unit tests. Examples include blocking merges if code coverage drops beyond a threshold, requiring that PRs have at least two approvals, or rejecting deployments when TODO comments exceed a limit. Use status checks that highlight which requirement failed, and provide opt-out mechanisms for emergencies (with logging). Align gates with company values---if speed matters more than coverage, tune thresholds accordingly.
+
+\section{Automating Reviewer Assignment}
+Manual reviewer selection is error-prone and often inequitable. Use CODEOWNERS files, GitHub auto-assign rules, or custom bots to distribute reviews across qualified engineers. Incorporate load-balancing logic (skip reviewers with more than N outstanding PRs) and fallbacks for off-hours. Automation ensures expertise is available without burning out a small group of senior engineers.
+
+\section{ChatOps and Issue Triage}
+Bots embedded in chat (Slack, Teams) accelerate collaboration. Examples include slash commands that add labels, queue reviews, or launch test runs. Issue triage bots can auto-label bug reports based on stack traces or affected components, directing PRs to the right owner. The key is keeping commands discoverable and auditable---log who triggered actions and provide help text.
+
+\section{Dashboards and Analytics}
+Automation should inform decisions. Build dashboards that track PR cycle time, review latency, commit subject quality, and flake rates. Use lightweight scripts or services (Looker, Metabase) to pull data from GitHub APIs. Share metrics in retrospectives to celebrate improvements and detect regressions early. Avoid weaponizing metrics; they should guide experiments, not punish individuals.
+
+\section{Progressive Rollouts and Automated Safeguards}
+Feature flags, canary deployments, and automated rollback scripts convert risky releases into safe experiments. Integrate flag status into PR templates so authors declare default values and kill-switch procedures. Use deployment automation to monitor key metrics post-release and auto-rollback if thresholds are violated. These safeguards encourage frequent merges because engineers trust the safety nets.
+
+\section{Maintaining Automation}
+Automation rots if nobody owns it. Assign a small working group to review bot logs, update dependencies, and collect feedback. Schedule quarterly audits to retire unused checks and tune noisy ones. Treat automation as a product: it needs roadmaps, maintenance budgets, and user support. A broken bot that blocks merges harms collaboration more than the absence of automation.
+
+\section*{Exercises}
+
+\paragraph{1. Automation inventory} List every automated check (hooks, CI jobs, bots) in your repository. Identify which collaboration problem each solves and which are redundant or missing.
+
+\paragraph{2. Hook performance} Measure the runtime of your pre-commit or commit-msg hooks. Optimize or remove steps that slow developers down without measurable benefit.
+
+\paragraph{3. Template experiment} Update your PR template to include a ``Rollout plan'' section. After two weeks, survey reviewers to see if clarity improved.
+
+\paragraph{4. Auto-assign review pilot} Configure CODEOWNERS or a bot to distribute reviews for one service. Track response times before and after to evaluate workload balance.
+
+\paragraph{5. Dashboard prototype} Build a simple script that pulls PR cycle time and review latency from your hosting platform. Share the visualization in your next retro and propose one improvement based on the data.

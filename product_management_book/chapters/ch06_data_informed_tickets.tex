@@ -1,0 +1,116 @@
+\chapter{The Data-Informed Ticket}
+\label{ch:data-informed-tickets}
+
+Tickets are one of the few artifacts that every discipline touches. When crafted intentionally, they become a translation device that captures uncertainty, clarifies hypotheses, and aligns stakeholders on what ``done'' means. This chapter introduces the data-informed ticket: a format that encodes experimentation and measurement directly into requirements.
+
+\section{Rethinking the Ticket}
+\label{sec:rethinking-ticket}
+
+Traditional user stories assume a known user persona, a stable feature, and a clear acceptance test. Data science and platform work rarely fit that mold. Instead of forcing complex initiatives into ill-fitting templates, we can evolve tickets into narrative briefs that state the problem, the hypothesis, and how we will evaluate success.
+
+\subsection{The Limitations of "As a user, I want..."}
+The classic format works well for UI interactions or workflow changes. It breaks down when the "user" is an internal system, a data pipeline, or a model training job. Treating infrastructure or research work as if it were a user-facing feature creates artificial constraints and trivializes the nuanced trade-offs those teams navigate.
+
+\subsection{The Ticket as Hypothesis}
+A data-informed ticket elevates the hypothesis to a first-class element. It states what we believe, why we believe it, and how we will test it. The hypothesis is testable and time-bound, ensuring that iteration results in learning even when the answer is ``no.''
+
+\subsection{Embracing Uncertainty}
+Uncertainty is documented rather than hidden. Tickets call out unknowns, estimation ranges, and alternative paths. Instead of pretending to know the exact timeline, we specify decision checkpoints and the signals that will trigger scope updates. This transparency builds trust with stakeholders who often misinterpret silence as certainty.
+
+\section{Anatomy of a Data-Informed Ticket}
+\label{sec:ticket-anatomy}
+
+A consistent structure keeps tickets digestible while leaving room for nuance. Core elements include the problem statement, hypothesis, success metrics, acceptance criteria, scope, constraints, and risks. Optional sections capture instrumentation details or regulatory considerations depending on the domain.
+
+\subsection{Problem Statement}
+This section explains the user or business pain in plain language. It includes context such as user research findings, operational incidents, or market analysis. Clarity here anchors every decision downstream.
+
+\subsection{Hypothesis}
+A succinct paragraph articulates what we expect to observe if the ticket succeeds. Explicit assumptions make it easier for reviewers to challenge logic or suggest cheaper experiments.
+
+\subsection{Success Metrics}
+Quantitative measures answer the question ``How will we know?'' Each metric includes a baseline, a target, and a measurement window. Qualitative signals, such as user feedback themes, are acceptable when justified.
+
+\subsection{Acceptance Criteria}
+Acceptance criteria translate the hypothesis into verifiable conditions. They encompass performance thresholds, data-quality requirements, monitoring hooks, and compliance needs. Writing them in bullet form encourages precision:
+\begin{itemize}
+    \item Model recall increases to 0.85 on the validation set without exceeding 2\% false positives.
+    \item P95 latency remains under 150\,ms for the scoring service at projected peak traffic.
+    \item Data lineage for all new features is captured in the catalog with automated tests.
+\end{itemize}
+
+\subsection{Scope and Constraints}
+Scope clarifies what is intentionally excluded so teams avoid gold-plating. Constraints list time windows, technical dependencies, regulatory deadlines, and resource limits.
+
+\subsection{Risks and Mitigation}
+Tickets should describe top risks, detection signals, and mitigation plans. For example, ``Training data may not include enough examples from segment C; mitigation: run gap analysis by week two and request targeted labeling if coverage \textless{} 5\%.''
+
+\section{Different Types of Data Science Work}
+\label{sec:ds-work-types}
+
+Not all data science work looks alike. Tailoring ticket templates to the type of work clarifies expectations and reduces review friction.
+
+\subsection{Exploratory Data Analysis Tickets}
+Exploration tickets focus on insight generation. Success is defined by questions answered, datasets evaluated, or decision recommendations produced. Deliverables include annotated notebooks, visualizations, and a concise summary of findings.
+
+\subsection{Experiment Design Tickets}
+These tickets describe how a specific hypothesis will be tested. They include sampling plans, power calculations, guardrail metrics, and stopping rules. Deliverables are experiment results, interpretation, and a recommendation on whether to roll out, pivot, or stop.
+
+\subsection{Model Development Tickets}
+Model-building tickets document training datasets, feature availability, baseline performance, and evaluation methodology. Acceptance criteria cover offline metrics as well as fairness or robustness checks. Deliverables include the trained model artifact, reproducible training code, and documentation.
+
+\subsection{Model Deployment Tickets}
+Deployment tickets bridge data science and engineering. They capture integration requirements, latency budgets, rollout strategies, and monitoring hooks. Deliverables are a deployed service, dashboards, and incident playbooks.
+
+\subsection{Model Maintenance Tickets}
+These tickets cover retraining, calibration, and monitoring improvements. They specify triggers for retraining, metrics to review, and reporting frequency. Deliverables include updated models, comparison reports, and any adjustments to alerting thresholds.
+
+\section{Collaboration in Ticket Writing}
+\label{sec:ticket-collaboration}
+
+Great tickets are co-authored. The PM orchestrates the process but relies on engineers, data scientists, and stakeholders to validate assumptions and commitments.
+
+\subsection{The PM's Role}
+The PM ensures the ticket states the problem, ties it to strategy, and reflects stakeholder needs. They facilitate discussions, capture decisions, and keep the document living as new information emerges.
+
+\subsection{The Data Scientist's Role}
+Data scientists assess feasibility, propose methodological approaches, and highlight statistical considerations. They estimate experimentation effort and recommend instrumentation to capture the necessary signals.
+
+\subsection{The Engineer's Role}
+Engineers validate that infrastructure and integration steps are realistic. They flag scalability concerns, estimate platform work, and outline how the solution will be deployed and supported.
+
+\subsection{The Stakeholder's Role}
+Stakeholders ground the ticket in business value. They verify that success metrics matter, confirm prioritization, and agree to provide the resources or subject-matter expertise required.
+
+\section{From Ticket to Implementation}
+\label{sec:ticket-to-implementation}
+
+Tickets should guide implementation, not just planning. Keeping them updated turns them into a living source of truth.
+
+\subsection{Ticket Refinement Sessions}
+Regular grooming sessions review assumptions, incorporate learnings, and break tickets into executable tasks. When evidence invalidates the hypothesis, the ticket is revised rather than left to rot in the backlog.
+
+\subsection{Tracking Progress}
+Status updates reference the ticket's metrics and acceptance criteria. Visual indicators in the project board highlight blockers, open questions, and decision deadlines.
+
+\subsection{Documentation and Knowledge Transfer}
+Tickets link to code, dashboards, and decision logs. Closing a ticket includes summarizing outcomes, referencing supporting artifacts, and articulating lessons that future teams can reuse.
+
+\section{Examples and Templates}
+\label{sec:ticket-examples}
+
+Below are simplified examples illustrating how the template adapts to different scenarios.
+
+\subsection{Example 1: Customer Segmentation}
+A segmentation ticket outlines the problem (marketing needs actionable cohorts), hypothesis (behavioral clustering will outperform demographic segments), success metrics (campaign lift, engagement rate), and constraints (data refresh weekly). It references artifacts such as the segmentation notebook and the decision memo approving rollout.
+
+\subsection{Example 2: A/B Test}
+This ticket defines the hypothesis, target KPI, minimum detectable effect, guardrail metrics, and experiment timeline. Acceptance criteria cover instrumentation completeness, sample size readiness, and analysis plan.
+
+\subsection{Example 3: Feature Pipeline}
+A data engineering ticket details upstream sources, transformation logic, data quality checks, and ownership. Success metrics focus on data freshness, completeness, and downstream consumer satisfaction.
+
+\section{Summary}
+\label{sec:tickets-summary}
+
+Data-informed tickets turn requirements into living hypotheses with explicit metrics, risks, and ownership. They normalize uncertainty, support collaboration, and provide a repeatable pattern for experimenting responsibly. The next chapter builds on this foundation by showing how to manage uncertainty throughout the requirement lifecycle.

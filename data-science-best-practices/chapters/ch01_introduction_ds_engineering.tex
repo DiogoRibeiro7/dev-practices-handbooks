@@ -5,7 +5,7 @@
 
 The journey from experimental data science to production machine learning systems is fraught with challenges that many practitioners underestimate. A model that achieves 95\% accuracy in a Jupyter notebook may fail catastrophically when deployed to production, not because of algorithmic shortcomings, but due to engineering deficiencies.
 
-\textbf{The inconvenient truth}: According to VentureBeat's 2019 survey of 500+ organizations\footnote{VentureBeat (2019). "Why do 87\% of data science projects never make it into production?" https://venturebeat.com/ai/why-do-87-of-data-science-projects-never-make-it-into-production/}, \textbf{87\% of data science projects never make it to production}. Gartner's 2020 research\footnote{Gartner (2020). "Gartner Says Only 53\% of AI Projects Make it from Prototypes to Production"} found that only 53\% of AI projects transition from prototype to production. More alarmingly, of those that do reach production, Algorithmia's 2021 State of Enterprise ML report\footnote{Algorithmia/DataRobot (2021). "2021 State of Enterprise Machine Learning"} revealed that 65\% take more than 6 months to deploy a single model, with 18\% taking over a year. Academic research corroborates these findings: Paleyes et al.'s 2022 comprehensive survey\footnote{Paleyes, A., Urma, R.G., \& Lawrence, N.D. (2022). "Challenges in Deploying Machine Learning: A Survey of Case Studies." ACM Computing Surveys, 55(6), Article 114.} identified deployment challenges across 50+ case studies, emphasizing the gap between research and production readiness.
+\textbf{The inconvenient truth}: According to VentureBeat's 2019 survey of 500+ organizations\footnote{VentureBeat (2019). ``Why do 87\% of data science projects never make it into production?`` https://venturebeat.com/ai/why-do-87-of-data-science-projects-never-make-it-into-production/}, \textbf{87\% of data science projects never make it to production}. Gartner's 2020 research\footnote{Gartner (2020). ``Gartner Says Only 53\% of AI Projects Make it from Prototypes to Production``} found that only 53\% of AI projects transition from prototype to production. More alarmingly, of those that do reach production, Algorithmia's 2021 State of Enterprise ML report\footnote{Algorithmia/DataRobot (2021). ``2021 State of Enterprise Machine Learning``} revealed that 65\% take more than 6 months to deploy a single model, with 18\% taking over a year. Academic research corroborates these findings: Paleyes et al.'s 2022 comprehensive survey\footnote{Paleyes, A., Urma, R.G., \& Lawrence, N.D. (2022). ``Challenges in Deploying Machine Learning: A Survey of Case Studies.`` ACM Computing Surveys, 55(6), Article 114.} identified deployment challenges across 50+ case studies, emphasizing the gap between research and production readiness.
 
 This chapter establishes the foundational principles of data science engineering---the discipline that bridges experimental data science and production software engineering. We introduce the \textbf{Six Pillars} framework that will guide you through building ML systems that are not just accurate, but also reliable, maintainable, and ethical.
 
@@ -50,11 +50,11 @@ Models experiencing drift in first year & 73\% & MIT Sloan 2021 \\
 \end{tabular}
 \end{table}
 
-\textbf{The economic impact is staggering}: According to IDC's 2021 Global DataSphere report\footnote{IDC (2021). "Worldwide Global DataSphere Forecast"}, organizations waste an estimated \$5.6 trillion annually on failed AI/ML initiatives. This represents approximately 30\% of total AI investment, translating to an average loss of \$12.5 million per failed project for enterprise organizations.
+\textbf{The economic impact is staggering}: According to IDC's 2021 Global DataSphere report\footnote{IDC (2021). ``Worldwide Global DataSphere Forecast``}, organizations waste an estimated \$5.6 trillion annually on failed AI/ML initiatives. This represents approximately 30\% of total AI investment, translating to an average loss of \$12.5 million per failed project for enterprise organizations.
 
 \subsection{Root Cause Analysis}
 
-Research by Dotscience\footnote{Dotscience (2020). "State of Enterprise ML Report"}, NewVantage Partners\footnote{NewVantage Partners (2022). "Big Data and AI Executive Survey"}, and Stanford's AI Index\footnote{Zhang, D. et al. (2022). "The AI Index 2022 Annual Report." Stanford University Human-Centered AI Institute.} identifies the primary failure modes:
+Research by Dotscience\footnote{Dotscience (2020). ``State of Enterprise ML Report``}, NewVantage Partners\footnote{NewVantage Partners (2022). ``Big Data and AI Executive Survey``}, and Stanford's AI Index\footnote{Zhang, D. et al. (2022). ``The AI Index 2022 Annual Report.`` Stanford University Human-Centered AI Institute.} identifies the primary failure modes:
 
 \begin{table}[h]
 \centering
@@ -75,11 +75,11 @@ Regulatory/ethical concerns & 28\% & \$12.7M \\
 \end{tabular}
 \end{table}
 
-\textbf{Key insight}: Notice that 6 of the top 8 failure modes are \emph{engineering problems}, not algorithmic deficiencies. The median accuracy improvement from research to production is only 1.2 percentage points\footnote{Papers With Code (2021). "Research-to-Production Gap Analysis"}, yet the engineering effort often exceeds 10x the research investment.
+\textbf{Key insight}: Notice that 6 of the top 8 failure modes are \emph{engineering problems}, not algorithmic deficiencies. The median accuracy improvement from research to production is only 1.2 percentage points\footnote{Papers With Code (2021). ``Research-to-Production Gap Analysis``}, yet the engineering effort often exceeds 10x the research investment.
 
 \subsection{The Hidden Cost of Technical Debt}
 
-Google's seminal paper "Machine Learning: The High-Interest Credit Card of Technical Debt"\footnote{Sculley et al. (2015). "Hidden Technical Debt in Machine Learning Systems." NIPS.} quantified ML-specific technical debt. Our analysis of 147 production ML systems across financial services reveals:
+Google's seminal paper ``Machine Learning: The High-Interest Credit Card of Technical Debt``\footnote{Sculley et al. (2015). ``Hidden Technical Debt in Machine Learning Systems.`` NIPS.} quantified ML-specific technical debt. Our analysis of 147 production ML systems across financial services reveals:
 
 \textbf{Technical Debt Accumulation Rate}:
 \begin{equation}
@@ -99,7 +99,7 @@ where:
 
 \textbf{Maintenance Cost Multiplier}:
 
-Research by Microsoft Research\footnote{Amershi et al. (2019). "Software Engineering for Machine Learning." ICSE-SEIP.} found that maintenance costs for ML systems follow:
+Research by Microsoft Research\footnote{Amershi et al. (2019). ``Software Engineering for Machine Learning.`` ICSE-SEIP.} found that maintenance costs for ML systems follow:
 
 \begin{equation}
 MC_{ratio} = \frac{MC}{DC} = 1.5 + 0.3 \cdot log_{10}(1 + TD_{normalized})
@@ -706,7 +706,7 @@ The following items require immediate attention:
         critical_recs = [r for r in recommendations if '[CRITICAL]' in r]
         if critical_recs:
             for i, rec in enumerate(critical_recs, 1):
-                summary += f"{i}. {rec.replace('[CRITICAL] ', '')}\n"
+                summary += f"{i}. {rec.replace('[CRITICAL] ', ")}\n"
         else:
             summary += "*No critical issues identified.*\n"
 
@@ -718,7 +718,7 @@ The following items require immediate attention:
         high_recs = [r for r in recommendations if '[HIGH]' in r][:3]
         if high_recs:
             for i, rec in enumerate(high_recs, 1):
-                summary += f"{i}. {rec.replace('[HIGH] ', '')}\n"
+                summary += f"{i}. {rec.replace('[HIGH] ', ")}\n"
 
         summary += f"""
 
@@ -1085,7 +1085,7 @@ We introduce six fundamental pillars that must support any production ML system.
 
 \textbf{Definition}: The ability to recreate exact results given the same inputs, code, and environment.
 
-\textbf{Why it matters}: Reproducibility is the foundation of scientific validity and debugging. Analysis of 147 production ML incidents\footnote{Based on internal incident analysis at leading ML-focused organizations, 2020-2022} revealed that 43\% would have been prevented or resolved 5x faster with perfect reproducibility. The reproducibility crisis in ML research\footnote{Gundersen, O.E. \& Kjensmo, S. (2018). "State of the Art: Reproducibility in Artificial Intelligence." AAAI Conference on Artificial Intelligence.} has documented that only 24\% of published ML papers include sufficient details for full reproduction.
+\textbf{Why it matters}: Reproducibility is the foundation of scientific validity and debugging. Analysis of 147 production ML incidents\footnote{Based on internal incident analysis at leading ML-focused organizations, 2020-2022} revealed that 43\% would have been prevented or resolved 5x faster with perfect reproducibility. The reproducibility crisis in ML research\footnote{Gundersen, O.E. \& Kjensmo, S. (2018). ``State of the Art: Reproducibility in Artificial Intelligence.`` AAAI Conference on Artificial Intelligence.} has documented that only 24\% of published ML papers include sufficient details for full reproduction.
 
 \textbf{Mathematical Measurement Framework}:
 
@@ -1116,7 +1116,7 @@ Config versioned & 0.15 & 2.9 hours average \\
 
 \textbf{Confidence Interval for Reproducibility}:
 
-When measuring reproducibility empirically (e.g., re-running experiments), we calculate confidence intervals using the normal approximation to the binomial distribution\footnote{Brown, L.D., Cai, T.T., \& DasGupta, A. (2001). "Interval Estimation for a Binomial Proportion." Statistical Science, 16(2), 101-133.}:
+When measuring reproducibility empirically (e.g., re-running experiments), we calculate confidence intervals using the normal approximation to the binomial distribution\footnote{Brown, L.D., Cai, T.T., \& DasGupta, A. (2001). ``Interval Estimation for a Binomial Proportion.`` Statistical Science, 16(2), 101-133.}:
 
 \begin{equation}
 CI_{95\%} = \bar{R} \pm 1.96 \cdot \frac{\sigma_R}{\sqrt{n_{trials}}}
@@ -1126,11 +1126,11 @@ where $\bar{R}$ is mean reproducibility score across $n_{trials}$ independent ru
 
 \textbf{Common failures}:
 \begin{itemize}
-    \item Random seeds not fixed (seen in 37\% of projects\footnote{Analysis of 289 GitHub ML repositories, 2022. See also Pineau, J. et al. (2021). "Improving Reproducibility in Machine Learning Research." Journal of Machine Learning Research, 22, 1-20.})
+    \item Random seeds not fixed (seen in 37\% of projects\footnote{Analysis of 289 GitHub ML repositories, 2022. See also Pineau, J. et al. (2021). ``Improving Reproducibility in Machine Learning Research.`` Journal of Machine Learning Research, 22, 1-20.})
     \item Dependencies not pinned to specific versions (62\% of projects)
     \item Data transformations applied inconsistently (28\%)
     \item Hardware-dependent operations (GPU vs. CPU differences) (19\%)
-    \item Non-deterministic algorithms (cuDNN, TensorFlow operations) (34\%)\footnote{NVIDIA (2020). "Determinism in cuDNN." https://docs.nvidia.com/deeplearning/cudnn/developer-guide/}
+    \item Non-deterministic algorithms (cuDNN, TensorFlow operations) (34\%)\footnote{NVIDIA (2020). ``Determinism in cuDNN.`` https://docs.nvidia.com/deeplearning/cudnn/developer-guide/}
 \end{itemize}
 
 \textbf{Implementation principles}:
@@ -1189,7 +1189,7 @@ Example: MTBF = 200 hours, MTTR = 2 hours gives $Availability = \frac{200}{202} 
     \item Comprehensive input validation (Pydantic, Great Expectations)
     \item Graceful degradation strategies (fallback to simpler model, cached predictions)
     \item Circuit breakers for external dependencies (Resilience4j, Polly)
-    \item Automated testing: unit (>80\% coverage), integration, chaos engineering\footnote{Basiri, A. et al. (2016). "Chaos Engineering." IEEE Software, 33(3), 35-41. Netflix's pioneering work on chaos engineering.}
+    \item Automated testing: unit (>80\% coverage), integration, chaos engineering\footnote{Basiri, A. et al. (2016). ``Chaos Engineering.`` IEEE Software, 33(3), 35-41. Netflix's pioneering work on chaos engineering.}
     \item Health checks and heartbeat monitoring (readiness, liveness probes)
 \end{itemize}
 
@@ -1197,7 +1197,7 @@ Example: MTBF = 200 hours, MTTR = 2 hours gives $Availability = \frac{200}{202} 
 
 \textbf{Definition}: The ability to understand system state from external outputs.
 
-\textbf{Why it matters}: You cannot improve what you cannot measure. Observability enables debugging, optimization, and continuous improvement. Systems with comprehensive observability resolve incidents 4.2x faster\footnote{Based on analysis of 1,247 ML incidents across organizations, 2020-2022}. The three pillars of observability (metrics, logs, traces) were formalized by distributed systems research\footnote{Beyer, B. et al. (2016). "Site Reliability Engineering: How Google Runs Production Systems." O'Reilly Media.} and are equally critical for ML systems.
+\textbf{Why it matters}: You cannot improve what you cannot measure. Observability enables debugging, optimization, and continuous improvement. Systems with comprehensive observability resolve incidents 4.2x faster\footnote{Based on analysis of 1,247 ML incidents across organizations, 2020-2022}. The three pillars of observability (metrics, logs, traces) were formalized by distributed systems research\footnote{Beyer, B. et al. (2016). ``Site Reliability Engineering: How Google Runs Production Systems.`` O'Reilly Media.} and are equally critical for ML systems.
 
 \textbf{Observability Maturity Model}:
 
@@ -1293,7 +1293,7 @@ Well-optimized: $Cost(L) = C_0 + C_1 \cdot L^{0.7}$ (sub-linear via batching, ca
 
 \textbf{Maintainability Index}:
 
-Based on IEEE Standard 1061\footnote{IEEE Std 1061-1998, "IEEE Standard for Software Quality Metrics Methodology"}, adapted for ML:
+Based on IEEE Standard 1061\footnote{IEEE Std 1061-1998, ``IEEE Standard for Software Quality Metrics Methodology``}, adapted for ML:
 
 \begin{equation}
 MI = 171 - 5.2 \cdot ln(V) - 0.23 \cdot CC - 16.2 \cdot ln(LOC) + 50 \cdot sin(\sqrt{2.4 \cdot CM})
@@ -1399,7 +1399,7 @@ FCRA & Adverse action notices, accuracy & \$100-\$1,000 per violation \\
     \item Model interpretability: SHAP values (additive feature attribution), LIME (local surrogates), attention mechanisms
     \item Data governance: access controls, audit logs, data lineage tracking
     \item Regular ethical reviews with diverse stakeholder engagement
-    \item Model cards\footnote{Mitchell et al. (2019). "Model Cards for Model Reporting." FAT* 2019.} documenting intended use, limitations, biases
+    \item Model cards\footnote{Mitchell et al. (2019). ``Model Cards for Model Reporting.`` FAT* 2019.} documenting intended use, limitations, biases
 \end{itemize}
 
 \section{How to Use This Book}
@@ -1566,7 +1566,7 @@ Custom frameworks (not standard) & All pipelines & 400 hours \\
     \item \textbf{ROI}: 312\% on engineering investment
 \end{itemize}
 
-\textbf{Key Takeaway}: Individual brilliance doesn't scale. Engineering practices, knowledge sharing, and team redundancy are essential for sustainable ML operations. The ``unicorn'' model creates fragile systems and burnout\footnote{Seifert, C. et al. (2021). "The Myth of the Data Science Unicorn." Harvard Business Review Data Science Special Issue.}.
+\textbf{Key Takeaway}: Individual brilliance doesn't scale. Engineering practices, knowledge sharing, and team redundancy are essential for sustainable ML operations. The ``unicorn'' model creates fragile systems and burnout\footnote{Seifert, C. et al. (2021). ``The Myth of the Data Science Unicorn.`` Harvard Business Review Data Science Special Issue.}.
 
 \subsection{The Regulation Reality Check: GDPR Forces Engineering Discipline}
 
@@ -1574,7 +1574,7 @@ Custom frameworks (not standard) & All pipelines & 400 hours \\
 
 \textbf{The Wake-Up Call} (May 2018): GDPR enforcement begins
 
-The data science team had built 12 ML models over 3 years, primarily focused on credit risk and fraud detection. All models were "working" in production with acceptable business metrics. Then GDPR's Article 22 hit: \textit{"Right to explanation for automated decision-making"}.
+The data science team had built 12 ML models over 3 years, primarily focused on credit risk and fraud detection. All models were ``working`` in production with acceptable business metrics. Then GDPR's Article 22 hit: \textit{``Right to explanation for automated decision-making``}.
 
 \textbf{The Compliance Audit} (Month 1):
 
@@ -1701,12 +1701,12 @@ Incident prevention & Proactive monitoring & \$340K (avoided 4 incidents) \\
 \textbf{Cultural Shift}:
 \begin{itemize}
     \item Data scientists now consider interpretability during model selection, not as afterthought
-    \item "Can we explain this to a regulator?" became standard design question
+    \item ``Can we explain this to a regulator?`` became standard design question
     \item Engineering rigor increased across all projects, not just regulated models
     \item Customer service satisfaction improved: could actually explain AI decisions
 \end{itemize}
 
-\textbf{Key Takeaway}: Regulatory compliance is not just a legal checkbox---it forces engineering discipline that improves overall system quality. GDPR, CCPA, and sector-specific regulations (FCRA, ECOA, SR 11-7) should inform your engineering architecture from day one, not be retrofitted\footnote{European Commission (2018). "General Data Protection Regulation (GDPR) Guidance for AI Systems." https://ec.europa.eu/info/law/law-topic/data-protection\_en}\footnote{Wachter, S., Mittelstadt, B., \& Russell, C. (2017). "Counterfactual Explanations without Opening the Black Box: Automated Decisions and the GDPR." Harvard Journal of Law \& Technology, 31(2).}.
+\textbf{Key Takeaway}: Regulatory compliance is not just a legal checkbox---it forces engineering discipline that improves overall system quality. GDPR, CCPA, and sector-specific regulations (FCRA, ECOA, SR 11-7) should inform your engineering architecture from day one, not be retrofitted\footnote{European Commission (2018). ``General Data Protection Regulation (GDPR) Guidance for AI Systems.`` https://ec.europa.eu/info/law/law-topic/data-protection\_en}\footnote{Wachter, S., Mittelstadt, B., \& Russell, C. (2017). ``Counterfactual Explanations without Opening the Black Box: Automated Decisions and the GDPR.`` Harvard Journal of Law \& Technology, 31(2).}.
 
 \subsection{The Platform Play: 10x Team Productivity Through Shared Infrastructure}
 
@@ -1861,7 +1861,7 @@ Meetings & 10\% & 5\% & -50\% \\
 
 \begin{itemize}
     \item \textbf{Productivity}: 8 DS freed up 70\% → 30\% overhead = 4.48 FTE gained
-    \item \textbf{Value of gained capacity}: 4.48 FTE × \$220K = \$985K
+    \item \textbf{Value of gained capacity}: 4.48 FTE $	imes$ \$220K = \$985K
     \item \textbf{Infrastructure cost savings}: \$187K/year (efficient resource usage)
     \item \textbf{Revenue from 16 additional models}: \$2.8M (conservative estimate)
     \item \textbf{Total annual value}: \$3.97M
@@ -1880,7 +1880,7 @@ Meetings & 10\% & 5\% & -50\% \\
     \item \textbf{Compliance}: Standardized monitoring simplified audit compliance
 \end{itemize}
 
-\textbf{Key Takeaway}: Shared ML infrastructure platforms are high-leverage investments. By eliminating duplicated work across data scientists, platform teams can 3-10x overall productivity. The \textit{platform-to-practitioners ratio} of 1:2-3 (3 platform engineers supporting 8 data scientists) is common in high-performing ML organizations\footnote{Sculley, D. et al. (2015). "Hidden Technical Debt in Machine Learning Systems." NeurIPS.}\footnote{Paleyes, A. et al. (2022). "Challenges in Deploying Machine Learning: A Survey of Case Studies." ACM Computing Surveys, 55(6).}.
+\textbf{Key Takeaway}: Shared ML infrastructure platforms are high-leverage investments. By eliminating duplicated work across data scientists, platform teams can 3-10x overall productivity. The \textit{platform-to-practitioners ratio} of 1:2-3 (3 platform engineers supporting 8 data scientists) is common in high-performing ML organizations\footnote{Sculley, D. et al. (2015). ``Hidden Technical Debt in Machine Learning Systems.`` NeurIPS.}\footnote{Paleyes, A. et al. (2022). ``Challenges in Deploying Machine Learning: A Survey of Case Studies.`` ACM Computing Surveys, 55(6).}.
 
 \section{Real-World Case Studies: Lessons from Production}
 
@@ -1902,7 +1902,7 @@ Meetings & 10\% & 5\% & -50\% \\
 \begin{itemize}
     \item Deployment attempt revealed 47 critical issues
     \item No data versioning: training data from 6 different sources, manually downloaded
-    \item Random seeds not fixed: model results varied ±2.3\% across runs
+    \item Random seeds not fixed: model results varied $pm$2.3\% across runs
     \item No compliance documentation for regulatory review (OCC, Fed)
     \item Discovered gender bias: 12.7\% lower approval rate for women (DIR = 0.68)
 \end{itemize}
@@ -1962,7 +1962,7 @@ Ethics (DIR) & 0.68 (failing) & 0.89 (passing) \\
     \item Data science team: random forest model, 82\% accuracy, 0.79 AUC
     \item Retrospective validation: predicted 68\% of readmissions
     \item Estimated impact: 450 prevented readmissions, \$3.1M savings
-    \item Stakeholder excitement: "Deploy immediately"
+    \item Stakeholder excitement: ``Deploy immediately``
 \end{itemize}
 
 \textbf{Phase 2 - Deployment Disaster} (Month 5-6):
@@ -2037,7 +2037,7 @@ Ethics (DIR) & 0.68 (failing) & 0.89 (passing) \\
     \item Multi-armed bandit model for real-time price optimization
     \item Backtest results: +3.8\% margin improvement (\$45.6M annually)
     \item Simulation: 127 products tested
-    \item Confidence: "This will transform our business"
+    \item Confidence: ``This will transform our business``
 \end{itemize}
 
 \textbf{Initial Production - The Crisis} (Month 4):
@@ -2084,7 +2084,7 @@ Ethics (DIR) & 0.68 (failing) & 0.89 (passing) \\
 
     \item \textbf{Transparency Measures}:
         \begin{itemize}
-            \item Price change explanations: "Price increased due to high demand"
+            \item Price change explanations: ``Price increased due to high demand``
             \item Price match guarantee: lowest price within 7 days
             \item Public commitment: no pricing based on demographic data
         \end{itemize}
@@ -2111,7 +2111,7 @@ Ethics (DIR) & 0.68 (failing) & 0.89 (passing) \\
     \item Margin improvement: +2.1\% (\$25.2M, below original target but sustainable)
     \item Customer trust recovered: NPS -42 → +12 over 6 months
     \item Zero discrimination complaints
-    \item Industry recognition: "Responsible AI in Retail" award
+    \item Industry recognition: ``Responsible AI in Retail`` award
     \item Engineering investment: \$420K
     \item \textbf{Net value}: \$24.78M (accounting for initial \$18M loss)
     \item \textbf{Long-term ROI}: Positive reputation impact invaluable
@@ -2377,16 +2377,16 @@ Security hardening & 2-3 & 30-45 \\
 \textbf{Investment}:
 \begin{itemize}
     \item Initial: \$320K
-    \item Ongoing: \$95K/year × 5 years = \$475K
+    \item Ongoing: \$95K/year $	imes$ 5 years = \$475K
     \item Total: \$795K
 \end{itemize}
 
 \textbf{Value Creation}:
 \begin{itemize}
-    \item Reproducibility: \$112K × 5 = \$560K
-    \item Reliability: \$1.2M × 5 = \$6M
-    \item Monitoring: \$400K × 5 = \$2M
-    \item Compliance: \$1.2M × 5 = \$6M
+    \item Reproducibility: \$112K $	imes$ 5 = \$560K
+    \item Reliability: \$1.2M $	imes$ 5 = \$6M
+    \item Monitoring: \$400K $	imes$ 5 = \$2M
+    \item Compliance: \$1.2M $	imes$ 5 = \$6M
     \item Faster deployment (next 3 models): \$380K
     \item Total: \$14.94M
 \end{itemize}
@@ -2456,7 +2456,7 @@ Sarah spent two intense days converting her notebook into a Python script. The p
     \item Hardcoding file paths: \texttt{/Users/sarah/Desktop/churn\_data\_final\_v3.csv}
     \item Removing all visualizations and markdown explanations
     \item Wrapping prediction logic in a Flask API (her first time using Flask)
-    \item Testing locally: "Works on my machine!"
+    \item Testing locally: ``Works on my machine!``
 \end{itemize}
 
 The engineering team containerized it (their first Docker container for ML) and deployed to AWS.
@@ -2474,7 +2474,7 @@ The engineering team containerized it (their first Docker container for ML) and 
 \textbf{Week 2}: Continued success
 \begin{itemize}
     \item Model predictions used for 5,200 more customers
-    \item Tom presents at executive meeting: "ML is transforming our business"
+    \item Tom presents at executive meeting: ``ML is transforming our business``
     \item Budget approved for 3 more ML projects
     \item Sarah's promotion discussion begins
 \end{itemize}
@@ -2484,12 +2484,12 @@ The engineering team containerized it (their first Docker container for ML) and 
 \textbf{Monday, Week 3, 9:47 AM}: Sarah receives urgent Slack messages:
 
 \begin{verbatim}
-Tom: "The churn model is broken. Marketing saying all
-     predictions are the same."
-Marketing: "Model says 0% churn probability for
-           EVERYONE. What's going on?"
-Engineering: "No errors in logs. API returning 200 OK.
-             But all predictions = 0.0"
+Tom: ``The churn model is broken. Marketing saying all
+     predictions are the same.``
+Marketing: ``Model says 0% churn probability for
+           EVERYONE. What's going on?``
+Engineering: ``No errors in logs. API returning 200 OK.
+             But all predictions = 0.0``
 \end{verbatim}
 
 Sarah's heart sank. She pulled up the monitoring dashboard. Wait - there was no monitoring dashboard. She SSH'd into the production server and examined the logs.
@@ -2509,7 +2509,7 @@ Sarah spent the next six hours debugging. Here's what she discovered:
 
 \textbf{Root Cause \#1: Silent Data Schema Change}
 
-The marketing team had started collecting a new customer attribute ("preferred\_contact\_method") the previous week. This changed the schema of the customer database. Sarah's code didn't validate input schemas. When it encountered the new column:
+The marketing team had started collecting a new customer attribute (``preferred\_contact\_method``) the previous week. This changed the schema of the customer database. Sarah's code didn't validate input schemas. When it encountered the new column:
 
 \begin{lstlisting}[language=Python]
 # Sarah's original code
@@ -2574,7 +2574,7 @@ Trust damage & Unquantified & Marketing skeptical of ML \\
 But it was worse than the numbers suggested:
 \begin{itemize}
     \item \textbf{Reputational damage}: CMO publicly questioned ML ROI at board meeting
-    \item \textbf{Project delays}: 3 planned ML projects put on hold pending "process improvements"
+    \item \textbf{Project delays}: 3 planned ML projects put on hold pending ``process improvements``
     \item \textbf{Regulatory concern}: Compliance team flagged model risk management gaps
     \item \textbf{Team morale}: Engineering team demoralized, finger-pointing began
 \end{itemize}
@@ -2859,7 +2859,7 @@ Ethics & 35/100 & 87/100 & +52 \\
     \item Engineering best practices became standard
     \item Sarah promoted to Senior ML Engineer (focused on infrastructure)
     \item Team doubled from 4 to 8 data scientists
-    \item Company culture: "Production-first ML"
+    \item Company culture: ``Production-first ML``
 \end{itemize}
 
 \subsection{The Lesson}
@@ -2887,7 +2887,7 @@ Conduct a technical debt audit on an existing ML project using the frameworks fr
             \item Description of the shortcut taken
             \item Estimated time to fix (engineer-hours)
             \item Priority score (1-10)
-            \item Monthly "interest" (extra time spent due to this debt)
+            \item Monthly ``interest`` (extra time spent due to this debt)
         \end{itemize}
     \item Calculate total technical debt in dollars
     \item Estimate maintenance cost ratio using:
@@ -2938,7 +2938,7 @@ Calculate the ROI of implementing engineering best practices using the framework
         \end{itemize}
     \item For each improvement, estimate:
         \begin{itemize}
-            \item Initial implementation cost (engineer-weeks × rate)
+            \item Initial implementation cost (engineer-weeks $	imes$ rate)
             \item Ongoing maintenance cost (annual)
             \item Value created in 5 categories:
                 \begin{enumerate}
@@ -2979,7 +2979,7 @@ Perform a rigorous Six Pillars assessment with statistical validation.
             \item Team velocity
         \end{itemize}
     \item Use the maturity assessment framework code to generate formal report
-    \item Identify the pillar with highest leverage (improvement × business impact)
+    \item Identify the pillar with highest leverage (improvement $	imes$ business impact)
     \item Create weighted improvement roadmap
 \end{enumerate}
 
@@ -3014,7 +3014,7 @@ Replicate one of the case studies from Section 1.7 in your own context.
 
 \begin{enumerate}
     \item Choose a case study that matches your industry
-    \item Document your system's "before" state across Six Pillars
+    \item Document your system's ``before`` state across Six Pillars
     \item Implement 3-5 key improvements from the case study
     \item Measure impact over 4-8 weeks:
         \begin{itemize}
@@ -3025,7 +3025,7 @@ Replicate one of the case studies from Section 1.7 in your own context.
     \item Document lessons learned and adaptations needed for your context
 \end{enumerate}
 
-\textbf{Deliverable}: "Our Story" case study document (3-5 pages) with before/after metrics, implementation timeline, ROI calculation, and lessons learned.
+\textbf{Deliverable}: ``Our Story`` case study document (3-5 pages) with before/after metrics, implementation timeline, ROI calculation, and lessons learned.
 
 \subsection{Exercise 7: Incident Response Framework [Basic]}
 
@@ -3125,11 +3125,11 @@ Design a hiring and development plan based on Six Pillars gaps.
 \begin{enumerate}
     \item Assess current team capabilities across pillars:
         \begin{itemize}
-            \item Create skill matrix (team members × pillar skills)
+            \item Create skill matrix (team members $	imes$ pillar skills)
             \item Rate proficiency: 1=Novice, 2=Intermediate, 3=Advanced, 4=Expert
             \item Identify critical gaps
         \end{itemize}
-    \item Calculate "pillar coverage ratio":
+    \item Calculate ``pillar coverage ratio``:
         \begin{equation*}
         PCR = \frac{\text{Number of team members with proficiency} \geq 3}{\text{Total team size}}
         \end{equation*}

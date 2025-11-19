@@ -1,0 +1,67 @@
+\chapter{Pull Request Creation: Designing Reviewable Changes}
+
+\section{Chapter Overview}
+Pull requests translate private development work into collaborative review. A well-crafted PR accelerates feedback, reduces defects, and signals respect for reviewer time. This chapter covers the end-to-end flow for creating reviewable PRs: scoping, sequencing commits, writing context-rich descriptions, providing evidence, and preparing reviewers with checklists and automation.
+
+\section{Defining a Reviewable PR}
+A reviewable pull request meets three criteria. First, the scope is narrow enough that a reviewer can understand intent and implementation within a single sitting. Second, the author supplies context beyond the diff itself, including motivation, architectural choices, and testing evidence. Third, the change is deployable independently, meaning rollbacks or feature flag toggles are straightforward if issues emerge. Anything else is a draft and should either be split or clearly labeled as work in progress.
+
+\section{Scoping Techniques}
+Before opening a PR, determine whether it passes the ``two-hour review'' heuristic. If a change sprawls across many files or combines refactors with net-new features, split it into multiple PRs. Techniques include pairing structural work with feature flags so behavior changes can land separately from cleanup, creating preparatory PRs for schema changes or dependency upgrades, and grouping tests in follow-up PRs when reviewers primarily need to validate implementation logic first. Communicate the sequence using links or GitHub's stacking features so reviewers see how the pieces connect.
+
+\section{Narrating Intent}
+Reviewers cannot read minds; they rely on the PR description to understand context that the diff cannot convey. Use a consistent narrative structure: summarize the change in one or two sentences, explain the motivation (bug reports, product requirements, performance targets), describe the approach including trade-offs considered, and enumerate validation evidence. When relevant, mention feature flags, rollout plans, or dependencies on other PRs. Treat this description as an artifact for future audits, not a disposable checklist.
+
+\begin{lstlisting}[style=markdown,caption={Example PR description with context and validation}]
+## Summary
+- add optimistic locking to the project update endpoint
+- reject updates when the record has changed since the client read it
+
+## Motivation
+- incidents #4821 and #4867 showed data loss when concurrent edits hit the API
+- OKR "reduce conflicting writes by 90%" depends on solving this race condition
+
+## Implementation
+- extend `Project` with `row_version`
+- add `If-Match` header parsing in the controller
+- return `409 Conflict` with retry instructions
+
+## Testing
+- unit: ProjectVersioningSpec, ProjectControllerSpec
+- integration: project_versioning.feature
+- manual: curl script reproducing concurrent edits
+
+## Rollout
+- ship behind `PROJECT_VERSIONING` flag
+- enable for staff accounts after canary deploy
+\end{lstlisting}
+
+\section{Providing Evidence}
+Reviewers trust authors who demonstrate validation rigor. Attach relevant outputs: screenshots for UI changes, log excerpts for backend behavior, metric snapshots for performance work. When evidence is interactive (videos, dashboards), link to the source. For bug fixes, include reproduction steps and proof that the bug no longer occurs. Mention newly created automated tests and explain why existing suites were sufficient or why certain tests are absent. Explicit evidence reduces back-and-forth and builds reviewer confidence.
+
+\section{Preparing for Review}
+Once the description and evidence are ready, verify that the branch is clean: lint, tests, and build must pass locally. If CI runs take time, kick them off before requesting review so artifacts are ready when reviewers open the PR. Assign reviewers intentionally---balance load across the team, involve subject-matter experts for specialized areas, and include at least one engineer responsible for the downstream system (e.g., QA, SRE). When requesting review, highlight any areas where feedback is most needed, such as ``focus on the caching logic; UI copy is placeholder.''
+
+\section{Helping Reviewers Navigate}
+Large diffs are inevitable occasionally. When they happen, invest in navigational aids. Use GitHub's ``Changes requested'' summary to point reviewers to critical files, add inline comments explaining tricky sections before reviewers ask, and collapse generated files by placing them in hidden directories or marking them with \texttt{.gitattributes}. Consider providing a tour video or pairing session for high-stakes refactors. Reviewers should spend their cognitive load on correctness, not on guessing where to start.
+
+\section{Automation and Templates}
+Templates enforce consistency without micromanagement. Customize \texttt{PULL\_REQUEST\_TEMPLATE.md} to include fields for summary, motivation, testing, rollout, and checklist items relevant to your team. Use checkboxes for common requirements (docs updated, migrations applied) so reviewers can gauge completeness at a glance. Pair templates with bots (Danger, GitHub Actions) that flag missing sections or remind authors to attach screenshots when front-end files change. Automation should reduce reviewer toil, not add bureaucracy.
+
+\section{Managing Drafts and Iterations}
+Not every PR is ready for merge immediately. When seeking early feedback, mark the PR as a draft and specify what feedback is desired. As revisions occur, summarize changes since the previous review in a dedicated section or comment thread so reviewers don't re-read the entire diff. Retain a changelog in the description or provide a ``since last review'' list to prevent confusion. After addressing feedback, rerun key tests and mention which comments remain unresolved.
+
+\section{Coordinating Release Readiness}
+Before merging, ensure deploy readiness: document migration order, confirm feature flags default to safe values, and note any manual follow-up steps. For cross-team dependencies, tag stakeholders (support, marketing, docs) within the PR so they can prepare. If the change introduces risk, coordinate a dark launch or partial rollout plan. Communicate the merge window and rollback strategy, especially when the PR unblocks other teams.
+
+\section*{Exercises}
+
+\paragraph{1. Rewrite a PR description} Take the last PR you opened and rewrite its description using the narrative template above. Share both versions with your team and note which details reviewers considered most helpful.
+
+\paragraph{2. Scope analysis} Pick an upcoming feature and outline how you would split it into multiple PRs. Include preparatory work, feature flags, and cleanup stages, and justify the ordering.
+
+\paragraph{3. Evidence audit} Review five merged PRs from your repository. For each, document whether the evidence (tests, screenshots, logs) matched the change type. Identify gaps and propose template updates.
+
+\paragraph{4. Draft workflow rehearsal} Create a draft PR for a work-in-progress change. Request targeted feedback on one area, then practice summarizing follow-up changes in the PR body before flipping it to ``Ready for review.'' Record how reviewers responded to the extra context.
+
+\paragraph{5. Automation experiment} Extend your PR template or add a bot rule that enforces one collaboration rule (for example, requiring a ``Rollout plan'' section). After a sprint, gather reviewer feedback on whether the automation improved clarity or introduced friction.

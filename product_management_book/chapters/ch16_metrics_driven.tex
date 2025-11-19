@@ -1,0 +1,185 @@
+\chapter{Metrics-Driven Acceptance Criteria}
+\label{ch:metrics-driven}
+
+Acceptance criteria grounded in metrics ensure teams ship outcomes, not just outputs. This chapter explains how to choose metrics, balance trade-offs, and operationalize measurement without inciting metric gaming.
+
+\section{The Case for Metrics-Driven Acceptance}
+\label{sec:case-metrics}
+
+Metrics remove ambiguity and align stakeholders on what success means.
+
+\subsection{From Subjective to Objective}
+Instead of debating whether ``the experience feels better,'' teams can agree to ``activation rate increases by 8\% with p \textless{} 0.05.'' Data replaces opinion, expediting decisions.
+
+\subsection{Enabling Automation}
+When criteria map to metrics, CI/CD pipelines can gate deployments, and dashboards can alert teams when performance drifts. Automation shortens feedback loops.
+
+\subsection{Learning and Improvement}
+Tracking acceptance metrics over time reveals whether improvements persist, enabling continuous optimization and reducing regression risk.
+
+\section{Choosing Metrics}
+\label{sec:choosing-metrics}
+
+Selecting the right metrics is critical.
+
+\subsection{Desirable Properties of Metrics}
+Metrics should be measurable, relevant, actionable, timely, and controllable. Avoid metrics that rely on data you cannot reliably capture.
+
+\subsection{Leading vs. Lagging Indicators}
+Leading indicators predict outcome trends (e.g., onboarding completions), while lagging indicators measure final impact (e.g., revenue). Balance both to catch issues early without losing sight of ultimate goals.
+
+\subsection{Input, Output, and Outcome Metrics}
+Inputs measure effort (tests written), outputs capture deliverables (features shipped), and outcomes measure impact (retention). Prioritize outcomes but use input/output metrics when necessary to proxy future impact.
+
+\subsection{Metric Selection Framework}
+Ask: What behavior do we want to influence? What decision will the metric inform? Who owns it? Piloting metrics on a small cohort before formal adoption reduces surprises.
+
+\section{Metrics for Feature Development}
+\label{sec:feature-metrics}
+
+Features require a mix of user and technical metrics.
+
+\subsection{Usage Metrics}
+Adoption rate, active users, or funnel completion quantifies whether users try the feature. Define thresholds such as ``50\% of eligible users interact within 30 days.''
+
+\subsection{Engagement Metrics}
+Depth metrics (time on task, frequency) ensure users derive value, not just trial usage.
+
+\subsection{Satisfaction Metrics}
+CSAT, NPS, or qualitative survey responses confirm that changes align with expectations. Combine numeric targets with qualitative feedback quotas.
+
+\subsection{Performance Metrics}
+Latency, error rate, and availability guard against regressions. Acceptance might require ``P95 latency $\le 200\,\text{ms}$ with error rate $<0.1\%$.''
+
+\subsection{Example: New Dashboard Feature}
+Acceptance criteria could include: 40\% adoption among analysts, +10 point satisfaction lift, P95 load $\le 1.5$ seconds, and no increase in support tickets.
+
+\section{Metrics for ML Models}
+\label{sec:ml-metrics}
+
+Model launches need offline, online, and business metrics.
+
+\subsection{Offline Evaluation Metrics}
+Specify thresholds for precision, recall, F1, AUC, or regression metrics. Include confidence intervals and fairness constraints.
+
+\subsection{Online Evaluation Metrics}
+A/B tests validate live impact—click-through, conversion, or churn. Acceptance requires statistically significant lift without violating guardrails.
+
+\subsection{Model Health Metrics}
+Monitor latency, resource usage, feature drift, and calibration. Include acceptable ranges and alert thresholds in requirements.
+
+\subsection{Business Impact Metrics}
+Tie model performance to revenue, cost savings, or risk reduction. ``Reduce fraud losses by \$500K/month'' resonates with executives.
+
+\subsection{Example: Recommendation System}
+Criteria might include offline NDCG@10 $\ge 0.48$, online CTR $\ge 4\%$, diversity index $\ge 0.3$, latency $\le 100\,\text{ms}$, and no increase in churn.
+
+\section{Metrics for Experiments}
+\label{sec:experiment-metrics}
+
+Experiments need clear success metrics and guardrails.
+
+\subsection{Primary, Secondary, and Guardrail Metrics}
+Primary metrics determine success; secondary metrics provide context; guardrails ensure you do not harm adjacent KPIs. Document all before launch.
+
+\subsection{Statistical Power and Duration}
+Acceptance should specify minimum detectable effect, required sample size, and planned duration to avoid underpowered tests.
+
+\subsection{Decision Criteria}
+Define thresholds and escalation paths: ``If the 95\% CI includes zero, rerun or pivot.''
+
+\section{Metrics for Infrastructure and Platform Work}
+\label{sec:infra-metrics}
+
+Non-user-facing work still needs measurable outcomes.
+
+\subsection{Reliability Metrics}
+Use SLOs/SLA (availability, latency) and error budgets as acceptance criteria.
+
+\subsection{Efficiency Metrics}
+Measure resource utilization, build times, or deployment frequency improvements.
+
+\subsection{Developer Experience Metrics}
+Track satisfaction surveys, support tickets, or onboarding time for internal platforms.
+
+\section{Balancing Multiple Metrics}
+\label{sec:balancing-metrics}
+
+Most work involves trade-offs.
+
+\subsection{Identifying Trade-offs}
+Document conflicting goals (precision vs. recall, latency vs. accuracy) and quantify acceptable ranges.
+
+\subsection{Weighted Scoring}
+Create weighted composite scores when decisions require multiple metrics. For example, assign 60\% weight to relevance, 25\% to diversity, 15\% to latency.
+
+\subsection{Pareto Optimality}
+Visualize Pareto frontiers to compare solutions without forcing a single scalar metric.
+
+\subsection{Decision Frameworks}
+Facilitate discussions across stakeholders about how to react when metrics conflict. Document escalation paths.
+
+\subsection{Example: Search Ranking Model}
+List acceptance thresholds for relevance, diversity, personalization, and latency. Provide weighting to choose among candidate models.
+
+\section{Avoiding Metric Pitfalls}
+\label{sec:metric-pitfalls}
+
+Metrics are powerful but can be misused.
+
+\subsection{Goodhart's Law}
+When metrics become targets, behavior can distort them. Use guardrails and rotate metrics periodically to reduce gaming.
+
+\subsection{Vanity Metrics}
+Avoid metrics that look good but lack business value (e.g., total sign-ups without engagement). Prioritize actionable metrics tied to outcomes.
+
+\subsection{Local vs. Global Optimization}
+Optimize metrics holistically. Example: focusing solely on conversion might increase refunds; include profitability guardrails.
+
+\subsection{Overfitting to Metrics}
+Do not tailor solutions narrowly to measured metrics; maintain qualitative reviews and fail-safes.
+
+\subsection{Ignoring Context and Nuance}
+Metrics cannot capture all nuance. Document how qualitative insights or ethics considerations can override metrics when necessary.
+
+\section{Metrics Dashboards and Monitoring}
+\label{sec:dashboards}
+
+Visibility keeps metrics actionable.
+
+\subsection{Dashboard Design Principles}
+Dashboards should prioritize clarity, highlight deviations, and offer drill-downs. Tailor detail to the audience.
+
+\subsection{Real-Time Monitoring}
+Implement alerting when metrics breach thresholds. Automate rollback triggers where appropriate.
+
+\subsection{Historical Trends}
+Track seasonal patterns, moving averages, and regression lines to contextualize changes.
+
+\subsection{Automated Analysis}
+Leverage anomaly detection or forecasting to flag issues early. Record annotations when changes occur for future audits.
+
+\subsection{Example: Model Performance Dashboard}
+Provide a layout showing offline metrics, online experiment outcomes, drift detectors, and business KPIs, all linked to relevant tickets.
+
+\section{Metrics in Continuous Improvement}
+\label{sec:continuous-improvement}
+
+Metrics underpin learning organizations.
+
+\subsection{Baseline, Measure, Improve, Repeat}
+Document baselines before changes, measure results, and iterate. Incorporate metrics into retrospectives to assess whether processes improved.
+
+\subsection{Improvement Targets}
+Set realistic stretch goals. Use statistical process control charts to track whether improvements are sustained.
+
+\subsection{Experimentation Culture}
+Make experimentation the default: small, instrumented changes inform future decisions. Encourage sharing of negative results.
+
+\subsection{Sharing and Learning}
+Create forums where teams present metric outcomes, case studies, and lessons learned. Institutionalize best practices via documentation and training.
+
+\section{Summary}
+\label{sec:metrics-summary}
+
+Metrics-driven acceptance criteria bring clarity, accountability, and learning to the product lifecycle. By choosing meaningful metrics, balancing trade-offs, and monitoring outcomes, teams ensure that shipped features deliver tangible value. The next chapter discusses documentation patterns that preserve these insights.

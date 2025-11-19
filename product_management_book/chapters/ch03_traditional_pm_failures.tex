@@ -1,0 +1,93 @@
+\chapter{Why Traditional PM Approaches Fail in Data-Driven Products}
+\label{ch:traditional-pm-failures}
+
+Classic product management frameworks were designed for contexts where scope is largely knowable, dependencies are stable, and compliance is the main source of uncertainty. Data-driven initiatives violate each of these assumptions. The interplay of experimentation, data availability, and evolving models demands a different operating system for product teams. This chapter illustrates where waterfall thinking and checkbox Agile fall apart and uses two case studies to highlight the cost of ignoring these signals.
+
+\section{The Waterfall Legacy}
+\label{sec:waterfall-legacy}
+
+Waterfall project management emerged from construction and defense manufacturing, industries where changing scope midstream is prohibitively expensive. Its success depends on the ability to define requirements completely and to plan sequential phases with minimal feedback. Modern software development borrowed many of these artifacts even as our products became far more malleable. When applied to data-intensive products, waterfall assumptions become liabilities; discovery never ends, and even late-stage insights can invalidate earlier decisions.
+
+\subsection{Fixed Requirements Assumption}
+Waterfall presumes that requirements can be fixed before implementation begins. In data-driven work, however, requirements evolve as soon as teams examine real data. Attempting to specify model features, metrics, or data transformations upfront creates false certainty. Teams end up enforcing outdated requirements long after evidence proves they were wrong, wasting effort and eroding trust. Translating requirements as hypotheses keeps discovery alive while still providing direction.
+
+\subsection{Sequential Phase Thinking}
+The classic sequence—requirements, design, implementation, testing—assumes each stage hands off to the next with minimal overlap. Data science insists on rapid loops: experiments inform design, which informs data collection, which loops back to hypothesis refinement. Sequential thinking forces ML teams to wait for approvals or documentation that will likely become obsolete. Product managers should instead foster concurrent collaboration, where design, engineering, and data science iterate together with shared checkpoints.
+
+\subsection{Predictable Timelines and Outcomes}
+Waterfall planning rewards precise estimates and penalizes deviation. Data science projects resist deterministic scheduling because effort depends on signal strength, data quality, and regulatory considerations. False precision triggers executive disappointment and knee-jerk reprioritization. Translation means presenting estimates as probability distributions, continuously updating them as data arrives, and pairing optimistic scenarios with contingency plans that keep stakeholders informed without overpromising.
+
+\section{Agile, But Not Agile Enough}
+\label{sec:agile-limitations}
+
+Agile practices improved upon waterfall by embracing iteration and customer feedback. Yet many implementations devolve into ceremony-heavy routines that prioritize predictability over learning. Scrum boards filled with ``build model'' tasks do little to capture the nuance of experimentation. To support data-driven work, Agile practices must expand to explicitly account for hypothesis testing, instrumentation, and post-launch monitoring.
+
+\subsection{User Stories for Data Science}
+The canonical ``As a user, I want...'' story works well for user-facing functionality but poorly captures backstage work such as creating embeddings or curating datasets. Product managers can adapt the format by anchoring stories to decision-makers rather than end users (``As a fraud analyst, I need a recall of 0.9 so that ...'') or by framing experiments directly (``As a product team, we believe feature X is predictive; we will know we're right when...''). Making the learning objective explicit prevents purely technical stories from drifting aimlessly.
+
+\subsection{Definition of Done for ML Models}
+Unlike UI features, ML models degrade over time as data drifts. Declaring a model ``done'' at the end of a sprint masks the ongoing operational responsibilities of monitoring, retraining, and recalibrating. Teams need a Definition of Done that spans pre-production validation, fairness checks, deployment readiness, and post-launch observability. Product managers should treat these as acceptance criteria rather than optional extras, ensuring capacity is reserved for maintenance work.
+
+\subsection{Velocity and Story Points}
+Story points and velocity assume that similar-looking work items require similar effort over time. Experiments, however, may succeed immediately or require multiple iterations with no guarantee of payoff. Comparing ``points'' of model research against UI features creates perverse incentives, either pressuring data scientists to inflate numbers or discouraging research entirely. Alternative metrics such as experiment throughput, time-to-signal, or percentage of hypotheses retired can better reflect progress without distorting planning.
+
+\section{The Feature Factory Trap}
+\label{sec:feature-factory}
+
+Feature factories optimize for output rather than outcome. Teams are rewarded for shipping artifacts regardless of whether they solve the problem they set out to address. In data-driven contexts, this leads to models that never reach production, dashboards no one reads, and experiments whose learnings are never applied. A relentless focus on throughput amplifies ML debt and hides the absence of validated outcomes.
+
+\subsection{Optimizing for Throughput}
+When incentives favor shipping, teams rush prototypes into production without proper data validation. Experiment time is slashed, instrumentation is deferred, and retraining pipelines are left unbuilt. Each shortcut accumulates debt that must eventually be paid as outages, false positives, or compliance violations. Product managers must shield exploratory work from throughput metrics and explicitly allocate capacity for foundational investments.
+
+\subsection{Ignoring Negative Results}
+Negative results are often buried because they appear to signal inefficiency. Yet documenting what did not work prevents the organization from repeating mistakes and accelerates future discovery. Celebrating only positive launches incentivizes teams to manipulate metrics or avoid risky bets. Translators can normalize learning by highlighting experiments that disproved assumptions and by ensuring review forums ask ``What did we learn?'' alongside ``What did we ship?''
+
+\subsection{Confusing Activity with Progress}
+Busy teams attend countless ceremonies, close numerous tickets, and yet move no meaningful metrics. Progress requires sequencing around the most impactful hypotheses and ruthlessly dropping work that does not contribute to the strategy. Product managers play a crucial role in saying ``no,'' focusing scarce data science capacity on initiatives where insights can influence design, policy, or monetization decisions.
+
+\section{Case Study: The Over-Specified ML Project}
+\label{sec:case-overspecified}
+
+Consider a financial-services company that attempted to automate credit-risk classification. Leadership insisted on a detailed requirements document covering every feature, model type, and acceptance test. The document locked in unrealistic expectations—such as using a single external dataset—and prohibited iterative discovery. When reality diverged from the plan, the team lacked the authority to adjust course.
+
+\subsection{The Initial Requirements}
+Stakeholders demanded a specific accuracy target and mandated that the system support all customer segments by launch. Red flags abounded: data coverage varied wildly across segments, the labeling pipeline was untested, and regulatory constraints made some features unusable. Nevertheless, the team committed to the document because it was treated as a contract.
+
+\subsection{The Reality of Development}
+As development progressed, engineers discovered inconsistent schemas, missing values, and latency that rendered real-time scoring infeasible. Data scientists could not meet the mandated accuracy without ingesting new data, but procurement timelines stretched for months. Rather than revisiting assumptions, leadership doubled down on the original plan, forcing the team to ship a brittle model.
+
+\subsection{The Aftermath}
+The deployed system misclassified edge cases, triggering manual review and erasing projected savings. Regulators flagged the undocumented feature selection process, leading to remediation costs. In retrospect, the team recognized that requirements should have been framed as hypotheses with validation checkpoints. Empowering the PM to renegotiate scope as evidence emerged would have prevented months of wasted effort.
+
+\section{Case Study: The Agile Theater}
+\label{sec:case-agile-theater}
+
+A consumer-tech company prided itself on ``being Agile.'' Stand-ups, sprint reviews, and burndown charts were immaculate. Yet output lagged because the ceremonies masked deeper issues: data science work was force-fitted into two-week sprints, and stakeholder reviews focused on demos rather than insights learned.
+
+\subsection{The Symptoms}
+Sprints ended with unpredictable outcomes, leaving business partners confused about what had been accomplished. Data scientists felt pressured to show demos even when experiments did not yield production-ready assets. Engineers became frustrated by late-breaking changes triggered by insights that surfaced outside of sprint cadences. Confidence eroded, and leadership questioned the value of the investment.
+
+\subsection{The Root Causes}
+The root issues lay in misaligned incentives. Velocity targets pushed teams to slice work into arbitrary tickets, masking the exploratory nature of analysis. Data scientists were not involved in roadmap planning, so dependencies surfaced late. Communication relied on sprint rituals rather than on decision-focused forums where hypotheses and findings could be debated.
+
+\subsection{The Turnaround}
+The turnaround began when the PM reframed the backlog as a portfolio of hypotheses with explicit decision points. Sprint reviews shifted from demo theater to learning reviews where teams discussed experiments run, results obtained, and next steps. Dedicated discovery tracks provided breathing room for research without inflating delivery commitments. Within two quarters, stakeholder trust returned as they saw clear rationale behind pivot decisions.
+
+\section{What's Missing: A New Approach}
+\label{sec:new-approach}
+
+Traditional frameworks fall short because they ignore uncertainty, lack explicit learning loops, and fail to align incentives across disciplines. The rest of the book introduces a pragmatic alternative: treat requirements as hypotheses, define quantitative guardrails, and build operating rhythms that celebrate learning as much as shipping.
+
+\subsection{Embracing Uncertainty}
+Requirements should state the problem, the hypothesis, and the observable signal that would confirm success. Iterative refinement based on data becomes a strength rather than a sign of failure. Product managers provide structure by documenting assumptions, decision triggers, and contingency plans.
+
+\subsection{Combining Rigor with Flexibility}
+Flexibility does not mean a lack of rigor. Structured experimentation with pre-registered metrics and instrumentation ensures that pivots are grounded in evidence. Clear success criteria describe the behaviors we expect to observe, not the exact implementation, granting engineers and data scientists the autonomy to discover the best solution.
+
+\subsection{Aligning Incentives Across Disciplines}
+Cross-functional incentives must reward shared outcomes. That involves aligning teams around north-star metrics, embedding data scientists in planning rituals, and providing engineering with visibility into business milestones. Chapters that follow introduce collaboration patterns—such as joint discovery workshops and translation canvases—that institutionalize this alignment.
+
+\section{Summary}
+\label{sec:failures-summary}
+
+Waterfall and superficial Agile frameworks collapse when faced with the ambiguity of data-driven products. Over-specified requirements, ceremony-driven planning, and throughput obsession obscure learning and derail outcomes. The next chapters delve into concrete tools for reframing requirements, quantifying uncertainty, and building operating mechanisms that honor the realities of data-informed product development.

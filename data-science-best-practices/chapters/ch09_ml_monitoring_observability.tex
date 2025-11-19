@@ -2,11 +2,11 @@
 
 \section{Introduction}
 
-Production ML systems fail silently. A fraud detection model can degrade from 95\% to 65\% accuracy over weeks while still serving predictions with confidence. Data distributions shift, features become stale, and infrastructure degrades—all invisible without proper monitoring. The difference between reliable ML systems and those that erode business value is comprehensive observability.
+Production ML systems fail silently. A fraud detection model can degrade from 95\% to 65\% accuracy over weeks while still serving predictions with confidence. Data distributions shift, features become stale, and infrastructure degrades---all invisible without proper monitoring. The difference between reliable ML systems and those that erode business value is comprehensive observability.
 
 \subsection{The Silent Degradation Problem}
 
-Consider a credit scoring model deployed in January. By March, prediction latency has tripled, data drift affects 40\% of features, and accuracy has dropped 15\%—yet the system continues serving predictions. Without monitoring, this degradation goes unnoticed until business metrics collapse or regulatory audits reveal failures.
+Consider a credit scoring model deployed in January. By March, prediction latency has tripled, data drift affects 40\% of features, and accuracy has dropped 15\%---yet the system continues serving predictions. Without monitoring, this degradation goes unnoticed until business metrics collapse or regulatory audits reveal failures.
 
 \subsection{Why ML Monitoring is Different}
 
@@ -3438,7 +3438,7 @@ class ADWIN:
     When drift is detected, the window is shrunk to remove old data.
 
     Reference:
-        Bifet & Gavaldà (2007). "Learning from Time-Changing Data with
+        Bifet \& Gavalda (2007). "Learning from Time-Changing Data with
         Adaptive Windowing."
 
     Example:
@@ -5864,9 +5864,9 @@ Attribution Confidence: {attribution.attribution_confidence:.1%}
                 report += f"  - {confounder}\n"
 
         if attribution.attribution_confidence >= self.min_confidence_for_attribution:
-            report += f"\n✓ High confidence that model change caused revenue {direction}"
+            report += f"\n[OK] High confidence that model change caused revenue {direction}"
         else:
-            report += f"\n⚠ Low confidence - confounders or insufficient data"
+            report += f"\n[WARNING] Low confidence - confounders or insufficient data"
 
         return report
 \end{lstlisting}
@@ -6427,7 +6427,7 @@ However, 3 months after deployment:
 \textbf{Root cause analysis revealed}:
 \begin{itemize}
     \item Model optimized for click prediction, not engagement quality
-    \item Higher accuracy achieved by recommending "clickbait" content
+    \item Higher accuracy achieved by recommending ``clickbait`` content
     \item Users clicked more (improving accuracy) but were less satisfied
     \item Content quality degraded, harming long-term retention
     \item No business metric tracking connected to model improvements
@@ -9482,7 +9482,7 @@ This section presents five detailed enterprise scenarios demonstrating critical 
 
 \subsubsection{The Problem}
 
-TechBank deployed a fraud detection model in January 2023 achieving 96\% accuracy. Without comprehensive monitoring, the model's performance gradually degraded over six months to 71\% accuracy—unnoticed until a major fraud ring exploited the weakness, resulting in \$12.4M in fraudulent transactions during Q2. The incident occurred because the team relied solely on monthly batch evaluations rather than continuous monitoring. Customer trust eroded as legitimate transactions were increasingly flagged (false positive rate rose from 2\% to 18\%), while actual fraud slipped through. The fraud pattern had shifted toward synthetic identity fraud, a pattern the model had minimal training data for, yet no drift detection was in place to identify this distributional change.
+TechBank deployed a fraud detection model in January 2023 achieving 96\% accuracy. Without comprehensive monitoring, the model's performance gradually degraded over six months to 71\% accuracy---unnoticed until a major fraud ring exploited the weakness, resulting in \$12.4M in fraudulent transactions during Q2. The incident occurred because the team relied solely on monthly batch evaluations rather than continuous monitoring. Customer trust eroded as legitimate transactions were increasingly flagged (false positive rate rose from 2\% to 18\%), while actual fraud slipped through. The fraud pattern had shifted toward synthetic identity fraud, a pattern the model had minimal training data for, yet no drift detection was in place to identify this distributional change.
 
 \subsubsection{Incident Timeline}
 
@@ -9654,11 +9654,11 @@ OPERATIONAL IMPACT:
   Executive time consumed:          180 hours
 
 RECOVERY METRICS (Post-Implementation):
-  Time to detect degradation:       6 months → 2 hours
-  Time to incident response:        N/A → 15 minutes
-  Model retraining frequency:       Ad-hoc → Automated weekly
-  False positive rate:              18% → 2.3%
-  Fraud detection accuracy:         71% → 97.5%
+  Time to detect degradation:       6 months to 2 hours
+  Time to incident response:        N/A to 15 minutes
+  Model retraining frequency:       Ad-hoc to Automated weekly
+  False positive rate:              18% to 2.3%
+  Fraud detection accuracy:         71% to 97.5%
 
   Prevented losses (6 months post-fix): \$18,200,000
   Monitoring system ROI:            4,200%
@@ -9872,7 +9872,7 @@ class SilentDegradationPrevention:
 
 \subsubsection{The Problem}
 
-RetailAI deployed a recommendation model with enthusiastic monitoring—tracking 240 metrics with aggressive thresholds. Within the first week, the system generated 18,500 alerts, averaging 110 alerts per hour. The ML team, initially responsive, experienced severe alert fatigue within three days. By week two, they began ignoring alerts entirely, missing a critical data pipeline failure that caused \$340K in lost revenue over 48 hours. The root cause was overly sensitive thresholds combined with correlated metrics (e.g., alerting on both ``latency\_p95'' and ``latency\_p99'' which move together), seasonal patterns triggering false alarms (traffic spikes every day at 9 AM treated as anomalies), and lack of alert deduplication allowing the same issue to generate hundreds of redundant notifications.
+RetailAI deployed a recommendation model with enthusiastic monitoring---tracking 240 metrics with aggressive thresholds. Within the first week, the system generated 18,500 alerts, averaging 110 alerts per hour. The ML team, initially responsive, experienced severe alert fatigue within three days. By week two, they began ignoring alerts entirely, missing a critical data pipeline failure that caused \$340K in lost revenue over 48 hours. The root cause was overly sensitive thresholds combined with correlated metrics (e.g., alerting on both ``latency\_p95'' and ``latency\_p99'' which move together), seasonal patterns triggering false alarms (traffic spikes every day at 9 AM treated as anomalies), and lack of alert deduplication allowing the same issue to generate hundreds of redundant notifications.
 
 \subsubsection{Incident Timeline}
 
@@ -9919,7 +9919,7 @@ Day 8 (Monday):
 Week 2:
   - Complete monitoring system overhaul
   - Implementation of intelligent alert management
-  - Alert volume reduction: 18,500/week → 47/week
+  - Alert volume reduction: 18,500/week -> 47/week
 \end{lstlisting}
 
 \subsubsection{Before Configuration}
@@ -9954,7 +9954,7 @@ alerting:
 
     # ... 238 more similar rules
 
-  deduplication: disabled  # Same issue → multiple alerts
+  deduplication: disabled  # Same issue -> multiple alerts
 
   correlation_analysis: disabled  # Can't group related alerts
 
@@ -10128,16 +10128,16 @@ MISSED INCIDENT IMPACT:
 
 TEAM IMPACT:
   ML engineer burnout:              3 engineers (2 requested transfer)
-  On-call satisfaction score:       2.1/10 → 1.3/10
+  On-call satisfaction score:       2.1/10 -> 1.3/10
   Average sleep hours during week:  4.2 hours
   Weekend work hours:               38 hours (unpaid)
 
 POST-FIX IMPROVEMENTS:
-  Alert volume reduction:           18,500/week → 47/week (99.7% reduction)
-  False positive rate:              99.94% → 8.5%
-  Time to detect real issues:       48 hours → 3.2 minutes
-  Engineering time on alerts:       180 hours/week → 4 hours/week
-  On-call satisfaction:             1.3/10 → 7.8/10
+  Alert volume reduction:           18,500/week -> 47/week (99.7% reduction)
+  False positive rate:              99.94% -> 8.5%
+  Time to detect real issues:       48 hours -> 3.2 minutes
+  Engineering time on alerts:       180 hours/week -> 4 hours/week
+  On-call satisfaction:             1.3/10 -> 7.8/10
 
   Incidents prevented (6 months):   23 major, 67 minor
   Estimated value of prevention:    \$2,100,000
@@ -10424,7 +10424,7 @@ class AlertFatiguePreventionSystem:
 
 \subsubsection{The Problem}
 
-FinServe Corp operated an AI-driven loan approval system processing 15,000 applications daily. During a routine regulatory audit in Q3 2023, examiners requested prediction logs and model decision explanations for a random sample of 500 loan decisions from the previous quarter. The ML team discovered they had only retained high-level aggregate metrics—individual prediction logs, feature values, and model versions were not stored. They could not demonstrate that protected characteristics (race, gender, age) didn't influence decisions, couldn't reproduce specific predictions, and had no audit trail showing which model version made each decision. The regulatory finding resulted in \$4.7M in fines, a six-month restriction on new AI deployments, mandatory third-party auditing, and severe reputational damage in financial services press.
+FinServe Corp operated an AI-driven loan approval system processing 15,000 applications daily. During a routine regulatory audit in Q3 2023, examiners requested prediction logs and model decision explanations for a random sample of 500 loan decisions from the previous quarter. The ML team discovered they had only retained high-level aggregate metrics---individual prediction logs, feature values, and model versions were not stored. They could not demonstrate that protected characteristics (race, gender, age) didn't influence decisions, couldn't reproduce specific predictions, and had no audit trail showing which model version made each decision. The regulatory finding resulted in \$4.7M in fines, a six-month restriction on new AI deployments, mandatory third-party auditing, and severe reputational damage in financial services press.
 
 \subsubsection{Incident Timeline}
 
@@ -10695,13 +10695,13 @@ TOTAL INCIDENT COST:                \$12,322,000
 
 POST-REMEDIATION BENEFITS:
   Regulatory audit pass rate:       100% (3 consecutive audits)
-  Time to generate compliance report: 3 weeks → 2 hours (automated)
-  Audit preparation cost:           \$200K → \$15K per audit
+  Time to generate compliance report: 3 weeks -> 2 hours (automated)
+  Audit preparation cost:           \$200K -> \$15K per audit
 
   Risk mitigation value:
     Prevented future fines:         \$8,000,000 (estimated)
     Competitive advantage restored: Partnership growth resumed
-    Customer trust recovered:       Application abandonment: 15% → 7%
+    Customer trust recovered:       Application abandonment: 15% -> 7%
 
   ROI of compliance monitoring:     340% (3-year horizon)
 \end{lstlisting}
@@ -11022,7 +11022,7 @@ class CompliancePredictionLogger:
 
 \subsubsection{The Problem}
 
-MedTech AI deployed a patient risk stratification model used by clinicians, IT operations, and ML engineers. At 2:47 AM on a Saturday, the model began producing anomalous risk scores—incorrectly flagging low-risk patients as high-risk. Automated alerts fired to three different teams, but unclear ownership led to a 14-hour incident during which 2,847 patients received unnecessary urgent care notifications. The root cause was a data pipeline change by the data engineering team that wasn't communicated to ML ops. No single team owned the end-to-end incident response. The ML team thought IT was investigating, IT assumed ML was handling it, and clinical informatics wasn't informed until patients started complaining. The lack of a RACI matrix and unified incident command structure cost \$680K in operational waste and risked patient safety.
+MedTech AI deployed a patient risk stratification model used by clinicians, IT operations, and ML engineers. At 2:47 AM on a Saturday, the model began producing anomalous risk scores---incorrectly flagging low-risk patients as high-risk. Automated alerts fired to three different teams, but unclear ownership led to a 14-hour incident during which 2,847 patients received unnecessary urgent care notifications. The root cause was a data pipeline change by the data engineering team that wasn't communicated to ML ops. No single team owned the end-to-end incident response. The ML team thought IT was investigating, IT assumed ML was handling it, and clinical informatics wasn't informed until patients started complaining. The lack of a RACI matrix and unified incident command structure cost \$680K in operational waste and risked patient safety.
 
 \subsubsection{Incident Timeline}
 
@@ -11033,9 +11033,9 @@ Saturday, 2:47 AM:
   - Risk scores begin drifting upward
 
 Saturday, 2:52 AM:
-  - Automated alert: "Feature drift detected" → ML Team Slack (no response, 2 AM)
-  - Automated alert: "Prediction distribution shift" → Data Team (no on-call)
-  - Automated alert: "API latency spike" → IT Ops PagerDuty (acknowledged)
+  - Automated alert: "Feature drift detected" -> ML Team Slack (no response, 2 AM)
+  - Automated alert: "Prediction distribution shift" -> Data Team (no on-call)
+  - Automated alert: "API latency spike" -> IT Ops PagerDuty (acknowledged)
 
 Saturday, 3:15 AM:
   - IT ops engineer investigates latency alert
@@ -11102,7 +11102,7 @@ monitoring:
     infrastructure_monitoring:
       owner: it_ops
       alerts: pagerduty
-      escalation: it_manager → vp_it
+      escalation: it_manager -> vp_it
 
     data_pipeline_monitoring:
       owner: data_engineering
@@ -11300,10 +11300,10 @@ PATIENT SAFETY RISK:
   Regulatory reporting: Required (patient safety event)
 
 POST-FIX IMPROVEMENTS:
-  Time to unified incident response: 11.5 hours → 8 minutes
-  Incident commander assignment:     N/A → Automatic (via rotation)
-  Cross-team communication:          Ad-hoc → Structured (#incident-response-ml)
-  Duplicate investigation:           87 hours → 0 hours
+  Time to unified incident response: 11.5 hours -> 8 minutes
+  Incident commander assignment:     N/A -> Automatic (via rotation)
+  Cross-team communication:          Ad-hoc -> Structured (#incident-response-ml)
+  Duplicate investigation:           87 hours -> 0 hours
 
   Incidents resolved (6 months):
     With old system: Avg 6.4 hours, 3 teams working independently
@@ -11683,7 +11683,7 @@ ETA Resolution: {eta_resolution}
 
 \subsubsection{The Problem}
 
-CloudRec operated a large-scale recommendation model serving 50M requests daily. Over six months, their monitoring infrastructure costs grew from \$18K/month to \$247K/month—exceeding the entire ML team's budget and threatening to make the model economically unviable. The explosion was caused by logging every prediction with full feature vectors (850 features × 50M predictions/day = 42.5B feature values/day), storing high-cardinality metrics in Prometheus (3.2M unique time series), retaining raw logs for 90 days in Elasticsearch (187 TB), and running 24/7 drift detection on all 850 features every 5 minutes. The monitoring cost (\$247K/month) approached the model's business value (\$380K/month in incremental revenue). Leadership demanded either cost reduction or model shutdown. An emergency cost optimization reduced monitoring costs by 91\% while improving detection effectiveness.
+CloudRec operated a large-scale recommendation model serving 50M requests daily. Over six months, their monitoring infrastructure costs grew from \$18K/month to \$247K/month---exceeding the entire ML team's budget and threatening to make the model economically unviable. The explosion was caused by logging every prediction with full feature vectors (850 features $	imes$ 50M predictions/day = 42.5B feature values/day), storing high-cardinality metrics in Prometheus (3.2M unique time series), retaining raw logs for 90 days in Elasticsearch (187 TB), and running 24/7 drift detection on all 850 features every 5 minutes. The monitoring cost (\$247K/month) approached the model's business value (\$380K/month in incremental revenue). Leadership demanded either cost reduction or model shutdown. An emergency cost optimization reduced monitoring costs by 91\% while improving detection effectiveness.
 
 \subsubsection{Incident Timeline}
 
@@ -11706,7 +11706,7 @@ Month 3 (Mar):
 
 Month 4 (Apr):
   - Retention increased to 90 days for "compliance"
-  - Elasticsearch cluster: 12 nodes → 28 nodes
+  - Elasticsearch cluster: 12 nodes -> 28 nodes
   - Prometheus cardinality explosion (high-dimensional labels)
   - Monitoring cost: \$127,000 (+119%)
   - CFO escalation
@@ -11734,13 +11734,13 @@ Week 2-3 (Implementation):
   - Sampling strategy: Log 1% of predictions (full), 100% (minimal)
   - Feature reduction: Drift detection on 47 critical features only
   - Tiered retention: 7 days full logs, 30 days aggregates
-  - Metrics cardinality reduction: 3.2M → 45K time series
+  - Metrics cardinality reduction: 3.2M -> 45K time series
   - Smart batching and compression
 
 Week 4 (Results):
   - New monitoring cost: \$22,000/month (91% reduction!)
   - Detection effectiveness: Maintained (no degradation)
-  - False positive rate: 12% → 3% (better quality!)
+  - False positive rate: 12% -> 3% (better quality!)
 \end{lstlisting}
 
 \subsubsection{Before Configuration}
@@ -11779,7 +11779,7 @@ monitoring:
   infrastructure:
     elasticsearch:
       nodes: 28
-      instance_type: r5.4xlarge  # \$1.008/hour × 28 = \$21,081/month
+      instance_type: r5.4xlarge  # \$1.008/hour $	imes$ 28 = \$21,081/month
       storage: 187_TB
 
     prometheus:
@@ -11934,14 +11934,14 @@ DETECTION EFFECTIVENESS:
     After: 3% (focused on what matters)
 
 BUSINESS OUTCOME:
-  Model viability:                  Threatened → Secure
-  Monitoring ROI:                   Negative → 1,627%
+  Model viability:                  Threatened -> Secure
+  Monitoring ROI:                   Negative -> 1,627%
   Detection quality:                Maintained
   Team productivity:                Improved (less noise)
 
   Opportunity cost prevented:
     Model would have been shut down
-    Lost revenue: \$380K/month × 12 months = \$4.56M
+    Lost revenue: \$380K/month $	imes$ 12 months = \$4.56M
     Cost optimization saved the model!
 \end{lstlisting}
 
@@ -12414,15 +12414,15 @@ incident_post_mortem:
     # Metrics for preventing recurrence
     - metric: "Time to incident acknowledgment"
       target: "< 15 minutes"
-      current: "28 minutes → 8 minutes (improved)"
+      current: "28 minutes -> 8 minutes (improved)"
 
     - metric: "Cross-team coordination time"
       target: "< 30 minutes"
-      current: "11.7 hours → 8 minutes (improved)"
+      current: "11.7 hours -> 8 minutes (improved)"
 
     - metric: "Change notification compliance"
       target: "100%"
-      current: "0% → 100% (mandated)"
+      current: "0% -> 100% (mandated)"
 
   follow_up:
     review_date: "2023-11-15"
@@ -12439,8 +12439,8 @@ incident_post_mortem:
     \item \textbf{Blameless culture is essential}: Focus on systems and processes, not individuals; people don't cause incidents, systems do
     \item \textbf{Conduct within 48 hours}: Memory fades quickly; strike while details are fresh
     \item \textbf{Include all participants}: Every team that touched the incident should contribute
-    \item \textbf{Use Five Whys to find root cause}: Keep asking "why" until you reach systemic issues
-    \item \textbf{Quantify everything}: Business impact, technical impact, time spent—numbers drive action
+    \item \textbf{Use Five Whys to find root cause}: Keep asking ``why`` until you reach systemic issues
+    \item \textbf{Quantify everything}: Business impact, technical impact, time spent---numbers drive action
     \item \textbf{Action items need owners and deadlines}: Vague commitments accomplish nothing
     \item \textbf{Track action item completion}: Post-mortems are worthless if learnings aren't implemented
     \item \textbf{Share broadly}: Other teams can learn from your incidents
@@ -12940,7 +12940,7 @@ class StructuredLogger:
     def _format_stacktrace(self, exception: Exception) -> str:
         """Format exception stacktrace for logging."""
         import traceback
-        return ''.join(traceback.format_exception(
+        return ".join(traceback.format_exception(
             type(exception), exception, exception.__traceback__
         ))
 
@@ -16262,7 +16262,7 @@ SLI: {slo.sli.name} ({slo.sli.sli_type.value})
 Target: {slo.sli.target_value} ({slo.target_percentage}% of time)
 Current Value: {slo.sli.current_value if slo.sli.current_value else 'N/A'}
 Compliance: {compliance:.2f}%
-Status: {'✓ MEETING SLO' if compliance >= slo.target_percentage else '✗ VIOLATING SLO'}
+Status: {'[OK] MEETING SLO' if compliance >= slo.target_percentage else '[FAIL] VIOLATING SLO'}
 
 Error Budget:
   Total: {error_budget.total_budget:.2f}%
@@ -16382,7 +16382,7 @@ BLAMELESS POST-MORTEM FACILITATION GUIDELINES
 2. FACILITATE DISCUSSION
    - Let participants speak without interruption
    - Redirect blame toward systemic issues
-   - Example: "The engineer made a mistake" → "The deployment process lacks validation"
+   - Example: "The engineer made a mistake" -> "The deployment process lacks validation"
 
 3. FOCUS ON SYSTEMS
    - Why did the system allow this to happen?

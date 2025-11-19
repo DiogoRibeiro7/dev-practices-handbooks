@@ -2,7 +2,7 @@
 
 \section{Introduction}
 
-Model selection is one of the most critical decisions in machine learning projects. Yet many teams approach it unsystematically: trying a few algorithms, picking the one with the highest validation accuracy, and moving to production. This naive approach often leads to models that fail under real-world conditions—overfitting to validation data, poor performance on edge cases, or unacceptable inference latency.
+Model selection is one of the most critical decisions in machine learning projects. Yet many teams approach it unsystematically: trying a few algorithms, picking the one with the highest validation accuracy, and moving to production. This naive approach often leads to models that fail under real-world conditions---overfitting to validation data, poor performance on edge cases, or unacceptable inference latency.
 
 \subsection{The Model Selection Challenge}
 
@@ -1447,7 +1447,7 @@ class PerformanceMonitor:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute('''
+        cursor.execute("'
             CREATE TABLE IF NOT EXISTS performance_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 model_name TEXT NOT NULL,
@@ -1457,9 +1457,9 @@ class PerformanceMonitor:
                 n_samples INTEGER NOT NULL,
                 data_hash TEXT NOT NULL
             )
-        ''')
+        "')
 
-        cursor.execute('''
+        cursor.execute("'
             CREATE TABLE IF NOT EXISTS degradation_alerts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 model_name TEXT NOT NULL,
@@ -1471,12 +1471,12 @@ class PerformanceMonitor:
                 severity TEXT NOT NULL,
                 should_retrain BOOLEAN NOT NULL
             )
-        ''')
+        "')
 
-        cursor.execute('''
+        cursor.execute("'
             CREATE INDEX IF NOT EXISTS idx_snapshots_model_time
             ON performance_snapshots(model_name, timestamp)
-        ''')
+        "')
 
         conn.commit()
         conn.close()
@@ -1503,11 +1503,11 @@ class PerformanceMonitor:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute('''
+        cursor.execute("'
             INSERT INTO performance_snapshots
             (model_name, timestamp, metric_name, metric_value, n_samples, data_hash)
             VALUES (?, ?, ?, ?, ?, ?)
-        ''', (model_name, timestamp.isoformat(), metric_name, metric_value,
+        "', (model_name, timestamp.isoformat(), metric_name, metric_value,
               n_samples, data_hash))
 
         conn.commit()
@@ -1606,12 +1606,12 @@ class PerformanceMonitor:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute('''
+        cursor.execute("'
             INSERT INTO degradation_alerts
             (model_name, timestamp, metric_name, baseline_value, current_value,
              degradation_pct, severity, should_retrain)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
+        "', (
             alert.model_name,
             alert.timestamp.isoformat(),
             alert.metric_name,
@@ -1635,11 +1635,11 @@ class PerformanceMonitor:
 
         cutoff = datetime.now() - timedelta(days=days)
 
-        query = '''
+        query = "'
             SELECT * FROM degradation_alerts
             WHERE model_name = ? AND timestamp >= ?
             ORDER BY timestamp DESC
-        '''
+        "'
 
         df = pd.read_sql_query(query, conn, params=(model_name, cutoff.isoformat()))
         conn.close()
@@ -1658,12 +1658,12 @@ class PerformanceMonitor:
 
         cutoff = datetime.now() - timedelta(days=days)
 
-        query = '''
+        query = "'
             SELECT timestamp, metric_value
             FROM performance_snapshots
             WHERE model_name = ? AND metric_name = ? AND timestamp >= ?
             ORDER BY timestamp
-        '''
+        "'
 
         df = pd.read_sql_query(
             query, conn,
@@ -2208,7 +2208,7 @@ class CustomAutoML:
         # Check constraints (simplified - in production, train and measure actual metrics)
         # Here we use heuristics based on model type
         if self.constraints.require_interpretability:
-            algorithm = trial.params.get('algorithm', '')
+            algorithm = trial.params.get('algorithm', ")
             if algorithm == 'neural':
                 # Penalize complex models when interpretability required
                 mean_score *= 0.8
@@ -3834,14 +3834,14 @@ The 3\% accuracy gain generated \$500/month in additional revenue, while infrast
 \textbf{Problem}: Regulators required the institution to explain all loan denials to applicants. The XGBoost model provided SHAP values, but:
 \begin{itemize}
     \item Explanations varied significantly for similar applicants
-    \item SHAP values didn't satisfy "clearly understandable to non-technical consumers" regulatory requirement
+    \item SHAP values didn't satisfy ``clearly understandable to non-technical consumers`` regulatory requirement
     \item Legal team couldn't defend model decisions in disputes
     \item Audit trails were complex and costly to maintain
 \end{itemize}
 
 \textbf{Lesson}: In regulated industries, interpretability is not optional. A 6\% performance gain means nothing if you can't deploy the model legally.
 
-\textbf{Resolution}: Deployed the logistic regression model with clear coefficient interpretations. Each feature's impact could be explained in plain language: "Your income-to-debt ratio of 45\% is above our 40\% threshold, contributing -0.3 to your risk score."
+\textbf{Resolution}: Deployed the logistic regression model with clear coefficient interpretations. Each feature's impact could be explained in plain language: ``Your income-to-debt ratio of 45\% is above our 40\% threshold, contributing -0.3 to your risk score.``
 
 \subsection{Scenario 3: The Resource Reality Check}
 

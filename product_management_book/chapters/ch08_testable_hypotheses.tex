@@ -1,0 +1,157 @@
+\chapter{Writing Testable Hypotheses, Not Just Features}
+\label{ch:testable-hypotheses}
+
+Treating product work like a science experiment enables teams to separate fact from assumption. Hypotheses make beliefs explicit, experiments test them, and evidence guides iteration. This chapter shows how to craft hypotheses that survive scrutiny and how to run experiments that inform decisions rather than merely confirm biases.
+
+\section{The Scientific Method in Product Development}
+\label{sec:scientific-method}
+
+The scientific method maps neatly to product development: observe, hypothesize, experiment, analyze, and repeat. It discourages hero opinions and anchors decisions in evidence.
+
+\subsection{Observation and Question}
+Everything starts with a question informed by user research, telemetry, or market signals. ``Why do trial users churn on day three?'' is more actionable than ``Improve activation.'' Requirements should note the observations that prompted the work.
+
+\subsection{Hypothesis Formation}
+A good hypothesis proposes a causal claim with a reason. For example, ``If we surface contextual tips after the third failed login, then completion rates will increase because users lack guidance.'' The ``because'' forces articulation of mechanism.
+
+\subsection{Experiment Design}
+Experiments must control for confounding variables. Identify the primary metric, guardrails, sample size, and duration before launching. Power calculations or simulation can ensure the experiment detects meaningful effects.
+
+\subsection{Analysis and Conclusion}
+After running the test, analyze results objectively. Document whether the hypothesis held, how strong the evidence was, and what decisions follow. Resist the urge to cherry-pick segments to confirm expectations.
+
+\section{Anatomy of a Testable Hypothesis}
+\label{sec:hypothesis-anatomy}
+
+Hypotheses should be specific, measurable, and falsifiable. A template helps maintain rigor.
+
+\subsection{The If-Then-Because Structure}
+Using ``If we do X, then Y will happen, because Z'' connects action, outcome, and rationale. This format exposes logical gaps and ensures each hypothesis includes a mechanism rather than a wish.
+
+\subsection{Operational Definitions}
+Define every variable precisely. ``Activation'' might mean ``user completes onboarding flow and triggers first API call.'' Without operational definitions, experiments yield ambiguous interpretations.
+
+\subsection{Success Criteria}
+Specify thresholds for declaring success. Include both statistical significance (e.g., p \textless{} 0.05) and practical significance (e.g., at least 3\% lift). Document guardrail metrics to ensure improvements do not come at unacceptable cost.
+
+\subsection{Falsifiability}
+Hypotheses must be disprovable. If results cannot invalidate the idea, it is not a hypothesis. Writing down ``This hypothesis fails if lift is \textless{} 2\% or latency exceeds 100\,ms'' keeps teams honest.
+
+\section{Types of Hypotheses in Product Development}
+\label{sec:hypothesis-types}
+
+Different problems call for different hypothesis types.
+
+\subsection{Descriptive Hypotheses}
+These describe current behavior (``We believe 40\% of sign-ups never complete onboarding''). They guide measurement work and inform priorities.
+
+\subsection{Causal Hypotheses}
+Causal hypotheses assert that changing X will cause Y. They are suited to UX changes, incentive tweaks, or algorithm updates. Verification typically requires randomized experiments.
+
+\subsection{Comparative Hypotheses}
+Comparative statements pit alternatives against each other (``Model architecture A will outperform B on recall''). They enable bake-offs and multi-armed bandit approaches.
+
+\subsection{Predictive Hypotheses}
+Predictive hypotheses forecast future metrics, such as ``The churn model will achieve ROC-AUC of 0.87 on next quarter's data.'' Validation involves backtests, cross-validation, and live shadow tests.
+
+\section{From Feature Specs to Hypotheses}
+\label{sec:features-to-hypotheses}
+
+Reframing traditional requirements as hypotheses shifts attention from shipping features to delivering impact.
+
+\subsection{Traditional Feature Specification}
+Feature specs often describe UI components or API responses without stating why they matter. Stakeholders assume the feature will work, turning review discussions into bikeshedding over details.
+
+\subsection{Hypothesis-Driven Specification}
+A hypothesis-driven spec might read: ``If we add a personalized checklist to onboarding, then activation will increase by 10\% because users understand the next step.'' The spec includes instrumentation requirements and experiment design.
+
+\subsection{Example Transformations}
+\begin{itemize}
+    \item \textbf{New feature request:} Instead of ``Add dark mode,'' use ``If we add dark mode, nightly active time will increase 5\% among power users because glare currently limits usage.''
+    \item \textbf{Performance optimization:} ``If we cache recommendations locally, P95 response time will drop below 150\,ms, improving conversion because users abandon slow pages.''
+    \item \textbf{ML improvement:} ``If we incorporate recency features, fraud recall will rise 3 points without exceeding 2\% false positives because fraudsters reuse patterns.''
+\end{itemize}
+
+\section{Designing Experiments}
+\label{sec:experiment-design}
+
+Experiment design determines whether hypotheses receive meaningful tests.
+
+\subsection{Controlled Experiments (A/B Tests)}
+Randomized control designs isolate the effect of the change. Requirements should note assignment strategy, stratification needs, and guardrails.
+
+\subsection{Quasi-Experimental Designs}
+When randomization is impossible, we rely on techniques like difference-in-differences, synthetic controls, or regression discontinuity. Requirements must describe assumptions and validation steps.
+
+\subsection{Observational Studies}
+Sometimes historical data is all we have. Observational analyses using propensity scores or causal forests can yield insights but require careful documentation of limitations.
+
+\subsection{Minimum Viable Experiments}
+Not every hypothesis warrants a multi-week A/B test. Wizard-of-Oz prototypes, concierge tests, or qualitative studies can cheaply test core assumptions before investing heavily.
+
+\section{Statistical Rigor in Hypothesis Testing}
+\label{sec:statistical-rigor}
+
+Understanding basic statistics keeps teams from drawing false conclusions.
+
+\subsection{Null and Alternative Hypotheses}
+Every test implicitly compares a null (no effect) against an alternative (effect present). Requirements should state both hypotheses and the acceptable Type I/II error rates.
+
+\subsection{Sample Size and Duration}
+Under-powered experiments waste time. Include minimum detectable effect, variance estimates, and required sample sizes. Document whether sequential testing or Bayesian approaches are used.
+
+\subsection{Multiple Testing Problems}
+Running many experiments increases false positives. Requirements should specify correction methods or experiment platforms that control error rates. Avoid peeking unless the methodology supports it.
+
+\subsection{Practical Significance vs. Statistical Significance}
+A statistically significant 0.2\% lift might not justify engineering effort. Pair p-values with effect sizes, confidence intervals, and business impact estimates.
+
+\section{Interpreting Results and Making Decisions}
+\label{sec:interpreting-results}
+
+Data must connect to action.
+
+\subsection{Positive Results}
+When a hypothesis is supported, document rollout plans, monitoring requirements, and follow-up experiments. Treat launch as the start of operational learning, not the end.
+
+\subsection{Negative Results}
+Rejected hypotheses illuminate which paths not to pursue. Capture learnings, retire assumptions, and revisit the problem framing.
+
+\subsection{Ambiguous Results}
+Mixed signals demand additional analysis. Requirements should outline secondary metrics or segmentation analyses to inform next steps rather than leaving ambiguity unresolved.
+
+\subsection{Unexpected Results}
+Surprising outcomes can unlock innovation. Investigate outliers, replicate findings, and consider whether the hypothesis should be revised or if a new question emerged.
+
+\section{Building a Hypothesis-Driven Culture}
+\label{sec:hypothesis-culture}
+
+Hypothesis-driven work thrives when the organization rewards learning.
+
+\subsection{Rewarding Rigorous Thinking}
+Celebrate well-designed experiments even when results are negative. Include experiment quality in performance reviews and roadmaps.
+
+\subsection{Educating Teams}
+Provide training on experimental design, statistics, and interpretation. Pair PMs with data scientists for peer reviews. Maintain internal playbooks with examples.
+
+\subsection{Infrastructure for Experimentation}
+Invest in tooling: feature-flag platforms, experiment analysis pipelines, and metric catalogs. Lowering the cost of experimentation increases the number of hypotheses teams can test responsibly.
+
+\section{Examples: Hypothesis-Driven Development}
+\label{sec:hypothesis-examples}
+
+Examples illustrate how hypotheses move from idea to action.
+
+\subsection{Example 1: UI Redesign}
+Hypothesis: ``If we simplify the checkout flow to two screens, completion will rise by 8\% because users abandon when forced to create accounts early.'' An A/B test confirmed a 9\% lift, leading to global rollout.
+
+\subsection{Example 2: Recommendation Algorithm}
+Hypothesis: ``If we switch to sequence-aware embeddings, click-through rate will increase by 4\% because contextual relevance matters.'' Offline evaluation showed recall gains, and an online experiment validated a 3.7\% lift, prompting migration.
+
+\subsection{Example 3: Pricing Strategy}
+Hypothesis: ``If we offer usage-based pricing to high-volume customers, revenue per account will grow 6\% without increasing churn because these customers value flexibility.'' A phased rollout with guardrails showed a 5.5\% lift and stable churn, leading to broader adoption.
+
+\section{Summary}
+\label{sec:hypotheses-summary}
+
+Writing testable hypotheses refocuses product work on learning and impact. By pairing structured hypotheses with rigorous experiments, teams can make confident decisions even when navigating uncertainty. The next chapter deepens the discussion with statistical techniques for evaluating acceptance criteria.

@@ -1,0 +1,43 @@
+\chapter{Constructive Feedback: Helping Teammates Grow Through Review}
+
+\section{Chapter Overview}
+Feedback is the soul of code review. Delivered well, it changes code, sharpens judgment, and strengthens relationships. Delivered poorly, it erodes trust and slows delivery. This chapter tackles the craft of constructive feedback: framing discussions, tailoring tone to context, balancing praise with critique, and turning lessons into reusable knowledge.
+
+\section{Framing the Conversation}
+Start by grounding the discussion in shared goals. Reference the PR description and emphasize you are collaborating toward the same outcome. Opening with ``Thanks for tackling the caching layer'' or ``Excited to see this feature ship'' reduces defensiveness. Clarify whether comments are suggestions or blockers, and use labels such as ``Blocking'' or ``Optional'' so authors can prioritize. Framing signals respect and sets the tone for productive iteration.
+
+\section{Balancing Reinforcement and Guidance}
+Constructive feedback includes both reinforcement and correction. Recognize effective choices---tests that cover edge cases, thoughtful abstraction boundaries, or clear documentation. Then offer guidance where change is needed. A review that only points out flaws leaves authors guessing whether anything went well, while untempered praise fails to address actual issues. Strive for at least one acknowledgement of good work in every review; specificity matters more than volume.
+
+\section{Tailoring Feedback to Experience Levels}
+New contributors need more context and mentorship, while senior engineers benefit from concise signals. Adjust language accordingly. With juniors, explain why a pattern is dangerous and provide references or snippets. With seniors, signal trust by focusing on high-level risks and pairing on nuanced debates instead of dictating how to implement. Regardless of seniority, avoid talking down to authors---assume competence and invite dialogue.
+
+\section{Transforming Nits Into Systemic Improvements}
+If the same nit appears across multiple PRs, it is no longer a nit---it is a process gap. Instead of repeating the comment forever, document the standard in a style guide, add a linter, or schedule a workshop. Use review time to flag patterns: ``I've left similar comments on three PRs; let's align on this in a design huddle.'' Constructive feedback elevates the entire team, not just the current author.
+
+\section{Disagreeing Productively}
+Disagreements are inevitable. When they occur, focus on data and principles rather than authority. Cite metrics, user impact, or established design guidelines. If consensus stalls, propose experiments (feature flags, A/B tests) or escalate to a synchronous discussion. The goal is not to ``win'' but to find the best solution. When decisions finally land, document the reasoning in the PR or an ADR so future debates have a reference point.
+
+\section{Timing and Channel Selection}
+Sensitive feedback sometimes warrants synchronous conversation. If a comment could be misread or touches on interpersonal dynamics, suggest a quick call or pairing session. Conversely, if the author is in a very different time zone, craft comments that stand alone without requiring back-and-forth. Respect quiet hours and weekends unless the change is urgent; batching feedback into a single, well-organized review is better than drip-feeding minor notes for days.
+
+\section{Coaching With Questions}
+Questions can unlock self-discovery. Instead of instructing, ask ``How would this behave when the cache is cold?'' or ``What safeguards exist if the API returns malformed data?'' Questions signal curiosity and invite authors to reason through scenarios, often leading them to propose the fix themselves. Use this technique judiciously---if a bug is severe, be direct---but lean on questions to cultivate critical thinking.
+
+\section{Creating Psychological Safety}
+Teams improve when people feel safe admitting mistakes. Normalize saying ``I don't know'' during review and model it in your own comments. When someone corrects a bug they introduced, thank them for the fix rather than shaming the regression. Praise vulnerability---``Appreciate you flagging the migration risk''---to reinforce the behavior. Psychological safety transforms review from a pass/fail exam into a shared learning loop.
+
+\section{Capturing and Sharing Lessons}
+Some review insights benefit the entire organization. After the PR merges, extract notable patterns into a wiki, design doc, or Slack digest. Share both positive patterns (``This PR's layered tests are a great example'') and cautionary tales (``Beware of mixing migration logic with UI changes''). By broadcasting lessons, reviewers multiply impact beyond a single conversation.
+
+\section*{Exercises}
+
+\paragraph{1. Feedback spectrum} Take a recent review where you focused heavily on defects. Write two additional comments praising concrete strengths from the same PR. Notice how this rebalancing changes the overall tone.
+
+\paragraph{2. Question practice} For three upcoming reviews, attempt to frame at least one comment as an open-ended question that encourages authors to reason through their approach.
+
+\paragraph{3. Pattern extraction} Identify a nit you have left more than twice in the past month. Draft a short style guide entry or automation rule that would remove the need for future comments.
+
+\paragraph{4. Disagreement drill} Revisit a past review dispute. Outline how you could have grounded the discussion in data or principles and what escalation path you would choose next time.
+
+\paragraph{5. Safety signal} Compose a template sentence you can reuse to acknowledge vulnerability (e.g., ``Thanks for calling out the risk---let's pair to mitigate it''). Use it in your next review when appropriate and observe the response.

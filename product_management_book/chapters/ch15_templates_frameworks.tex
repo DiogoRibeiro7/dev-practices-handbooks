@@ -1,0 +1,214 @@
+\chapter{Templates and Frameworks for Different Work Types}
+\label{ch:templates-frameworks}
+
+Templates convert patterns into actionable checklists. This chapter presents core templates for common work types and guidance for adapting them to your tooling.
+
+\section{Template Design Principles}
+\label{sec:template-principles}
+
+Good templates strike a balance between structure and flexibility.
+
+\subsection{Completeness vs. Simplicity}
+Include sections that drive quality but avoid overwhelming authors. Use required and optional sections, plus progressive disclosure (collapsible details or checklists) to keep forms approachable.
+
+\subsection{Clarity and Examples}
+Provide instructions next to each section, along with good/bad examples. Inline tooltips or hyperlinks to exemplar tickets accelerate adoption.
+
+\subsection{Tool Integration}
+Templates must fit within Jira, GitHub Issues, or other tools. Use Markdown headings, tables, and links to keep content readable. Where tools support custom fields, map template sections to structured inputs for reporting.
+
+\subsection{Adaptability}
+Version templates and allow teams to fork them. Collect feedback regularly and document why sections exist so future editors avoid accidental regressions.
+
+\section{Feature Development Template}
+\label{sec:feature-template}
+
+For user-facing features, emphasize user value, impact, and technical considerations.
+
+\subsection{Template Structure}
+Sections include: problem statement, personas, user journeys, success metrics, acceptance criteria, non-functional requirements, dependencies, risks, and rollout plan. Embed links to design assets and instrumentation specs.
+
+\subsection{Complete Example: Search Autocomplete}
+Illustrate how the template is filled for a search autocomplete initiative: outline user pain, hypotheses about time-to-result improvements, API latency requirements, and experiment plans. Annotate each section explaining why certain fields were populated.
+
+\subsection{Variations}
+Provide lighter versions for small enhancements and richer variants for platform-scale features. Distinguish between external and internal tooling needs.
+
+\section{Data Exploration Template}
+\label{sec:exploration-template}
+
+Exploratory work requires structure without stifling discovery.
+
+\subsection{Template Structure}
+Capture the questions to answer, datasets, access requirements, analysis methods, time box, deliverables (findings memo, dashboard), and decision criteria.
+
+\subsection{Complete Example: Customer Churn Analysis}
+Demonstrate how a churn exploration defines cohorts, details data access steps, lists analyses (cohort retention, feature importance), and triggers a go/no-go decision for model development.
+
+\subsection{Variations}
+Offer short-form templates for quick assessments and long-form for multi-week studies, plus a variant for ongoing monitoring reports.
+
+\section{Experiment Design Template}
+\label{sec:experiment-template}
+
+Ensure experiments are reproducible and statistically sound.
+
+\subsection{Template Structure}
+Include hypothesis, rationale, primary/secondary/guardrail metrics, sample size calculation, duration, assignment method, implementation plan, analysis plan, and decision criteria.
+
+\subsection{Complete Example: Pricing Test}
+Walk through a pricing experiment including elasticity hypotheses, target KPIs, sample-size math, guardrails (churn, NPS), and expected ROI.
+
+\subsection{Variations}
+Provide guidance for multivariate tests, multi-armed bandits, or sequential tests with interim looks.
+
+\section{ML Model Development Template}
+\label{sec:ml-model-template}
+
+Model-building templates ensure data, metrics, and evaluation are tightly defined.
+
+\subsection{Template Structure}
+Sections cover problem definition, success metrics, data sources and quality checks, baseline approaches, modeling plan, experimentation log, evaluation results, fairness considerations, and deployment readiness.
+
+\subsection{Complete Example: Product Recommendation Model}
+Show how to document offline metrics, comparison against baselines, and online rollout plan. Include instrumentation and retraining strategy.
+
+\subsection{Variations}
+Adapt for classification vs. regression, batch vs. streaming, or regulated contexts.
+
+\section{Data Pipeline Template}
+\label{sec:pipeline-template}
+
+Data engineering work needs clarity on lineage and SLAs.
+
+\subsection{Template Structure}
+Define upstream sources, transformations, validation rules, schedule, SLAs (latency, completeness), monitoring, backfill plan, and data owners.
+
+\subsection{Complete Example: Telemetry Pipeline}
+Detail how raw sensor data flows through cleaning, enrichment, and storage. Document schema evolution processes and rollback plans.
+
+\subsection{Variations}
+Offer variants for batch ETL, streaming pipelines, or one-off migrations.
+
+\section{Governance Review Template}
+\label{sec:governance-template}
+
+Large initiatives benefit from structured governance.
+
+\subsection{Template Structure}
+Capture purpose, scope, stakeholders, decision rights, approval checkpoints, risks, mitigations, and success metrics.
+
+\subsection{Complete Example: Privacy Review}
+Show how a privacy feature documents data classifications, consent flows, mitigations, and compliance sign-offs.
+
+\subsection{Variations}
+Provide templates for security reviews, architecture reviews, or vendor assessments.
+
+\section{Instrumentation Template}
+\label{sec:instrumentation-template}
+
+Measurement work deserves its own template.
+
+\subsection{Template Structure}
+Include goals, events, properties, data taxonomy, retention strategy, QA plan, and dashboards.
+
+\subsection{Complete Example: Onboarding Funnel}
+Outline instrumentation required for each onboarding step, naming conventions, and validation procedures.
+
+\subsection{Variations}
+Adapt template for client-side analytics, server-side logging, or ML monitoring.
+
+\section{Operational Runbook Template}
+\label{sec:runbook-template}
+
+Operations require clear procedures.
+
+\subsection{Template Structure}
+Sections include service overview, ownership, dependencies, alerts, playbooks for common incidents, escalation paths, and post-incident review steps.
+
+\subsection{Complete Example: Recommendation Service Runbook}
+Provide sample runbook entries for alert responses, failover procedures, and communication templates.
+
+\subsection{Variations}
+Offer lighter runbooks for low-risk systems and extended versions for 24/7 services.
+
+\section{Integration Template}
+\label{sec:integration-template}
+
+Integrations need detailed contracts.
+
+\subsection{Template Structure}
+Cover integration purpose, stakeholders, API contracts, authentication, error handling, rate limits, performance expectations, logging, and documentation links.
+
+\subsection{Complete Example: Payment Gateway Integration}
+Detail how to document endpoints, security practices, error codes, and reconciliation procedures.
+
+\subsection{Variations}
+Include versions for third-party SaaS integrations, internal microservices, or data pipelines.
+
+\section{Documentation and Knowledge Sharing Template}
+\label{sec:documentation-template}
+
+Documentation work should be structured like any other deliverable.
+
+\subsection{Template Structure}
+Define target audience, goals, outline, existing gaps, maintenance plan, and feedback channels.
+
+\subsection{Complete Example: Data Science Onboarding Guide}
+Show how to craft a living guide with sections for tooling, datasets, coding standards, and escalation paths.
+
+\subsection{Variations}
+Offer templates for user guides, API references, or runbooks.
+
+\section{Cross-Functional Initiative Template}
+\label{sec:initiative-template}
+
+Large programs require alignment artifacts.
+
+\subsection{Template Structure}
+Include vision, measurable outcomes, workstreams with owners, dependencies, budget, risk matrix, communication cadence, and decision forums.
+
+\subsection{Complete Example: Platform Migration}
+Document phases, gating criteria, and stakeholder communication plans for a multi-quarter migration.
+
+\subsection{Variations}
+Adapt for product launches, reorganizations, or compliance programs.
+
+\section{Template Customization Guide}
+\label{sec:customization}
+
+Tailor templates without losing their benefits.
+
+\subsection{Assessing Your Needs}
+Determine which problems you are solving and gather feedback from consumers of the template (engineers, analysts, stakeholders).
+
+\subsection{Modification Process}
+Start from the closest template, adjust sections, pilot with a small team, and iterate. Document changes and rationale.
+
+\subsection{Creating New Templates}
+When patterns repeat but lack templates, generalize them. Capture two or three examples before codifying to avoid premature standardization.
+
+\subsection{Template Governance}
+Assign owners, version templates, and publish change logs. Provide training when updates introduce new sections.
+
+\section{Tool-Specific Adaptations}
+\label{sec:tool-adaptations}
+
+Implement templates where teams work every day.
+
+\subsection{Jira Templates}
+Use issue types with custom fields and automation to enforce template sections. For example, automatically remind authors to populate success metrics before moving to ``Ready.''
+
+\subsection{GitHub Issue Templates}
+Leverage Markdown issue forms with required fields, dropdowns, and structured data, enabling reporting via GitHub Projects.
+
+\subsection{Azure DevOps Templates}
+Customize work item processes and add extensions for diagram embedding or dependency visualization.
+
+\subsection{Notion and Confluence Templates}
+Create page templates with callouts, toggle lists, and synced databases. Embed diagrams or data tables for richer context.
+
+\section{Summary}
+\label{sec:templates-summary}
+
+Templates codify best practices for repeated work types. By designing them thoughtfully, integrating them with tooling, and continuously iterating, organizations create a scalable foundation for high-quality requirements. The next chapter focuses on metrics-driven acceptance patterns that complement these templates.

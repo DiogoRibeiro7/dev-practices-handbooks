@@ -6,7 +6,7 @@ Model deployment transforms experimental code into production systems serving mi
 
 \subsection{The Deployment Challenge}
 
-Consider a recommendation system that performs excellently in notebooks but crashes under production load, serves stale predictions after model updates, and requires 30 minutes of downtime for each deployment. These are not edge cases—they are the norm for teams without disciplined deployment practices.
+Consider a recommendation system that performs excellently in notebooks but crashes under production load, serves stale predictions after model updates, and requires 30 minutes of downtime for each deployment. These are not edge cases---they are the norm for teams without disciplined deployment practices.
 
 \subsection{Why Deployment Engineering Matters}
 
@@ -1533,7 +1533,7 @@ class ModelRegistry:
         """Compute SHA256 hash of model file."""
         sha256 = hashlib.sha256()
         with open(file_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(4096), b''):
+            for chunk in iter(lambda: f.read(4096), b"):
                 sha256.update(chunk)
         return sha256.hexdigest()
 
@@ -2748,7 +2748,7 @@ jobs:
 
 \subsection{RetailML's Production Outage}
 
-RetailML, an e-commerce recommendation platform serving 5 million daily predictions, deployed a new recommendation model on Black Friday eve—the highest traffic day of the year. The deployment used a simple rolling update without proper validation or monitoring.
+RetailML, an e-commerce recommendation platform serving 5 million daily predictions, deployed a new recommendation model on Black Friday eve---the highest traffic day of the year. The deployment used a simple rolling update without proper validation or monitoring.
 
 Within 15 minutes of deployment:
 \begin{itemize}

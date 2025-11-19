@@ -1,0 +1,184 @@
+\chapter{Commit Messages That Tell the Story}
+
+\section{Chapter Overview}
+Commit messages are the narrative glue of a repository. They record intention, scope, risk, and validation in a compact artifact that survives long after context fades. This chapter explains how to craft commit messages that accelerate reviews, debugging, audits, and onboarding. You will learn a repeatable structure, see examples drawn from production incidents, and practice elevating low-signal messages into durable documentation.
+
+\section{Commit Messages as Narrative Contracts}
+Each commit message is an agreement between authors and future readers. It should answer three questions:
+\begin{enumerate}
+  \item \textbf{What changed?} A concise subject summarizing the code effect.
+  \item \textbf{Why now?} Background that cannot be inferred from the diff alone.
+  \item \textbf{How was it validated?} Tests, experiments, or manual verification.
+\end{enumerate}
+
+\begin{lstlisting}[style=shell,caption={High-signal history tells the story behind incidents}]
+$ git log --oneline -3
+9f42cb7 fix(auth): stop session reuse after password reset
+1bf3c0a chore(ci): move lint to reusable workflow
+af901de feat(a11y): add focus traps to modal dialogs
+\end{lstlisting}
+
+During an authentication incident, the first commit above immediately hints at scope (auth), intention (stop session reuse), and motivation (password reset bug). Investigators spend minutes instead of hours locating root causes.
+
+\section{Anatomy of a High-Signal Commit Message}
+\subsection{Subject Line}
+\begin{itemize}
+  \item Limit to 50 characters when possible; treat it like a newspaper headline.
+  \item Use imperative mood (``fix leak'', ``add logging'') to describe the action.
+  \item Include scope indicators: subsystem, file, or component.
+\end{itemize}
+
+\begin{lstlisting}[style=markdown,caption={Subject line patterns}]
+feat(api): add rate limit to partner endpoint
+fix(worker): prevent panic on null job payload
+perf(cache): reuse prepared statements for hot queries
+\end{lstlisting}
+
+\subsection{Body Sections}
+Use the body to document context that future readers cannot derive from the source diff:
+\begin{itemize}
+  \item \textbf{Problem statement}: what failed or was missing?
+  \item \textbf{Constraints or rejected approaches}: highlight trade-offs.
+  \item \textbf{Validation}: list tests, experiments, or dashboards consulted.
+\end{itemize}
+
+\begin{lstlisting}[style=markdown,caption={Template for detailed commit bodies}]
+Summary:
+- replaces naive retry loop with jittered backoff to avoid synchronized retries
+
+Context:
+- incidents #2481 and #2493 showed retry storms when Kafka paused partitions
+- tried adding queue capacity, but metrics still spiked under failover
+
+Validation:
+- load test suite `kafka_failover` passes locally
+- canary deploy on cluster `west-prod` shows 70% lower retry count
+\end{lstlisting}
+
+\begin{tipbox}
+High-signal bodies reference monitoring panels, incident IDs, feature flags, or experiments. These breadcrumbs make audits and postmortems faster because reviewers know exactly where to look next.
+\end{tipbox}
+
+\section{Structured Conventions}
+Structured standards such as Conventional Commits or Jira-style prefixes normalize your history across large teams. Choose one format and automate enforcement.
+
+\subsection{Conventional Commits Refresher}
+\begin{longtable}{p{0.22\textwidth}p{0.68\textwidth}}
+\toprule
+\textbf{Prefix} & \textbf{Typical Use} \\
+\midrule
+\texttt{feat:} & New capability visible to users or dependent services. \\
+\texttt{fix:} & Bug fix restoring expected behavior or preventing regressions. \\
+\texttt{docs:} & Documentation-only updates (README, ADRs, runbooks). \\
+\texttt{test:} & Adding or modifying automated tests without production code changes. \\
+\texttt{refactor:} & Internal restructuring without behavior changes. \\
+\texttt{perf:} & Performance improvements (latency, memory, throughput). \\
+\texttt{build:} / \texttt{ci:} & Pipeline, dependencies, container images, or build metadata. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Issue or Incident Tags}
+Many organizations prepend identifiers:
+\begin{lstlisting}[style=markdown,caption={Linking commits to tracking systems}]
+feat(billing): add pro-rated refunds (GH-884)
+fix(search): guard nil results in facet builder (INC-4312)
+chore(ci): pin terraform version to 1.7.3 (OP-201)
+\end{lstlisting}
+
+Linking to tickets clarifies motivation and unlocks dashboards that correlate commit activity with delivery metrics. Automation can parse identifiers and backfill release notes automatically.
+
+\section{Collaborative Workflows}
+\subsection{Pair and Mob Programming}
+When multiple authors collaborate, note co-authors using trailers:
+\begin{lstlisting}[style=markdown,caption={Including co-authors with trailers}]
+fix(payments): handle zero-decimal currencies correctly
+
+Co-authored-by: Priya Patel <ppatel@example.com>
+Co-authored-by: Alex Kim <alex.kim@example.com>
+\end{lstlisting}
+
+These trailers preserve attribution and help reviewers reach the right context holders when questions arise.
+
+\subsection{Stacked or Incremental Work}
+For stacked diffs or feature flags, make intent explicit:
+\begin{lstlisting}[style=markdown,caption={Clarifying incremental rollouts}]
+feat(flag/email-v2): behind flag, add new template renderer
+
+Follow-up:
+- enable flag for internal tenants after perf run
+- remove legacy renderer once `EMAIL_V2_GLOBAL` is true
+\end{lstlisting}
+
+Call out follow-up tasks inside the body so future contributors know when cleanup is expected.
+
+\section{Common Anti-Patterns and Their Fixes}
+\subsection{``WIP'' Commits}
+\begin{warningbox}
+Commits titled ``wip'' or ``tmp'' often hide partially implemented code, leaving reviewers and bisect users confused. Squash or amend before opening a pull request.
+\end{warningbox}
+
+\textbf{Fix}: Use draft pull requests or temporary branches instead of polluted history. When inevitable, rewrite before merging:
+\begin{lstlisting}[style=shell,caption={Fixing low-signal commits}]
+$ git commit --amend
+# edit the message to describe the real change
+\end{lstlisting}
+
+\subsection{Mixed Languages or Emojis}
+Avoid messages that only insiders parse:
+\begin{lstlisting}[style=markdown]
+feat: finalmente mexi nisso kkk
+fix: [fire emoji] [fire emoji] [fire emoji]
+\end{lstlisting}
+
+\textbf{Fix}: Default to English (or your team's agreed language) and avoid emoji noise except when encoded in automation-friendly ways (e.g., `[skip ci]`).
+
+\subsection{Missing Validation}
+Messages that skip validation details force reviewers to infer whether tests exist.
+
+\textbf{Fix}: List the relevant test suites or manual steps. Even ``Not run (docs-only)'' is better than silence because it signals intent.
+
+\section{Tooling and Automation}
+\subsection{Linting Commit Messages}
+Use tools such as Commitlint or custom Git hooks to enforce structure:
+\begin{lstlisting}[style=shell,caption={Enforcing message style in pre-commit}]
+$ cat .husky/commit-msg
+#!/bin/sh
+npx commitlint --edit "$1"
+\end{lstlisting}
+
+\subsection{Templates for Teams}
+Provide a commit template that Git loads automatically:
+\begin{lstlisting}[style=markdown,caption={.gitmessage template snippet}]
+<type>(<scope>): <subject>
+
+Context:
+- why is this needed?
+- what alternatives did you consider?
+
+Testing:
+- unit:
+- integration:
+- manual:
+\end{lstlisting}
+
+Configure it with:
+\begin{lstlisting}[style=shell]
+$ git config commit.template .gitmessage
+\end{lstlisting}
+
+\subsection{Integrating With CI}
+CI pipelines can parse commit metadata to drive automation:
+\begin{itemize}
+  \item Trigger docs deployments automatically when commits have \texttt{docs:} prefixes.
+  \item Fail builds if commit bodies omit required trailers (e.g., ``Signed-off-by'').
+  \item Generate release notes grouped by type for every deploy.
+\end{itemize}
+
+\section*{Exercises}
+\begin{enumerate}
+  \item Export the last 50 commits in your primary repository and classify them into ``high signal'', ``medium'', or ``low''. What patterns emerge?
+  \item Rewrite the weakest commit message you find into the structured template above. Share before/after examples with your team.
+  \item Configure a commit template locally and evaluate how it changes your thinking during the next sprint retrospective.
+  \item Add commit linting to a side project using Commitlint or a custom hook. Document how many commits would have failed previously.
+  \item Practice bisecting a known bug using only commit messages (no diffs). Were the messages sufficient? If not, note what information was missing.
+\end{enumerate}
