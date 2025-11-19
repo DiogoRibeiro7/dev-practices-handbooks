@@ -168,6 +168,37 @@ Promote blameless analysis with sections for summary, impact, timeline, root cau
 \subsection{Onboarding Checklist Template}
 Outline tasks for day 1, week 1, and month 1, plus resources and mentors.
 
+\section{Documentation Automation Toolkit}
+\label{sec:doc-automation}
+
+Automation keeps documentation assets synchronized with the pace of delivery. The repository provides \texttt{tools/doc\_automation.py}, a CLI that generates:
+\begin{itemize}
+    \item README templates keyed to project type (\texttt{ml\_service}, \texttt{data\_pipeline}, \texttt{web\_app}) and technology stack.
+    \item Architecture Decision Record (ADR) scaffolds with guided prompts for context, drivers, decisions, and consequences.
+    \item Model cards using metadata exported from notebooks or pipeline configs (see \texttt{tools/data/sample\_model\_pipeline.json}).
+    \item Audience-specific views of requirements (executive summary, engineering brief, QA checklist).
+\end{itemize}
+
+\begin{lstlisting}[language=bash,caption={Automating documentation artifacts.}]
+# README + ADR
+python tools/doc_automation.py --mode readme \
+  --project-type ml_service --tech python fastapi mlflow \
+  --repo https://github.com/org/ml-service --deployment "K8s (us-east-1)"
+python tools/doc_automation.py --mode adr --adr-number 5 \
+  --adr-title "Evaluate Feature Store" --adr-status Proposed \
+  --adr-context "Need consistent offline/online features" \
+  --adr-drivers reuse velocity --adr-decision "Adopt Feast" \
+  --adr-alternatives bespoke --adr-consequences "New ops surface"
+
+# Model card + requirement conversions
+python tools/doc_automation.py --mode model-card \
+  --pipeline-config tools/data/sample_model_pipeline.json
+python tools/doc_automation.py --mode requirement \
+  --requirement-file tools/data/sample_requirement.md
+\end{lstlisting}
+
+Artifacts appear in \texttt{tools/generated/}, making it easy to commit new docs or attach them to tickets without manual formatting. Teams can embed the CLI in CI/CD or notebook workflows to ensure documentation stays current across audiences.
+
 \section{Documentation Culture}
 \label{sec:doc-culture}
 

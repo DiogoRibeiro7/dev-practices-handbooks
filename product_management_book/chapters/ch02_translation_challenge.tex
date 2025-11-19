@@ -73,6 +73,37 @@ Concrete examples anchor abstract debates. Visuals such as sequence diagrams or 
 \subsection{Facilitating Productive Discussions}
 Cross-functional dialogues benefit from explicit objectives, pre-read materials, and documented outcomes. When disagreements arise, focus on the underlying assumptions rather than on personalities. Techniques like decision records or structured debates (pros/cons, straw polls) help teams converge without silencing dissent. Maintaining rigor while moving forward requires acknowledging unresolved questions and assigning owners to close them.
 
+\section{Facilitation Tooling}
+\label{sec:facilitation-tools}
+
+Chapter~\ref{ch:translation-challenge} now ships with \texttt{tools/facilitation.py}, giving PMs ready-made canvases for translation workshops:
+\begin{itemize}
+    \item \textbf{Assumption mapping canvases} (Markdown) capture statements, evidence, and confidence so teams can test the riskiest beliefs.
+    \item \textbf{Risk assessment matrices} output probability/impact tables for slides or Jira tickets.
+    \item \textbf{Stakeholder alignment dashboards} list influence vs.\ alignment to highlight where additional engagement is needed.
+    \item \textbf{Mental-model comparison grids} contrast how each discipline defines success metrics, sources of truth, or decision cadences.
+\end{itemize}
+
+\begin{lstlisting}[language=bash,caption={Generating facilitation assets for translation workshops.}]
+# Assumptions + risk matrix
+python tools/facilitation.py --mode assumption \
+  --items "User trusts insights" "Data refreshed daily" \
+  --evidence "Customer interviews" "ETL schedule"
+python tools/facilitation.py --mode risk \
+  --items "Model drift" "API downtime" \
+  --probabilities High Medium --impacts High High
+
+# Stakeholder + mental-model canvases
+python tools/facilitation.py --mode stakeholder \
+  --items "VP Product" "Head of Data" \
+  --influence High Medium --alignment Supporter Neutral
+python tools/facilitation.py --mode mental \
+  --items "Business" "Engineering" "Data Science" \
+  --dimensions "Success Metric" "Source of Truth" "Decision Cadence"
+\end{lstlisting}
+
+Artifacts land in \texttt{tools/generated/}, ready to paste into collaboration documents immediately after workshops.
+
 \section{Summary}
 \label{sec:translation-summary}
 

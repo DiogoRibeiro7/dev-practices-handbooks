@@ -110,6 +110,207 @@ This ticket defines the hypothesis, target KPI, minimum detectable effect, guard
 \subsection{Example 3: Feature Pipeline}
 A data engineering ticket details upstream sources, transformation logic, data quality checks, and ownership. Success metrics focus on data freshness, completeness, and downstream consumer satisfaction.
 
+\section{Interactive Code Examples}
+\label{sec:ticket-code-examples}
+
+Templates become far more useful when paired with executable assets. The snippets below show how to validate ticket payloads, automate scoring, and drive consistency across tools.
+
+\subsection{Jira Ticket JSON Schema Validation}
+Embed the schema in a repository (for example, \texttt{schemas/data\_ticket.schema.json}) and run it via \texttt{ajv} or any JSON Schema validator as part of CI. Tickets exported from Jira Automation or created via API must satisfy each field before progressing to ``Ready.''
+
+\begin{lstlisting}[caption={JSON Schema for a data-informed Jira ticket.}]
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DataInformedTicket",
+  "type": "object",
+  "required": [
+    "summary",
+    "problemStatement",
+    "hypothesis",
+    "successMetrics",
+    "acceptanceCriteria",
+    "owner"
+  ],
+  "properties": {
+    "summary": { "type": "string", "minLength": 10 },
+    "problemStatement": { "type": "string", "minLength": 30 },
+    "hypothesis": {
+      "type": "object",
+      "required": ["statement", "decisionDate"],
+      "properties": {
+        "statement": { "type": "string" },
+        "assumptions": { "type": "array", "items": { "type": "string" } },
+        "decisionDate": { "type": "string", "format": "date" }
+      }
+    },
+    "successMetrics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "baseline", "target"],
+        "properties": {
+          "name": { "type": "string" },
+          "baseline": { "type": "number" },
+          "target": { "type": "number" },
+          "unit": { "type": "string", "enum": ["%", "ms", "count"] }
+        }
+      }
+    },
+    "acceptanceCriteria": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 5 }
+    },
+    "owner": { "type": "string" },
+    "riskRegister": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["risk", "mitigation"],
+        "properties": {
+          "risk": { "type": "string" },
+          "mitigation": { "type": "string" },
+          "signal": { "type": "string" }
+        }
+      }
+    }
+  }
+}
+\end{lstlisting}
+
+\subsection{Python Quality Scoring Script}
+The script ingests the JSON payload above and emits a normalized score. Teams wire it into Jira webhooks or pull requests to guard quality gates.
+
+\begin{lstlisting}[language=Python,caption={Automated requirement quality scoring.}]
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+WEIGHTS = {
+    "problemStatement": 0.2,
+    "hypothesis": 0.2,
+    "successMetrics": 0.25,
+    "acceptanceCriteria": 0.2,
+    "riskRegister": 0.15,
+}
+
+def completeness_score(ticket: dict) -> float:
+    score = 0.0
+    for field, weight in WEIGHTS.items():
+        value = ticket.get(field)
+        if not value:
+            continue
+        if isinstance(value, list):
+            score += weight if len(value) > 0 else 0
+        elif isinstance(value, dict):
+            score += weight if all(value.values()) else weight * 0.5
+        elif isinstance(value, str):
+            score += weight if len(value.strip()) > 15 else weight * 0.5
+    return round(score, 2)
+
+if __name__ == "__main__":
+    sample_path = Path("tickets/sample_ticket.json")
+    payload = json.loads(sample_path.read_text(encoding="utf-8"))
+    score = completeness_score(payload)
+    gate = "PASS" if score >= 0.8 else "REVISE"
+    print(f"Quality score: {score:.2f} -> {gate}")
+\end{lstlisting}
+
+\subsection{YAML Templates for Common Work Types}
+YAML headers make it easy to drive templated forms across issue trackers or doc generators. Each template captures the minimum metadata for a work type.
+
+\begin{lstlisting}[caption={Exploration, deployment, and experiment YAML headers.}]
+exploration:
+  title: ""
+  questions:
+    - ""
+  datasets:
+    - name: ""
+      access: ""
+  timebox_days: 10
+  deliverables:
+    - memo
+    - dashboard
+  decision_criteria: ""
+
+ml_model_deployment:
+  service_name: ""
+  latency_budget_ms: 150
+  rollout_plan: canary
+  monitoring:
+    - metric: p95_latency
+      threshold: 150
+    - metric: drift_psi
+      threshold: 0.2
+  rollback_owner: ""
+
+a_b_test:
+  hypothesis: ""
+  primary_metric: conversion_rate
+  guardrails:
+    - churn
+    - latency
+  mde_percent: 3.0
+  sample_size: 120000
+  analysis_notebook: "notebooks/ab_test.ipynb"
+\end{lstlisting}
+
+\subsection{GitHub Issue Form with Validation}
+GitHub Issue Forms enforce schema-like validation directly in the UI. The snippet below sets required fields, dropdowns, and regex validation for metrics.
+
+\begin{lstlisting}[caption={Sample GitHub Issue form for data-informed tickets.}]
+name: Data-Informed Ticket
+description: Capture hypothesis, metrics, and risk before implementation.
+title: "[Ticket]: <short summary>"
+labels:
+  - data-informed
+  - needs-triage
+body:
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: 120 characters or fewer.
+      placeholder: "Reduce search abandonment via autocomplete."
+    validations:
+      required: true
+      pattern: '^.{20,120}$'
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis
+      render: markdown
+      description: State expectation + decision date.
+    validations:
+      required: true
+  - type: dropdown
+    id: work_type
+    attributes:
+      label: Work Type
+      options:
+        - Exploration
+        - Experiment
+        - Model Deployment
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Success Metrics
+      description: One per line, format `metric: baseline -> target`.
+      placeholder: |
+        conversion_rate: 0.18 -> 0.20
+        p95_latency_ms: 220 -> 150
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Top Risks + Mitigation
+      placeholder: "- Risk: data gap... Mitigation: request labeling batch."
+\end{lstlisting}
+
 \section{Summary}
 \label{sec:tickets-summary}
 

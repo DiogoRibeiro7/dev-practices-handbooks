@@ -151,6 +151,34 @@ Hypothesis: ``If we switch to sequence-aware embeddings, click-through rate will
 \subsection{Example 3: Pricing Strategy}
 Hypothesis: ``If we offer usage-based pricing to high-volume customers, revenue per account will grow 6\% without increasing churn because these customers value flexibility.'' A phased rollout with guardrails showed a 5.5\% lift and stable churn, leading to broader adoption.
 
+\section{Experiment Planning Toolkit}
+\label{sec:hypothesis-tooling}
+
+Chapter~\ref{sec:experiment-design} is now supported by \texttt{tools/experiment\_planner.py}, which automates:
+\begin{itemize}
+    \item Hypothesis worksheets guided by prompts (problem, expected signal, guardrails, decision criteria).
+    \item Sample-size and power calculations given baseline conversion, minimum detectable effect, alpha, and power targets.
+    \item Experiment tracking templates (JSON tables) for primary/secondary metrics across checkpoints.
+    \item Statistical analysis report templates that capture results, interpretation, and recommendations.
+\end{itemize}
+
+\begin{lstlisting}[language=bash,caption={Using the experiment planning CLI.}]
+# Hypothesis + sample size
+python tools/experiment_planner.py --mode hypothesis \
+  --problem "Activation drop during onboarding" \
+  --signal "Activation rate" --guardrail "Churn, CSAT"
+python tools/experiment_planner.py --mode sample \
+  --alpha 0.05 --power 0.8 --baseline 0.2 --mde 0.03
+
+# Tracking + analysis report
+python tools/experiment_planner.py --mode tracking \
+  --metrics "Activation" "Retention" --checkpoints "Week1" "Week2"
+python tools/experiment_planner.py --mode report \
+  --report-name "Onboarding Experiment"
+\end{lstlisting}
+
+Outputs are written to \texttt{tools/generated/}, ready to paste into PRDs, experiment tickets, or post-analysis docs.
+
 \section{Summary}
 \label{sec:hypotheses-summary}
 

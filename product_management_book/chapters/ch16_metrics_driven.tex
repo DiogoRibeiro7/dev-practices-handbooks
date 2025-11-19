@@ -162,6 +162,176 @@ Leverage anomaly detection or forecasting to flag issues early. Record annotatio
 \subsection{Example: Model Performance Dashboard}
 Provide a layout showing offline metrics, online experiment outcomes, drift detectors, and business KPIs, all linked to relevant tickets.
 
+\section{Dashboard Prototypes and Code}
+\label{sec:metrics-dashboard-prototypes}
+
+Working prototypes help teams operationalize the concepts above. All runnable examples live under \texttt{dashboards/} with instructions in \texttt{dashboards/README.md} and dependencies captured in \texttt{dashboards/requirements.txt}; readers can launch them locally or adapt the notebooks to their tooling. The snippets below use Python (Streamlit, Dash, Plotly) but can be adapted to any stack, and representative screenshots are embedded for quick reference.
+
+\subsection{Requirement Quality Trends (Streamlit)}
+A lightweight Streamlit app ingests requirement quality scores exported from Jira and plots rolling trends with guardrails. Teams run it locally or deploy to Streamlit Cloud.
+
+\begin{lstlisting}[language=Python,caption={Streamlit dashboard for requirement quality metrics.}]
+import pandas as pd
+import streamlit as st
+import altair as alt
+
+st.set_page_config(page_title="Requirement Quality Monitor", layout="wide")
+st.title("Requirement Quality Metrics")
+
+uploaded = st.file_uploader("Upload CSV (ticket_id,date,score)", type="csv")
+if uploaded:
+    df = pd.read_csv(uploaded, parse_dates=["date"])
+else:
+    df = pd.read_csv("sample_quality_scores.csv", parse_dates=["date"])
+
+df = df.sort_values("date")
+rolling = df.groupby("date")["score"].mean().rolling(window=14).mean().reset_index()
+threshold = st.slider("Minimum acceptable score", 0.0, 1.0, 0.8, 0.05)
+
+chart = (
+    alt.Chart(rolling)
+    .mark_line()
+    .encode(x="date:T", y=alt.Y("score:Q", scale=alt.Scale(domain=[0, 1])))
+)
+threshold_rule = alt.Chart(rolling).mark_rule(color="red").encode(y=alt.value(threshold))
+
+st.altair_chart(chart + threshold_rule, use_container_width=True)
+st.metric("Current 14d Avg", f"{rolling.score.iloc[-1]:.2f}")
+\end{lstlisting}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{images/quality_dashboard.png}
+    \caption{Streamlit requirement quality dashboard driven by \texttt{dashboards/requirement\_quality\_dashboard.py}.}
+\end{figure}
+
+\subsection{ML Acceptance Criteria Tracker}
+Use Dash or Streamlit to display offline/online metrics for each model candidate. The mock data below highlights how to render heatmaps and spark lines for latency/SLO checks.
+
+\begin{lstlisting}[language=Python,caption={Dash layout tracking ML model acceptance status.}]
+import dash
+from dash import dash_table, dcc, html
+import pandas as pd
+
+data = [
+    {"model": "rec_v3", "auc": 0.89, "calibration": 0.04, "p95_latency_ms": 92, "psi": 0.08},
+    {"model": "rec_v4", "auc": 0.91, "calibration": 0.02, "p95_latency_ms": 115, "psi": 0.15},
+]
+df = pd.DataFrame(data)
+
+app = dash.Dash(__name__)
+app.layout = html.Div(
+    [
+        html.H2("Model Acceptance Tracker"),
+        dash_table.DataTable(
+            df.to_dict("records"),
+            [{"name": c, "id": c} for c in df.columns],
+            style_data_conditional=[
+                {"if": {"filter_query": "{auc} >= 0.9", "column_id": "auc"}, "backgroundColor": "#d2f5d2"},
+                {"if": {"filter_query": "{p95_latency_ms} > 110", "column_id": "p95_latency_ms"}, "backgroundColor": "#fcdede"},
+            ],
+        ),
+        dcc.Graph(
+            figure={
+                "data": [
+                    {"x": df["model"], "y": df["psi"], "type": "bar", "name": "PSI"},
+                    {"x": df["model"], "y": df["calibration"], "type": "bar", "name": "Calibration Error"},
+                ],
+                "layout": {"barmode": "group", "yaxis": {"title": "Value"}},
+            }
+        ),
+    ]
+)
+
+if __name__ == "__main__":
+    app.run_server(debug=True)
+\end{lstlisting}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{images/model_acceptance_dashboard.png}
+    \caption{Snapshot of the Dash-based model acceptance tracker.}
+\end{figure}
+
+\subsection{Interactive ROC and Calibration Plot Generator}
+Generative tools allow PMs to upload CSVs with prediction scores and labels, then instantly visualize ROC and calibration curves to verify acceptance thresholds.
+
+\begin{lstlisting}[language=Python,caption={Plotly-based ROC and calibration explorer.}]
+import numpy as np
+import pandas as pd
+import plotly.express as px
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import roc_curve, auc
+
+df = pd.read_csv("model_predictions.csv")
+y_true, y_score = df["label"], df["score"]
+fpr, tpr, _ = roc_curve(y_true, y_score)
+roc_auc = auc(fpr, tpr)
+
+roc_fig = px.area(
+    x=fpr,
+    y=tpr,
+    title=f"ROC Curve (AUC={roc_auc:.3f})",
+    labels={"x": "False Positive Rate", "y": "True Positive Rate"},
+)
+roc_fig.add_shape(type="line", x0=0, x1=1, y0=0, y1=1, line=dict(dash="dash"))
+
+prob_true, prob_pred = calibration_curve(y_true, y_score, n_bins=10)
+cal_fig = px.line(
+    x=prob_pred,
+    y=prob_true,
+    title="Calibration Curve",
+    labels={"x": "Predicted Probability", "y": "Observed Frequency"},
+)
+cal_fig.add_shape(type="line", x0=0, x1=1, y0=0, y1=1, line=dict(dash="dash"))
+
+roc_fig.write_html("roc.html")
+cal_fig.write_html("calibration.html")
+\end{lstlisting}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{images/roc_calibration_dashboard.png}
+    \caption{ROC and calibration outputs generated by \texttt{dashboards/roc\_calibration\_tool.py}.}
+\end{figure}
+
+\subsection{A/B Test Results Dashboard with Significance Checks}
+For experiments, combine metric tracking with automated significance calculations. The sample Streamlit app below computes z-scores, p-values, and displays uplift ranges.
+
+\begin{lstlisting}[language=Python,caption={Streamlit-based A/B dashboard with statistical testing.}]
+import math
+import streamlit as st
+from scipy import stats
+
+st.title("A/B Test Monitor")
+col1, col2 = st.columns(2)
+with col1:
+    visitors_a = st.number_input("Variant A Visitors", value=5000)
+    conversions_a = st.number_input("Variant A Conversions", value=900)
+with col2:
+    visitors_b = st.number_input("Variant B Visitors", value=5200)
+    conversions_b = st.number_input("Variant B Conversions", value=1020)
+
+rate_a = conversions_a / visitors_a
+rate_b = conversions_b / visitors_b
+diff = rate_b - rate_a
+
+p_pool = (conversions_a + conversions_b) / (visitors_a + visitors_b)
+se = math.sqrt(p_pool * (1 - p_pool) * (1 / visitors_a + 1 / visitors_b))
+z = diff / se
+p_value = 2 * (1 - stats.norm.cdf(abs(z)))
+
+st.metric("Lift", f"{diff * 100:.2f}%")
+st.metric("p-value", f"{p_value:.4f}")
+st.progress(min(max((rate_b / rate_a) - 1, 0), 1))
+\end{lstlisting}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/ab_test_dashboard.png}
+    \caption{Visual summary of conversion deltas rendered by the Streamlit A/B monitor.}
+\end{figure}
+
 \section{Metrics in Continuous Improvement}
 \label{sec:continuous-improvement}
 

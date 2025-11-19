@@ -125,6 +125,24 @@ Correlate requirement scores with lead time. Use this data to set expectations: 
 \subsection{Example: Quality Dashboard}
 A dashboard aggregates completeness, clarity, and prediction signals. Traffic-light indicators highlight which tickets need refinement before sprint commitment.
 
+\section{Automated Quality Analysis Tools}
+\label{sec:quality-tools}
+
+To complement the manual scorecards, the repository ships with \texttt{tools/quality\_analyzer.py}, a simple NLP-enabled CLI that:
+\begin{itemize}
+    \item Parses requirement documents (Markdown with \texttt{\#\#} headings) and scores completeness, clarity, consistency, and acceptance-criteria robustness.
+    \item Flags ambiguous language, overlong sentences, and missing sections, offering targeted improvement suggestions.
+    \item Runs logical checks on acceptance criteria, ensuring they contain measurable thresholds and conditional phrasing.
+    \item Exports Markdown/JSON quality scorecards that teams can attach to tickets or automation pipelines.
+\end{itemize}
+
+\begin{lstlisting}[language=bash,caption={Running the quality analyzer against a sample requirement.}]
+python tools/quality_analyzer.py tools/data/sample_requirement.md \
+  --output tools/generated/quality_report.md
+\end{lstlisting}
+
+This tooling enables continuous monitoring of requirement health and a consistent feedback loop across product, engineering, and data teams.
+
 \section{Automated Quality Assessment Tools}
 \label{sec:automated-tools}
 

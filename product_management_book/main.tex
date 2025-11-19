@@ -21,6 +21,7 @@
 \fancyhead[LE]{\leftmark}
 \fancyhead[RO]{\rightmark}
 \fancyfoot[C]{\thepage}
+\setlength{\headheight}{26pt}
 \renewcommand{\headrulewidth}{0.4pt}
 
 % Graphics and figures
@@ -32,6 +33,7 @@
 
 % Colors
 \usepackage[table]{xcolor}
+\usepackage[acronym]{glossaries}
 \definecolor{titlecolor}{RGB}{0,51,102}
 \definecolor{linkcolor}{RGB}{0,102,204}
 
@@ -101,6 +103,7 @@
 % Line spacing
 \usepackage{setspace}
 \onehalfspacing
+\makeglossaries
 
 \begin{document}
 
@@ -159,6 +162,21 @@ This book serves product managers, technical program managers, engineering leads
 
 You can read sequentially or jump to the sections most relevant to your current challenge. Part~I diagnoses the translation problem, Part~II offers patterns for data-informed requirements, Part~III introduces mathematical rigor tailored to agile organizations, and Part~IV provides implementation templates, metrics, and documentation practices. Each chapter concludes with actionable guidance so you can experiment immediately.
 
+\subsection*{How to Read This Book}
+If you prefer a linear journey, move through the four parts in order: Part~I sets the shared language, Part~II equips you with hypothesis-driven tickets, Part~III layers on quantitative rigor, and Part~IV delivers implementation playbooks. This progression mirrors how teams mature their operating model from intent to execution.
+
+If you are jumping in midstream, treat each part as a toolbox. Skim Part~I for translation principles, then dive into the section that addresses your current pain point—upgrading acceptance criteria (Part~III), tightening measurement (Part~II), or refreshing documentation patterns (Part~IV). Cross-references call out where concepts intersect so you can explore adjacent topics without losing momentum.
+
+\clearpage
+
+% Glossary entries
+\newglossaryentry{slo}{name={SLO},description={Service Level Objective; the reliability or performance target a system commits to meet, usually expressed as an availability or latency goal}}
+\newglossaryentry{wape}{name={WAPE},description={Weighted Absolute Percentage Error; a forecasting accuracy metric that sums absolute errors weighted by actual values}}
+\newglossaryentry{psi}{name={PSI},description={Population Stability Index; a measure that tracks distribution shifts between a baseline dataset and current data, often used for model drift detection}}
+
+\chapter*{Glossary}
+\addcontentsline{toc}{chapter}{Glossary}
+\printglossary
 \clearpage
 
 % Table of contents
@@ -205,7 +223,7 @@ You can read sequentially or jump to the sections most relevant to your current 
 % Appendices
 \appendix
 \addcontentsline{toc}{chapter}{Appendices}
-% \input{appendices/appendix_a}
-% \input{appendices/appendix_b}
+\input{appendices/appendix_metrics}
+\input{appendices/appendix_pwa}
 
 \end{document}

@@ -28,6 +28,28 @@ For user-facing features, emphasize user value, impact, and technical considerat
 \subsection{Template Structure}
 Sections include: problem statement, personas, user journeys, success metrics, acceptance criteria, non-functional requirements, dependencies, risks, and rollout plan. Embed links to design assets and instrumentation specs.
 
+\subsection{Sample Header}
+Keep the template header light enough to drop into Jira or GitHub Issues. The snippet below covers the scoping essentials before teams dive into richer sections.
+
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabular}{p{0.28\textwidth}p{0.6\textwidth}}
+        \toprule
+        \textbf{Field} & \textbf{Prompt / Example} \\
+        \midrule
+        Feature Name & ``Search Autocomplete for Mobile'' \\
+        Problem Statement & ``Users abandon after 2 queries because results load too slowly.'' \\
+        Personas / Segments & ``Consumer shoppers (Tier A), Guest users (Tier B)'' \\
+        Success Metric & ``Reduce median search time to \textless{}500~\text{ms}; +5\% conversion.'' \\
+        Acceptance Criteria Snapshot & ``AC1: Suggest after 3 chars; AC2: Results filtered by locale.'' \\
+        Owner / Squad & ``Voyager Web -- PM: Ana Silva, EM: Leo Park'' \\
+        Target Release & ``Beta in Sprint 24; GA in Sprint 26'' \\
+        \bottomrule
+    \end{tabular}
+    \caption{Concise feature template header for backlog items.}
+\end{table}
+
 \subsection{Complete Example: Search Autocomplete}
 Illustrate how the template is filled for a search autocomplete initiative: outline user pain, hypotheses about time-to-result improvements, API latency requirements, and experiment plans. Annotate each section explaining why certain fields were populated.
 
@@ -41,6 +63,29 @@ Exploratory work requires structure without stifling discovery.
 
 \subsection{Template Structure}
 Capture the questions to answer, datasets, access requirements, analysis methods, time box, deliverables (findings memo, dashboard), and decision criteria.
+
+\subsection{Sample Header}
+Analysts often start with a lightweight Markdown block copied into an analytics ticket or shared doc. Keep the header constrained to the most important metadata and link deeper artifacts elsewhere.
+
+\begin{verbatim}
+## Exploration Title
+Customer Churn Cohort Deep-Dive
+
+## Question(s)
+- Which cohorts are driving churn >8%?
+- What leading indicators predict churn 2 weeks out?
+
+## Datasets / Access
+- warehouse.mart.churn_events (owner: data_eng)
+- s3://telemetry/ios (request access via #data-ops)
+
+## Time Box
+Start: 2025-11-20  End: 2025-12-05 (10 working days)
+
+## Deliverables
+- Findings memo + one-pager
+- Mode dashboard link + SQL in repo analytics/churn/
+\end{verbatim}
 
 \subsection{Complete Example: Customer Churn Analysis}
 Demonstrate how a churn exploration defines cohorts, details data access steps, lists analyses (cohort retention, feature importance), and triggers a go/no-go decision for model development.
@@ -159,6 +204,28 @@ Show how to craft a living guide with sections for tooling, datasets, coding sta
 
 \subsection{Variations}
 Offer templates for user guides, API references, or runbooks.
+
+\section{Automated Template Generators}
+\label{sec:template-generators}
+
+Scaling templates across teams benefits from automation. The repository now includes \texttt{tools/template\_generator.py}, a CLI utility that:
+\begin{itemize}
+    \item Accepts work type, domain, and risk level, then stitches the appropriate section list with domain/risk-specific extensions.
+    \item Converts free-form requirement statements into structured acceptance criteria using lightweight NLP rules.
+    \item Validates completeness by running predefined checklists aligned with the frameworks in this chapter.
+    \item Exports the assembled template to Markdown, Jira JSON payloads, and Azure DevOps YAML for rapid ingestion into planning tools.
+\end{itemize}
+
+\begin{lstlisting}[language=bash,caption={Generating a healthcare feature template with high-risk controls.}]
+python tools/template_generator.py \
+  --work-type feature \
+  --domain healthcare \
+  --risk high \
+  --requirement "Improve clinician onboarding to cut activation time by 15%" \
+  --export markdown jira azure
+\end{lstlisting}
+
+Outputs land in \texttt{tools/generated/}, ready to copy into tickets or share with stakeholders. Detailed instructions live in \texttt{tools/README.md}. Teams can wire the generator into internal portals or notebook workflows to offer self-service templates with consistent structure, automated acceptance criteria, and built-in validation.
 
 \section{Cross-Functional Initiative Template}
 \label{sec:initiative-template}

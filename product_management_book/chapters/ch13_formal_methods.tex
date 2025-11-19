@@ -136,6 +136,37 @@ Cutting-edge research tools (Coq, Isabelle, NuSMV) provide deep assurance when t
 \subsection{Tool Selection Criteria}
 Consider expressiveness, learning curve, tooling ecosystem, integration with existing workflows, and community support. Start with tools that provide immediate wins without overwhelming the team.
 
+\section{Formal Methods Automation Toolkit}
+\label{sec:formal-automation}
+
+Practical automation helps teams apply formal reasoning quickly. The repository includes \texttt{tools/formal\_methods.py}, which provides:
+\begin{itemize}
+    \item Business-rule conversion into symbolic logic, suitable for validation with SymPy or external solvers.
+    \item State machine diagram generation (Mermaid) from textual transitions.
+    \item Decision table construction to visualize complex conditional requirements.
+    \item Constraint satisfaction solving for requirement validation (e.g., ensuring channel/risk combinations obey policy rules).
+\end{itemize}
+
+\begin{lstlisting}[language=bash,caption={Using the formal methods automation CLI.}]
+# Convert rules + visualize workflow
+python tools/formal_methods.py --mode logic \
+  --rules "user_is_verified -> allow_purchase" \
+          "order_value > 100 -> flag_manual_review"
+python tools/formal_methods.py --mode state \
+  --transitions "draft -> review: submit" \
+               "review -> approved: sign" \
+               "review -> rejected: decline"
+
+# Decision table + CSP validation
+python tools/formal_methods.py --mode decision \
+  --conditions "Region=EU AND Risk=High" "Region=US AND Risk=Low" \
+  --actions "Notify" "Escalate"
+python tools/formal_methods.py --mode csp \
+  --csp-file tools/data/sample_csp.json
+\end{lstlisting}
+
+Artifacts are written to \texttt{tools/generated/}, making it simple to embed logic proofs, diagrams, and constraint checks into Chapter 13 workflows.
+
 \section{Adoption Strategy}
 \label{sec:adoption}
 
