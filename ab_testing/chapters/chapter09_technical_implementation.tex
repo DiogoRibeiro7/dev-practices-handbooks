@@ -1,0 +1,3188 @@
+% Chapter 9: Technical Implementation
+
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Design and implement feature flag systems for experiment control
+    \item Build scalable random assignment infrastructure
+    \item Architect data collection pipelines for experiment tracking
+    \item Implement real-time monitoring and alerting systems
+    \item Design ETL pipelines for experiment data processing
+    \item Apply data quality validation frameworks
+    \item Use Python, R, and SQL for experiment analysis
+    \item Handle big data experimentation with distributed computing
+    \item Build automated statistical testing frameworks
+    \item Design APIs for experiment management platforms
+    \item Apply object-oriented principles to experiment code
+    \item Ensure reproducibility through version control and documentation
+\end{itemize}
+
+\section{Introduction: From Theory to Production}
+
+Academic treatments of A/B testing focus on statistical theory: hypothesis tests, confidence intervals, power analysis. Production experimentation systems require robust engineering:
+
+\begin{itemize}
+    \item \textbf{Scale:} Millions of users, thousands of concurrent experiments
+    \item \textbf{Reliability:} 99.9\% uptime, no data loss
+    \item \textbf{Performance:} Sub-millisecond assignment decisions
+    \item \textbf{Flexibility:} Support diverse experiment types and metrics
+    \item \textbf{Compliance:} GDPR, CCPA, SOX requirements
+    \item \textbf{Observability:} Real-time monitoring and debugging
+\end{itemize}
+
+This chapter bridges the gap between statistical methods and production systems, providing practical implementation patterns for enterprise-scale experimentation platforms.
+
+\section{Experiment Infrastructure}
+
+\subsection{Feature Flags and Configuration Management}
+
+Feature flags decouple deployment from release, enabling safe experimentation in production.
+
+\begin{definition}[Feature Flag]
+A conditional statement that controls code path execution based on configuration:
+\begin{verbatim}
+if feature_flag('new_checkout_flow', user_id):
+    return new_checkout()
+else:
+    return legacy_checkout()
+\end{verbatim}
+\end{definition}
+
+\textbf{Architecture Requirements:}
+\begin{itemize}
+    \item \textbf{Low latency:} < 10ms evaluation time
+    \item \textbf{High availability:} Graceful degradation if flag service down
+    \item \textbf{Consistency:} Same user always sees same variant (sticky assignment)
+    \item \textbf{Flexibility:} Support percentage rollouts, user targeting, kill switches
+\end{itemize}
+
+\lstset{language=Python, caption=Feature Flag System Implementation}
+\begin{lstlisting}
+import hashlib
+import json
+from typing import Dict, Any, Optional, List
+from enum import Enum
+from dataclasses import dataclass
+from datetime import datetime
+import redis
+
+class FlagStatus(Enum):
+    """Feature flag status."""
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    ARCHIVED = "archived"
+
+@dataclass
+class FlagConfig:
+    """Configuration for a feature flag."""
+    flag_key: str
+    status: FlagStatus
+    rollout_percentage: float  # 0.0 to 1.0
+    variant_weights: Dict[str, float]  # variant -> weight
+    targeting_rules: List[Dict[str, Any]]
+    created_at: datetime
+    updated_at: datetime
+
+    def validate(self):
+        """Validate flag configuration."""
+        # Check weights sum to 1
+        total_weight = sum(self.variant_weights.values())
+        if not (0.99 <= total_weight <= 1.01):  # Allow rounding error
+            raise ValueError(f"Variant weights must sum to 1, got {total_weight}")
+
+        # Check rollout percentage
+        if not (0 <= self.rollout_percentage <= 1):
+            raise ValueError(f"Rollout must be 0-1, got {self.rollout_percentage}")
+
+class FeatureFlagSystem:
+    """
+    Production feature flag system with caching and fallback.
+
+    Features:
+    - Consistent hashing for assignment
+    - Local caching with TTL
+    - Graceful degradation
+    - Audit logging
+    """
+
+    def __init__(self, redis_client: Optional[redis.Redis] = None,
+                 default_ttl: int = 60):
+        """
+        Parameters:
+        -----------
+        redis_client : redis.Redis
+            Redis client for distributed config storage
+        default_ttl : int
+            Cache TTL in seconds
+        """
+        self.redis_client = redis_client
+        self.default_ttl = default_ttl
+        self.local_cache: Dict[str, FlagConfig] = {}
+        self.cache_timestamps: Dict[str, datetime] = {}
+
+    def evaluate(self, flag_key: str, user_id: str,
+                context: Optional[Dict[str, Any]] = None) -> str:
+        """
+        Evaluate feature flag for user.
+
+        Parameters:
+        -----------
+        flag_key : str
+            Feature flag identifier
+        user_id : str
+            User identifier (for consistent assignment)
+        context : dict
+            Additional context for targeting (user attributes, etc.)
+
+        Returns:
+        --------
+        str : Assigned variant (e.g., 'control', 'treatment')
+        """
+        # Get flag configuration
+        config = self._get_config(flag_key)
+
+        if config is None or config.status != FlagStatus.ACTIVE:
+            return 'control'  # Default to control if flag not found/inactive
+
+        # Check if user is in rollout
+        if not self._is_in_rollout(flag_key, user_id,
+                                   config.rollout_percentage):
+            return 'control'
+
+        # Apply targeting rules
+        if context and not self._matches_targeting(config.targeting_rules,
+                                                   context):
+            return 'control'
+
+        # Assign variant based on consistent hash
+        variant = self._assign_variant(flag_key, user_id,
+                                      config.variant_weights)
+
+        # Log assignment (async in production)
+        self._log_assignment(flag_key, user_id, variant)
+
+        return variant
+
+    def _get_config(self, flag_key: str) -> Optional[FlagConfig]:
+        """Get flag configuration with caching."""
+        # Check local cache
+        if flag_key in self.local_cache:
+            cache_age = (datetime.now() -
+                        self.cache_timestamps[flag_key]).seconds
+            if cache_age < self.default_ttl:
+                return self.local_cache[flag_key]
+
+        # Fetch from Redis
+        if self.redis_client:
+            try:
+                config_json = self.redis_client.get(f"flag:{flag_key}")
+                if config_json:
+                    config_dict = json.loads(config_json)
+                    config = self._deserialize_config(config_dict)
+
+                    # Update cache
+                    self.local_cache[flag_key] = config
+                    self.cache_timestamps[flag_key] = datetime.now()
+
+                    return config
+            except Exception as e:
+                # Log error but continue with cached/default value
+                print(f"Error fetching flag config: {e}")
+
+        return None
+
+    def _is_in_rollout(self, flag_key: str, user_id: str,
+                      rollout_percentage: float) -> bool:
+        """
+        Determine if user is in rollout using consistent hashing.
+
+        Uses hash of (flag_key, user_id) for deterministic assignment.
+        """
+        hash_input = f"{flag_key}:{user_id}"
+        hash_value = int(hashlib.md5(hash_input.encode()).hexdigest(), 16)
+
+        # Map hash to [0, 1]
+        normalized = (hash_value % 10000) / 10000.0
+
+        return normalized < rollout_percentage
+
+    def _assign_variant(self, flag_key: str, user_id: str,
+                       variant_weights: Dict[str, float]) -> str:
+        """
+        Assign variant using weighted consistent hashing.
+
+        Ensures same user always gets same variant (sticky assignment).
+        """
+        # Create cumulative distribution
+        variants = sorted(variant_weights.keys())
+        cumulative_weights = []
+        cumsum = 0
+        for variant in variants:
+            cumsum += variant_weights[variant]
+            cumulative_weights.append(cumsum)
+
+        # Hash user to [0, 1]
+        hash_input = f"{flag_key}:variant:{user_id}"
+        hash_value = int(hashlib.md5(hash_input.encode()).hexdigest(), 16)
+        random_value = (hash_value % 10000) / 10000.0
+
+        # Find variant
+        for i, threshold in enumerate(cumulative_weights):
+            if random_value < threshold:
+                return variants[i]
+
+        return variants[-1]  # Fallback
+
+    def _matches_targeting(self, targeting_rules: List[Dict[str, Any]],
+                          context: Dict[str, Any]) -> bool:
+        """
+        Check if context matches targeting rules.
+
+        Targeting rules format:
+        [
+            {"attribute": "country", "operator": "in", "values": ["US", "CA"]},
+            {"attribute": "plan", "operator": "equals", "values": "premium"}
+        ]
+        """
+        for rule in targeting_rules:
+            attribute = rule['attribute']
+            operator = rule['operator']
+            target_values = rule['values']
+
+            if attribute not in context:
+                return False
+
+            context_value = context[attribute]
+
+            if operator == 'equals':
+                if context_value != target_values:
+                    return False
+            elif operator == 'in':
+                if context_value not in target_values:
+                    return False
+            elif operator == 'not_in':
+                if context_value in target_values:
+                    return False
+            elif operator == 'greater_than':
+                if context_value <= target_values:
+                    return False
+            elif operator == 'less_than':
+                if context_value >= target_values:
+                    return False
+
+        return True
+
+    def _log_assignment(self, flag_key: str, user_id: str, variant: str):
+        """
+        Log flag assignment for audit trail.
+
+        In production, send to async queue (Kafka, Kinesis) for processing.
+        """
+        event = {
+            'flag_key': flag_key,
+            'user_id': user_id,
+            'variant': variant,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        # In production: send to message queue
+        # producer.send('flag_assignments', json.dumps(event))
+
+        # For now, just log
+        print(f"Assignment: {event}")
+
+    def _deserialize_config(self, config_dict: Dict) -> FlagConfig:
+        """Deserialize flag config from dict."""
+        return FlagConfig(
+            flag_key=config_dict['flag_key'],
+            status=FlagStatus(config_dict['status']),
+            rollout_percentage=config_dict['rollout_percentage'],
+            variant_weights=config_dict['variant_weights'],
+            targeting_rules=config_dict.get('targeting_rules', []),
+            created_at=datetime.fromisoformat(config_dict['created_at']),
+            updated_at=datetime.fromisoformat(config_dict['updated_at'])
+        )
+
+    def create_flag(self, config: FlagConfig):
+        """Create or update feature flag."""
+        config.validate()
+
+        if self.redis_client:
+            config_dict = {
+                'flag_key': config.flag_key,
+                'status': config.status.value,
+                'rollout_percentage': config.rollout_percentage,
+                'variant_weights': config.variant_weights,
+                'targeting_rules': config.targeting_rules,
+                'created_at': config.created_at.isoformat(),
+                'updated_at': config.updated_at.isoformat()
+            }
+
+            self.redis_client.set(
+                f"flag:{config.flag_key}",
+                json.dumps(config_dict),
+                ex=86400  # 24 hour expiry
+            )
+
+# Example usage
+flag_system = FeatureFlagSystem()
+
+# Create experiment flag
+config = FlagConfig(
+    flag_key='new_checkout_flow',
+    status=FlagStatus.ACTIVE,
+    rollout_percentage=1.0,  # 100% of users
+    variant_weights={
+        'control': 0.5,
+        'treatment': 0.5
+    },
+    targeting_rules=[
+        {'attribute': 'country', 'operator': 'in', 'values': ['US', 'CA']}
+    ],
+    created_at=datetime.now(),
+    updated_at=datetime.now()
+)
+
+flag_system.create_flag(config)
+
+# Evaluate for user
+user_context = {'country': 'US', 'plan': 'premium'}
+variant = flag_system.evaluate('new_checkout_flow', 'user_12345',
+                               user_context)
+print(f"Assigned variant: {variant}")
+\end{lstlisting}
+
+\subsection{Random Assignment Systems}
+
+Random assignment must be:
+\begin{itemize}
+    \item \textbf{Deterministic:} Same input always produces same output
+    \item \textbf{Uniform:} Each variant has exact specified probability
+    \item \textbf{Independent:} Assignments across experiments are uncorrelated
+\end{itemize}
+
+\textbf{Hashing Strategy:}
+
+\begin{enumerate}
+    \item Concatenate experiment ID and user ID
+    \item Hash using cryptographic hash (MD5, SHA-256)
+    \item Map hash to [0, 1] using modulo
+    \item Assign variant based on thresholds
+\end{enumerate}
+
+\lstset{language=Python, caption=Production Random Assignment System}
+\begin{lstlisting}
+import hashlib
+from typing import List, Dict
+from dataclasses import dataclass
+
+@dataclass
+class ExperimentConfig:
+    """Experiment configuration."""
+    experiment_id: str
+    variants: List[str]
+    traffic_allocation: float  # Fraction of users in experiment
+    variant_weights: Dict[str, float]
+    salt: str = ""  # For re-randomization
+
+class RandomAssignmentSystem:
+    """
+    Production random assignment system.
+
+    Features:
+    - Consistent hashing for deterministic assignment
+    - Support for stratified randomization
+    - Traffic allocation control
+    - Re-randomization via salt
+    """
+
+    def __init__(self):
+        self.experiments: Dict[str, ExperimentConfig] = {}
+
+    def register_experiment(self, config: ExperimentConfig):
+        """Register experiment configuration."""
+        # Validate configuration
+        if sum(config.variant_weights.values()) != 1.0:
+            raise ValueError("Variant weights must sum to 1.0")
+
+        if not (0 <= config.traffic_allocation <= 1):
+            raise ValueError("Traffic allocation must be between 0 and 1")
+
+        self.experiments[config.experiment_id] = config
+
+    def assign(self, experiment_id: str, unit_id: str,
+              stratification_key: str = None) -> str:
+        """
+        Assign unit to variant.
+
+        Parameters:
+        -----------
+        experiment_id : str
+            Experiment identifier
+        unit_id : str
+            Unit to assign (user_id, session_id, etc.)
+        stratification_key : str
+            Optional key for stratified randomization
+
+        Returns:
+        --------
+        str : Assigned variant or 'holdout' if not in traffic
+        """
+        if experiment_id not in self.experiments:
+            raise ValueError(f"Unknown experiment: {experiment_id}")
+
+        config = self.experiments[experiment_id]
+
+        # Check if unit is in traffic allocation
+        if not self._is_in_traffic(experiment_id, unit_id, config):
+            return 'holdout'
+
+        # Assign variant
+        return self._assign_variant(experiment_id, unit_id, config,
+                                   stratification_key)
+
+    def _is_in_traffic(self, experiment_id: str, unit_id: str,
+                      config: ExperimentConfig) -> bool:
+        """Determine if unit is in experiment traffic."""
+        hash_input = f"{experiment_id}:traffic:{unit_id}:{config.salt}"
+        hash_value = self._hash_to_float(hash_input)
+        return hash_value < config.traffic_allocation
+
+    def _assign_variant(self, experiment_id: str, unit_id: str,
+                       config: ExperimentConfig,
+                       stratification_key: str = None) -> str:
+        """Assign variant using consistent hashing."""
+        # Include stratification key if provided
+        strat_suffix = f":{stratification_key}" if stratification_key else ""
+        hash_input = f"{experiment_id}:variant:{unit_id}:{config.salt}{strat_suffix}"
+
+        hash_value = self._hash_to_float(hash_input)
+
+        # Map to variant using cumulative weights
+        cumsum = 0
+        for variant in sorted(config.variants):
+            cumsum += config.variant_weights[variant]
+            if hash_value < cumsum:
+                return variant
+
+        return config.variants[-1]  # Fallback
+
+    @staticmethod
+    def _hash_to_float(input_string: str) -> float:
+        """
+        Hash string to float in [0, 1].
+
+        Uses MD5 for speed (not cryptographic security).
+        """
+        hash_bytes = hashlib.md5(input_string.encode()).digest()
+        hash_int = int.from_bytes(hash_bytes[:8], byteorder='big')
+        return (hash_int % 10000) / 10000.0
+
+    def get_assignment_probabilities(self, experiment_id: str,
+                                    unit_id: str) -> Dict[str, float]:
+        """
+        Get probability of each assignment for debugging.
+
+        Useful for validating assignment logic.
+        """
+        if experiment_id not in self.experiments:
+            raise ValueError(f"Unknown experiment: {experiment_id}")
+
+        config = self.experiments[experiment_id]
+
+        # Probability of being in traffic
+        in_traffic_prob = config.traffic_allocation
+
+        # Probability of each variant given in traffic
+        probabilities = {}
+        for variant, weight in config.variant_weights.items():
+            probabilities[variant] = in_traffic_prob * weight
+
+        probabilities['holdout'] = 1 - in_traffic_prob
+
+        return probabilities
+
+# Example usage
+assignment_system = RandomAssignmentSystem()
+
+# Register A/B test
+config = ExperimentConfig(
+    experiment_id='checkout_redesign_v2',
+    variants=['control', 'treatment'],
+    traffic_allocation=0.8,  # 80% in experiment, 20% holdout
+    variant_weights={'control': 0.5, 'treatment': 0.5},
+    salt='v1'
+)
+
+assignment_system.register_experiment(config)
+
+# Assign users
+for user_id in ['user_1', 'user_2', 'user_3', 'user_4', 'user_5']:
+    variant = assignment_system.assign('checkout_redesign_v2', user_id)
+    probs = assignment_system.get_assignment_probabilities(
+        'checkout_redesign_v2', user_id
+    )
+    print(f"{user_id}: {variant} (Probs: {probs})")
+\end{lstlisting}
+
+\subsection{Data Collection Architecture}
+
+Experiment data flows through multiple stages:
+
+\begin{enumerate}
+    \item \textbf{Client instrumentation:} Capture events (impressions, clicks, conversions)
+    \item \textbf{Event ingestion:} Stream to data pipeline (Kafka, Kinesis)
+    \item \textbf{Processing:} Enrich, validate, aggregate
+    \item \textbf{Storage:} Write to data warehouse (Snowflake, BigQuery)
+    \item \textbf{Analysis:} Query for statistical tests
+\end{enumerate}
+
+\lstset{language=Python, caption=Event Tracking System}
+\begin{lstlisting}
+from dataclasses import dataclass, asdict
+from typing import Dict, Any, Optional
+from datetime import datetime
+import json
+import uuid
+
+@dataclass
+class ExperimentEvent:
+    """
+    Base class for experiment events.
+
+    All events inherit from this and add specific fields.
+    """
+    event_id: str
+    event_type: str
+    timestamp: datetime
+    experiment_id: str
+    variant: str
+    user_id: str
+    session_id: str
+
+    # Context
+    platform: str  # web, ios, android
+    version: str   # app/site version
+
+    # Additional properties (flexible)
+    properties: Dict[str, Any]
+
+    def to_json(self) -> str:
+        """Serialize to JSON for logging."""
+        data = asdict(self)
+        data['timestamp'] = self.timestamp.isoformat()
+        return json.dumps(data)
+
+    def validate(self):
+        """Validate event structure."""
+        required = ['event_id', 'event_type', 'experiment_id',
+                   'variant', 'user_id']
+        for field in required:
+            if not getattr(self, field):
+                raise ValueError(f"Missing required field: {field}")
+
+@dataclass
+class ExposureEvent(ExperimentEvent):
+    """
+    User exposed to experiment variant.
+
+    Logged when user is assigned to variant and sees feature.
+    """
+    pass
+
+@dataclass
+class ConversionEvent(ExperimentEvent):
+    """
+    User completed conversion action.
+
+    Examples: purchase, signup, click
+    """
+    conversion_value: float = 0.0
+    conversion_type: str = ""
+
+class EventTracker:
+    """
+    Client-side event tracking for experiments.
+
+    Buffers events and sends in batches for efficiency.
+    """
+
+    def __init__(self, batch_size: int = 100):
+        self.batch_size = batch_size
+        self.event_buffer = []
+
+    def track_exposure(self, experiment_id: str, variant: str,
+                      user_id: str, session_id: str,
+                      platform: str, version: str,
+                      properties: Dict[str, Any] = None):
+        """Track experiment exposure."""
+        event = ExposureEvent(
+            event_id=str(uuid.uuid4()),
+            event_type='exposure',
+            timestamp=datetime.now(),
+            experiment_id=experiment_id,
+            variant=variant,
+            user_id=user_id,
+            session_id=session_id,
+            platform=platform,
+            version=version,
+            properties=properties or {}
+        )
+
+        event.validate()
+        self._buffer_event(event)
+
+    def track_conversion(self, experiment_id: str, variant: str,
+                        user_id: str, session_id: str,
+                        platform: str, version: str,
+                        conversion_value: float = 0.0,
+                        conversion_type: str = "",
+                        properties: Dict[str, Any] = None):
+        """Track conversion event."""
+        event = ConversionEvent(
+            event_id=str(uuid.uuid4()),
+            event_type='conversion',
+            timestamp=datetime.now(),
+            experiment_id=experiment_id,
+            variant=variant,
+            user_id=user_id,
+            session_id=session_id,
+            platform=platform,
+            version=version,
+            conversion_value=conversion_value,
+            conversion_type=conversion_type,
+            properties=properties or {}
+        )
+
+        event.validate()
+        self._buffer_event(event)
+
+    def _buffer_event(self, event: ExperimentEvent):
+        """Buffer event and flush if batch full."""
+        self.event_buffer.append(event)
+
+        if len(self.event_buffer) >= self.batch_size:
+            self.flush()
+
+    def flush(self):
+        """
+        Flush buffered events to backend.
+
+        In production, send to:
+        - Kafka/Kinesis for streaming
+        - Snowplow/Segment for event pipeline
+        - Direct to data warehouse
+        """
+        if not self.event_buffer:
+            return
+
+        # Serialize events
+        events_json = [event.to_json() for event in self.event_buffer]
+
+        # In production: send to message queue
+        # kafka_producer.send('experiment_events', events_json)
+
+        # For now, just log
+        print(f"Flushing {len(events_json)} events")
+
+        # Clear buffer
+        self.event_buffer = []
+
+# Example usage
+tracker = EventTracker(batch_size=10)
+
+# Track exposure
+tracker.track_exposure(
+    experiment_id='checkout_v2',
+    variant='treatment',
+    user_id='user_123',
+    session_id='session_456',
+    platform='web',
+    version='2.1.0',
+    properties={'page': 'checkout', 'step': 1}
+)
+
+# Track conversion
+tracker.track_conversion(
+    experiment_id='checkout_v2',
+    variant='treatment',
+    user_id='user_123',
+    session_id='session_456',
+    platform='web',
+    version='2.1.0',
+    conversion_value=49.99,
+    conversion_type='purchase'
+)
+
+tracker.flush()
+\end{lstlisting}
+
+\subsection{Real-Time Monitoring}
+
+Production experiments require continuous monitoring for:
+\begin{itemize}
+    \item Sample ratio mismatch (SRM)
+    \item Metric anomalies
+    \item Assignment failures
+    \item Performance degradation
+\end{itemize}
+
+\lstset{language=Python, caption=Real-Time Experiment Monitor}
+\begin{lstlisting}
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+import numpy as np
+from scipy import stats
+
+@dataclass
+class MetricSnapshot:
+    """Snapshot of experiment metrics at a point in time."""
+    timestamp: datetime
+    experiment_id: str
+    variant: str
+    sample_size: int
+    metric_values: Dict[str, float]
+
+@dataclass
+class Alert:
+    """Alert for experiment issue."""
+    alert_id: str
+    alert_type: str
+    severity: str  # 'info', 'warning', 'critical'
+    experiment_id: str
+    message: str
+    timestamp: datetime
+    metadata: Dict
+
+class ExperimentMonitor:
+    """
+    Real-time experiment monitoring system.
+
+    Checks for:
+    - Sample ratio mismatch (SRM)
+    - Metric anomalies
+    - Low traffic
+    - High variance
+    """
+
+    def __init__(self, check_interval_seconds: int = 300):
+        self.check_interval = check_interval_seconds
+        self.snapshots: Dict[str, List[MetricSnapshot]] = {}
+        self.alerts: List[Alert] = []
+
+    def record_snapshot(self, snapshot: MetricSnapshot):
+        """Record metrics snapshot."""
+        if snapshot.experiment_id not in self.snapshots:
+            self.snapshots[snapshot.experiment_id] = []
+
+        self.snapshots[snapshot.experiment_id].append(snapshot)
+
+    def check_experiment(self, experiment_id: str,
+                        expected_variant_weights: Dict[str, float]):
+        """
+        Run all checks for experiment.
+
+        Parameters:
+        -----------
+        experiment_id : str
+            Experiment to check
+        expected_variant_weights : dict
+            Expected variant allocation (e.g., {'control': 0.5, 'treatment': 0.5})
+        """
+        if experiment_id not in self.snapshots:
+            return
+
+        # Get latest snapshots for each variant
+        latest_snapshots = self._get_latest_snapshots(experiment_id)
+
+        # Check SRM
+        self._check_sample_ratio_mismatch(experiment_id, latest_snapshots,
+                                         expected_variant_weights)
+
+        # Check traffic levels
+        self._check_traffic_levels(experiment_id, latest_snapshots)
+
+        # Check metric anomalies
+        self._check_metric_anomalies(experiment_id, latest_snapshots)
+
+    def _get_latest_snapshots(self, experiment_id: str) -> Dict[str, MetricSnapshot]:
+        """Get latest snapshot for each variant."""
+        snapshots = self.snapshots[experiment_id]
+
+        # Group by variant and get latest
+        latest = {}
+        for snapshot in snapshots:
+            if snapshot.variant not in latest:
+                latest[snapshot.variant] = snapshot
+            elif snapshot.timestamp > latest[snapshot.variant].timestamp:
+                latest[snapshot.variant] = snapshot
+
+        return latest
+
+    def _check_sample_ratio_mismatch(self, experiment_id: str,
+                                    snapshots: Dict[str, MetricSnapshot],
+                                    expected_weights: Dict[str, float]):
+        """
+        Check for sample ratio mismatch using chi-square test.
+
+        SRM indicates assignment or tracking issues.
+        """
+        variants = list(snapshots.keys())
+        observed_counts = [snapshots[v].sample_size for v in variants]
+        total = sum(observed_counts)
+
+        expected_counts = [expected_weights[v] * total for v in variants]
+
+        # Chi-square test
+        chi2, p_value = stats.chisquare(observed_counts, expected_counts)
+
+        # Alert if p < 0.001 (very strong evidence of mismatch)
+        if p_value < 0.001:
+            alert = Alert(
+                alert_id=f"srm_{experiment_id}_{datetime.now().timestamp()}",
+                alert_type='sample_ratio_mismatch',
+                severity='critical',
+                experiment_id=experiment_id,
+                message=(f"Sample ratio mismatch detected! "
+                        f"p-value={p_value:.6f}, chi2={chi2:.2f}"),
+                timestamp=datetime.now(),
+                metadata={
+                    'observed': dict(zip(variants, observed_counts)),
+                    'expected': dict(zip(variants, expected_counts)),
+                    'p_value': p_value,
+                    'chi2': chi2
+                }
+            )
+            self.alerts.append(alert)
+            print(f"ALERT: {alert.message}")
+
+    def _check_traffic_levels(self, experiment_id: str,
+                             snapshots: Dict[str, MetricSnapshot],
+                             min_daily_traffic: int = 1000):
+        """Check if experiment has sufficient traffic."""
+        for variant, snapshot in snapshots.items():
+            if snapshot.sample_size < min_daily_traffic:
+                alert = Alert(
+                    alert_id=f"traffic_{experiment_id}_{variant}_{datetime.now().timestamp()}",
+                    alert_type='low_traffic',
+                    severity='warning',
+                    experiment_id=experiment_id,
+                    message=(f"Low traffic for variant {variant}: "
+                           f"{snapshot.sample_size} (expected > {min_daily_traffic})"),
+                    timestamp=datetime.now(),
+                    metadata={'variant': variant, 'sample_size': snapshot.sample_size}
+                )
+                self.alerts.append(alert)
+                print(f"WARNING: {alert.message}")
+
+    def _check_metric_anomalies(self, experiment_id: str,
+                               snapshots: Dict[str, MetricSnapshot]):
+        """
+        Check for unusual metric values using historical baselines.
+
+        Detects data quality issues or genuine effects.
+        """
+        # In production, compare to historical percentiles
+        # For now, just check for extreme values
+
+        for variant, snapshot in snapshots.items():
+            for metric_name, value in snapshot.metric_values.items():
+                # Example: check conversion rate is plausible
+                if metric_name == 'conversion_rate':
+                    if value < 0 or value > 1:
+                        alert = Alert(
+                            alert_id=f"anomaly_{experiment_id}_{variant}_{metric_name}_{datetime.now().timestamp()}",
+                            alert_type='metric_anomaly',
+                            severity='critical',
+                            experiment_id=experiment_id,
+                            message=(f"Invalid {metric_name} for {variant}: {value}"),
+                            timestamp=datetime.now(),
+                            metadata={'variant': variant, 'metric': metric_name, 'value': value}
+                        )
+                        self.alerts.append(alert)
+                        print(f"ERROR: {alert.message}")
+
+    def get_recent_alerts(self, hours: int = 24) -> List[Alert]:
+        """Get alerts from last N hours."""
+        cutoff = datetime.now() - timedelta(hours=hours)
+        return [a for a in self.alerts if a.timestamp > cutoff]
+
+# Example usage
+monitor = ExperimentMonitor()
+
+# Simulate snapshots
+snapshots = [
+    MetricSnapshot(
+        timestamp=datetime.now(),
+        experiment_id='checkout_v2',
+        variant='control',
+        sample_size=5000,
+        metric_values={'conversion_rate': 0.082, 'revenue_per_user': 4.50}
+    ),
+    MetricSnapshot(
+        timestamp=datetime.now(),
+        experiment_id='checkout_v2',
+        variant='treatment',
+        sample_size=5100,  # Slight imbalance (should be fine)
+        metric_values={'conversion_rate': 0.095, 'revenue_per_user': 5.20}
+    )
+]
+
+for snapshot in snapshots:
+    monitor.record_snapshot(snapshot)
+
+# Check experiment
+monitor.check_experiment(
+    'checkout_v2',
+    expected_variant_weights={'control': 0.5, 'treatment': 0.5}
+)
+
+# Get recent alerts
+recent_alerts = monitor.get_recent_alerts(hours=1)
+print(f"\nRecent alerts: {len(recent_alerts)}")
+for alert in recent_alerts:
+    print(f"  [{alert.severity}] {alert.alert_type}: {alert.message}")
+\end{lstlisting}
+
+\section{Data Engineering Considerations}
+
+\subsection{ETL Pipelines for Experiment Data}
+
+ETL (Extract, Transform, Load) pipelines process raw event data into analysis-ready tables.
+
+\textbf{Pipeline Stages:}
+
+\begin{enumerate}
+    \item \textbf{Extract:} Pull raw events from streaming system (Kafka) or data lake (S3)
+    \item \textbf{Transform:}
+    \begin{itemize}
+        \item Join exposures with conversions
+        \item Aggregate by user/variant
+        \item Compute derived metrics
+        \item Apply attribution windows
+    \end{itemize}
+    \item \textbf{Load:} Write to data warehouse (Snowflake, BigQuery, Redshift)
+\end{enumerate}
+
+\lstset{language=SQL, caption=Experiment Data Schema}
+\begin{lstlisting}
+-- Exposures table: User-variant assignments
+CREATE TABLE experiment_exposures (
+    exposure_id VARCHAR(36) PRIMARY KEY,
+    experiment_id VARCHAR(100) NOT NULL,
+    variant VARCHAR(50) NOT NULL,
+    user_id VARCHAR(100) NOT NULL,
+    session_id VARCHAR(100),
+    exposure_timestamp TIMESTAMP NOT NULL,
+    platform VARCHAR(20),
+    version VARCHAR(20),
+    properties JSON,
+
+    -- Metadata
+    ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Indexes
+    INDEX idx_experiment_user (experiment_id, user_id),
+    INDEX idx_experiment_timestamp (experiment_id, exposure_timestamp)
+);
+
+-- Conversions table: User actions
+CREATE TABLE experiment_conversions (
+    conversion_id VARCHAR(36) PRIMARY KEY,
+    experiment_id VARCHAR(100) NOT NULL,
+    variant VARCHAR(50),  -- May be NULL if user not in experiment
+    user_id VARCHAR(100) NOT NULL,
+    session_id VARCHAR(100),
+    conversion_timestamp TIMESTAMP NOT NULL,
+    conversion_type VARCHAR(50) NOT NULL,
+    conversion_value DECIMAL(10, 2),
+    platform VARCHAR(20),
+    properties JSON,
+
+    -- Metadata
+    ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Indexes
+    INDEX idx_experiment_user (experiment_id, user_id),
+    INDEX idx_experiment_timestamp (experiment_id, conversion_timestamp)
+);
+
+-- Aggregated user-level metrics (materialized for fast querying)
+CREATE TABLE experiment_user_metrics (
+    experiment_id VARCHAR(100) NOT NULL,
+    variant VARCHAR(50) NOT NULL,
+    user_id VARCHAR(100) NOT NULL,
+
+    -- Exposure info
+    first_exposure_timestamp TIMESTAMP NOT NULL,
+    total_exposures INT DEFAULT 1,
+
+    -- Conversion metrics (7-day attribution window)
+    converted BOOLEAN DEFAULT FALSE,
+    conversion_count INT DEFAULT 0,
+    total_conversion_value DECIMAL(10, 2) DEFAULT 0,
+
+    -- Engagement metrics
+    sessions INT DEFAULT 0,
+    page_views INT DEFAULT 0,
+    time_spent_seconds INT DEFAULT 0,
+
+    -- Computed at
+    computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (experiment_id, variant, user_id),
+    INDEX idx_experiment_variant (experiment_id, variant)
+);
+
+-- Experiment summary statistics (pre-aggregated for dashboards)
+CREATE TABLE experiment_summary (
+    experiment_id VARCHAR(100) NOT NULL,
+    variant VARCHAR(50) NOT NULL,
+    date DATE NOT NULL,
+
+    -- Sample sizes
+    unique_users INT,
+    total_exposures INT,
+
+    -- Conversion metrics
+    conversions INT,
+    conversion_rate DECIMAL(10, 6),
+    revenue_per_user DECIMAL(10, 2),
+    average_order_value DECIMAL(10, 2),
+
+    -- Engagement metrics
+    avg_sessions_per_user DECIMAL(10, 2),
+    avg_page_views_per_user DECIMAL(10, 2),
+
+    -- Statistical metrics
+    conversion_rate_se DECIMAL(10, 6),  -- Standard error
+
+    -- Metadata
+    computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (experiment_id, variant, date)
+);
+\end{lstlisting}
+
+\lstset{language=SQL, caption=ETL Transformation Queries}
+\begin{lstlisting}
+-- Step 1: Compute user-level metrics
+-- Join exposures with conversions, applying 7-day attribution window
+
+INSERT INTO experiment_user_metrics
+    (experiment_id, variant, user_id, first_exposure_timestamp,
+     total_exposures, converted, conversion_count, total_conversion_value)
+WITH exposures AS (
+    SELECT
+        experiment_id,
+        variant,
+        user_id,
+        MIN(exposure_timestamp) AS first_exposure,
+        COUNT(*) AS exposure_count
+    FROM experiment_exposures
+    WHERE exposure_timestamp >= CURRENT_DATE - INTERVAL '30 days'
+    GROUP BY experiment_id, variant, user_id
+),
+conversions AS (
+    SELECT
+        c.experiment_id,
+        c.user_id,
+        COUNT(*) AS conversion_count,
+        SUM(c.conversion_value) AS total_value
+    FROM experiment_conversions c
+    INNER JOIN exposures e
+        ON c.experiment_id = e.experiment_id
+        AND c.user_id = e.user_id
+    WHERE c.conversion_timestamp BETWEEN e.first_exposure
+                                    AND e.first_exposure + INTERVAL '7 days'
+    GROUP BY c.experiment_id, c.user_id
+)
+SELECT
+    e.experiment_id,
+    e.variant,
+    e.user_id,
+    e.first_exposure AS first_exposure_timestamp,
+    e.exposure_count AS total_exposures,
+    CASE WHEN c.conversion_count > 0 THEN TRUE ELSE FALSE END AS converted,
+    COALESCE(c.conversion_count, 0) AS conversion_count,
+    COALESCE(c.total_value, 0) AS total_conversion_value
+FROM exposures e
+LEFT JOIN conversions c
+    ON e.experiment_id = c.experiment_id
+    AND e.user_id = c.user_id
+ON DUPLICATE KEY UPDATE
+    total_exposures = VALUES(total_exposures),
+    converted = VALUES(converted),
+    conversion_count = VALUES(conversion_count),
+    total_conversion_value = VALUES(total_conversion_value),
+    computed_at = CURRENT_TIMESTAMP;
+
+-- Step 2: Compute daily summary statistics
+
+INSERT INTO experiment_summary
+    (experiment_id, variant, date, unique_users, total_exposures,
+     conversions, conversion_rate, revenue_per_user, conversion_rate_se)
+SELECT
+    experiment_id,
+    variant,
+    DATE(first_exposure_timestamp) AS date,
+    COUNT(DISTINCT user_id) AS unique_users,
+    SUM(total_exposures) AS total_exposures,
+    SUM(CASE WHEN converted THEN 1 ELSE 0 END) AS conversions,
+    AVG(CASE WHEN converted THEN 1.0 ELSE 0.0 END) AS conversion_rate,
+    AVG(total_conversion_value) AS revenue_per_user,
+    SQRT(AVG(CASE WHEN converted THEN 1.0 ELSE 0.0 END) *
+         (1 - AVG(CASE WHEN converted THEN 1.0 ELSE 0.0 END)) /
+         COUNT(DISTINCT user_id)) AS conversion_rate_se
+FROM experiment_user_metrics
+WHERE computed_at >= CURRENT_DATE - INTERVAL '1 day'
+GROUP BY experiment_id, variant, DATE(first_exposure_timestamp)
+ON DUPLICATE KEY UPDATE
+    unique_users = VALUES(unique_users),
+    total_exposures = VALUES(total_exposures),
+    conversions = VALUES(conversions),
+    conversion_rate = VALUES(conversion_rate),
+    revenue_per_user = VALUES(revenue_per_user),
+    conversion_rate_se = VALUES(conversion_rate_se),
+    computed_at = CURRENT_TIMESTAMP;
+
+-- Step 3: Sample Ratio Mismatch (SRM) Check Query
+
+WITH variant_counts AS (
+    SELECT
+        experiment_id,
+        variant,
+        COUNT(DISTINCT user_id) AS user_count
+    FROM experiment_user_metrics
+    WHERE first_exposure_timestamp >= CURRENT_DATE - INTERVAL '7 days'
+    GROUP BY experiment_id, variant
+),
+totals AS (
+    SELECT
+        experiment_id,
+        SUM(user_count) AS total_users
+    FROM variant_counts
+    GROUP BY experiment_id
+),
+expected_counts AS (
+    SELECT
+        vc.experiment_id,
+        vc.variant,
+        vc.user_count AS observed,
+        t.total_users * 0.5 AS expected  -- Assuming 50/50 split
+    FROM variant_counts vc
+    JOIN totals t ON vc.experiment_id = t.experiment_id
+)
+SELECT
+    experiment_id,
+    variant,
+    observed,
+    expected,
+    (observed - expected) AS difference,
+    ((observed - expected) * (observed - expected)) / expected AS chi2_component
+FROM expected_counts
+ORDER BY experiment_id, variant;
+\end{lstlisting}
+
+\lstset{language=Python, caption=Python ETL Pipeline with Pandas}
+\begin{lstlisting}
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from typing import Dict, List
+from sqlalchemy import create_engine
+
+class ExperimentETL:
+    """
+    ETL pipeline for experiment data processing.
+
+    Processes raw events into analysis-ready metrics.
+    """
+
+    def __init__(self, db_connection_string: str):
+        self.engine = create_engine(db_connection_string)
+
+    def extract_exposures(self, experiment_id: str,
+                         start_date: datetime,
+                         end_date: datetime) -> pd.DataFrame:
+        """Extract exposure events from database."""
+        query = """
+        SELECT
+            exposure_id,
+            experiment_id,
+            variant,
+            user_id,
+            exposure_timestamp,
+            platform,
+            version
+        FROM experiment_exposures
+        WHERE experiment_id = %s
+          AND exposure_timestamp BETWEEN %s AND %s
+        ORDER BY user_id, exposure_timestamp
+        """
+
+        return pd.read_sql(query, self.engine,
+                          params=[experiment_id, start_date, end_date])
+
+    def extract_conversions(self, experiment_id: str,
+                           start_date: datetime,
+                           end_date: datetime) -> pd.DataFrame:
+        """Extract conversion events from database."""
+        query = """
+        SELECT
+            conversion_id,
+            user_id,
+            conversion_timestamp,
+            conversion_type,
+            conversion_value
+        FROM experiment_conversions
+        WHERE experiment_id = %s
+          AND conversion_timestamp BETWEEN %s AND %s
+        ORDER BY user_id, conversion_timestamp
+        """
+
+        return pd.read_sql(query, self.engine,
+                          params=[experiment_id, start_date, end_date])
+
+    def transform_user_metrics(self, exposures: pd.DataFrame,
+                              conversions: pd.DataFrame,
+                              attribution_window_days: int = 7) -> pd.DataFrame:
+        """
+        Transform raw events into user-level metrics.
+
+        Applies attribution window for conversions.
+        """
+        # Get first exposure per user
+        first_exposure = exposures.groupby('user_id').agg({
+            'exposure_timestamp': 'min',
+            'variant': 'first',
+            'experiment_id': 'first'
+        }).reset_index()
+        first_exposure.columns = ['user_id', 'first_exposure',
+                                  'variant', 'experiment_id']
+
+        # Count total exposures
+        exposure_counts = exposures.groupby('user_id').size().reset_index()
+        exposure_counts.columns = ['user_id', 'total_exposures']
+
+        # Merge
+        user_metrics = first_exposure.merge(exposure_counts, on='user_id')
+
+        # Apply attribution window to conversions
+        conversions_attributed = []
+        for _, user_row in user_metrics.iterrows():
+            user_id = user_row['user_id']
+            first_exp = user_row['first_exposure']
+
+            # Get conversions within attribution window
+            user_conversions = conversions[
+                (conversions['user_id'] == user_id) &
+                (conversions['conversion_timestamp'] >= first_exp) &
+                (conversions['conversion_timestamp'] <=
+                 first_exp + timedelta(days=attribution_window_days))
+            ]
+
+            if len(user_conversions) > 0:
+                conversions_attributed.append({
+                    'user_id': user_id,
+                    'converted': True,
+                    'conversion_count': len(user_conversions),
+                    'total_conversion_value': user_conversions['conversion_value'].sum()
+                })
+            else:
+                conversions_attributed.append({
+                    'user_id': user_id,
+                    'converted': False,
+                    'conversion_count': 0,
+                    'total_conversion_value': 0
+                })
+
+        conv_df = pd.DataFrame(conversions_attributed)
+
+        # Merge with user metrics
+        user_metrics = user_metrics.merge(conv_df, on='user_id')
+
+        return user_metrics
+
+    def compute_summary_statistics(self, user_metrics: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute summary statistics by variant.
+
+        Returns aggregated metrics for statistical testing.
+        """
+        summary = user_metrics.groupby('variant').agg({
+            'user_id': 'count',
+            'total_exposures': 'sum',
+            'converted': 'sum',
+            'conversion_count': 'sum',
+            'total_conversion_value': 'sum'
+        }).reset_index()
+
+        summary.columns = ['variant', 'users', 'exposures', 'conversions',
+                          'total_conversions', 'total_revenue']
+
+        # Compute rates
+        summary['conversion_rate'] = summary['conversions'] / summary['users']
+        summary['revenue_per_user'] = summary['total_revenue'] / summary['users']
+
+        # Standard errors
+        summary['conversion_rate_se'] = np.sqrt(
+            summary['conversion_rate'] * (1 - summary['conversion_rate']) /
+            summary['users']
+        )
+
+        summary['revenue_per_user_se'] = user_metrics.groupby('variant').agg({
+            'total_conversion_value': lambda x: x.std() / np.sqrt(len(x))
+        }).values
+
+        return summary
+
+    def run_pipeline(self, experiment_id: str,
+                    start_date: datetime,
+                    end_date: datetime) -> Dict[str, pd.DataFrame]:
+        """
+        Run complete ETL pipeline.
+
+        Returns:
+        --------
+        dict : Contains 'user_metrics' and 'summary' DataFrames
+        """
+        print(f"Extracting data for {experiment_id}...")
+
+        # Extract
+        exposures = self.extract_exposures(experiment_id, start_date, end_date)
+        conversions = self.extract_conversions(experiment_id, start_date, end_date)
+
+        print(f"  Exposures: {len(exposures)}")
+        print(f"  Conversions: {len(conversions)}")
+
+        # Transform
+        print("Transforming user-level metrics...")
+        user_metrics = self.transform_user_metrics(exposures, conversions)
+
+        print("Computing summary statistics...")
+        summary = self.compute_summary_statistics(user_metrics)
+
+        return {
+            'user_metrics': user_metrics,
+            'summary': summary
+        }
+
+# Example usage (with mock connection string)
+# etl = ExperimentETL('postgresql://user:pass@localhost/experiments')
+
+# results = etl.run_pipeline(
+#     experiment_id='checkout_v2',
+#     start_date=datetime(2024, 1, 1),
+#     end_date=datetime(2024, 1, 31)
+# )
+
+# print("\nSummary Statistics:")
+# print(results['summary'])
+\end{lstlisting}
+
+\subsection{Data Quality Checks}
+
+Data quality issues can invalidate experiment results. Implement automated checks:
+
+\lstset{language=Python, caption=Data Quality Validation Framework}
+\begin{lstlisting}
+from dataclasses import dataclass
+from typing import List, Callable
+import pandas as pd
+
+@dataclass
+class QualityCheckResult:
+    """Result of a data quality check."""
+    check_name: str
+    passed: bool
+    message: str
+    severity: str  # 'error', 'warning', 'info'
+    details: dict = None
+
+class DataQualityChecker:
+    """
+    Data quality validation framework for experiments.
+
+    Checks for common data issues that invalidate experiments.
+    """
+
+    def __init__(self):
+        self.checks: List[Callable] = []
+        self.results: List[QualityCheckResult] = []
+
+    def add_check(self, check_func: Callable):
+        """Add quality check function."""
+        self.checks.append(check_func)
+
+    def run_checks(self, data: pd.DataFrame) -> List[QualityCheckResult]:
+        """Run all registered checks."""
+        self.results = []
+
+        for check in self.checks:
+            result = check(data)
+            self.results.append(result)
+
+            if result.severity == 'error':
+                print(f"ERROR: {result.check_name}: {result.message}")
+            elif result.severity == 'warning':
+                print(f"WARNING: {result.check_name}: {result.message}")
+
+        return self.results
+
+    def get_failures(self) -> List[QualityCheckResult]:
+        """Get failed checks."""
+        return [r for r in self.results if not r.passed]
+
+# Define quality check functions
+
+def check_no_nulls(data: pd.DataFrame) -> QualityCheckResult:
+    """Check for NULL values in critical columns."""
+    critical_cols = ['user_id', 'variant', 'experiment_id']
+
+    null_counts = {}
+    for col in critical_cols:
+        if col in data.columns:
+            null_count = data[col].isnull().sum()
+            if null_count > 0:
+                null_counts[col] = null_count
+
+    if null_counts:
+        return QualityCheckResult(
+            check_name='no_nulls',
+            passed=False,
+            message=f"Found NULL values in critical columns: {null_counts}",
+            severity='error',
+            details=null_counts
+        )
+    else:
+        return QualityCheckResult(
+            check_name='no_nulls',
+            passed=True,
+            message="No NULL values in critical columns",
+            severity='info'
+        )
+
+def check_valid_variants(data: pd.DataFrame,
+                        expected_variants: List[str]) -> QualityCheckResult:
+    """Check all variants are expected values."""
+    if 'variant' not in data.columns:
+        return QualityCheckResult(
+            check_name='valid_variants',
+            passed=False,
+            message="Missing 'variant' column",
+            severity='error'
+        )
+
+    actual_variants = set(data['variant'].unique())
+    expected_set = set(expected_variants)
+
+    unexpected = actual_variants - expected_set
+    missing = expected_set - actual_variants
+
+    if unexpected or missing:
+        return QualityCheckResult(
+            check_name='valid_variants',
+            passed=False,
+            message=f"Variant mismatch. Unexpected: {unexpected}, Missing: {missing}",
+            severity='error',
+            details={'unexpected': list(unexpected), 'missing': list(missing)}
+        )
+    else:
+        return QualityCheckResult(
+            check_name='valid_variants',
+            passed=True,
+            message=f"All variants valid: {expected_variants}",
+            severity='info'
+        )
+
+def check_timestamp_order(data: pd.DataFrame) -> QualityCheckResult:
+    """Check exposures come before conversions for each user."""
+    if 'first_exposure' not in data.columns or 'conversion_timestamp' not in data.columns:
+        return QualityCheckResult(
+            check_name='timestamp_order',
+            passed=True,
+            message="Columns not present for timestamp check",
+            severity='info'
+        )
+
+    # For converted users, check exposure before conversion
+    converted = data[data['converted'] == True]
+
+    if len(converted) == 0:
+        return QualityCheckResult(
+            check_name='timestamp_order',
+            passed=True,
+            message="No conversions to check",
+            severity='info'
+        )
+
+    invalid = converted[converted['conversion_timestamp'] < converted['first_exposure']]
+
+    if len(invalid) > 0:
+        return QualityCheckResult(
+            check_name='timestamp_order',
+            passed=False,
+            message=f"Found {len(invalid)} conversions before exposure",
+            severity='error',
+            details={'count': len(invalid)}
+        )
+    else:
+        return QualityCheckResult(
+            check_name='timestamp_order',
+            passed=True,
+            message="All conversions after exposures",
+            severity='info'
+        )
+
+def check_sample_size_balance(data: pd.DataFrame,
+                              tolerance: float = 0.1) -> QualityCheckResult:
+    """
+    Check variant sample sizes are balanced.
+
+    Allows 10% tolerance by default.
+    """
+    variant_counts = data['variant'].value_counts()
+
+    if len(variant_counts) < 2:
+        return QualityCheckResult(
+            check_name='sample_size_balance',
+            passed=False,
+            message=f"Only {len(variant_counts)} variant(s) found",
+            severity='error'
+        )
+
+    expected_size = len(data) / len(variant_counts)
+
+    imbalanced = []
+    for variant, count in variant_counts.items():
+        ratio = count / expected_size
+        if ratio < (1 - tolerance) or ratio > (1 + tolerance):
+            imbalanced.append({
+                'variant': variant,
+                'count': count,
+                'expected': expected_size,
+                'ratio': ratio
+            })
+
+    if imbalanced:
+        return QualityCheckResult(
+            check_name='sample_size_balance',
+            passed=False,
+            message=f"Sample size imbalance detected in {len(imbalanced)} variant(s)",
+            severity='warning',
+            details={'imbalanced': imbalanced}
+        )
+    else:
+        return QualityCheckResult(
+            check_name='sample_size_balance',
+            passed=True,
+            message="Sample sizes balanced",
+            severity='info'
+        )
+
+# Example usage
+checker = DataQualityChecker()
+
+# Add checks
+checker.add_check(check_no_nulls)
+checker.add_check(lambda df: check_valid_variants(df, ['control', 'treatment']))
+checker.add_check(check_timestamp_order)
+checker.add_check(check_sample_size_balance)
+
+# Create sample data
+sample_data = pd.DataFrame({
+    'user_id': [f'user_{i}' for i in range(1000)],
+    'variant': ['control'] * 450 + ['treatment'] * 550,  # Imbalanced
+    'experiment_id': ['exp_1'] * 1000,
+    'converted': [False] * 900 + [True] * 100
+})
+
+# Run checks
+results = checker.run_checks(sample_data)
+
+# Report
+print(f"\n=== Quality Check Summary ===")
+print(f"Total checks: {len(results)}")
+print(f"Passed: {sum(1 for r in results if r.passed)}")
+print(f"Failed: {sum(1 for r in results if not r.passed)}")
+
+failures = checker.get_failures()
+if failures:
+    print(f"\nFailures:")
+    for failure in failures:
+        print(f"  - {failure.check_name}: {failure.message}")
+\end{lstlisting}
+
+\subsection{Storage and Retrieval Systems}
+
+\textbf{Storage Strategy:}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{llll}
+\toprule
+\textbf{Data Type} & \textbf{Storage} & \textbf{Retention} & \textbf{Access Pattern} \\
+\midrule
+Raw events & S3/Data Lake & 2 years & Batch (rare) \\
+Aggregated metrics & Snowflake/BigQuery & Indefinite & Interactive queries \\
+Real-time stats & Redis/DynamoDB & 7 days & High-frequency reads \\
+Experiment metadata & PostgreSQL & Indefinite & OLTP \\
+\bottomrule
+\end{tabular}
+\caption{Data storage strategy by type}
+\end{table}
+
+\subsection{Privacy and Compliance}
+
+Experiment systems must comply with privacy regulations:
+
+\begin{itemize}
+    \item \textbf{GDPR:} Right to erasure, data minimization, consent
+    \item \textbf{CCPA:} Do not sell, right to delete
+    \item \textbf{HIPAA:} (Healthcare) De-identification, access controls
+\end{itemize}
+
+\lstset{language=Python, caption=Privacy-Preserving Data Handling}
+\begin{lstlisting}
+import hashlib
+from typing import Optional
+
+class PrivacyCompliantIDSystem:
+    """
+    Privacy-preserving identifier system.
+
+    Uses hashing to pseudonymize user IDs while maintaining
+    consistency for experiment assignment.
+    """
+
+    def __init__(self, secret_salt: str):
+        """
+        Parameters:
+        -----------
+        secret_salt : str
+            Secret key for hashing (rotate periodically)
+        """
+        self.salt = secret_salt
+
+    def pseudonymize(self, user_id: str) -> str:
+        """
+        Convert user ID to pseudonymous identifier.
+
+        One-way hash prevents reverse lookup while maintaining consistency.
+        """
+        hash_input = f"{self.salt}:{user_id}"
+        return hashlib.sha256(hash_input.encode()).hexdigest()[:16]
+
+    def delete_user_data(self, user_id: str, db_connection):
+        """
+        Delete all experiment data for user (GDPR right to erasure).
+
+        Parameters:
+        -----------
+        user_id : str
+            User ID to delete
+        db_connection : database connection
+            Connection to experiment database
+        """
+        pseudo_id = self.pseudonymize(user_id)
+
+        cursor = db_connection.cursor()
+
+        # Delete from all tables
+        tables = [
+            'experiment_exposures',
+            'experiment_conversions',
+            'experiment_user_metrics'
+        ]
+
+        for table in tables:
+            query = f"DELETE FROM {table} WHERE user_id = %s"
+            cursor.execute(query, [pseudo_id])
+
+        db_connection.commit()
+        cursor.close()
+
+        print(f"Deleted all data for user {user_id} (pseudo: {pseudo_id})")
+
+# Example
+privacy_system = PrivacyCompliantIDSystem(secret_salt="your-secret-key-2024")
+
+# Pseudonymize IDs before storing
+original_id = "user_12345_email@example.com"
+pseudo_id = privacy_system.pseudonymize(original_id)
+print(f"Original: {original_id}")
+print(f"Pseudonymized: {pseudo_id}")
+
+# On deletion request
+# privacy_system.delete_user_data(original_id, db_connection)
+\end{lstlisting}
+
+\section{Statistical Computing}
+
+\subsection{Python Libraries Ecosystem}
+
+Production experiment analysis uses specialized libraries:
+
+\lstset{language=Python, caption=Comprehensive Statistical Analysis with Python}
+\begin{lstlisting}
+import numpy as np
+import pandas as pd
+from scipy import stats
+import statsmodels.api as sm
+from statsmodels.stats.power import zt_ind_solve_power
+from statsmodels.stats.proportion import proportions_ztest
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+class ExperimentAnalyzer:
+    """
+    Comprehensive experiment analysis using Python scientific stack.
+
+    Libraries:
+    - numpy: Numerical computation
+    - pandas: Data manipulation
+    - scipy: Statistical tests
+    - statsmodels: Advanced statistical models
+    - matplotlib/seaborn: Visualization
+    """
+
+    def __init__(self, data: pd.DataFrame):
+        """
+        Parameters:
+        -----------
+        data : pd.DataFrame
+            Experiment data with columns: user_id, variant, converted, revenue, etc.
+        """
+        self.data = data
+        self.results = {}
+
+    def analyze_conversion_rate(self, alpha: float = 0.05) -> dict:
+        """
+        Analyze binary conversion metric.
+
+        Returns z-test results and confidence intervals.
+        """
+        # Aggregate by variant
+        agg = self.data.groupby('variant').agg({
+            'user_id': 'count',
+            'converted': 'sum'
+        })
+
+        control = agg.loc['control']
+        treatment = agg.loc['treatment']
+
+        # Conversion rates
+        p_control = control['converted'] / control['user_id']
+        p_treatment = treatment['converted'] / treatment['user_id']
+
+        # Two-proportion z-test
+        counts = np.array([treatment['converted'], control['converted']])
+        nobs = np.array([treatment['user_id'], control['user_id']])
+
+        z_stat, p_value = proportions_ztest(counts, nobs, alternative='two-sided')
+
+        # Confidence interval for difference
+        p_diff = p_treatment - p_control
+        se_diff = np.sqrt(
+            p_control * (1 - p_control) / control['user_id'] +
+            p_treatment * (1 - p_treatment) / treatment['user_id']
+        )
+
+        ci_lower = p_diff - stats.norm.ppf(1 - alpha/2) * se_diff
+        ci_upper = p_diff + stats.norm.ppf(1 - alpha/2) * se_diff
+
+        results = {
+            'metric': 'conversion_rate',
+            'control_rate': p_control,
+            'treatment_rate': p_treatment,
+            'absolute_diff': p_diff,
+            'relative_lift': (p_treatment / p_control - 1) * 100,
+            'z_statistic': z_stat,
+            'p_value': p_value,
+            'ci_lower': ci_lower,
+            'ci_upper': ci_upper,
+            'significant': p_value < alpha
+        }
+
+        self.results['conversion_rate'] = results
+        return results
+
+    def analyze_revenue(self, alpha: float = 0.05) -> dict:
+        """
+        Analyze continuous revenue metric using t-test.
+
+        Handles non-normal distributions with Welch's t-test.
+        """
+        control_revenue = self.data[self.data['variant'] == 'control']['revenue']
+        treatment_revenue = self.data[self.data['variant'] == 'treatment']['revenue']
+
+        # Welch's t-test (unequal variances)
+        t_stat, p_value = stats.ttest_ind(treatment_revenue, control_revenue,
+                                          equal_var=False)
+
+        # Descriptive statistics
+        control_mean = control_revenue.mean()
+        treatment_mean = treatment_revenue.mean()
+        diff = treatment_mean - control_mean
+
+        # Confidence interval
+        se_diff = np.sqrt(
+            control_revenue.var() / len(control_revenue) +
+            treatment_revenue.var() / len(treatment_revenue)
+        )
+
+        df = len(control_revenue) + len(treatment_revenue) - 2
+        t_crit = stats.t.ppf(1 - alpha/2, df)
+
+        ci_lower = diff - t_crit * se_diff
+        ci_upper = diff + t_crit * se_diff
+
+        results = {
+            'metric': 'revenue_per_user',
+            'control_mean': control_mean,
+            'treatment_mean': treatment_mean,
+            'absolute_diff': diff,
+            'relative_lift': (treatment_mean / control_mean - 1) * 100,
+            't_statistic': t_stat,
+            'p_value': p_value,
+            'ci_lower': ci_lower,
+            'ci_upper': ci_upper,
+            'significant': p_value < alpha
+        }
+
+        self.results['revenue'] = results
+        return results
+
+    def bootstrap_confidence_interval(self, metric: str,
+                                     n_bootstrap: int = 10000,
+                                     alpha: float = 0.05) -> dict:
+        """
+        Compute bootstrap confidence interval for any metric.
+
+        Non-parametric method for complex metrics or small samples.
+        """
+        control_data = self.data[self.data['variant'] == 'control']
+        treatment_data = self.data[self.data['variant'] == 'treatment']
+
+        bootstrap_diffs = []
+
+        for _ in range(n_bootstrap):
+            # Resample with replacement
+            control_sample = control_data.sample(n=len(control_data),
+                                                replace=True)
+            treatment_sample = treatment_data.sample(n=len(treatment_data),
+                                                    replace=True)
+
+            # Compute metric
+            if metric == 'conversion_rate':
+                control_metric = control_sample['converted'].mean()
+                treatment_metric = treatment_sample['converted'].mean()
+            elif metric == 'revenue':
+                control_metric = control_sample['revenue'].mean()
+                treatment_metric = treatment_sample['revenue'].mean()
+            else:
+                raise ValueError(f"Unknown metric: {metric}")
+
+            bootstrap_diffs.append(treatment_metric - control_metric)
+
+        # Percentile confidence interval
+        ci_lower = np.percentile(bootstrap_diffs, alpha/2 * 100)
+        ci_upper = np.percentile(bootstrap_diffs, (1 - alpha/2) * 100)
+
+        return {
+            'metric': metric,
+            'bootstrap_mean_diff': np.mean(bootstrap_diffs),
+            'ci_lower': ci_lower,
+            'ci_upper': ci_upper,
+            'bootstrap_samples': n_bootstrap
+        }
+
+    def check_sample_ratio_mismatch(self, expected_ratio: float = 0.5,
+                                   alpha: float = 0.001) -> dict:
+        """
+        Check for Sample Ratio Mismatch using chi-square test.
+
+        SRM indicates assignment or tracking issues.
+        """
+        variant_counts = self.data['variant'].value_counts()
+
+        total = variant_counts.sum()
+        observed = variant_counts.values
+        expected = np.array([expected_ratio, 1 - expected_ratio]) * total
+
+        chi2_stat, p_value = stats.chisquare(observed, expected)
+
+        return {
+            'chi2_statistic': chi2_stat,
+            'p_value': p_value,
+            'observed_counts': dict(variant_counts),
+            'expected_counts': dict(zip(variant_counts.index, expected)),
+            'srm_detected': p_value < alpha
+        }
+
+    def power_analysis(self, mde: float, alpha: float = 0.05,
+                      power: float = 0.8, baseline_rate: float = None) -> dict:
+        """
+        Compute required sample size for desired power.
+
+        Parameters:
+        -----------
+        mde : float
+            Minimum detectable effect (absolute for conversion rate)
+        alpha : float
+            Type I error rate
+        power : float
+            Desired power (1 - Type II error)
+        baseline_rate : float
+            Baseline conversion rate
+
+        Returns:
+        --------
+        dict : Required sample size and other parameters
+        """
+        if baseline_rate is None:
+            # Estimate from control group
+            baseline_rate = self.data[self.data['variant'] == 'control']['converted'].mean()
+
+        # Convert to effect size (Cohen's h for proportions)
+        p1 = baseline_rate
+        p2 = baseline_rate + mde
+
+        effect_size = 2 * (np.arcsin(np.sqrt(p2)) - np.arcsin(np.sqrt(p1)))
+
+        # Compute required sample size per group
+        n_required = zt_ind_solve_power(
+            effect_size=effect_size,
+            alpha=alpha,
+            power=power,
+            alternative='two-sided'
+        )
+
+        return {
+            'baseline_rate': baseline_rate,
+            'mde': mde,
+            'effect_size': effect_size,
+            'alpha': alpha,
+            'power': power,
+            'n_required_per_variant': int(np.ceil(n_required)),
+            'n_total_required': int(np.ceil(n_required * 2))
+        }
+
+    def generate_report(self) -> str:
+        """Generate comprehensive analysis report."""
+        report = []
+        report.append("=== Experiment Analysis Report ===\n")
+
+        # Sample size
+        total_users = len(self.data)
+        variant_counts = self.data['variant'].value_counts()
+        report.append(f"Total users: {total_users}")
+        for variant, count in variant_counts.items():
+            report.append(f"  {variant}: {count} ({count/total_users:.1%})")
+
+        # Conversion rate analysis
+        if 'conversion_rate' in self.results:
+            report.append("\n--- Conversion Rate ---")
+            r = self.results['conversion_rate']
+            report.append(f"Control: {r['control_rate']:.4f}")
+            report.append(f"Treatment: {r['treatment_rate']:.4f}")
+            report.append(f"Absolute difference: {r['absolute_diff']:.4f}")
+            report.append(f"Relative lift: {r['relative_lift']:.2f}%")
+            report.append(f"95% CI: [{r['ci_lower']:.4f}, {r['ci_upper']:.4f}]")
+            report.append(f"p-value: {r['p_value']:.4f}")
+            report.append(f"Significant: {r['significant']}")
+
+        # Revenue analysis
+        if 'revenue' in self.results:
+            report.append("\n--- Revenue Per User ---")
+            r = self.results['revenue']
+            report.append(f"Control: ${r['control_mean']:.2f}")
+            report.append(f"Treatment: ${r['treatment_mean']:.2f}")
+            report.append(f"Absolute difference: ${r['absolute_diff']:.2f}")
+            report.append(f"Relative lift: {r['relative_lift']:.2f}%")
+            report.append(f"95% CI: [${r['ci_lower']:.2f}, ${r['ci_upper']:.2f}]")
+            report.append(f"p-value: {r['p_value']:.4f}")
+            report.append(f"Significant: {r['significant']}")
+
+        return "\n".join(report)
+
+# Example usage
+np.random.seed(42)
+
+# Generate sample data
+n_users = 10000
+data = pd.DataFrame({
+    'user_id': [f'user_{i}' for i in range(n_users)],
+    'variant': ['control'] * 5000 + ['treatment'] * 5000,
+    'converted': (
+        [np.random.binomial(1, 0.10) for _ in range(5000)] +  # Control: 10%
+        [np.random.binomial(1, 0.12) for _ in range(5000)]    # Treatment: 12%
+    ),
+    'revenue': (
+        np.random.gamma(2, 5, 5000).tolist() +  # Control
+        np.random.gamma(2, 5.5, 5000).tolist()  # Treatment (slightly higher)
+    )
+})
+
+# Analyze
+analyzer = ExperimentAnalyzer(data)
+
+# Run analyses
+conv_results = analyzer.analyze_conversion_rate()
+rev_results = analyzer.analyze_revenue()
+srm_results = analyzer.check_sample_ratio_mismatch()
+power_results = analyzer.power_analysis(mde=0.01)
+
+# Print report
+print(analyzer.generate_report())
+
+print("\n--- Sample Ratio Mismatch ---")
+print(f"SRM detected: {srm_results['srm_detected']}")
+print(f"p-value: {srm_results['p_value']:.6f}")
+
+print("\n--- Power Analysis ---")
+print(f"For MDE of {power_results['mde']:.3f}:")
+print(f"Required sample size: {power_results['n_required_per_variant']} per variant")
+\end{lstlisting}
+
+\subsection{R Packages for Experimentation}
+
+R provides comprehensive packages for statistical analysis of experiments:
+
+\lstset{language=R, caption=R Analysis of Experiments}
+\begin{lstlisting}
+# Load required packages
+library(tidyverse)
+library(broom)
+library(pwr)
+
+# Experiment Analysis in R
+analyze_experiment <- function(data, metric = "conversion_rate") {
+  # Aggregate by variant
+  summary_stats <- data %>%
+    group_by(variant) %>%
+    summarise(
+      n = n(),
+      mean = mean(!!sym(metric)),
+      sd = sd(!!sym(metric)),
+      se = sd / sqrt(n)
+    )
+
+  # Two-sample test
+  control_data <- data %>% filter(variant == "control") %>% pull(!!sym(metric))
+  treatment_data <- data %>% filter(variant == "treatment") %>% pull(!!sym(metric))
+
+  test_result <- t.test(treatment_data, control_data)
+
+  # Effect size
+  cohens_d <- (mean(treatment_data) - mean(control_data)) /
+              sqrt((var(control_data) + var(treatment_data)) / 2)
+
+  # Return results
+  list(
+    summary = summary_stats,
+    test = tidy(test_result),
+    effect_size = cohens_d
+  )
+}
+
+# Power analysis
+power_analysis_r <- function(effect_size, alpha = 0.05, power = 0.80) {
+  pwr.t.test(d = effect_size, sig.level = alpha, power = power,
+            type = "two.sample", alternative = "two.sided")
+}
+
+# Example
+# results <- analyze_experiment(experiment_data, "conversion_rate")
+# print(results$summary)
+# print(results$test)
+\end{lstlisting}
+
+\subsection{Big Data Considerations with Spark}
+
+For experiments with billions of events, use distributed computing:
+
+\lstset{language=Python, caption=Experiment Analysis with PySpark}
+\begin{lstlisting}
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+
+class SparkExperimentAnalyzer:
+    """
+    Distributed experiment analysis using Apache Spark.
+
+    Handles petabyte-scale experiment data.
+    """
+
+    def __init__(self, spark: SparkSession):
+        self.spark = spark
+
+    def load_exposures(self, path: str):
+        """Load exposure events from S3/HDFS."""
+        return self.spark.read.parquet(path)
+
+    def load_conversions(self, path: str):
+        """Load conversion events from S3/HDFS."""
+        return self.spark.read.parquet(path)
+
+    def compute_user_metrics(self, exposures_df, conversions_df,
+                            attribution_window_days: int = 7):
+        """
+        Compute user-level metrics using distributed joins.
+
+        Processes billions of rows efficiently.
+        """
+        # Get first exposure per user
+        window = Window.partitionBy("experiment_id", "user_id").orderBy("exposure_timestamp")
+
+        first_exposures = exposures_df.withColumn(
+            "row_num", F.row_number().over(window)
+        ).filter(
+            F.col("row_num") == 1
+        ).select(
+            "experiment_id",
+            "user_id",
+            "variant",
+            F.col("exposure_timestamp").alias("first_exposure")
+        )
+
+        # Count total exposures
+        exposure_counts = exposures_df.groupBy(
+            "experiment_id", "user_id"
+        ).agg(
+            F.count("*").alias("total_exposures")
+        )
+
+        # Join exposures with counts
+        user_exposures = first_exposures.join(
+            exposure_counts,
+            on=["experiment_id", "user_id"]
+        )
+
+        # Join with conversions (within attribution window)
+        conversions_attributed = conversions_df.join(
+            first_exposures,
+            on=["experiment_id", "user_id"]
+        ).filter(
+            (F.col("conversion_timestamp") >= F.col("first_exposure")) &
+            (F.col("conversion_timestamp") <= F.col("first_exposure") + F.expr(f"INTERVAL {attribution_window_days} DAYS"))
+        ).groupBy(
+            "experiment_id", "user_id"
+        ).agg(
+            F.count("*").alias("conversion_count"),
+            F.sum("conversion_value").alias("total_conversion_value")
+        )
+
+        # Final user metrics
+        user_metrics = user_exposures.join(
+            conversions_attributed,
+            on=["experiment_id", "user_id"],
+            how="left"
+        ).fillna({
+            "conversion_count": 0,
+            "total_conversion_value": 0
+        }).withColumn(
+            "converted",
+            F.when(F.col("conversion_count") > 0, True).otherwise(False)
+        )
+
+        return user_metrics
+
+    def compute_summary_statistics(self, user_metrics_df):
+        """
+        Aggregate to variant-level statistics.
+
+        Returns DataFrame ready for analysis.
+        """
+        summary = user_metrics_df.groupBy(
+            "experiment_id", "variant"
+        ).agg(
+            F.count("user_id").alias("users"),
+            F.sum("total_exposures").alias("exposures"),
+            F.sum(F.when(F.col("converted"), 1).otherwise(0)).alias("conversions"),
+            F.avg("total_conversion_value").alias("revenue_per_user"),
+            F.stddev("total_conversion_value").alias("revenue_stddev")
+        ).withColumn(
+            "conversion_rate",
+            F.col("conversions") / F.col("users")
+        ).withColumn(
+            "conversion_rate_se",
+            F.sqrt(F.col("conversion_rate") * (1 - F.col("conversion_rate")) / F.col("users"))
+        )
+
+        return summary
+
+    def run_pipeline(self, exposures_path: str, conversions_path: str,
+                    output_path: str):
+        """
+        Run complete analysis pipeline.
+
+        Processes data in distributed fashion across cluster.
+        """
+        print("Loading exposures...")
+        exposures = self.load_exposures(exposures_path)
+
+        print("Loading conversions...")
+        conversions = self.load_conversions(conversions_path)
+
+        print("Computing user metrics...")
+        user_metrics = self.compute_user_metrics(exposures, conversions)
+
+        # Cache for reuse
+        user_metrics.cache()
+
+        print("Computing summary statistics...")
+        summary = self.compute_summary_statistics(user_metrics)
+
+        # Write results
+        summary.write.parquet(output_path, mode="overwrite")
+
+        print(f"Results written to {output_path}")
+
+        return summary
+
+# Example usage
+# spark = SparkSession.builder.appName("ExperimentAnalysis").getOrCreate()
+# analyzer = SparkExperimentAnalyzer(spark)
+
+# summary = analyzer.run_pipeline(
+#     exposures_path="s3://experiments/exposures/",
+#     conversions_path="s3://experiments/conversions/",
+#     output_path="s3://experiments/summary/"
+# )
+
+# summary.show()
+\end{lstlisting}
+
+\section{Automation and Scaling}
+
+\subsection{Automated Statistical Tests}
+
+Production systems automate routine analyses:
+
+\lstset{language=Python, caption=Automated Experiment Analysis Pipeline}
+\begin{lstlisting}
+from typing import Dict, List
+from datetime import datetime, timedelta
+import schedule
+import logging
+
+class AutomatedExperimentPipeline:
+    """
+    Automated pipeline for experiment analysis.
+
+    Runs daily:
+    - Fetch data
+    - Quality checks
+    - Statistical tests
+    - Alert on significant results
+    - Update dashboards
+    """
+
+    def __init__(self, db_connection, alert_system):
+        self.db = db_connection
+        self.alert_system = alert_system
+        self.logger = logging.getLogger(__name__)
+
+    def analyze_active_experiments(self):
+        """Analyze all active experiments."""
+        self.logger.info("Starting automated analysis...")
+
+        # Get list of active experiments
+        active_experiments = self._get_active_experiments()
+
+        self.logger.info(f"Found {len(active_experiments)} active experiments")
+
+        for exp_id in active_experiments:
+            try:
+                self._analyze_experiment(exp_id)
+            except Exception as e:
+                self.logger.error(f"Error analyzing {exp_id}: {e}")
+                self.alert_system.send_alert(
+                    severity="error",
+                    message=f"Failed to analyze experiment {exp_id}: {e}"
+                )
+
+        self.logger.info("Automated analysis complete")
+
+    def _get_active_experiments(self) -> List[str]:
+        """Query database for active experiments."""
+        query = """
+        SELECT DISTINCT experiment_id
+        FROM experiment_exposures
+        WHERE exposure_timestamp >= CURRENT_DATE - INTERVAL '7 days'
+          AND experiment_id IN (
+              SELECT experiment_id FROM experiments WHERE status = 'active'
+          )
+        """
+        result = self.db.execute(query)
+        return [row[0] for row in result]
+
+    def _analyze_experiment(self, experiment_id: str):
+        """Analyze single experiment."""
+        self.logger.info(f"Analyzing {experiment_id}...")
+
+        # Fetch data
+        data = self._fetch_experiment_data(experiment_id)
+
+        # Quality checks
+        quality_issues = self._run_quality_checks(data)
+        if quality_issues:
+            self.alert_system.send_alert(
+                severity="warning",
+                message=f"Quality issues in {experiment_id}: {quality_issues}"
+            )
+
+        # Statistical tests
+        results = self._run_statistical_tests(data)
+
+        # Check for significance
+        if results['conversion_rate']['significant']:
+            self.alert_system.send_alert(
+                severity="info",
+                message=(f"Significant result in {experiment_id}! "
+                        f"Lift: {results['conversion_rate']['relative_lift']:.2f}% "
+                        f"(p={results['conversion_rate']['p_value']:.4f})")
+            )
+
+        # Update dashboard
+        self._update_dashboard(experiment_id, results)
+
+    def _fetch_experiment_data(self, experiment_id: str) -> pd.DataFrame:
+        """Fetch experiment data from database."""
+        # Implementation similar to ETL pipeline
+        pass
+
+    def _run_quality_checks(self, data: pd.DataFrame) -> List[str]:
+        """Run data quality checks."""
+        issues = []
+
+        # Check SRM
+        variant_counts = data['variant'].value_counts()
+        if len(variant_counts) == 2:
+            chi2, p_value = stats.chisquare(variant_counts.values)
+            if p_value < 0.001:
+                issues.append(f"Sample ratio mismatch (p={p_value:.6f})")
+
+        # Check minimum sample size
+        min_users = variant_counts.min()
+        if min_users < 100:
+            issues.append(f"Low sample size ({min_users} users)")
+
+        return issues
+
+    def _run_statistical_tests(self, data: pd.DataFrame) -> Dict:
+        """Run statistical tests."""
+        analyzer = ExperimentAnalyzer(data)
+        return {
+            'conversion_rate': analyzer.analyze_conversion_rate(),
+            'revenue': analyzer.analyze_revenue()
+        }
+
+    def _update_dashboard(self, experiment_id: str, results: Dict):
+        """Update dashboard with latest results."""
+        # Send to dashboard service (Grafana, Tableau, etc.)
+        pass
+
+    def schedule_daily_run(self, run_time: str = "02:00"):
+        """Schedule pipeline to run daily."""
+        schedule.every().day.at(run_time).do(self.analyze_active_experiments)
+
+        self.logger.info(f"Scheduled daily analysis at {run_time}")
+
+        while True:
+            schedule.run_pending()
+            time.sleep(60)
+
+# Example usage
+# pipeline = AutomatedExperimentPipeline(db_connection, alert_system)
+# pipeline.schedule_daily_run(run_time="02:00")
+\end{lstlisting}
+
+\subsection{Alert Systems}
+
+\lstset{language=Python, caption=Multi-Channel Alert System}
+\begin{lstlisting}
+from enum import Enum
+from dataclasses import dataclass
+from typing import Optional
+import requests
+import json
+
+class AlertSeverity(Enum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+@dataclass
+class Alert:
+    severity: AlertSeverity
+    title: str
+    message: str
+    experiment_id: Optional[str] = None
+    metadata: Optional[dict] = None
+
+class AlertSystem:
+    """
+    Multi-channel alert system for experiment monitoring.
+
+    Supports:
+    - Slack
+    - PagerDuty
+    - Email
+    - SMS (Twilio)
+    """
+
+    def __init__(self, config: dict):
+        self.slack_webhook = config.get('slack_webhook')
+        self.pagerduty_key = config.get('pagerduty_key')
+        self.email_config = config.get('email')
+
+    def send_alert(self, alert: Alert):
+        """Send alert to appropriate channels based on severity."""
+        if alert.severity == AlertSeverity.INFO:
+            # Send to Slack only
+            self._send_slack(alert)
+
+        elif alert.severity == AlertSeverity.WARNING:
+            # Send to Slack
+            self._send_slack(alert)
+
+        elif alert.severity in [AlertSeverity.ERROR, AlertSeverity.CRITICAL]:
+            # Send to all channels
+            self._send_slack(alert)
+            self._send_pagerduty(alert)
+            self._send_email(alert)
+
+    def _send_slack(self, alert: Alert):
+        """Send alert to Slack."""
+        if not self.slack_webhook:
+            return
+
+        # Color based on severity
+        colors = {
+            AlertSeverity.INFO: "#36a64f",
+            AlertSeverity.WARNING: "#ff9900",
+            AlertSeverity.ERROR: "#ff0000",
+            AlertSeverity.CRITICAL: "#990000"
+        }
+
+        payload = {
+            "attachments": [{
+                "color": colors[alert.severity],
+                "title": f"[{alert.severity.value.upper()}] {alert.title}",
+                "text": alert.message,
+                "fields": [
+                    {
+                        "title": "Experiment ID",
+                        "value": alert.experiment_id or "N/A",
+                        "short": True
+                    }
+                ],
+                "ts": int(datetime.now().timestamp())
+            }]
+        }
+
+        if alert.metadata:
+            payload["attachments"][0]["fields"].append({
+                "title": "Details",
+                "value": json.dumps(alert.metadata, indent=2),
+                "short": False
+            })
+
+        try:
+            response = requests.post(
+                self.slack_webhook,
+                json=payload,
+                timeout=5
+            )
+            response.raise_for_status()
+        except Exception as e:
+            print(f"Failed to send Slack alert: {e}")
+
+    def _send_pagerduty(self, alert: Alert):
+        """Send alert to PagerDuty."""
+        if not self.pagerduty_key:
+            return
+
+        payload = {
+            "routing_key": self.pagerduty_key,
+            "event_action": "trigger",
+            "payload": {
+                "summary": alert.title,
+                "severity": alert.severity.value,
+                "source": "experiment_monitoring",
+                "custom_details": {
+                    "message": alert.message,
+                    "experiment_id": alert.experiment_id,
+                    "metadata": alert.metadata
+                }
+            }
+        }
+
+        try:
+            response = requests.post(
+                "https://events.pagerduty.com/v2/enqueue",
+                json=payload,
+                timeout=5
+            )
+            response.raise_for_status()
+        except Exception as e:
+            print(f"Failed to send PagerDuty alert: {e}")
+
+    def _send_email(self, alert: Alert):
+        """Send email alert."""
+        # Implementation using SMTP or email service API
+        pass
+
+# Example usage
+alert_system = AlertSystem({
+    'slack_webhook': 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL',
+    'pagerduty_key': 'your-pagerduty-key'
+})
+
+# Send critical alert
+alert = Alert(
+    severity=AlertSeverity.CRITICAL,
+    title="Sample Ratio Mismatch Detected",
+    message="Experiment checkout_v2 has severe sample ratio mismatch (p < 0.0001)",
+    experiment_id="checkout_v2",
+    metadata={"p_value": 0.00001, "chi2": 45.2}
+)
+
+alert_system.send_alert(alert)
+\end{lstlisting}
+
+\subsection{Experiment Management API}
+
+\lstset{language=Python, caption=REST API for Experiment Management using FastAPI}
+\begin{lstlisting}
+from fastapi import FastAPI, HTTPException, Depends
+from pydantic import BaseModel
+from typing import List, Optional
+from datetime import datetime
+from enum import Enum
+
+app = FastAPI(title="Experiment Management API")
+
+class ExperimentStatus(str, Enum):
+    draft = "draft"
+    active = "active"
+    paused = "paused"
+    completed = "completed"
+
+class ExperimentCreate(BaseModel):
+    name: str
+    description: str
+    variants: List[str]
+    traffic_allocation: float
+    metrics: List[str]
+
+class ExperimentResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    status: ExperimentStatus
+    variants: List[str]
+    traffic_allocation: float
+    metrics: List[str]
+    created_at: datetime
+    updated_at: datetime
+
+class AssignmentRequest(BaseModel):
+    experiment_id: str
+    user_id: str
+    context: Optional[dict] = None
+
+class AssignmentResponse(BaseModel):
+    experiment_id: str
+    user_id: str
+    variant: str
+    timestamp: datetime
+
+@app.post("/experiments/", response_model=ExperimentResponse)
+async def create_experiment(experiment: ExperimentCreate):
+    """Create new experiment."""
+    # Validate
+    if experiment.traffic_allocation < 0 or experiment.traffic_allocation > 1:
+        raise HTTPException(status_code=400, detail="Invalid traffic allocation")
+
+    # Create in database
+    # exp_id = db.create_experiment(experiment)
+
+    # Return response
+    return ExperimentResponse(
+        id="exp_123",  # Generated ID
+        name=experiment.name,
+        description=experiment.description,
+        status=ExperimentStatus.draft,
+        variants=experiment.variants,
+        traffic_allocation=experiment.traffic_allocation,
+        metrics=experiment.metrics,
+        created_at=datetime.now(),
+        updated_at=datetime.now()
+    )
+
+@app.get("/experiments/{experiment_id}", response_model=ExperimentResponse)
+async def get_experiment(experiment_id: str):
+    """Get experiment details."""
+    # Fetch from database
+    # experiment = db.get_experiment(experiment_id)
+
+    # Mock response
+    return ExperimentResponse(
+        id=experiment_id,
+        name="Checkout Redesign",
+        description="Testing new checkout flow",
+        status=ExperimentStatus.active,
+        variants=["control", "treatment"],
+        traffic_allocation=0.8,
+        metrics=["conversion_rate", "revenue"],
+        created_at=datetime(2024, 1, 1),
+        updated_at=datetime(2024, 1, 15)
+    )
+
+@app.post("/assign/", response_model=AssignmentResponse)
+async def assign_variant(request: AssignmentRequest):
+    """Assign user to variant."""
+    # Use assignment system
+    # variant = assignment_system.assign(request.experiment_id, request.user_id)
+
+    return AssignmentResponse(
+        experiment_id=request.experiment_id,
+        user_id=request.user_id,
+        variant="treatment",  # Mock
+        timestamp=datetime.now()
+    )
+
+@app.get("/experiments/{experiment_id}/results")
+async def get_results(experiment_id: str):
+    """Get experiment results."""
+    # Run analysis
+    # results = analyzer.analyze_experiment(experiment_id)
+
+    return {
+        "experiment_id": experiment_id,
+        "status": "active",
+        "results": {
+            "conversion_rate": {
+                "control": 0.102,
+                "treatment": 0.118,
+                "lift": 15.7,
+                "p_value": 0.002,
+                "significant": True
+            }
+        }
+    }
+
+@app.patch("/experiments/{experiment_id}/status")
+async def update_status(experiment_id: str, status: ExperimentStatus):
+    """Update experiment status."""
+    # Update in database
+    # db.update_experiment_status(experiment_id, status)
+
+    return {"experiment_id": experiment_id, "status": status}
+
+# Run with: uvicorn api:app --reload
+\end{lstlisting}
+
+\section{Code Architecture}
+
+\subsection{Object-Oriented Design for Experiments}
+
+\lstset{language=Python, caption=OOP Design Patterns for Experiments}
+\begin{lstlisting}
+from abc import ABC, abstractmethod
+from typing import Dict, Any, List
+from dataclasses import dataclass
+
+# Strategy pattern for different metric types
+
+class Metric(ABC):
+    """Abstract base class for metrics."""
+
+    @abstractmethod
+    def compute(self, data: pd.DataFrame) -> float:
+        """Compute metric value."""
+        pass
+
+    @abstractmethod
+    def variance(self, data: pd.DataFrame) -> float:
+        """Compute metric variance."""
+        pass
+
+class ConversionRateMetric(Metric):
+    """Binary conversion rate metric."""
+
+    def compute(self, data: pd.DataFrame) -> float:
+        return data['converted'].mean()
+
+    def variance(self, data: pd.DataFrame) -> float:
+        p = self.compute(data)
+        return p * (1 - p) / len(data)
+
+class RevenuePerUserMetric(Metric):
+    """Continuous revenue metric."""
+
+    def compute(self, data: pd.DataFrame) -> float:
+        return data['revenue'].mean()
+
+    def variance(self, data: pd.DataFrame) -> float:
+        return data['revenue'].var() / len(data)
+
+# Factory pattern for experiment creation
+
+class ExperimentFactory:
+    """Factory for creating different experiment types."""
+
+    @staticmethod
+    def create_ab_test(name: str, variants: List[str],
+                      metrics: List[Metric]) -> 'Experiment':
+        """Create standard A/B test."""
+        return ABTest(name, variants, metrics)
+
+    @staticmethod
+    def create_mab_test(name: str, variants: List[str],
+                       metrics: List[Metric]) -> 'Experiment':
+        """Create multi-armed bandit test."""
+        return MultiarmedBanditTest(name, variants, metrics)
+
+# Experiment base class
+
+class Experiment(ABC):
+    """Base class for all experiments."""
+
+    def __init__(self, name: str, variants: List[str], metrics: List[Metric]):
+        self.name = name
+        self.variants = variants
+        self.metrics = metrics
+        self.data = None
+
+    @abstractmethod
+    def assign(self, user_id: str) -> str:
+        """Assign user to variant."""
+        pass
+
+    def load_data(self, data: pd.DataFrame):
+        """Load experiment data."""
+        self.data = data
+
+    def analyze(self) -> Dict[str, Any]:
+        """Analyze experiment."""
+        if self.data is None:
+            raise ValueError("No data loaded")
+
+        results = {}
+        for metric in self.metrics:
+            metric_results = self._analyze_metric(metric)
+            results[metric.__class__.__name__] = metric_results
+
+        return results
+
+    def _analyze_metric(self, metric: Metric) -> Dict:
+        """Analyze single metric."""
+        control_data = self.data[self.data['variant'] == 'control']
+        treatment_data = self.data[self.data['variant'] == 'treatment']
+
+        control_value = metric.compute(control_data)
+        treatment_value = metric.compute(treatment_data)
+
+        # Statistical test
+        se = np.sqrt(metric.variance(control_data) + metric.variance(treatment_data))
+        z = (treatment_value - control_value) / se
+        p_value = 2 * (1 - stats.norm.cdf(abs(z)))
+
+        return {
+            'control_value': control_value,
+            'treatment_value': treatment_value,
+            'difference': treatment_value - control_value,
+            'z_statistic': z,
+            'p_value': p_value
+        }
+
+class ABTest(Experiment):
+    """Standard A/B test with fixed allocation."""
+
+    def assign(self, user_id: str) -> str:
+        # Use consistent hashing
+        hash_value = int(hashlib.md5(f"{self.name}:{user_id}".encode()).hexdigest(), 16)
+        return self.variants[hash_value % len(self.variants)]
+
+class MultiarmedBanditTest(Experiment):
+    """Multi-armed bandit with adaptive allocation."""
+
+    def __init__(self, name: str, variants: List[str], metrics: List[Metric]):
+        super().__init__(name, variants, metrics)
+        self.variant_rewards = {v: [] for v in variants}
+
+    def assign(self, user_id: str) -> str:
+        # Thompson Sampling
+        sampled_means = {}
+        for variant in self.variants:
+            rewards = self.variant_rewards[variant]
+            if len(rewards) == 0:
+                # Uninformed prior
+                sampled_means[variant] = np.random.beta(1, 1)
+            else:
+                # Beta posterior
+                successes = sum(rewards)
+                failures = len(rewards) - successes
+                sampled_means[variant] = np.random.beta(1 + successes, 1 + failures)
+
+        return max(sampled_means, key=sampled_means.get)
+
+    def record_reward(self, variant: str, reward: float):
+        """Record reward for variant."""
+        self.variant_rewards[variant].append(reward)
+
+# Example usage
+factory = ExperimentFactory()
+
+metrics = [
+    ConversionRateMetric(),
+    RevenuePerUserMetric()
+]
+
+experiment = factory.create_ab_test(
+    name="checkout_redesign",
+    variants=["control", "treatment"],
+    metrics=metrics
+)
+
+# Assign users
+user_variant = experiment.assign("user_123")
+
+# Load data and analyze
+# experiment.load_data(data)
+# results = experiment.analyze()
+\end{lstlisting}
+
+\subsection{Testing and Validation Frameworks}
+
+\lstset{language=Python, caption=Unit Tests for Experiment System}
+\begin{lstlisting}
+import pytest
+import numpy as np
+from scipy import stats
+
+class TestRandomAssignment:
+    """Tests for random assignment system."""
+
+    def test_consistent_assignment(self):
+        """Same user always gets same variant."""
+        system = RandomAssignmentSystem()
+
+        config = ExperimentConfig(
+            experiment_id='test_exp',
+            variants=['control', 'treatment'],
+            traffic_allocation=1.0,
+            variant_weights={'control': 0.5, 'treatment': 0.5}
+        )
+        system.register_experiment(config)
+
+        user_id = 'user_123'
+        variant1 = system.assign('test_exp', user_id)
+        variant2 = system.assign('test_exp', user_id)
+
+        assert variant1 == variant2, "Assignment not consistent"
+
+    def test_uniform_distribution(self):
+        """Assignments follow specified distribution."""
+        system = RandomAssignmentSystem()
+
+        config = ExperimentConfig(
+            experiment_id='test_exp',
+            variants=['control', 'treatment'],
+            traffic_allocation=1.0,
+            variant_weights={'control': 0.5, 'treatment': 0.5}
+        )
+        system.register_experiment(config)
+
+        # Assign many users
+        assignments = []
+        for i in range(10000):
+            variant = system.assign('test_exp', f'user_{i}')
+            assignments.append(variant)
+
+        # Count assignments
+        counts = pd.Series(assignments).value_counts()
+
+        # Chi-square test for uniformity
+        expected = [5000, 5000]
+        chi2, p_value = stats.chisquare(counts.values, expected)
+
+        assert p_value > 0.01, f"Assignments not uniform (p={p_value})"
+
+    def test_independence(self):
+        """Assignments across experiments are independent."""
+        system = RandomAssignmentSystem()
+
+        # Register two experiments
+        for exp_id in ['exp_1', 'exp_2']:
+            config = ExperimentConfig(
+                experiment_id=exp_id,
+                variants=['A', 'B'],
+                traffic_allocation=1.0,
+                variant_weights={'A': 0.5, 'B': 0.5}
+            )
+            system.register_experiment(config)
+
+        # Assign users to both experiments
+        assignments = []
+        for i in range(1000):
+            user_id = f'user_{i}'
+            var1 = system.assign('exp_1', user_id)
+            var2 = system.assign('exp_2', user_id)
+            assignments.append((var1, var2))
+
+        # Count joint assignments
+        joint_counts = pd.Series(assignments).value_counts()
+
+        # All combinations should be ~250
+        expected = 250
+        for count in joint_counts.values:
+            assert abs(count - expected) < 50, "Experiments not independent"
+
+class TestStatisticalAnalysis:
+    """Tests for statistical analysis."""
+
+    def test_type_i_error_control(self):
+        """False positive rate under null hypothesis."""
+        n_simulations = 1000
+        alpha = 0.05
+        false_positives = 0
+
+        for _ in range(n_simulations):
+            # Generate null data (no effect)
+            control = np.random.binomial(1, 0.1, 1000)
+            treatment = np.random.binomial(1, 0.1, 1000)
+
+            # Test
+            _, p_value = proportions_ztest(
+                [treatment.sum(), control.sum()],
+                [len(treatment), len(control)]
+            )
+
+            if p_value < alpha:
+                false_positives += 1
+
+        fpr = false_positives / n_simulations
+
+        # Should be close to alpha
+        assert abs(fpr - alpha) < 0.02, f"Type I error rate {fpr} != {alpha}"
+
+    def test_power(self):
+        """Power under alternative hypothesis."""
+        n_simulations = 1000
+        alpha = 0.05
+        true_positives = 0
+
+        for _ in range(n_simulations):
+            # Generate data with effect
+            control = np.random.binomial(1, 0.10, 1000)
+            treatment = np.random.binomial(1, 0.12, 1000)  # 20% relative lift
+
+            # Test
+            _, p_value = proportions_ztest(
+                [treatment.sum(), control.sum()],
+                [len(treatment), len(control)]
+            )
+
+            if p_value < alpha:
+                true_positives += 1
+
+        power = true_positives / n_simulations
+
+        # Should have high power for this effect size
+        assert power > 0.70, f"Power {power} too low"
+
+# Run tests
+pytest.main([__file__, '-v'])
+\end{lstlisting}
+
+\subsection{Documentation and Reproducibility}
+
+\textbf{Best Practices:}
+
+\begin{enumerate}
+    \item \textbf{Experiment Registry:} Central catalog of all experiments with metadata
+    \item \textbf{Analysis Notebooks:} Jupyter notebooks for reproducible analysis
+    \item \textbf{Experiment Configs:} Version-controlled YAML/JSON configs
+    \item \textbf{Documentation:} Auto-generated API docs, runbooks, postmortems
+\end{enumerate}
+
+\lstset{language=Python, caption=Experiment Documentation System}
+\begin{lstlisting}
+from dataclasses import dataclass, asdict
+from datetime import datetime
+import yaml
+import json
+
+@dataclass
+class ExperimentDocumentation:
+    """Complete experiment documentation."""
+
+    # Metadata
+    experiment_id: str
+    name: str
+    owner: str
+    created_at: datetime
+
+    # Design
+    hypothesis: str
+    success_metrics: List[str]
+    guardrail_metrics: List[str]
+    variants: Dict[str, str]  # variant -> description
+
+    # Configuration
+    traffic_allocation: float
+    sample_size_target: int
+    expected_duration_days: int
+
+    # Analysis
+    statistical_test: str
+    alpha: float
+    power: float
+    mde: float  # Minimum detectable effect
+
+    # Results
+    status: str
+    results_summary: Optional[Dict] = None
+    decision: Optional[str] = None
+    decision_rationale: Optional[str] = None
+
+    def to_yaml(self, filepath: str):
+        """Export to YAML file."""
+        doc_dict = asdict(self)
+
+        # Convert datetime
+        doc_dict['created_at'] = doc_dict['created_at'].isoformat()
+
+        with open(filepath, 'w') as f:
+            yaml.dump(doc_dict, f, default_flow_style=False)
+
+    @classmethod
+    def from_yaml(cls, filepath: str):
+        """Load from YAML file."""
+        with open(filepath, 'r') as f:
+            data = yaml.safe_load(f)
+
+        data['created_at'] = datetime.fromisoformat(data['created_at'])
+
+        return cls(**data)
+
+# Example
+doc = ExperimentDocumentation(
+    experiment_id='checkout_redesign_v2',
+    name='Checkout Flow Redesign',
+    owner='product@company.com',
+    created_at=datetime.now(),
+    hypothesis='New single-page checkout will increase conversion by reducing friction',
+    success_metrics=['conversion_rate', 'revenue_per_user'],
+    guardrail_metrics=['page_load_time', 'error_rate'],
+    variants={
+        'control': 'Current multi-step checkout',
+        'treatment': 'New single-page checkout'
+    },
+    traffic_allocation=0.8,
+    sample_size_target=10000,
+    expected_duration_days=14,
+    statistical_test='two-proportion z-test',
+    alpha=0.05,
+    power=0.80,
+    mde=0.015,
+    status='completed',
+    results_summary={'conversion_rate_lift': 0.018, 'p_value': 0.003},
+    decision='Ship treatment',
+    decision_rationale='Significant lift in conversion rate with no negative guardrail impacts'
+)
+
+# doc.to_yaml('experiments/checkout_redesign_v2.yaml')
+\end{lstlisting}
+
+\section{Summary}
+
+This chapter covered the technical infrastructure required for production A/B testing:
+
+\begin{itemize}
+    \item \textbf{Experiment Infrastructure:} Feature flags, random assignment, data collection, real-time monitoring
+    \item \textbf{Data Engineering:} ETL pipelines, quality checks, storage strategies, privacy compliance
+    \item \textbf{Statistical Computing:} Python/R/SQL libraries, big data with Spark
+    \item \textbf{Automation:} Automated analysis, alerts, APIs
+    \item \textbf{Code Architecture:} OOP design, testing frameworks, documentation
+\end{itemize}
+
+Key principles for production systems:
+\begin{enumerate}
+    \item \textbf{Reliability:} Graceful degradation, caching, fallbacks
+    \item \textbf{Scalability:} Distributed architecture, efficient data structures
+    \item \textbf{Observability:} Monitoring, logging, alerting
+    \item \textbf{Compliance:} Privacy-preserving design, audit trails
+    \item \textbf{Reproducibility:} Version control, documentation, testing
+\end{enumerate}
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \textbf{Kleppmann (2017)}, \textit{Designing Data-Intensive Applications}: System design for data pipelines
+    \item \textbf{Kohavi et al. (2020)}, \textit{Trustworthy Online Controlled Experiments}: Industry best practices
+    \item \textbf{McKinney (2017)}, \textit{Python for Data Analysis}: Pandas and data manipulation
+    \item \textbf{VanderPlas (2016)}, \textit{Python Data Science Handbook}: Scientific Python stack
+    \item \textbf{Wickham \& Grolemund (2017)}, \textit{R for Data Science}: R programming and tidyverse
+\end{itemize}
+
+\section{Exercises}
+
+\begin{enumerate}
+    \item \textbf{Feature Flag System:}
+    \begin{itemize}
+        \item Implement a feature flag system with Redis backend
+        \item Add support for gradual rollouts (0\% to 100\%)
+        \item Implement targeting rules (geography, user attributes)
+        \item Test with load simulation (1000 req/sec)
+    \end{itemize}
+
+    \item \textbf{Random Assignment:}
+    \begin{itemize}
+        \item Verify consistent hashing produces uniform distribution (chi-square test)
+        \item Implement stratified randomization by user segment
+        \item Test independence across multiple experiments
+    \end{itemize}
+
+    \item \textbf{ETL Pipeline:}
+    \begin{itemize}
+        \item Build complete ETL pipeline from raw events to summary tables
+        \item Implement incremental updates (only process new data)
+        \item Add data quality checks at each stage
+        \item Schedule with Apache Airflow
+    \end{itemize}
+
+    \item \textbf{Monitoring System:}
+    \begin{itemize}
+        \item Implement SRM detection with automated alerts
+        \item Create real-time dashboard showing experiment health
+        \item Set up anomaly detection for metric values
+        \item Integrate with PagerDuty/Slack for notifications
+    \end{itemize}
+
+    \item \textbf{Statistical Analysis:}
+    \begin{itemize}
+        \item Implement sequential testing with alpha spending
+        \item Add support for ratio metrics (clicks per user)
+        \item Implement variance reduction via CUPED
+        \item Compare Python, R, and SQL implementations for performance
+    \end{itemize}
+
+    \item \textbf{API Design:}
+    \begin{itemize}
+        \item Design REST API for experiment management (CRUD operations)
+        \item Implement authentication and authorization
+        \item Add rate limiting and caching
+        \item Document with OpenAPI/Swagger
+    \end{itemize}
+\end{enumerate}

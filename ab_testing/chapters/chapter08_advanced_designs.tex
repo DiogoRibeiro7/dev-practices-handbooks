@@ -1,14 +1,34 @@
+% Chapter 8: Advanced Experimental Designs
+
 \section{Learning Objectives}
 
 After completing this chapter, readers will be able to:
 \begin{itemize}
     \item Design and analyze factorial experiments testing multiple factors simultaneously
     \item Implement multi-armed bandit algorithms for dynamic traffic allocation
+    \item Apply contextual bandits when user features are available
     \item Conduct sequential testing with appropriate statistical controls
+    \item Use SPRT and alpha spending functions for early stopping
+    \item Apply quasi-experimental designs when randomization isn't possible
     \item Handle network effects and interference in experimental settings
-    \item Apply switchback designs for marketplace and platform experiments
+    \item Design experiments for two-sided marketplaces
     \item Choose appropriate advanced designs for specific business contexts
 \end{itemize}
+
+\section{Introduction: Beyond Traditional A/B Testing}
+
+Traditional A/B tests—randomly splitting users 50/50 between control and treatment, collecting a predetermined sample size, and analyzing once—serve well for many scenarios. But modern experimentation demands more sophisticated approaches:
+
+\begin{itemize}
+    \item Testing multiple factors simultaneously (factorial designs)
+    \item Adapting allocation based on performance (bandits)
+    \item Stopping experiments early when evidence accumulates (sequential testing)
+    \item Drawing causal inferences without randomization (quasi-experiments)
+    \item Handling interference when users interact (network effects)
+    \item Accounting for platform-specific complexities (marketplaces, ecosystems)
+\end{itemize}
+
+This chapter explores these advanced experimental designs, their theoretical foundations, implementation challenges, and practical applications.
 
 \section{Factorial Designs}
 
@@ -74,6 +94,25 @@ An interaction exists when the effect of one factor depends on the level of anot
 A $2^k$ factorial design with $n$ observations per cell provides the same precision for estimating main effects as $k$ separate experiments each with $2^{k-1} \times n$ observations, while also estimating all interaction effects.
 \end{theorem}
 
+\begin{proof}
+For main effect of factor A in factorial design:
+\begin{equation}
+\text{Var}(\hat{\alpha}_A) = \frac{4\sigma^2}{2^k n}
+\end{equation}
+
+For separate A/B test with sample size $N$:
+\begin{equation}
+\text{Var}(\hat{\alpha}_A^{\text{sep}}) = \frac{2\sigma^2}{N}
+\end{equation}
+
+Setting variances equal:
+\begin{equation}
+\frac{4\sigma^2}{2^k n} = \frac{2\sigma^2}{N} \implies N = 2^{k-1} n
+\end{equation}
+
+Thus, factorial design achieves same precision with fraction of sample size, while also estimating interactions.
+\end{proof}
+
 \lstset{language=Python, caption=Comprehensive Factorial Design Analysis}
 \begin{lstlisting}
 import numpy as np
@@ -119,11 +158,6 @@ def simulate_factorial_experiment(
         np.random.seed(seed)
 
     # Define cell probabilities
-    # Cell (0,0): baseline
-    # Cell (1,0): baseline + main_effect_A
-    # Cell (0,1): baseline + main_effect_B
-    # Cell (1,1): baseline + main_effect_A + main_effect_B + interaction
-
     probabilities = {
         (0, 0): baseline,
         (1, 0): baseline + main_effect_A,
@@ -372,8 +406,8 @@ def visualize_factorial_experiment(data: pd.DataFrame, results: Dict):
 np.random.seed(42)
 data = simulate_factorial_experiment(
     n_per_cell=500,
-    main_effect_A=0.02,    # Subject B increases conversion by 2pp
-    main_effect_B=0.015,   # Evening increases conversion by 1.5pp
+    main_effect_A=0.02,    # Factor A increases conversion by 2pp
+    main_effect_B=0.015,   # Factor B increases conversion by 1.5pp
     interaction=0.01,      # Additional 1pp when both are combined
     baseline=0.10
 )
@@ -519,11 +553,13 @@ UCB addresses $\epsilon$-greedy's limitation by explicitly balancing exploitatio
 
 The UCB term $\sqrt{\frac{2 \ln t}{N_i}}$ represents uncertainty: variants with fewer observations get bonus exploration.
 
-\textbf{Theorem (Auer et al., 2002):} UCB1 achieves logarithmic regret:
+\begin{theorem}[Auer et al., 2002]
+UCB1 achieves logarithmic regret:
 \begin{equation}
 R(T) \leq 8 \sum_{i: \mu_i < \mu^*} \frac{\ln T}{\Delta_i} + \left(1 + \frac{\pi^2}{3}\right) \sum_{i=1}^K \Delta_i
 \end{equation}
 where $\Delta_i = \mu^* - \mu_i$ is the gap between optimal and variant $i$.
+\end{theorem}
 
 \subsection{Thompson Sampling (Bayesian Bandit)}
 
@@ -549,308 +585,283 @@ Thompson sampling maintains posterior distributions over variant success rates a
 
 \textbf{Intuition:} Variants with higher uncertainty (wider posteriors) have higher probability of being sampled, naturally balancing exploration and exploitation.
 
-\lstset{language=Python, caption=Comprehensive Bandit Implementations and Comparison}
+\subsection{Contextual Bandits}
+
+Contextual bandits extend MAB by incorporating user features to personalize variant selection.
+
+\begin{definition}[Contextual Bandit]
+At each time $t$:
+\begin{enumerate}
+    \item Observe context vector $x_t \in \mathbb{R}^d$ (user features)
+    \item Select arm $a_t$ based on context
+    \item Observe reward $r_t(a_t)$
+    \item Update model
+\end{enumerate}
+
+Goal: Learn mapping from contexts to optimal arms.
+\end{definition}
+
+\subsubsection{LinUCB Algorithm}
+
+LinUCB assumes linear reward models:
+\begin{equation}
+\mathbb{E}[r_{t,a} | x_t] = x_t^T \theta_a
+\end{equation}
+
+where $\theta_a$ is a parameter vector for arm $a$.
+
+\begin{algorithm}[H]
+\caption{LinUCB}
+\begin{algorithmic}
+\STATE Initialize: $A_a = I_d$, $b_a = 0$ for all arms $a$
+\FOR{each user $t = 1, 2, \ldots, T$}
+    \STATE Observe context $x_t$
+    \FOR{each arm $a$}
+        \STATE Compute: $\hat{\theta}_a = A_a^{-1} b_a$
+        \STATE Compute: UCB$_a = x_t^T \hat{\theta}_a + \alpha \sqrt{x_t^T A_a^{-1} x_t}$
+    \ENDFOR
+    \STATE Select $a_t = \arg\max_a \text{UCB}_a$
+    \STATE Observe reward $r_t$
+    \STATE Update: $A_{a_t} \leftarrow A_{a_t} + x_t x_t^T$
+    \STATE Update: $b_{a_t} \leftarrow b_{a_t} + r_t x_t$
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\textbf{Key Insight:} $\alpha \sqrt{x_t^T A_a^{-1} x_t}$ is the uncertainty in prediction for context $x_t$ under arm $a$.
+
+\lstset{language=Python, caption=Contextual Bandit Implementation}
 \begin{lstlisting}
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple
-from abc import ABC, abstractmethod
 
-class Bandit(ABC):
-    """Abstract base class for bandit algorithms."""
+class LinUCB:
+    """
+    Linear Upper Confidence Bound algorithm for contextual bandits.
+    """
 
-    def __init__(self, n_arms: int):
+    def __init__(self, n_arms: int, n_features: int, alpha: float = 1.0):
+        """
+        Parameters:
+        -----------
+        n_arms : int
+            Number of arms (variants)
+        n_features : int
+            Dimension of context vectors
+        alpha : float
+            Exploration parameter
+        """
         self.n_arms = n_arms
-        self.counts = np.zeros(n_arms)
-        self.values = np.zeros(n_arms)
+        self.n_features = n_features
+        self.alpha = alpha
+
+        # Initialize for each arm
+        self.A = [np.identity(n_features) for _ in range(n_arms)]
+        self.b = [np.zeros((n_features, 1)) for _ in range(n_arms)]
+
+        # Track selections
+        self.arm_counts = np.zeros(n_arms)
         self.total_reward = 0
 
-    @abstractmethod
-    def select_arm(self, t: int) -> int:
-        """Select an arm to pull."""
-        pass
+    def select_arm(self, context: np.ndarray) -> int:
+        """
+        Select arm based on context.
 
-    def update(self, arm: int, reward: float):
-        """Update statistics after observing reward."""
-        self.counts[arm] += 1
-        self.values[arm] += (reward - self.values[arm]) / self.counts[arm]
-        self.total_reward += reward
+        Parameters:
+        -----------
+        context : np.ndarray
+            Context vector (n_features,)
 
-class EpsilonGreedy(Bandit):
-    """Epsilon-greedy bandit."""
+        Returns:
+        --------
+        int : Selected arm index
+        """
+        context = context.reshape(-1, 1)
+        ucb_values = np.zeros(self.n_arms)
 
-    def __init__(self, n_arms: int, epsilon: float = 0.1,
-                 decay: bool = False):
-        super().__init__(n_arms)
-        self.epsilon = epsilon
-        self.decay = decay
+        for a in range(self.n_arms):
+            # Compute theta_hat = A_a^{-1} b_a
+            A_inv = np.linalg.inv(self.A[a])
+            theta_hat = A_inv @ self.b[a]
 
-    def select_arm(self, t: int) -> int:
-        epsilon = self.epsilon / t if self.decay else self.epsilon
+            # Compute UCB
+            mean_reward = (context.T @ theta_hat).item()
+            uncertainty = self.alpha * np.sqrt(
+                (context.T @ A_inv @ context).item()
+            )
+            ucb_values[a] = mean_reward + uncertainty
 
-        if np.random.random() < epsilon:
-            return np.random.randint(0, self.n_arms)
-        else:
-            return np.argmax(self.values)
-
-class UCB1(Bandit):
-    """UCB1 algorithm."""
-
-    def __init__(self, n_arms: int):
-        super().__init__(n_arms)
-
-    def select_arm(self, t: int) -> int:
-        # Initially pull each arm once
-        for arm in range(self.n_arms):
-            if self.counts[arm] == 0:
-                return arm
-
-        # Calculate UCB for each arm
-        ucb_values = self.values + np.sqrt(
-            2 * np.log(t) / self.counts
-        )
         return np.argmax(ucb_values)
 
-class ThompsonSampling(Bandit):
-    """Thompson Sampling with Beta-Bernoulli model."""
+    def update(self, arm: int, context: np.ndarray, reward: float):
+        """
+        Update model after observing reward.
 
-    def __init__(self, n_arms: int):
-        super().__init__(n_arms)
-        self.alpha = np.ones(n_arms)  # Successes + 1 (prior)
-        self.beta = np.ones(n_arms)   # Failures + 1 (prior)
+        Parameters:
+        -----------
+        arm : int
+            Selected arm
+        context : np.ndarray
+            Context vector
+        reward : float
+            Observed reward
+        """
+        context = context.reshape(-1, 1)
 
-    def select_arm(self, t: int) -> int:
-        # Sample from posterior for each arm
-        samples = np.random.beta(self.alpha, self.beta)
-        return np.argmax(samples)
+        # Update A and b for selected arm
+        self.A[arm] += context @ context.T
+        self.b[arm] += reward * context
 
-    def update(self, arm: int, reward: float):
-        super().update(arm, reward)
-        self.alpha[arm] += reward
-        self.beta[arm] += (1 - reward)
+        # Track statistics
+        self.arm_counts[arm] += 1
+        self.total_reward += reward
 
-def simulate_bandit_experiment(
-    bandit: Bandit,
-    true_rates: List[float],
-    n_trials: int
+def simulate_contextual_bandit(
+    n_arms: int,
+    n_features: int,
+    true_theta: List[np.ndarray],
+    n_trials: int,
+    context_distribution: str = 'uniform'
 ) -> dict:
     """
-    Simulate bandit experiment.
+    Simulate contextual bandit problem.
 
     Parameters:
     -----------
-    bandit : Bandit
-        Bandit algorithm instance
-    true_rates : list
-        True conversion rate for each arm
+    n_arms : int
+        Number of arms
+    n_features : int
+        Dimension of context
+    true_theta : list of np.ndarray
+        True parameter vectors for each arm
     n_trials : int
-        Number of users
+        Number of trials
+    context_distribution : str
+        'uniform' or 'normal'
 
     Returns:
     --------
     dict : Simulation results
     """
-    n_arms = len(true_rates)
-    true_rates = np.array(true_rates)
-    optimal_rate = np.max(true_rates)
-    optimal_arm = np.argmax(true_rates)
+    linucb = LinUCB(n_arms, n_features, alpha=1.0)
 
-    # Track metrics over time
-    arm_selections = np.zeros((n_trials, n_arms))
     cumulative_reward = np.zeros(n_trials)
     cumulative_regret = np.zeros(n_trials)
-    optimal_selections = np.zeros(n_trials)
+    arm_selections = np.zeros((n_trials, n_arms))
 
     for t in range(n_trials):
-        # Select arm
-        arm = bandit.select_arm(t + 1)
-        arm_selections[t, arm] = 1
+        # Generate context
+        if context_distribution == 'uniform':
+            context = np.random.uniform(-1, 1, n_features)
+        else:
+            context = np.random.randn(n_features)
 
-        # Observe reward
-        reward = np.random.binomial(1, true_rates[arm])
+        # Compute optimal arm and reward
+        expected_rewards = [context @ theta for theta in true_theta]
+        optimal_arm = np.argmax(expected_rewards)
+        optimal_reward = expected_rewards[optimal_arm]
 
-        # Update bandit
-        bandit.update(arm, reward)
+        # Select arm using LinUCB
+        selected_arm = linucb.select_arm(context)
+        arm_selections[t, selected_arm] = 1
+
+        # Observe reward (with noise)
+        true_reward = context @ true_theta[selected_arm]
+        observed_reward = true_reward + np.random.normal(0, 0.1)
+
+        # Update
+        linucb.update(selected_arm, context, observed_reward)
 
         # Track metrics
-        regret = optimal_rate - true_rates[arm]
-
-        cumulative_reward[t] = bandit.total_reward
+        regret = optimal_reward - true_reward
+        cumulative_reward[t] = linucb.total_reward
         cumulative_regret[t] = (
             cumulative_regret[t-1] + regret if t > 0 else regret
         )
-        optimal_selections[t] = (arm == optimal_arm)
-
-    # Cumulative arm selections
-    cumulative_selections = np.cumsum(arm_selections, axis=0)
 
     return {
-        'arm_selections': arm_selections,
-        'cumulative_selections': cumulative_selections,
-        'final_proportions': cumulative_selections[-1] / n_trials,
         'cumulative_reward': cumulative_reward,
         'cumulative_regret': cumulative_regret,
-        'optimal_selection_rate': np.cumsum(optimal_selections) /
-                                  np.arange(1, n_trials + 1),
-        'final_values': bandit.values
+        'arm_selections': arm_selections,
+        'arm_counts': linucb.arm_counts
     }
 
-def compare_bandit_algorithms(
-    true_rates: List[float],
-    n_trials: int = 10000,
-    n_simulations: int = 100
-):
-    """
-    Compare different bandit algorithms through simulation.
+# Example: Content recommendation with user features
+np.random.seed(42)
 
-    Parameters:
-    -----------
-    true_rates : list
-        True conversion rate for each variant
-    n_trials : int
-        Number of trials per simulation
-    n_simulations : int
-        Number of simulation replications
-    """
-    n_arms = len(true_rates)
+n_arms = 3
+n_features = 5
 
-    algorithms = {
-        'epsilon-greedy (0.1)': lambda: EpsilonGreedy(n_arms, 0.1),
-        'epsilon-greedy (decay)': lambda: EpsilonGreedy(n_arms, 1.0,
-                                                         decay=True),
-        'UCB1': lambda: UCB1(n_arms),
-        'Thompson Sampling': lambda: ThompsonSampling(n_arms)
-    }
+# True parameters (unknown to algorithm)
+true_theta = [
+    np.array([0.5, 0.3, -0.2, 0.1, 0.4]),   # Arm 0
+    np.array([0.3, 0.5, 0.2, -0.1, 0.2]),   # Arm 1
+    np.array([0.4, 0.2, 0.3, 0.3, 0.1])     # Arm 2
+]
 
-    results = {name: [] for name in algorithms.keys()}
-
-    for sim in range(n_simulations):
-        np.random.seed(sim)
-
-        for name, create_bandit in algorithms.items():
-            bandit = create_bandit()
-            result = simulate_bandit_experiment(bandit, true_rates, n_trials)
-            results[name].append(result)
-
-    # Aggregate results
-    aggregated = {}
-    for name in algorithms.keys():
-        regrets = [r['cumulative_regret'] for r in results[name]]
-        optimal_rates = [r['optimal_selection_rate'] for r in results[name]]
-
-        aggregated[name] = {
-            'mean_regret': np.mean(regrets, axis=0),
-            'std_regret': np.std(regrets, axis=0),
-            'mean_optimal_rate': np.mean(optimal_rates, axis=0)
-        }
-
-    # Visualization
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-
-    # 1. Cumulative regret
-    ax = axes[0, 0]
-    for name, data in aggregated.items():
-        ax.plot(data['mean_regret'], label=name, linewidth=2)
-        ax.fill_between(
-            range(n_trials),
-            data['mean_regret'] - data['std_regret'],
-            data['mean_regret'] + data['std_regret'],
-            alpha=0.2
-        )
-    ax.set_xlabel('Trial')
-    ax.set_ylabel('Cumulative Regret')
-    ax.set_title('Cumulative Regret Over Time')
-    ax.legend()
-    ax.grid(alpha=0.3)
-
-    # 2. Optimal arm selection rate
-    ax = axes[0, 1]
-    for name, data in aggregated.items():
-        ax.plot(data['mean_optimal_rate'], label=name, linewidth=2)
-    ax.set_xlabel('Trial')
-    ax.set_ylabel('Proportion Selecting Optimal Arm')
-    ax.set_title('Convergence to Optimal Arm')
-    ax.legend()
-    ax.grid(alpha=0.3)
-    ax.set_ylim([0, 1])
-
-    # 3. Final regret comparison
-    ax = axes[1, 0]
-    final_regrets = [data['mean_regret'][-1] for data in aggregated.values()]
-    final_stds = [data['std_regret'][-1] for data in aggregated.values()]
-
-    x_pos = np.arange(len(algorithms))
-    ax.bar(x_pos, final_regrets, yerr=final_stds, capsize=5, alpha=0.7)
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(algorithms.keys(), rotation=15, ha='right')
-    ax.set_ylabel('Final Cumulative Regret')
-    ax.set_title(f'Final Regret after {n_trials} Trials')
-    ax.grid(axis='y', alpha=0.3)
-
-    # 4. Arm selection distribution (Thompson Sampling)
-    ax = axes[1, 1]
-    ts_results = results['Thompson Sampling']
-    final_props = np.array([r['final_proportions'] for r in ts_results])
-    mean_props = np.mean(final_props, axis=0)
-
-    x_pos = np.arange(n_arms)
-    ax.bar(x_pos, mean_props, alpha=0.7)
-    ax.axhline(y=1/n_arms, color='red', linestyle='--',
-               label='Equal allocation')
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels([f'Arm {i}\n({rate:.1%})'
-                        for i, rate in enumerate(true_rates)])
-    ax.set_ylabel('Proportion of Selections')
-    ax.set_title('Thompson Sampling: Final Allocation')
-    ax.legend()
-    ax.grid(axis='y', alpha=0.3)
-
-    plt.tight_layout()
-    return fig, aggregated
-
-# Example comparison
-true_rates = [0.08, 0.10, 0.12]
-fig, results = compare_bandit_algorithms(
-    true_rates,
-    n_trials=10000,
-    n_simulations=100
+results = simulate_contextual_bandit(
+    n_arms=n_arms,
+    n_features=n_features,
+    true_theta=true_theta,
+    n_trials=10000
 )
 
-print("=== Bandit Algorithm Comparison ===")
-print(f"True rates: {true_rates}")
-print(f"Optimal arm: Arm {np.argmax(true_rates)} ({max(true_rates):.1%})\n")
+print("=== Contextual Bandit Results ===")
+print(f"\nArm selection counts:")
+for arm in range(n_arms):
+    print(f"  Arm {arm}: {int(results['arm_counts'][arm])} "
+          f"({results['arm_counts'][arm]/10000:.1%})")
 
-for name, data in results.items():
-    print(f"{name}:")
-    print(f"  Final regret: {data['mean_regret'][-1]:.1f} "
-          f"(±{data['std_regret'][-1]:.1f})")
-    print(f"  Final optimal rate: {data['mean_optimal_rate'][-1]:.3f}\n")
+print(f"\nFinal cumulative reward: {results['cumulative_reward'][-1]:.1f}")
+print(f"Final cumulative regret: {results['cumulative_regret'][-1]:.1f}")
 
-plt.savefig('bandit_comparison.pdf', bbox_inches='tight')
+# Visualize
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+ax1.plot(results['cumulative_regret'])
+ax1.set_xlabel('Trial')
+ax1.set_ylabel('Cumulative Regret')
+ax1.set_title('LinUCB: Cumulative Regret')
+ax1.grid(alpha=0.3)
+
+cumulative_selections = np.cumsum(results['arm_selections'], axis=0)
+for arm in range(n_arms):
+    ax2.plot(cumulative_selections[:, arm] / np.arange(1, 10001),
+            label=f'Arm {arm}')
+ax2.set_xlabel('Trial')
+ax2.set_ylabel('Selection Proportion')
+ax2.set_title('Arm Selection Over Time')
+ax2.legend()
+ax2.grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('contextual_bandit.pdf')
 plt.show()
 \end{lstlisting}
 
 \subsection{When to Use Bandits vs. Traditional A/B Tests}
 
-\textbf{Use bandits when:}
-\begin{itemize}
-    \item \textbf{Optimizing during the test is valuable:} E.g., content recommendation, ad selection
-    \item \textbf{Cost of poor experiences is high:} Want to minimize exposure to inferior variants
-    \item \textbf{Rapid learning is possible:} Quick feedback enables adaptation
-    \item \textbf{Continuous optimization desired:} Not a one-time decision
-    \item \textbf{Many variants:} Efficient at eliminating poor options
-\end{itemize}
-
-\textbf{Use traditional A/B when:}
-\begin{itemize}
-    \item \textbf{Clean inference is critical:} Need p-values, confidence intervals for decision making
-    \item \textbf{Regulatory requirements:} Medical devices, financial products
-    \item \textbf{Long-term effects matter:} User habituation, retention effects
-    \item \textbf{Stakeholder communication:} Fixed allocation easier to explain
-    \item \textbf{Implementation is permanent:} Making a one-time product decision
-\end{itemize}
-
-\textbf{Hybrid Approach:} Use bandits for traffic allocation during experiment, then analyze using causal inference methods (e.g., inverse propensity weighting) for final decision.
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Criterion} & \textbf{Bandits} & \textbf{Traditional A/B} \\
+\midrule
+Optimize during test & \checkmark\checkmark & \\
+Cost of poor experiences & \checkmark\checkmark & \\
+Rapid feedback available & \checkmark\checkmark & \\
+Clean causal inference needed & & \checkmark\checkmark \\
+Regulatory requirements & & \checkmark\checkmark \\
+Long-term effects matter & & \checkmark\checkmark \\
+Many variants (>5) & \checkmark\checkmark & \\
+Permanent implementation decision & & \checkmark\checkmark \\
+Continuous optimization & \checkmark\checkmark & \\
+\bottomrule
+\end{tabular}
+\caption{Bandit vs. traditional A/B test selection guide}
+\label{tab:bandit_vs_ab}
+\end{table}
 
 \section{Sequential Testing}
 
@@ -869,362 +880,764 @@ Simulation with no true effect ($H_0$ true):
 \end{itemize}
 \end{example}
 
-\textbf{Problem:} Multiple testing without correction.
+\subsection{Sequential Probability Ratio Test (SPRT)}
 
-\textbf{Solution:} Group sequential methods with adjusted boundaries.
+Wald's SPRT provides optimal sequential testing for comparing two simple hypotheses.
 
-\subsection{Group Sequential Testing}
-
-Pre-specify:
-\begin{itemize}
-    \item Information fractions: e.g., analyze at 25\%, 50\%, 75\%, 100\% of planned sample
-    \item Spending function: how to allocate Type I error across looks
-    \item Stopping boundaries: thresholds for stopping
-\end{itemize}
-
-\subsubsection{O'Brien-Fleming Boundaries}
-
-Conservative early stopping; save most $\alpha$ for final analysis.
-
-For $K$ equally spaced looks at information fractions $1/K, 2/K, \ldots, K/K$:
-
+\begin{definition}[SPRT]
+Test $H_0: \theta = \theta_0$ vs. $H_1: \theta = \theta_1$ by computing:
 \begin{equation}
-c_k = c \sqrt{\frac{K}{k}}
+\Lambda_n = \frac{L(\theta_1; \mathbf{X}_n)}{L(\theta_0; \mathbf{X}_n)}
 \end{equation}
 
-where $c \approx 2$ for $\alpha = 0.05$ (determined numerically to control FWER).
-
-\textbf{Early boundaries are stringent:}
+Continue sampling until:
 \begin{itemize}
-    \item At 25\% information: $c_1 = c\sqrt{4} = 2c \approx 4$ (need $|Z| > 4$)
-    \item At 50\% information: $c_2 = c\sqrt{2} \approx 2.83$
-    \item At 100\% information: $c_K = c \approx 2$
+    \item $\Lambda_n \geq B$: Reject $H_0$ in favor of $H_1$
+    \item $\Lambda_n \leq A$: Accept $H_0$
+    \item $A < \Lambda_n < B$: Continue sampling
 \end{itemize}
 
-\textbf{Advantage:} Preserves power well; if don't stop early, final test nearly as powerful as fixed design.
+where boundaries $A$ and $B$ are chosen to control error rates:
+\begin{align}
+A &\approx \frac{\beta}{1-\alpha} \\
+B &\approx \frac{1-\beta}{\alpha}
+\end{align}
+\end{definition}
 
-\subsubsection{Pocock Boundaries}
+\begin{theorem}[Wald, 1947]
+Among all sequential tests with Type I error $\leq \alpha$ and Type II error $\leq \beta$, SPRT minimizes expected sample size under both $H_0$ and $H_1$.
+\end{theorem}
 
-Equal thresholds at all looks: $c_1 = c_2 = \cdots = c_K$.
-
-For $\alpha = 0.05$ and $K=5$ looks: $c \approx 2.41$.
-
-\textbf{More aggressive early stopping} than O'Brien-Fleming.
-
-\textbf{Disadvantage:} If no early stop, final test less powerful due to $\alpha$ spent early.
-
-\lstset{language=Python, caption=Group Sequential Testing Implementation}
+\lstset{language=Python, caption=SPRT Implementation for A/B Testing}
 \begin{lstlisting}
 import numpy as np
 from scipy import stats
-from typing import List, Tuple
 import matplotlib.pyplot as plt
 
-class GroupSequentialTest:
+class SPRT:
     """
-    Implement group sequential testing with O'Brien-Fleming or Pocock boundaries.
+    Sequential Probability Ratio Test for two proportions.
     """
 
-    def __init__(self,
-                 max_n: int,
-                 n_looks: int,
-                 alpha: float = 0.05,
-                 beta: float = 0.20,
-                 boundary_type: str = 'obf'):
+    def __init__(self, p0: float, p1: float, alpha: float = 0.05,
+                 beta: float = 0.20):
         """
         Parameters:
         -----------
-        max_n : int
-            Maximum sample size per group
-        n_looks : int
-            Number of interim analyses (including final)
+        p0 : float
+            Null hypothesis conversion rate
+        p1 : float
+            Alternative hypothesis conversion rate
         alpha : float
             Type I error rate
         beta : float
-            Type II error rate (1 - power)
-        boundary_type : str
-            'obf' (O'Brien-Fleming) or 'pocock'
+            Type II error rate
         """
-        self.max_n = max_n
-        self.n_looks = n_looks
+        self.p0 = p0
+        self.p1 = p1
         self.alpha = alpha
         self.beta = beta
-        self.boundary_type = boundary_type
 
-        # Information fractions
-        self.info_fracs = np.array([
-            (k+1) / n_looks for k in range(n_looks)
-        ])
+        # Compute boundaries
+        self.A = beta / (1 - alpha)
+        self.B = (1 - beta) / alpha
 
-        # Calculate boundaries
-        self.boundaries = self._calculate_boundaries()
+        # Initialize
+        self.log_lr = 0  # Log likelihood ratio
+        self.n = 0
+        self.successes = 0
 
-    def _calculate_boundaries(self) -> np.ndarray:
-        """Calculate stopping boundaries."""
-        if self.boundary_type == 'obf':
-            # O'Brien-Fleming: conservative early, lenient late
-            # Use Lan-DeMets spending function approximation
-            z_alpha = stats.norm.ppf(1 - self.alpha/2)
-            boundaries = z_alpha * np.sqrt(1 / self.info_fracs)
-
-        elif self.boundary_type == 'pocock':
-            # Pocock: equal boundaries
-            # Approximate for 2-sided test
-            if self.n_looks == 1:
-                c = stats.norm.ppf(1 - self.alpha/2)
-            elif self.n_looks == 2:
-                c = 2.178
-            elif self.n_looks == 3:
-                c = 2.289
-            elif self.n_looks == 4:
-                c = 2.361
-            elif self.n_looks == 5:
-                c = 2.413
-            else:
-                # Approximation for larger K
-                c = stats.norm.ppf(1 - self.alpha/(2*self.n_looks))
-
-            boundaries = np.ones(self.n_looks) * c
-        else:
-            raise ValueError("boundary_type must be 'obf' or 'pocock'")
-
-        return boundaries
-
-    def analyze_look(self,
-                     n_current: int,
-                     control_conversions: int,
-                     treatment_conversions: int,
-                     control_n: int,
-                     treatment_n: int) -> dict:
+    def update(self, conversion: int):
         """
-        Analyze data at a specific look.
+        Update with new observation.
+
+        Parameters:
+        -----------
+        conversion : int
+            1 if conversion, 0 otherwise
 
         Returns:
         --------
-        dict with keys:
-            - 'z_stat': Test statistic
-            - 'boundary': Critical value for this look
-            - 'stop_efficacy': Stop for efficacy
-            - 'stop_futility': Stop for futility
-            - 'continue': Continue to next look
+        str : 'continue', 'reject_h0', or 'accept_h0'
         """
-        # Calculate test statistic
-        p1 = control_conversions / control_n
-        p2 = treatment_conversions / treatment_n
-        p_pooled = (control_conversions + treatment_conversions) / (
-            control_n + treatment_n
-        )
+        self.n += 1
+        self.successes += conversion
 
-        se = np.sqrt(p_pooled * (1 - p_pooled) * (1/control_n + 1/treatment_n))
-        z_stat = (p2 - p1) / se
+        # Update log likelihood ratio
+        if conversion == 1:
+            self.log_lr += np.log(self.p1 / self.p0)
+        else:
+            self.log_lr += np.log((1 - self.p1) / (1 - self.p0))
 
-        # Determine which look we're at
-        look_idx = int(np.round(n_current / self.max_n * self.n_looks)) - 1
-        look_idx = np.clip(look_idx, 0, self.n_looks - 1)
+        # Check stopping conditions
+        if np.exp(self.log_lr) >= self.B:
+            return 'reject_h0'  # Evidence for H1
+        elif np.exp(self.log_lr) <= self.A:
+            return 'accept_h0'  # Evidence for H0
+        else:
+            return 'continue'
 
-        boundary = self.boundaries[look_idx]
-
-        # Stopping decisions
-        stop_efficacy = abs(z_stat) >= boundary
-
-        # Simple futility boundary (can be more sophisticated)
-        futility_boundary = 0.5
-        stop_futility = abs(z_stat) < futility_boundary and look_idx >= 1
-
+    def get_statistics(self):
+        """Return current test statistics."""
         return {
-            'look': look_idx + 1,
-            'n_current': n_current,
-            'z_stat': z_stat,
-            'boundary': boundary,
-            'stop_efficacy': stop_efficacy,
-            'stop_futility': stop_futility,
-            'continue': not (stop_efficacy or stop_futility),
-            'p1': p1,
-            'p2': p2
+            'n': self.n,
+            'successes': self.successes,
+            'rate': self.successes / self.n if self.n > 0 else 0,
+            'log_lr': self.log_lr,
+            'lr': np.exp(self.log_lr)
         }
 
-    def visualize_boundaries(self):
-        """Visualize stopping boundaries."""
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        # Plot boundaries
-        looks = np.arange(1, self.n_looks + 1)
-        ax.plot(looks, self.boundaries, 'ro-', linewidth=2,
-                markersize=10, label='Efficacy boundary')
-        ax.plot(looks, -self.boundaries, 'ro-', linewidth=2, markersize=10)
-
-        # Add futility boundary
-        ax.axhline(y=0.5, color='orange', linestyle='--',
-                  label='Futility boundary')
-        ax.axhline(y=-0.5, color='orange', linestyle='--')
-        ax.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
-
-        # Styling
-        ax.set_xlabel('Analysis Number', fontsize=12)
-        ax.set_ylabel('Z-statistic Threshold', fontsize=12)
-        ax.set_title(f'{self.boundary_type.upper()} Boundaries '
-                    f'(K={self.n_looks}, α={self.alpha})', fontsize=14)
-        ax.set_xticks(looks)
-        ax.grid(alpha=0.3)
-        ax.legend(fontsize=11)
-
-        # Add information fractions
-        for i, (look, frac) in enumerate(zip(looks, self.info_fracs)):
-            ax.text(look, self.boundaries[i] + 0.3,
-                   f'{frac:.1%}', ha='center', fontsize=10)
-
-        plt.tight_layout()
-        return fig
-
-def simulate_sequential_experiment(
-    true_effect: float,
-    baseline_rate: float,
-    max_n_per_group: int,
-    n_looks: int,
-    boundary_type: str,
-    n_simulations: int = 1000
-) -> dict:
+def simulate_sprt(p_true: float, p0: float, p1: float,
+                 max_n: int = 10000, n_simulations: int = 1000):
     """
-    Simulate group sequential experiments.
+    Simulate SPRT performance.
 
-    Returns type I error, power, and average sample size.
+    Returns:
+    --------
+    dict : Simulation results
     """
-    gst = GroupSequentialTest(
-        max_n=max_n_per_group,
-        n_looks=n_looks,
-        boundary_type=boundary_type
-    )
-
-    stopped_for_efficacy = 0
-    stopped_for_futility = 0
-    total_n = []
-
-    p1 = baseline_rate
-    p2 = baseline_rate + true_effect
+    stopped_for_h1 = 0
+    stopped_for_h0 = 0
+    sample_sizes = []
 
     for sim in range(n_simulations):
         np.random.seed(sim)
+        sprt = SPRT(p0, p1)
 
-        stopped = False
+        for _ in range(max_n):
+            conversion = np.random.binomial(1, p_true)
+            decision = sprt.update(conversion)
 
-        for look in range(1, n_looks + 1):
-            n_current = int(max_n_per_group * look / n_looks)
-
-            # Generate data
-            control = np.random.binomial(1, p1, n_current)
-            treatment = np.random.binomial(1, p2, n_current)
-
-            result = gst.analyze_look(
-                n_current=n_current,
-                control_conversions=control.sum(),
-                treatment_conversions=treatment.sum(),
-                control_n=n_current,
-                treatment_n=n_current
-            )
-
-            if result['stop_efficacy']:
-                stopped_for_efficacy += 1
-                total_n.append(n_current * 2)
-                stopped = True
+            if decision == 'reject_h0':
+                stopped_for_h1 += 1
+                sample_sizes.append(sprt.n)
                 break
-            elif result['stop_futility']:
-                stopped_for_futility += 1
-                total_n.append(n_current * 2)
-                stopped = True
+            elif decision == 'accept_h0':
+                stopped_for_h0 += 1
+                sample_sizes.append(sprt.n)
                 break
-
-        if not stopped:
-            total_n.append(max_n_per_group * 2)
+        else:
+            # Reached max_n without decision
+            sample_sizes.append(max_n)
 
     return {
-        'type_i_error' if true_effect == 0 else 'power':
-            stopped_for_efficacy / n_simulations,
-        'stopped_for_futility_rate': stopped_for_futility / n_simulations,
-        'average_sample_size': np.mean(total_n),
-        'median_sample_size': np.median(total_n),
-        'sample_size_reduction': 1 - np.mean(total_n) / (max_n_per_group * 2)
+        'reject_h0_rate': stopped_for_h1 / n_simulations,
+        'accept_h0_rate': stopped_for_h0 / n_simulations,
+        'no_decision_rate': (n_simulations - stopped_for_h1 -
+                           stopped_for_h0) / n_simulations,
+        'mean_sample_size': np.mean(sample_sizes),
+        'median_sample_size': np.median(sample_sizes),
+        'sample_sizes': sample_sizes
     }
 
-# Example usage
-print("=== Group Sequential Testing ===\n")
+# Example: Test if conversion rate differs from 5%
+print("=== SPRT Simulation ===\n")
 
-# Visualize boundaries
-gst_obf = GroupSequentialTest(max_n=5000, n_looks=5, boundary_type='obf')
-gst_pocock = GroupSequentialTest(max_n=5000, n_looks=5, boundary_type='pocock')
+p0 = 0.05  # Null hypothesis
+p1 = 0.07  # Alternative hypothesis
 
-print("O'Brien-Fleming Boundaries:")
-print(gst_obf.boundaries)
-print("\nPocock Boundaries:")
-print(gst_pocock.boundaries)
+# Scenario 1: True rate = p0 (null is true)
+print("Scenario 1: True rate = 5% (H0 true)")
+results_h0 = simulate_sprt(p_true=p0, p0=p0, p1=p1, n_simulations=1000)
+print(f"  Reject H0 rate: {results_h0['reject_h0_rate']:.3f} (should be ~0.05)")
+print(f"  Accept H0 rate: {results_h0['accept_h0_rate']:.3f}")
+print(f"  Mean sample size: {results_h0['mean_sample_size']:.0f}\n")
 
-fig_obf = gst_obf.visualize_boundaries()
-plt.savefig('obf_boundaries.pdf')
+# Scenario 2: True rate = p1 (alternative is true)
+print("Scenario 2: True rate = 7% (H1 true)")
+results_h1 = simulate_sprt(p_true=p1, p0=p0, p1=p1, n_simulations=1000)
+print(f"  Reject H0 rate: {results_h1['reject_h0_rate']:.3f} (should be ~0.80)")
+print(f"  Accept H0 rate: {results_h1['accept_h0_rate']:.3f}")
+print(f"  Mean sample size: {results_h1['mean_sample_size']:.0f}\n")
 
-fig_pocock = gst_pocock.visualize_boundaries()
-plt.savefig('pocock_boundaries.pdf')
+# Compare to fixed sample size
+fixed_n = 3000  # Hypothetical fixed design
+print(f"Fixed sample size test: {fixed_n} per variant")
+print(f"SPRT average savings (H0): {(1 - results_h0['mean_sample_size']/fixed_n)*100:.1f}%")
+print(f"SPRT average savings (H1): {(1 - results_h1['mean_sample_size']/fixed_n)*100:.1f}%")
 
-# Simulate to check Type I error control
-print("\n=== Simulation Results (1000 replications) ===")
-print("\nUnder null (true_effect = 0):")
+# Visualize sample size distributions
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
-for boundary_type in ['obf', 'pocock']:
-    result = simulate_sequential_experiment(
-        true_effect=0.0,
-        baseline_rate=0.10,
-        max_n_per_group=5000,
-        n_looks=5,
-        boundary_type=boundary_type,
-        n_simulations=1000
-    )
+ax1.hist(results_h0['sample_sizes'], bins=50, alpha=0.7, edgecolor='black')
+ax1.axvline(results_h0['mean_sample_size'], color='red', linestyle='--',
+           linewidth=2, label=f"Mean = {results_h0['mean_sample_size']:.0f}")
+ax1.axvline(fixed_n, color='blue', linestyle='--',
+           linewidth=2, label=f"Fixed = {fixed_n}")
+ax1.set_xlabel('Sample Size')
+ax1.set_ylabel('Frequency')
+ax1.set_title('SPRT Sample Sizes (H0 True)')
+ax1.legend()
+ax1.grid(alpha=0.3)
 
-    print(f"\n{boundary_type.upper()}:")
-    print(f"  Type I error: {result['type_i_error']:.3f} "
-          f"(target: 0.05)")
-    print(f"  Avg sample size: {result['average_sample_size']:.0f} "
-          f"({result['sample_size_reduction']:.1%} reduction)")
+ax2.hist(results_h1['sample_sizes'], bins=50, alpha=0.7, edgecolor='black')
+ax2.axvline(results_h1['mean_sample_size'], color='red', linestyle='--',
+           linewidth=2, label=f"Mean = {results_h1['mean_sample_size']:.0f}")
+ax2.axvline(fixed_n, color='blue', linestyle='--',
+           linewidth=2, label=f"Fixed = {fixed_n}")
+ax2.set_xlabel('Sample Size')
+ax2.set_ylabel('Frequency')
+ax2.set_title('SPRT Sample Sizes (H1 True)')
+ax2.legend()
+ax2.grid(alpha=0.3)
 
-print("\nUnder alternative (true_effect = 0.02):")
-
-for boundary_type in ['obf', 'pocock']:
-    result = simulate_sequential_experiment(
-        true_effect=0.02,
-        baseline_rate=0.10,
-        max_n_per_group=5000,
-        n_looks=5,
-        boundary_type=boundary_type,
-        n_simulations=1000
-    )
-
-    print(f"\n{boundary_type.upper()}:")
-    print(f"  Power: {result['power']:.3f}")
-    print(f"  Avg sample size: {result['average_sample_size']:.0f} "
-          f"({result['sample_size_reduction']:.1%} reduction)")
+plt.tight_layout()
+plt.savefig('sprt_sample_sizes.pdf')
+plt.show()
 \end{lstlisting}
 
-\section{Network Effects and Interference}
+\subsection{Group Sequential Designs}
+
+Group sequential methods pre-specify interim analyses with adjusted boundaries to control Type I error.
+
+\textbf{Key Components:}
+\begin{enumerate}
+    \item \textbf{Information fractions:} Times to analyze (e.g., 25\%, 50\%, 75\%, 100\%)
+    \item \textbf{Spending function:} How to allocate $\alpha$ across looks
+    \item \textbf{Stopping boundaries:} Thresholds for early stopping
+\end{enumerate}
+
+\subsubsection{Alpha Spending Functions}
+
+Rather than pre-specifying the exact number and timing of analyses, alpha spending functions provide flexibility.
+
+\begin{definition}[Alpha Spending Function]
+A function $\alpha^*(t)$ where $t \in [0,1]$ is the information fraction, satisfying:
+\begin{itemize}
+    \item $\alpha^*(0) = 0$
+    \item $\alpha^*(1) = \alpha$
+    \item $\alpha^*(t)$ is non-decreasing
+\end{itemize}
+
+At each analysis with information fraction $t_k$, spend:
+\begin{equation}
+\Delta\alpha_k = \alpha^*(t_k) - \alpha^*(t_{k-1})
+\end{equation}
+\end{definition}
+
+\textbf{Common Spending Functions:}
+
+\begin{enumerate}
+    \item \textbf{O'Brien-Fleming:}
+    \begin{equation}
+    \alpha^*(t) = 2 - 2\Phi\left(\frac{z_{\alpha/2}}{\sqrt{t}}\right)
+    \end{equation}
+    Conservative early, liberal late.
+
+    \item \textbf{Pocock:}
+    \begin{equation}
+    \alpha^*(t) = \alpha \log(1 + (e - 1)t)
+    \end{equation}
+    More uniform spending.
+
+    \item \textbf{Kim-DeMets (Power Family):}
+    \begin{equation}
+    \alpha^*(t) = \alpha t^\rho
+    \end{equation}
+    where $\rho > 0$ controls shape. $\rho = 1$ is linear, $\rho = 3$ approximates O'Brien-Fleming.
+\end{enumerate}
+
+\lstset{language=Python, caption=Alpha Spending Functions}
+\begin{lstlisting}
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+
+class AlphaSpending:
+    """
+    Alpha spending functions for group sequential designs.
+    """
+
+    @staticmethod
+    def obrien_fleming(t: float, alpha: float = 0.05) -> float:
+        """O'Brien-Fleming spending function."""
+        if t <= 0:
+            return 0
+        if t >= 1:
+            return alpha
+        z = stats.norm.ppf(1 - alpha/2)
+        return 2 * (1 - stats.norm.cdf(z / np.sqrt(t)))
+
+    @staticmethod
+    def pocock(t: float, alpha: float = 0.05) -> float:
+        """Pocock spending function."""
+        if t <= 0:
+            return 0
+        if t >= 1:
+            return alpha
+        return alpha * np.log(1 + (np.e - 1) * t)
+
+    @staticmethod
+    def kim_demets(t: float, alpha: float = 0.05, rho: float = 3) -> float:
+        """Kim-DeMets power family."""
+        if t <= 0:
+            return 0
+        if t >= 1:
+            return alpha
+        return alpha * (t ** rho)
+
+    @staticmethod
+    def compute_boundary(t: float, alpha_spent: float,
+                        prev_alpha_spent: float = 0,
+                        prev_t: float = 0) -> float:
+        """
+        Compute Z-score boundary for current analysis.
+
+        Uses Lan-DeMets approximation.
+        """
+        if t <= 0:
+            return np.inf
+
+        delta_alpha = alpha_spent - prev_alpha_spent
+        if delta_alpha <= 0:
+            return np.inf
+
+        # Two-sided boundary
+        z_boundary = stats.norm.ppf(1 - delta_alpha/2)
+
+        # Adjust for information fraction
+        z_boundary = z_boundary * np.sqrt(1/t)
+
+        return z_boundary
+
+# Visualize spending functions
+t_values = np.linspace(0, 1, 1000)
+alpha = 0.05
+
+obf_spent = [AlphaSpending.obrien_fleming(t, alpha) for t in t_values]
+pocock_spent = [AlphaSpending.pocock(t, alpha) for t in t_values]
+linear_spent = alpha * t_values
+power3_spent = [AlphaSpending.kim_demets(t, alpha, rho=3) for t in t_values]
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+# Cumulative alpha spent
+ax1.plot(t_values, obf_spent, label="O'Brien-Fleming", linewidth=2)
+ax1.plot(t_values, pocock_spent, label='Pocock', linewidth=2)
+ax1.plot(t_values, linear_spent, label='Linear', linewidth=2, linestyle='--')
+ax1.plot(t_values, power3_spent, label='Kim-DeMets (ρ=3)', linewidth=2)
+ax1.set_xlabel('Information Fraction (t)', fontsize=12)
+ax1.set_ylabel('Cumulative α Spent', fontsize=12)
+ax1.set_title('Alpha Spending Functions', fontsize=14)
+ax1.legend(fontsize=11)
+ax1.grid(alpha=0.3)
+ax1.set_ylim([0, alpha * 1.1])
+
+# Incremental alpha spent (derivative)
+dt = t_values[1] - t_values[0]
+obf_incr = np.diff(obf_spent) / dt
+pocock_incr = np.diff(pocock_spent) / dt
+linear_incr = np.diff(linear_spent) / dt
+power3_incr = np.diff(power3_spent) / dt
+
+ax2.plot(t_values[:-1], obf_incr, label="O'Brien-Fleming", linewidth=2)
+ax2.plot(t_values[:-1], pocock_incr, label='Pocock', linewidth=2)
+ax2.plot(t_values[:-1], linear_incr, label='Linear', linewidth=2, linestyle='--')
+ax2.plot(t_values[:-1], power3_incr, label='Kim-DeMets (ρ=3)', linewidth=2)
+ax2.set_xlabel('Information Fraction (t)', fontsize=12)
+ax2.set_ylabel('Incremental α Rate', fontsize=12)
+ax2.set_title('Alpha Spending Rate', fontsize=14)
+ax2.legend(fontsize=11)
+ax2.grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('alpha_spending_functions.pdf')
+plt.show()
+
+# Compute boundaries for specific looks
+print("=== Alpha Spending Boundaries ===\n")
+print("For 5 equally-spaced looks:\n")
+
+info_fracs = [0.2, 0.4, 0.6, 0.8, 1.0]
+
+print("O'Brien-Fleming:")
+prev_alpha = 0
+prev_t = 0
+for t in info_fracs:
+    alpha_spent = AlphaSpending.obrien_fleming(t, alpha)
+    delta_alpha = alpha_spent - prev_alpha
+    z_bound = stats.norm.ppf(1 - delta_alpha/2) / np.sqrt(t)
+    print(f"  Look {info_fracs.index(t)+1} (t={t:.1f}): "
+          f"Δα={delta_alpha:.4f}, Z={z_bound:.3f}")
+    prev_alpha = alpha_spent
+    prev_t = t
+
+print("\nPocock:")
+prev_alpha = 0
+for t in info_fracs:
+    alpha_spent = AlphaSpending.pocock(t, alpha)
+    delta_alpha = alpha_spent - prev_alpha
+    z_bound = stats.norm.ppf(1 - delta_alpha/2) / np.sqrt(t)
+    print(f"  Look {info_fracs.index(t)+1} (t={t:.1f}): "
+          f"Δα={delta_alpha:.4f}, Z={z_bound:.3f}")
+    prev_alpha = alpha_spent
+\end{lstlisting}
+
+\subsection{Practical Implementation Challenges}
+
+\begin{enumerate}
+    \item \textbf{Pre-specification:} Must define stopping rules before seeing data
+
+    Violation: "Let's check results and decide if we should stop"
+
+    Solution: Document analysis plan, information fractions, and spending function
+
+    \item \textbf{Unplanned analyses:} Extra "peeks" between scheduled looks
+
+    Problem: Consumes unaccounted $\alpha$
+
+    Solution: Use alpha spending functions that accommodate unplanned looks
+
+    \item \textbf{Multiple metrics:} Each metric requires separate $\alpha$ control
+
+    Solution: Bonferroni correction across metrics, or hierarchical testing
+
+    \item \textbf{Sample size re-estimation:} Adjusting target sample size mid-experiment
+
+    Problem: Can inflate Type I error
+
+    Solution: Use methods that allow blinded or conditional re-estimation
+
+    \item \textbf{Delayed outcomes:} Conversions observed days after assignment
+
+    Problem: Information accumulates slowly
+
+    Solution: Account for delay in information fraction calculations
+\end{enumerate}
+
+\section{Quasi-Experimental Designs}
+
+When randomization is infeasible, quasi-experimental designs enable causal inference through careful design and statistical adjustment.
+
+\subsection{When Randomization Fails}
+
+\textbf{Common scenarios:}
+\begin{itemize}
+    \item Market-level interventions (can't randomize cities)
+    \item Regulatory changes (everyone affected simultaneously)
+    \item Ethical constraints (can't withhold beneficial treatments)
+    \item Technical limitations (single codebase, no variant infrastructure)
+    \item Retrospective analysis (change already implemented)
+\end{itemize}
+
+\subsection{Difference-in-Differences (DID)}
+
+DID exploits variation in treatment timing across groups to estimate causal effects.
+
+\begin{definition}[DID Estimator]
+Compare change over time in treated group to change in control group:
+\begin{equation}
+\hat{\tau}_{\text{DID}} = (\bar{Y}_{\text{treat, post}} - \bar{Y}_{\text{treat, pre}}) - (\bar{Y}_{\text{control, post}} - \bar{Y}_{\text{control, pre}})
+\end{equation}
+\end{definition}
+
+\textbf{Key Assumption:} Parallel trends—absent treatment, treated and control groups would have followed parallel trends.
+
+\begin{example}[Geographic Rollout]
+A food delivery app launches a new feature in Seattle (treatment) but not Portland (control):
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+& \textbf{Pre (Week 1)} & \textbf{Post (Week 2)} & \textbf{Change} \\
+\midrule
+Seattle (Treated) & 100 orders/day & 120 orders/day & +20 \\
+Portland (Control) & 90 orders/day & 100 orders/day & +10 \\
+\midrule
+DID Estimate & & & +10 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+DID estimate: $(120 - 100) - (100 - 90) = 10$ orders/day attributable to feature.
+
+Without DID, naive estimate would be $20$ orders/day, confounded by overall market growth.
+\end{example}
+
+\textbf{Regression Form:}
+\begin{equation}
+Y_{it} = \beta_0 + \beta_1 \text{Treated}_i + \beta_2 \text{Post}_t + \beta_3 (\text{Treated}_i \times \text{Post}_t) + \epsilon_{it}
+\end{equation}
+
+where $\beta_3$ is the DID estimate.
+
+\lstset{language=Python, caption=Difference-in-Differences Analysis}
+\begin{lstlisting}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import statsmodels.formula.api as smf
+from scipy import stats
+
+def generate_did_data(
+    n_treated: int,
+    n_control: int,
+    n_periods_pre: int,
+    n_periods_post: int,
+    treatment_effect: float,
+    trend: float = 0,
+    noise_std: float = 5
+) -> pd.DataFrame:
+    """
+    Simulate DID data.
+
+    Parameters:
+    -----------
+    n_treated, n_control : int
+        Number of units in each group
+    n_periods_pre, n_periods_post : int
+        Number of time periods before/after treatment
+    treatment_effect : float
+        True treatment effect
+    trend : float
+        Common time trend
+    noise_std : float
+        Standard deviation of idiosyncratic noise
+
+    Returns:
+    --------
+    pd.DataFrame : Panel data
+    """
+    n_periods = n_periods_pre + n_periods_post
+    data = []
+
+    # Treated units
+    for unit in range(n_treated):
+        baseline = 100 + np.random.normal(0, 10)
+        for t in range(n_periods):
+            post = 1 if t >= n_periods_pre else 0
+            y = (baseline +
+                 trend * t +
+                 treatment_effect * post +
+                 np.random.normal(0, noise_std))
+            data.append({
+                'unit': f'T{unit}',
+                'period': t,
+                'treated': 1,
+                'post': post,
+                'y': y
+            })
+
+    # Control units
+    for unit in range(n_control):
+        baseline = 100 + np.random.normal(0, 10)
+        for t in range(n_periods):
+            post = 1 if t >= n_periods_pre else 0
+            y = (baseline +
+                 trend * t +
+                 np.random.normal(0, noise_std))
+            data.append({
+                'unit': f'C{unit}',
+                'period': t,
+                'treated': 0,
+                'post': post,
+                'y': y
+            })
+
+    df = pd.DataFrame(data)
+    df['treated_post'] = df['treated'] * df['post']
+    return df
+
+def analyze_did(df: pd.DataFrame) -> dict:
+    """
+    Analyze DID data.
+
+    Returns:
+    --------
+    dict : DID results
+    """
+    # Manual DID calculation
+    treated_pre = df[(df['treated']==1) & (df['post']==0)]['y'].mean()
+    treated_post = df[(df['treated']==1) & (df['post']==1)]['y'].mean()
+    control_pre = df[(df['treated']==0) & (df['post']==0)]['y'].mean()
+    control_post = df[(df['treated']==0) & (df['post']==1)]['y'].mean()
+
+    did_manual = (treated_post - treated_pre) - (control_post - control_pre)
+
+    # Regression DID
+    model = smf.ols('y ~ treated + post + treated_post', data=df).fit()
+
+    # Robust standard errors (clustered by unit)
+    model_robust = smf.ols('y ~ treated + post + treated_post',
+                          data=df).fit(cov_type='cluster',
+                                      cov_kwds={'groups': df['unit']})
+
+    return {
+        'did_manual': did_manual,
+        'treated_pre': treated_pre,
+        'treated_post': treated_post,
+        'control_pre': control_pre,
+        'control_post': control_post,
+        'model': model,
+        'model_robust': model_robust,
+        'did_estimate': model_robust.params['treated_post'],
+        'did_se': model_robust.bse['treated_post'],
+        'did_pvalue': model_robust.pvalues['treated_post']
+    }
+
+def plot_did(df: pd.DataFrame, results: dict):
+    """Visualize DID analysis."""
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Time series plot
+    treated_means = df[df['treated']==1].groupby('period')['y'].mean()
+    control_means = df[df['treated']==0].groupby('period')['y'].mean()
+
+    ax1.plot(treated_means.index, treated_means.values,
+            'o-', label='Treated', linewidth=2, markersize=8)
+    ax1.plot(control_means.index, control_means.values,
+            's-', label='Control', linewidth=2, markersize=8)
+
+    # Add vertical line at treatment
+    n_periods_pre = df[df['post']==0]['period'].nunique()
+    ax1.axvline(n_periods_pre - 0.5, color='red', linestyle='--',
+               label='Treatment Start', linewidth=2)
+
+    ax1.set_xlabel('Period', fontsize=12)
+    ax1.set_ylabel('Outcome', fontsize=12)
+    ax1.set_title('DID: Time Series', fontsize=14)
+    ax1.legend(fontsize=11)
+    ax1.grid(alpha=0.3)
+
+    # 2x2 table visualization
+    means = [
+        [results['control_pre'], results['control_post']],
+        [results['treated_pre'], results['treated_post']]
+    ]
+
+    ax2.imshow(means, cmap='RdYlGn', aspect='auto')
+    ax2.set_xticks([0, 1])
+    ax2.set_yticks([0, 1])
+    ax2.set_xticklabels(['Pre', 'Post'], fontsize=12)
+    ax2.set_yticklabels(['Control', 'Treated'], fontsize=12)
+
+    # Add values
+    for i in range(2):
+        for j in range(2):
+            ax2.text(j, i, f'{means[i][j]:.1f}',
+                    ha='center', va='center',
+                    fontsize=14, fontweight='bold')
+
+    # Add arrows showing differences
+    control_change = results['control_post'] - results['control_pre']
+    treated_change = results['treated_post'] - results['treated_pre']
+
+    ax2.text(1.3, 0, f'Δ={control_change:.1f}', fontsize=11)
+    ax2.text(1.3, 1, f'Δ={treated_change:.1f}', fontsize=11, fontweight='bold')
+
+    did = results['did_manual']
+    ax2.text(0.5, -0.5, f'DID = {did:.1f}', fontsize=14,
+            ha='center', fontweight='bold',
+            bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
+
+    ax2.set_title('DID: 2×2 Table', fontsize=14)
+
+    plt.tight_layout()
+    return fig
+
+# Example: Feature rollout
+np.random.seed(42)
+df = generate_did_data(
+    n_treated=50,
+    n_control=50,
+    n_periods_pre=4,
+    n_periods_post=4,
+    treatment_effect=15,  # True effect
+    trend=2,
+    noise_std=10
+)
+
+results = analyze_did(df)
+
+print("=== Difference-in-Differences Analysis ===\n")
+print("Means:")
+print(f"  Control Pre:  {results['control_pre']:.2f}")
+print(f"  Control Post: {results['control_post']:.2f}")
+print(f"  Treated Pre:  {results['treated_pre']:.2f}")
+print(f"  Treated Post: {results['treated_post']:.2f}\n")
+
+print("DID Estimates:")
+print(f"  Manual calculation: {results['did_manual']:.2f}")
+print(f"  Regression estimate: {results['did_estimate']:.2f}")
+print(f"  Standard error (clustered): {results['did_se']:.2f}")
+print(f"  95% CI: [{results['did_estimate'] - 1.96*results['did_se']:.2f}, "
+      f"{results['did_estimate'] + 1.96*results['did_se']:.2f}]")
+print(f"  p-value: {results['did_pvalue']:.4f}\n")
+
+print("Regression Results:")
+print(results['model_robust'].summary().tables[1])
+
+fig = plot_did(df, results)
+plt.savefig('did_analysis.pdf')
+plt.show()
+\end{lstlisting}
+
+\subsection{Regression Discontinuity Design (RDD)}
+
+RDD exploits discontinuities in treatment assignment based on a running variable.
+
+\begin{definition}[Sharp RDD]
+Treatment assigned based on threshold:
+\begin{equation}
+D_i = \begin{cases}
+1 & \text{if } X_i \geq c \\
+0 & \text{if } X_i < c
+\end{cases}
+\end{equation}
+
+Treatment effect estimated as:
+\begin{equation}
+\tau = \lim_{x \downarrow c} \mathbb{E}[Y_i | X_i = x] - \lim_{x \uparrow c} \mathbb{E}[Y_i | X_i = x]
+\end{equation}
+\end{definition}
+
+\begin{example}[Scholarship Program]
+Students with GPA $\geq 3.5$ receive scholarship. Compare outcomes just above and below threshold.
+
+Assumption: Students near threshold (3.49 vs. 3.51 GPA) are similar except for scholarship.
+\end{example}
+
+\textbf{Key Assumption:} No manipulation of running variable around cutoff.
+
+\subsection{Instrumental Variables (IV)}
+
+IV exploits exogenous variation to instrument for endogenous treatment.
+
+\begin{definition}[Instrumental Variable]
+Variable $Z$ is a valid instrument for treatment $D$ if:
+\begin{enumerate}
+    \item \textbf{Relevance:} $\text{Cov}(Z, D) \neq 0$
+    \item \textbf{Exclusion:} $Z$ affects outcome $Y$ only through $D$
+    \item \textbf{Exogeneity:} $\text{Cov}(Z, \epsilon) = 0$ where $\epsilon$ is error term
+\end{enumerate}
+\end{definition}
+
+\textbf{Two-Stage Least Squares (2SLS):}
+\begin{enumerate}
+    \item First stage: Regress $D$ on $Z$ to get $\hat{D}$
+    \item Second stage: Regress $Y$ on $\hat{D}$
+\end{enumerate}
+
+\begin{example}[Email Encouragement]
+Testing effect of mobile app usage on engagement:
+\begin{itemize}
+    \item $Y$: Engagement (outcome)
+    \item $D$: App usage (endogenous—engaged users self-select into app)
+    \item $Z$: Randomized email encouraging app download (instrument)
+\end{itemize}
+
+Email affects engagement only through app usage (exclusion), is randomized (exogenous), and increases app adoption (relevance).
+
+2SLS estimates Local Average Treatment Effect (LATE) for compliers—users induced to adopt app by email.
+\end{example}
+
+\section{Platform-Specific Considerations}
+
+\subsection{Network Effects and Interference}
 
 When users interact, standard A/B testing assumptions break down. One user's treatment can affect another user's outcome.
 
-\subsection{Types of Interference}
-
-\begin{enumerate}
-    \item \textbf{Direct Network Effects:} User A's treatment directly affects User B
-
-    Example: Social network feature where treated users send more friend requests, affecting control users
-
-    \item \textbf{Marketplace Effects:} Two-sided platforms with supply-demand dynamics
-
-    Example: Ride-sharing app where increasing driver supply in treatment affects wait times for all users
-
-    \item \textbf{Competition Effects:} Users compete for limited resources
-
-    Example: Bidding platform where treated users' behavior affects prices for everyone
-\end{enumerate}
-
-\textbf{Consequence:} Treatment effect estimates are biased. May underestimate (positive spillover) or overestimate (negative spillover) true effects.
-
-\subsection{SUTVA Violation}
-
+\begin{definition}[SUTVA Violation]
 The Stable Unit Treatment Value Assumption (SUTVA) requires:
 \begin{enumerate}
     \item No interference: User $i$'s outcome depends only on their own treatment
@@ -1232,89 +1645,96 @@ The Stable Unit Treatment Value Assumption (SUTVA) requires:
 \end{enumerate}
 
 Network effects violate SUTVA.
+\end{definition}
 
-\subsection{Mitigation Strategies}
+\textbf{Mitigation Strategies:}
 
-\subsubsection{1. Cluster Randomization}
+\begin{enumerate}
+    \item \textbf{Cluster Randomization}
 
-Randomize groups of connected users together.
+    Randomize groups of connected users together.
 
-\textbf{Example:} For social network experiment, randomize entire friend groups or geographic regions.
+    Example: For social network experiment, randomize entire friend groups or geographic regions.
 
-\textbf{Trade-off:} Reduces interference but decreases effective sample size.
+    Trade-off: Reduces interference but decreases effective sample size.
 
-\subsubsection{2. Ego Network Randomization}
+    \item \textbf{Ego Network Randomization}
 
-Randomize both focal user and their immediate neighbors to same treatment.
+    Randomize both focal user and their immediate neighbors to same treatment.
 
-\textbf{Advantage:} Reduces spillover for randomized pairs.
+    \item \textbf{Temporal Switchbacks}
 
-\textbf{Limitation:} Difficult with overlapping networks.
+    Alternate entire system between control and treatment over time periods.
 
-\subsubsection{3. Temporal Switchbacks}
+    Must account for temporal correlation and carryover effects.
+\end{enumerate}
 
-Alternate entire system between control and treatment over time periods.
+\subsection{Two-Sided Marketplaces}
 
-\begin{example}[Switchback Design]
-Week 1: Monday (Control), Tuesday (Treatment), Wednesday (Control), ...
-
-Week 2: Monday (Treatment), Tuesday (Control), ...
-
-Compare outcomes between control and treatment periods.
-\end{example}
-
-\textbf{Analysis:} Must account for temporal correlation and carryover effects.
-
-\section{Switchback Designs}
-
-Switchback (crossover) designs are particularly useful for marketplace and platform experiments.
-
-\subsection{Structure}
-
-Alternate between control and treatment conditions over time, typically:
+Marketplaces with buyers and sellers present unique challenges:
 \begin{itemize}
-    \item Geographic units (cities, regions)
-    \item Time periods (hours, days, weeks)
+    \item Supply-demand dynamics
+    \item Cross-side network effects
+    \item Equilibrium effects
 \end{itemize}
 
-\begin{center}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{City} & \textbf{Week 1} & \textbf{Week 2} & \textbf{Week 3} & \textbf{Week 4} \\
-\midrule
-New York & Control & Treatment & Control & Treatment \\
-San Francisco & Treatment & Control & Treatment & Control \\
-Chicago & Control & Treatment & Control & Treatment \\
-Boston & Treatment & Control & Treatment & Control \\
-\bottomrule
-\end{tabular}
-\end{center}
+\textbf{Example Challenges:}
 
-\subsection{Analysis}
+\begin{enumerate}
+    \item \textbf{Spillover:} Increasing driver supply in treatment affects wait times for all users
 
-Use mixed effects model or difference-in-differences:
+    \item \textbf{Equilibrium:} Pricing changes affect both supply and demand
 
-\begin{equation}
-Y_{it} = \alpha_i + \beta T_{it} + \gamma_t + \epsilon_{it}
-\end{equation}
+    \item \textbf{Matching:} Treated buyers compete with control buyers for limited supply
+\end{enumerate}
 
-where:
+\textbf{Design Solutions:}
+
+\begin{enumerate}
+    \item \textbf{Market-level randomization:} Randomize entire markets (cities, regions)
+
+    \item \textbf{Time-based designs:} Switchback designs alternating treatments over time
+
+    \item \textbf{Matched market pairs:} Pair similar markets, randomize within pairs
+\end{enumerate}
+
+\subsection{Mobile App Testing}
+
+Mobile apps introduce technical constraints:
+
 \begin{itemize}
-    \item $\alpha_i$: Unit fixed effect
-    \item $T_{it}$: Treatment indicator
-    \item $\gamma_t$: Time fixed effect
-    \item $\beta$: Treatment effect (estimand)
+    \item \textbf{App store review:} Cannot rapidly iterate like web
+    \item \textbf{Version fragmentation:} Users on different app versions
+    \item \textbf{Update adoption:} Gradual rollout as users update
+    \item \textbf{Offline functionality:} Treatment effects while disconnected
 \end{itemize}
 
-\textbf{Key Assumption:} No carryover effects, or sufficient washout period between switches.
+\textbf{Design Approaches:}
 
-\subsection{Practical Considerations}
+\begin{enumerate}
+    \item \textbf{Server-side flags:} Control features remotely without app updates
 
+    \item \textbf{Phased rollouts:} Gradual release to percentage of users
+
+    \item \textbf{A/A tests:} Validate measurement infrastructure before A/B tests
+\end{enumerate}
+
+\subsection{Cross-Platform Experiments}
+
+Users interact across web, mobile app, and other platforms.
+
+\textbf{Challenges:}
 \begin{itemize}
-    \item \textbf{Switch frequency:} Balance temporal correlation vs. statistical power
-    \item \textbf{Washout periods:} Allow for treatment effects to dissipate
-    \item \textbf{Temporal trends:} Control for day-of-week effects, seasonality
-    \item \textbf{Synchronization:} Coordinate switches across units
+    \item Consistent user identification
+    \item Platform-specific effects
+    \item Different usage patterns
+\end{itemize}
+
+\textbf{Solutions:}
+\begin{itemize}
+    \item User-level randomization (not session/device)
+    \item Track cross-platform behavior
+    \item Analyze platform-specific and overall effects
 \end{itemize}
 
 \section{Summary}
@@ -1324,134 +1744,107 @@ Advanced experimental designs extend A/B testing capabilities:
 \begin{itemize}
     \item \textbf{Factorial designs} efficiently test multiple factors and detect interactions
     \item \textbf{Multi-armed bandits} optimize allocation during experiments, minimizing regret
-    \item \textbf{Sequential testing} allows early stopping while controlling error rates
+    \item \textbf{Contextual bandits} personalize variant selection using user features
+    \item \textbf{Sequential testing} (SPRT, group sequential) allows early stopping while controlling error rates
+    \item \textbf{Alpha spending functions} provide flexibility in interim analysis timing
+    \item \textbf{Quasi-experimental designs} (DID, RDD, IV) enable causal inference without randomization
     \item \textbf{Network-aware designs} handle interference when users interact
-    \item \textbf{Switchback designs} address marketplace and platform challenges
+    \item \textbf{Platform-specific solutions} address marketplaces, mobile apps, and ecosystems
 \end{itemize}
 
 Each design involves trade-offs between efficiency, complexity, and validity. Choose designs based on:
 \begin{itemize}
     \item Business objectives (optimization vs. inference)
     \item User interaction structure (independent vs. networked)
-    \item Resource constraints (sample size, time)
+    \item Resource constraints (sample size, time, engineering)
     \item Stakeholder requirements (interpretability, regulatory)
+    \item Technical feasibility (randomization infrastructure)
 \end{itemize}
 
 \section{Further Reading}
 
 \begin{itemize}
-    \item \cite{box2005statistics}: Comprehensive treatment of factorial designs
-    \item \cite{lattimore2020bandit}: Theoretical foundations of multi-armed bandits
-    \item \cite{jennison2000group}: Group sequential methods for clinical trials
-    \item \cite{eckles2016design}: Design and analysis with network effects
-    \item \cite{hayes2017cluster}: Cluster randomized trials
+    \item \textbf{Box, Hunter \& Hunter (2005)}, \textit{Statistics for Experimenters}: Comprehensive treatment of factorial designs
+    \item \textbf{Lattimore \& Szepesvári (2020)}, \textit{Bandit Algorithms}: Theoretical foundations of multi-armed bandits
+    \item \textbf{Jennison \& Turnbull (2000)}, \textit{Group Sequential Methods}: Definitive reference on sequential testing
+    \item \textbf{Wald (1947)}, \textit{Sequential Analysis}: Original SPRT work
+    \item \textbf{Angrist \& Pischke (2009)}, \textit{Mostly Harmless Econometrics}: Practical guide to quasi-experimental methods
+    \item \textbf{Imbens \& Rubin (2015)}, \textit{Causal Inference}: Comprehensive treatment of causal inference
+    \item \textbf{Eckles et al. (2016)}, "Design and Analysis of Experiments in Networks": Network interference in experiments
 \end{itemize}
 
 \section{Exercises}
 
-\subsection{Conceptual Questions}
+\subsection{Factorial Designs}
 
 \begin{enumerate}
-    \item Explain when a $2^3$ full factorial design would be preferable to three separate A/B tests, and when separate tests might be better.
-
-    \item Describe a scenario where Thompson Sampling would be preferable to a traditional A/B test, and explain your reasoning.
-
-    \item Why does "peeking" at A/B test results inflate Type I error? How do group sequential methods address this?
-
-    \item Give an example of a product feature that would violate SUTVA due to network effects. Propose an experimental design to test this feature.
-\end{enumerate}
-
-\subsection{Calculation Exercises}
-
-\begin{enumerate}
-    \item For a $2^4$ factorial design with 200 observations per cell:
-    \begin{enumerate}
-        \item How many total observations are needed?
-        \item How many parameters can be estimated (main effects + interactions)?
-        \item What would be the effective sample size for estimating each main effect?
-    \end{enumerate}
-
-    \item Calculate the UCB1 selection criterion for three arms with:
-    \begin{itemize}
-        \item Arm 1: $\hat{\mu}_1 = 0.10$, $N_1 = 100$
-        \item Arm 2: $\hat{\mu}_2 = 0.12$, $N_2 = 50$
-        \item Arm 3: $\hat{\mu}_3 = 0.11$, $N_3 = 150$
-    \end{itemize}
-    At time $t = 301$, which arm should be selected?
-
-    \item For O'Brien-Fleming boundaries with $K=4$ looks and $\alpha=0.05$, if the first look yields $Z=2.5$, should you stop? What if the second look yields $Z=2.8$?
-\end{enumerate}
-
-\subsection{Programming Exercises}
-
-\begin{enumerate}
-    \item Implement a complete factorial experiment simulator:
-    \begin{itemize}
-        \item Generate data for $2^k$ designs with specified effects
-        \item Analyze using ANOVA
-        \item Create interaction plots
-        \item Calculate power for detecting interactions
-    \end{itemize}
-
-    \item Compare $\epsilon$-greedy, UCB1, and Thompson Sampling:
-    \begin{itemize}
-        \item Simulate 10 arms with various true rates
-        \item Run 10,000 trials for each algorithm
-        \item Plot cumulative regret
-        \item Analyze convergence properties
-    \end{itemize}
-
-    \item Implement group sequential testing:
-    \begin{itemize}
-        \item Create O'Brien-Fleming and Pocock boundaries
-        \item Simulate experiments under null and alternative
-        \item Verify Type I error control
-        \item Measure average sample size savings
-    \end{itemize}
-\end{enumerate}
-
-\subsection{Applied Exercises}
-
-\begin{enumerate}
-    \item \textbf{E-commerce Factorial Design:} Design a $2^3$ experiment testing:
+    \item Design a $2^3$ factorial experiment for an e-commerce site testing:
     \begin{itemize}
         \item Product image size (small vs. large)
-        \item Price display (with vs. without discount)
-        \item Reviews prominence (top vs. bottom)
+        \item Price display format (regular vs. promotional)
+        \item Review placement (top vs. bottom)
     \end{itemize}
-    Specify sample size, analysis plan, and expected interactions.
+    Specify sample size per cell for 80\% power to detect 1.5 percentage point main effects.
 
-    \item \textbf{Content Recommendation Bandit:} A news app wants to optimize article headlines dynamically:
-    \begin{itemize}
-        \item 5 headline variants per article
-        \item Goal: maximize click-through rate
-        \item New headlines added continuously
-    \end{itemize}
-    Recommend a bandit algorithm and justify your choice.
+    \item Implement a fractional factorial $2^{5-1}$ design with Resolution V. Which effects can be estimated?
 
-    \item \textbf{Marketplace Experiment:} A ride-sharing platform wants to test dynamic pricing:
-    \begin{itemize}
-        \item Treatment affects all riders and drivers in treated regions
-        \item Spillover between nearby regions
-        \item Time-varying demand
-    \end{itemize}
-    Design an experiment accounting for interference. Specify randomization unit, analysis method, and duration.
-
-    \item \textbf{Sequential Testing Strategy:} Your company typically runs A/B tests for 2 weeks with 10,000 users per variant. Design a sequential testing procedure that could reduce average duration by 30\% while maintaining $\alpha = 0.05$ and power = 80\%.
+    \item Analyze interaction effects: Given cell means for a $2^2$ design, compute and interpret the interaction. When would you recommend implementing both factors vs. just one?
 \end{enumerate}
 
-\subsection{Advanced Projects}
+\subsection{Multi-Armed Bandits}
 
 \begin{enumerate}
-    \item \textbf{Bandit with Delayed Feedback:} Extend Thompson Sampling to handle rewards observed with delay (e.g., 7-day retention). Simulate and compare to standard Thompson Sampling.
+    \item Compare regret bounds: For 5 arms with gaps $\Delta = [0.05, 0.03, 0.02, 0.01]$, compute theoretical regret bound for UCB1 at $T=10000$.
 
-    \item \textbf{Network Interference Simulation:} Create a social network graph (1000 nodes) and simulate an experiment with spillover effects. Compare:
+    \item Implement and compare $\epsilon$-greedy (fixed and decaying), UCB1, and Thompson Sampling on synthetic data. Plot cumulative regret and convergence to optimal arm.
+
+    \item Design a contextual bandit for content recommendation: specify features, reward function, and algorithm. How would you handle cold-start problems for new content?
+\end{enumerate}
+
+\subsection{Sequential Testing}
+
+\begin{enumerate}
+    \item Implement SPRT for testing $H_0: p = 0.05$ vs. $H_1: p = 0.07$ with $\alpha = 0.05, \beta = 0.20$. Simulate under both hypotheses and verify error rates.
+
+    \item Design a group sequential test with O'Brien-Fleming boundaries for 4 interim analyses. Compute boundaries and expected sample size under $H_0$ and $H_1$.
+
+    \item Compare alpha spending functions: Plot O'Brien-Fleming, Pocock, and Kim-DeMets ($\rho = 2$). Which spends most alpha early? How does this affect stopping probabilities?
+\end{enumerate}
+
+\subsection{Quasi-Experimental Designs}
+
+\begin{enumerate}
+    \item A company launches a feature in Texas but not California. Design a difference-in-differences analysis. What are threats to parallel trends assumption? How would you test for pre-treatment parallel trends?
+
+    \item Identify potential instruments for estimating effect of customer reviews on sales. Evaluate each against relevance, exclusion, and exogeneity criteria.
+
+    \item Design a regression discontinuity study for a loyalty program with eligibility at \$1000 annual spend. Specify bandwidth, functional form, and robustness checks.
+\end{enumerate}
+
+\subsection{Applied Projects}
+
+\begin{enumerate}
+    \item \textbf{Marketplace Experiment:} Design an experiment for testing dynamic pricing in a two-sided marketplace (e.g., Uber, Airbnb). Address:
     \begin{itemize}
-        \item Individual randomization (biased)
-        \item Cluster randomization (less power)
-        \item Ego-network randomization
+        \item Randomization unit (user, market, time)
+        \item Spillover mitigation
+        \item Equilibrium effects
+        \item Analysis plan
     \end{itemize}
-    Measure bias and power for each approach.
 
-    \item \textbf{Adaptive Factorial Design:} Implement a factorial design that drops unpromising factor levels based on interim data, while controlling error rates.
+    \item \textbf{Mobile App A/B Test:} Design a mobile app experiment with server-side flags. Specify:
+    \begin{itemize}
+        \item User identification strategy
+        \item Version compatibility handling
+        \item Cross-platform consistency
+        \item Rollout plan
+    \end{itemize}
+
+    \item \textbf{Social Network Experiment:} Design an experiment testing a viral feature on a social network. Address SUTVA violations through:
+    \begin{itemize}
+        \item Cluster randomization (specify clusters)
+        \item Power analysis accounting for clustering
+        \item Spillover measurement
+        \item Alternative designs (switchbacks, etc.)
+    \end{itemize}
 \end{enumerate}

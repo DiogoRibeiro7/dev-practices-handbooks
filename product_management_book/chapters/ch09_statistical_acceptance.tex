@@ -1,7 +1,7 @@
 \chapter{Incorporating Statistical Thinking into Acceptance Criteria}
 \label{ch:statistical-acceptance}
 
-Acceptance criteria for data-driven features must consider probability, variance, and long-term monitoring. This chapter equips PMs to specify statistical guardrails with enough rigor to satisfy data scientists while remaining accessible to stakeholders.
+Acceptance criteria for data-driven features must consider probability, variance, and long-term monitoring. This chapter equips PMs to specify statistical guardrails with enough rigor to satisfy data scientists while keeping the language accessible to stakeholders.
 
 \section{Beyond Binary Pass/Fail}
 \label{sec:beyond-binary}
@@ -20,7 +20,7 @@ Hybrid acceptance criteria combine deterministic checks (e.g., API schemas) with
 \section{Statistical Metrics in Acceptance Criteria}
 \label{sec:statistical-metrics}
 
-Selecting the right metric shapes behavior. Requirements should justify metric choice and highlight trade-offs.
+Selecting the right metric shapes behavior. Requirements should justify metric choice and highlight trade-offs. Google’s 2023 experimentation guidelines emphasize that teams must align key metrics to business outcomes or risk optimizing the wrong behavior.
 
 \subsection{Classification Metrics}
 Precision (share of flagged items that are correct), recall (share of actual positives captured), F1 (harmonic mean of precision/recall), ROC-AUC (\gls{rocauc}), and confusion matrices (tables comparing predicted vs. actual outcomes) describe different slices of classification performance. Requirements should specify which metric reflects business value (e.g., high recall to catch fraud) and include guardrails for others.
@@ -37,7 +37,7 @@ Clustering acceptance includes silhouette scores (\gls{silhouette}) or Davies--B
 \section{Setting Performance Thresholds}
 \label{sec:performance-thresholds}
 
-Thresholds must be grounded in baselines, benchmarks, and business value; arbitrary targets erode credibility.
+Thresholds must be grounded in baselines, benchmarks, and business value; arbitrary targets erode credibility. Netflix’s 2023 data-platform memos stress that data teams must present benchmarks alongside new thresholds to maintain trust with executives, a practice worth adopting.
 
 \subsection{Establishing Baselines}
 Document current system performance, heuristic benchmarks, and random baselines. Acceptance should require beating these baselines with statistical confidence.
@@ -189,11 +189,23 @@ Release day at FlowPay starts with Leo skimming the statistical acceptance doc. 
     \item \textbf{Pause and Practice}—hands-on exercise to calculate sample size and confidence interval for a forthcoming test.
     \item \textbf{Implementation Planner}—plan for adding statistical gates to release processes, including tooling and training needs.
 \end{itemize}
+
+\section{Implementation Snapshot}
+\label{sec:stats-snapshot}
+\begin{itemize}
+    \item \textbf{Time investment}—2--4 weeks to define statistical templates, train teams, and automate acceptance checks.
+    \item \textbf{ROI timeline}—Launch confidence rises immediately; reductions in rollback incidents appear within a couple of releases.
+    \item \textbf{Risk mitigation}—Objective guardrails prevent “ship and hope” launches that damage customers or violate regulations.
+    \item \textbf{Competitive advantage}—Reliable experimentation enables faster iteration and safer scaling than competitors who rely on gut feel.
+    \item \textbf{Cost of inaction}—Skipping statistical rigor invites false positives, misallocated resources, and eroded credibility with data teams and regulators.
+\end{itemize}
 \section{Industry Adaptations}
 \label{sec:stats-industry}
 \paragraph{Regulated Industries.} Acceptance criteria must reference regulatory thresholds (e.g., sensitivity requirements for diagnostics, stress limits for finance). Include audit-ready documentation of datasets, sample sizes, and analysis scripts. Consider independent validation or third-party attestations for critical releases.
 
 \paragraph{Startups vs. Enterprises.} Startups may lack statisticians; bake reusable templates and office hours into the process so teams can still set guardrails. Enterprises should integrate statistical gates into release workflows (CI/CD or change boards) with automated reports.
+
+\paragraph{DevOps Integration.} Link statistical acceptance directly to CI/CD pipelines so releases pause automatically when metrics or confidence intervals fall outside thresholds. Consider adding synthetic monitors for remote/hybrid deployments to catch regional regressions.
 
 \paragraph{B2B vs. B2C.} B2B acceptance metrics might include contractual SLAs or customer-specific KPIs—capture per-customer baselines. B2C requires segment-level or A/B metrics with strong monitoring to catch regression at scale.
 

@@ -274,6 +274,439 @@ Collect only data necessary for the experiment:
     \item \textbf{Differential privacy:} Add noise to protect individual privacy
 \end{enumerate}
 
+\section{Regulatory Compliance}
+
+Operating in regulated environments requires understanding and complying with industry-specific requirements for experimentation.
+
+\subsection{GDPR and Data Protection Laws}
+
+\textbf{Key GDPR requirements for experiments:}
+
+\begin{enumerate}
+    \item \textbf{Lawful basis:} Identify legal basis for processing
+    \begin{itemize}
+        \item Consent: Explicit agreement to participate
+        \item Legitimate interest: Balancing test for product improvement
+        \item Contract: Necessary for service delivery
+    \end{itemize}
+
+    \item \textbf{Data minimization:} Collect only necessary data
+
+    \item \textbf{Purpose limitation:} Use data only for stated purpose
+
+    \item \textbf{Storage limitation:} Delete data when no longer needed
+
+    \item \textbf{Data subject rights:}
+    \begin{itemize}
+        \item Right to access experimental data
+        \item Right to erasure ("right to be forgotten")
+        \item Right to object to processing
+        \item Right to data portability
+    \end{itemize}
+
+    \item \textbf{Data Protection Impact Assessment (DPIA):} Required for high-risk processing
+\end{enumerate}
+
+\lstset{language=Python, caption=GDPR Compliance Checker}
+\begin{lstlisting}
+from enum import Enum
+from dataclasses import dataclass
+from typing import List, Optional
+
+class LegalBasis(Enum):
+    """GDPR legal basis for processing."""
+    CONSENT = "consent"
+    CONTRACT = "contract"
+    LEGAL_OBLIGATION = "legal_obligation"
+    VITAL_INTERESTS = "vital_interests"
+    PUBLIC_TASK = "public_task"
+    LEGITIMATE_INTEREST = "legitimate_interest"
+
+class DataCategory(Enum):
+    """Categories of personal data."""
+    STANDARD = "standard"  # Name, email, etc.
+    SPECIAL = "special"  # Race, health, religion, etc.
+    CRIMINAL = "criminal"  # Criminal convictions
+
+@dataclass
+class GDPRComplianceAssessment:
+    """Assess GDPR compliance for A/B test."""
+
+    experiment_name: str
+    legal_basis: LegalBasis
+    data_collected: List[str]
+    data_categories: List[DataCategory]
+    retention_period_days: int
+    third_party_sharing: bool
+    automated_decision_making: bool
+    children_targeted: bool
+
+    def assess_dpia_required(self) -> bool:
+        """
+        Determine if Data Protection Impact Assessment is required.
+
+        DPIA required if:
+        - Processing special category data at scale
+        - Systematic monitoring of public areas
+        - Automated decision-making with legal/significant effects
+        - Processing children's data at scale
+        """
+        high_risk_factors = []
+
+        # Special category data
+        if DataCategory.SPECIAL in self.data_categories:
+            high_risk_factors.append("Processing special category data")
+
+        # Automated decisions with significant impact
+        if self.automated_decision_making:
+            high_risk_factors.append("Automated decision-making")
+
+        # Children's data
+        if self.children_targeted:
+            high_risk_factors.append("Targeting children")
+
+        # Large scale processing
+        if self.retention_period_days > 365:
+            high_risk_factors.append("Long-term data retention")
+
+        return len(high_risk_factors) >= 2
+
+    def check_compliance(self) -> Dict:
+        """Comprehensive GDPR compliance check."""
+        issues = []
+        warnings = []
+
+        # Check legal basis is appropriate
+        if (DataCategory.SPECIAL in self.data_categories and
+            self.legal_basis not in [LegalBasis.CONSENT,
+                                    LegalBasis.LEGAL_OBLIGATION]):
+            issues.append({
+                'severity': 'critical',
+                'issue': 'Invalid legal basis for special category data',
+                'remedy': 'Obtain explicit consent or identify legal obligation'
+            })
+
+        # Check retention period
+        if self.retention_period_days > 730:  # 2 years
+            warnings.append({
+                'severity': 'medium',
+                'issue': f'Long retention period: {self.retention_period_days} days',
+                'remedy': 'Document necessity for extended retention'
+            })
+
+        # Check children's data
+        if self.children_targeted and self.legal_basis != LegalBasis.CONSENT:
+            issues.append({
+                'severity': 'critical',
+                'issue': 'Processing children data without parental consent',
+                'remedy': 'Obtain verifiable parental consent'
+            })
+
+        # Check third-party sharing
+        if self.third_party_sharing:
+            warnings.append({
+                'severity': 'high',
+                'issue': 'Third-party data sharing detected',
+                'remedy': 'Ensure data processing agreements in place'
+            })
+
+        # DPIA assessment
+        dpia_required = self.assess_dpia_required()
+        if dpia_required:
+            warnings.append({
+                'severity': 'high',
+                'issue': 'Data Protection Impact Assessment required',
+                'remedy': 'Conduct DPIA before launching experiment'
+            })
+
+        return {
+            'compliant': len(issues) == 0,
+            'dpia_required': dpia_required,
+            'critical_issues': issues,
+            'warnings': warnings,
+            'recommendation': self._get_recommendation(issues, warnings)
+        }
+
+    def _get_recommendation(self, issues: List, warnings: List) -> str:
+        """Generate compliance recommendation."""
+        if issues:
+            return "BLOCKED: Critical GDPR compliance issues. Legal review required."
+        elif warnings:
+            return f"PROCEED WITH CAUTION: {len(warnings)} compliance warnings. Document mitigations."
+        else:
+            return "COMPLIANT: No GDPR issues detected."
+
+# Example usage
+assessment = GDPRComplianceAssessment(
+    experiment_name="Personalized Health Recommendations Test",
+    legal_basis=LegalBasis.LEGITIMATE_INTEREST,
+    data_collected=["user_id", "health_conditions", "medications"],
+    data_categories=[DataCategory.SPECIAL],  # Health data
+    retention_period_days=90,
+    third_party_sharing=False,
+    automated_decision_making=True,
+    children_targeted=False
+)
+
+result = assessment.check_compliance()
+print(f"Compliant: {result['compliant']}")
+print(f"DPIA Required: {result['dpia_required']}")
+print(f"Recommendation: {result['recommendation']}")
+\end{lstlisting}
+
+\subsection{HIPAA (Healthcare)}
+
+For experiments involving Protected Health Information (PHI):
+
+\textbf{HIPAA requirements:}
+\begin{itemize}
+    \item \textbf{Authorization:} Obtain patient authorization for research use
+    \item \textbf{De-identification:} Remove 18 identifiers or use expert determination
+    \item \textbf{Limited data sets:} Remove direct identifiers, use data use agreement
+    \item \textbf{Business Associate Agreements:} Required for third-party processors
+    \item \textbf{Security Rule:} Technical safeguards for ePHI
+\end{itemize}
+
+\textbf{Safe harbor de-identification (remove all):}
+\begin{multicols}{2}
+\begin{enumerate}
+    \item Names
+    \item Geographic subdivisions smaller than state
+    \item Dates (except year)
+    \item Phone numbers
+    \item Fax numbers
+    \item Email addresses
+    \item Social Security numbers
+    \item Medical record numbers
+    \item Health plan numbers
+    \item Account numbers
+    \item Certificate/license numbers
+    \item Vehicle identifiers
+    \item Device identifiers/serial numbers
+    \item URLs
+    \item IP addresses
+    \item Biometric identifiers
+    \item Full-face photos
+    \item Any unique identifying number
+\end{enumerate}
+\end{multicols}
+
+\subsection{COPPA (Children's Privacy)}
+
+Testing products used by children under 13 in the US:
+
+\textbf{COPPA requirements:}
+\begin{itemize}
+    \item \textbf{Parental consent:} Obtain verifiable consent before collecting data
+    \item \textbf{Clear privacy notice:} Disclose data collection practices
+    \item \textbf{Data minimization:} Collect only necessary information
+    \item \textbf{Parental access:} Allow parents to review and delete data
+    \item \textbf{Security:} Reasonable safeguards for children's data
+\end{itemize}
+
+\textbf{Age gate implementation:}
+\begin{itemize}
+    \item Neutral age screening (don't encourage lying)
+    \item Age verification mechanisms
+    \item Separate consent flows for under-13 users
+    \item Parental email verification
+\end{itemize}
+
+\subsection{Financial Services Regulations}
+
+Experiments in banking, lending, or financial services:
+
+\textbf{Key regulations:}
+\begin{itemize}
+    \item \textbf{Fair Lending Laws:} Ensure non-discrimination in credit decisions
+    \item \textbf{FCRA (Fair Credit Reporting Act):} Accuracy in credit decisions
+    \item \textbf{GLBA (Gramm-Leach-Bliley Act):} Privacy of financial information
+    \item \textbf{Dodd-Frank Act:} Consumer protection in financial products
+\end{itemize}
+
+\textbf{Testing lending algorithms:}
+\begin{enumerate}
+    \item \textbf{Disparate impact analysis:} Test for discrimination across protected groups
+    \item \textbf{Adverse action notices:} Inform consumers of credit denials
+    \item \textbf{Model governance:} Document and validate models
+    \item \textbf{Fair lending compliance:} Ensure equal treatment
+\end{enumerate}
+
+\lstset{language=Python, caption=Fair Lending Analysis}
+\begin{lstlisting}
+import pandas as pd
+import numpy as np
+from scipy import stats
+
+class FairLendingAnalyzer:
+    """Analyze experiments for fair lending compliance."""
+
+    def __init__(self, data: pd.DataFrame):
+        self.data = data
+        self.protected_classes = ['race', 'gender', 'age_group', 'national_origin']
+
+    def disparate_impact_test(self, outcome_col: str = 'approved',
+                              threshold: float = 0.80) -> Dict:
+        """
+        Test for disparate impact using the 80% rule.
+
+        The 80% rule: Selection rate for protected group should be
+        at least 80% of selection rate for most favored group.
+        """
+        results = {}
+
+        for protected_class in self.protected_classes:
+            if protected_class not in self.data.columns:
+                continue
+
+            # Calculate approval rates by group
+            approval_rates = (self.data.groupby(protected_class)[outcome_col]
+                            .mean()
+                            .sort_values(ascending=False))
+
+            reference_rate = approval_rates.iloc[0]  # Highest rate
+
+            # Calculate ratios
+            ratios = approval_rates / reference_rate
+
+            # Identify disparate impact
+            failing_groups = ratios[ratios < threshold]
+
+            results[protected_class] = {
+                'approval_rates': approval_rates.to_dict(),
+                'reference_group': approval_rates.index[0],
+                'reference_rate': reference_rate,
+                'ratios': ratios.to_dict(),
+                'disparate_impact_detected': len(failing_groups) > 0,
+                'failing_groups': failing_groups.to_dict()
+            }
+
+        return results
+
+    def statistical_significance_test(self, variant_col: str,
+                                     outcome_col: str = 'approved') -> Dict:
+        """Test if approval rates differ significantly by variant and protected class."""
+        results = {}
+
+        for protected_class in self.protected_classes:
+            if protected_class not in self.data.columns:
+                continue
+
+            # Create contingency table
+            contingency = pd.crosstab(
+                [self.data[variant_col], self.data[protected_class]],
+                self.data[outcome_col]
+            )
+
+            # Chi-square test
+            chi2, p_value, dof, expected = stats.chi2_contingency(contingency)
+
+            results[protected_class] = {
+                'chi2_statistic': chi2,
+                'p_value': p_value,
+                'significant': p_value < 0.05,
+                'contingency_table': contingency.to_dict()
+            }
+
+        return results
+
+    def generate_compliance_report(self, variant_col: str = 'variant') -> str:
+        """Generate fair lending compliance report."""
+        disparate_impact = self.disparate_impact_test()
+        significance = self.statistical_significance_test(variant_col)
+
+        report = ["Fair Lending Compliance Analysis", "="*50, ""]
+
+        # Disparate impact results
+        report.append("Disparate Impact Test (80% Rule):")
+        report.append("-" * 40)
+
+        for protected_class, results in disparate_impact.items():
+            report.append(f"\n{protected_class.upper()}:")
+            report.append(f"  Reference group: {results['reference_group']} "
+                        f"({results['reference_rate']:.1%})")
+
+            if results['disparate_impact_detected']:
+                report.append("  WARNING: Disparate impact detected!")
+                for group, ratio in results['failing_groups'].items():
+                    rate = results['approval_rates'][group]
+                    report.append(f"    {group}: {rate:.1%} ({ratio:.1%} of reference)")
+            else:
+                report.append("  PASS: No disparate impact detected")
+
+        return "\n".join(report)
+
+# Example usage
+# Simulate lending experiment data
+np.random.seed(42)
+n = 5000
+
+data = pd.DataFrame({
+    'variant': np.random.choice(['control', 'treatment'], n),
+    'race': np.random.choice(['white', 'black', 'hispanic', 'asian'], n),
+    'gender': np.random.choice(['male', 'female'], n),
+    'credit_score': np.random.normal(700, 50, n),
+})
+
+# Simulate approval with potential bias
+data['approved'] = (
+    (data['credit_score'] > 680) &
+    (np.random.random(n) > 0.3)  # Base rejection rate
+).astype(int)
+
+analyzer = FairLendingAnalyzer(data)
+report = analyzer.generate_compliance_report()
+print(report)
+\end{lstlisting}
+
+\subsection{Institutional Review Boards (IRBs)}
+
+Academic researchers and some industry experiments may require IRB approval:
+
+\textbf{When IRB review is needed:}
+\begin{itemize}
+    \item Research involving human subjects
+    \item Intent to publish or present findings
+    \item Federally funded research (in the US)
+    \item Research at regulated institutions
+    \item High-risk experiments
+\end{itemize}
+
+\textbf{IRB exemptions (US regulations):}
+\begin{enumerate}
+    \item Research in established educational settings
+    \item Educational tests, surveys, or observations (with conditions)
+    \item Benign behavioral interventions with informed consent
+    \item Secondary research on de-identified data
+\end{enumerate}
+
+\textbf{IRB submission components:}
+\begin{itemize}
+    \item Protocol description
+    \item Informed consent documents
+    \item Recruitment materials
+    \item Data security plan
+    \item Risk-benefit analysis
+    \item Investigator qualifications
+\end{itemize}
+
+\subsection{Industry-Specific Compliance Checklist}
+
+\begin{center}
+\begin{tabular}{lp{4cm}p{5cm}}
+\toprule
+\textbf{Industry} & \textbf{Key Regulations} & \textbf{Critical Considerations} \\
+\midrule
+Healthcare & HIPAA, FDA & PHI protection, medical device regulations \\
+Financial & FCRA, GLBA, Dodd-Frank & Fair lending, privacy, consumer protection \\
+Education & FERPA, COPPA & Student privacy, parental consent \\
+Telecommunications & TCPA, CPNI & Consent for communications, call data privacy \\
+E-commerce & FTC Act, state laws & Deceptive practices, consumer protection \\
+Gaming & COPPA, gambling laws & Age verification, responsible gaming \\
+\bottomrule
+\end{tabular}
+\end{center}
+
 \section{Transparency and Communication}
 
 \subsection{Internal Transparency}
@@ -311,6 +744,463 @@ Collect only data necessary for the experiment:
     \item Sharing datasets (when appropriate)
     \item Contributing to field knowledge
 \end{itemize}
+
+\section{Experimental Integrity}
+
+Maintaining scientific rigor and avoiding statistical malpractice is essential for trustworthy experimentation.
+
+\subsection{Pre-registration and Documentation}
+
+\textbf{Why pre-registration matters:}
+\begin{itemize}
+    \item Prevents p-hacking and HARKing (Hypothesizing After Results are Known)
+    \item Creates accountability for experimental design
+    \item Enables distinction between confirmatory and exploratory analysis
+    \item Builds institutional knowledge
+\end{itemize}
+
+\textbf{What to pre-register:}
+\begin{enumerate}
+    \item Research question and hypothesis
+    \item Primary and secondary metrics
+    \item Planned sample size and duration
+    \item Statistical analysis plan
+    \item Subgroup analyses (if planned)
+    \item Decision criteria for shipping
+\end{enumerate}
+
+\lstset{language=Python, caption=Pre-registration Framework}
+\begin{lstlisting}
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
+from datetime import datetime
+import json
+import hashlib
+
+@dataclass
+class ExperimentPreRegistration:
+    """
+    Pre-registration document for A/B test experiments.
+    Creates immutable record of experimental design before execution.
+    """
+    # Basic information
+    experiment_id: str
+    experiment_name: str
+    owner: str
+    registration_date: datetime = field(default_factory=datetime.now)
+
+    # Research design
+    hypothesis: str
+    rationale: str
+
+    # Metrics
+    primary_metric: str
+    primary_metric_definition: str
+    secondary_metrics: List[str] = field(default_factory=list)
+    guardrail_metrics: List[str] = field(default_factory=list)
+
+    # Statistical design
+    minimum_detectable_effect: float
+    significance_level: float = 0.05
+    statistical_power: float = 0.80
+    planned_sample_size: int
+    planned_duration_days: int
+
+    # Analysis plan
+    statistical_test: str  # e.g., "two-sample t-test", "mann-whitney"
+    multiple_testing_correction: str  # e.g., "bonferroni", "benjamini-hochberg"
+    planned_subgroups: List[str] = field(default_factory=list)
+
+    # Decision criteria
+    success_criteria: str
+    launch_threshold: str  # e.g., "p < 0.05 and lift > 2%"
+
+    # Additional fields
+    exclusion_criteria: Optional[str] = None
+    randomization_unit: str = "user_id"
+    traffic_allocation: Dict[str, float] = field(default_factory=dict)
+
+    def generate_hash(self) -> str:
+        """Generate cryptographic hash of pre-registration for tamper detection."""
+        # Serialize registration to JSON
+        reg_dict = {
+            'experiment_id': self.experiment_id,
+            'hypothesis': self.hypothesis,
+            'primary_metric': self.primary_metric,
+            'significance_level': self.significance_level,
+            'planned_sample_size': self.planned_sample_size,
+            'statistical_test': self.statistical_test,
+            'success_criteria': self.success_criteria
+        }
+
+        # Create hash
+        reg_json = json.dumps(reg_dict, sort_keys=True)
+        return hashlib.sha256(reg_json.encode()).hexdigest()
+
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for storage."""
+        return {
+            'experiment_id': self.experiment_id,
+            'experiment_name': self.experiment_name,
+            'owner': self.owner,
+            'registration_date': self.registration_date.isoformat(),
+            'hypothesis': self.hypothesis,
+            'rationale': self.rationale,
+            'primary_metric': self.primary_metric,
+            'primary_metric_definition': self.primary_metric_definition,
+            'secondary_metrics': self.secondary_metrics,
+            'guardrail_metrics': self.guardrail_metrics,
+            'mde': self.minimum_detectable_effect,
+            'alpha': self.significance_level,
+            'power': self.statistical_power,
+            'sample_size': self.planned_sample_size,
+            'duration_days': self.planned_duration_days,
+            'statistical_test': self.statistical_test,
+            'multiple_testing_correction': self.multiple_testing_correction,
+            'planned_subgroups': self.planned_subgroups,
+            'success_criteria': self.success_criteria,
+            'launch_threshold': self.launch_threshold,
+            'hash': self.generate_hash()
+        }
+
+# Example usage
+registration = ExperimentPreRegistration(
+    experiment_id="EXP-2024-042",
+    experiment_name="Checkout Button Color Test",
+    owner="product_team@company.com",
+    hypothesis="Changing checkout button from blue to green will increase conversion rate",
+    rationale="Green signals 'go' and may reduce friction in purchase decision",
+    primary_metric="conversion_rate",
+    primary_metric_definition="Orders / Sessions on checkout page",
+    secondary_metrics=["revenue_per_session", "cart_abandonment_rate"],
+    guardrail_metrics=["page_load_time", "error_rate"],
+    minimum_detectable_effect=0.02,  # 2% relative lift
+    planned_sample_size=10000,
+    planned_duration_days=14,
+    statistical_test="two-proportion z-test",
+    multiple_testing_correction="bonferroni",
+    planned_subgroups=["device_type", "user_segment"],
+    success_criteria="Statistically significant lift in conversion rate with no degradation in guardrails",
+    launch_threshold="p < 0.05, lift > 2%, guardrails within 1% of baseline",
+    traffic_allocation={"control": 0.5, "treatment": 0.5}
+)
+
+# Save with tamper-proof hash
+registration_doc = registration.to_dict()
+print(f"Pre-registration hash: {registration_doc['hash']}")
+\end{lstlisting}
+
+\subsection{Avoiding P-Hacking and Data Dredging}
+
+\textbf{Common p-hacking practices to avoid:}
+
+\begin{enumerate}
+    \item \textbf{Peeking:} Looking at results before planned sample size and stopping early if significant
+
+    \item \textbf{Metric switching:} Declaring different metric as primary post-hoc
+
+    \item \textbf{Subgroup fishing:} Testing many subgroups without correction
+
+    \item \textbf{Outlier removal:} Removing data points to achieve significance
+
+    \item \textbf{Optional stopping:} Repeatedly checking for significance
+
+    \item \textbf{Flexible analysis:} Trying multiple statistical tests until one is significant
+\end{enumerate}
+
+\textbf{Safeguards against p-hacking:}
+
+\lstset{language=Python, caption=P-Hacking Detection and Prevention}
+\begin{lstlisting}
+class ExperimentIntegrityMonitor:
+    """Monitor and prevent statistical malpractice in experiments."""
+
+    def __init__(self, pre_registration: ExperimentPreRegistration):
+        self.pre_reg = pre_registration
+        self.analysis_log = []
+
+    def log_analysis(self, analysis_type: str, metric: str,
+                    p_value: float, notes: str):
+        """Log every statistical analysis performed."""
+        self.analysis_log.append({
+            'timestamp': datetime.now(),
+            'analysis_type': analysis_type,
+            'metric': metric,
+            'p_value': p_value,
+            'notes': notes
+        })
+
+    def check_analysis_integrity(self) -> Dict:
+        """
+        Check for signs of p-hacking or fishing.
+
+        Returns:
+        --------
+        dict : Integrity assessment and warnings
+        """
+        warnings = []
+
+        # Check for multiple looks at data
+        primary_analyses = [a for a in self.analysis_log
+                          if a['metric'] == self.pre_reg.primary_metric]
+        if len(primary_analyses) > 1:
+            warnings.append({
+                'severity': 'high',
+                'issue': 'multiple_testing',
+                'message': f"Primary metric analyzed {len(primary_analyses)} times. "
+                          f"May indicate peeking or optional stopping."
+            })
+
+        # Check for fishing across metrics
+        unique_metrics = set(a['metric'] for a in self.analysis_log)
+        expected_metrics = {self.pre_reg.primary_metric} | set(
+            self.pre_reg.secondary_metrics)
+
+        unexpected_metrics = unique_metrics - expected_metrics
+        if unexpected_metrics:
+            warnings.append({
+                'severity': 'high',
+                'issue': 'metric_fishing',
+                'message': f"Metrics not in pre-registration analyzed: "
+                          f"{unexpected_metrics}. May indicate fishing."
+            })
+
+        # Check for subgroup fishing
+        subgroup_analyses = [a for a in self.analysis_log
+                           if 'subgroup' in a.get('notes', '')]
+        if len(subgroup_analyses) > len(self.pre_reg.planned_subgroups):
+            warnings.append({
+                'severity': 'medium',
+                'issue': 'subgroup_fishing',
+                'message': f"More subgroup analyses ({len(subgroup_analyses)}) "
+                          f"than pre-registered ({len(self.pre_reg.planned_subgroups)})"
+            })
+
+        # Check for excessive analyses
+        if len(self.analysis_log) > 20:
+            warnings.append({
+                'severity': 'medium',
+                'issue': 'excessive_analysis',
+                'message': f"{len(self.analysis_log)} analyses logged. "
+                          f"Review for fishing behavior."
+            })
+
+        return {
+            'integrity_score': max(0, 100 - len(warnings) * 20),
+            'warnings': warnings,
+            'total_analyses': len(self.analysis_log),
+            'analysis_log': self.analysis_log
+        }
+
+    def enforce_multiple_testing_correction(self, p_values: List[float]) -> Dict:
+        """Apply multiple testing correction as specified in pre-registration."""
+        from scipy import stats
+
+        method = self.pre_reg.multiple_testing_correction.lower()
+
+        if method == 'bonferroni':
+            alpha_corrected = self.pre_reg.significance_level / len(p_values)
+            reject = [p < alpha_corrected for p in p_values]
+
+        elif method == 'benjamini-hochberg' or method == 'fdr':
+            # Benjamini-Hochberg FDR control
+            reject, p_adjusted, _, _ = stats.multipletests(
+                p_values, alpha=self.pre_reg.significance_level,
+                method='fdr_bh'
+            )
+            reject = list(reject)
+
+        elif method == 'holm':
+            reject, p_adjusted, _, _ = stats.multipletests(
+                p_values, alpha=self.pre_reg.significance_level,
+                method='holm'
+            )
+            reject = list(reject)
+
+        else:
+            raise ValueError(f"Unknown correction method: {method}")
+
+        return {
+            'method': method,
+            'original_alpha': self.pre_reg.significance_level,
+            'n_tests': len(p_values),
+            'p_values_original': p_values,
+            'reject_null': reject,
+            'significant_count': sum(reject)
+        }
+
+# Example usage
+monitor = ExperimentIntegrityMonitor(registration)
+
+# Log analyses as they happen
+monitor.log_analysis('t-test', 'conversion_rate', 0.032, 'Primary metric')
+monitor.log_analysis('t-test', 'revenue_per_session', 0.089, 'Secondary metric')
+monitor.log_analysis('mann-whitney', 'conversion_rate', 0.028,
+                    'Non-parametric alternative')  # SUSPICIOUS: re-analyzing
+
+# Check integrity
+integrity = monitor.check_analysis_integrity()
+print(f"Integrity score: {integrity['integrity_score']}/100")
+for warning in integrity['warnings']:
+    print(f"WARNING: {warning['message']}")
+
+# Apply multiple testing correction
+p_values = [0.032, 0.089, 0.045, 0.012]
+correction = monitor.enforce_multiple_testing_correction(p_values)
+print(f"\nMultiple testing correction ({correction['method']}):")
+for i, (p, reject) in enumerate(zip(p_values, correction['reject_null'])):
+    print(f"  Test {i+1}: p={p:.4f}, significant={reject}")
+\end{lstlisting}
+
+\subsection{Reproducibility Standards}
+
+\textbf{Reproducibility checklist:}
+
+\begin{enumerate}
+    \item \textbf{Code version control:} All analysis code in git
+
+    \item \textbf{Environment documentation:} Package versions, dependencies
+
+    \item \textbf{Random seed setting:} For reproducible randomization
+
+    \item \textbf{Data lineage:} Track data sources and transformations
+
+    \item \textbf{Analysis notebooks:} Literate programming with code + narrative
+
+    \item \textbf{Automated pipelines:} Reduce manual steps that introduce variation
+\end{enumerate}
+
+\lstset{language=Python, caption=Reproducibility Template}
+\begin{lstlisting}
+"""
+Reproducible A/B Test Analysis Template
+========================================
+
+Experiment: EXP-2024-042
+Analyst: Jane Doe
+Date: 2024-01-15
+Python version: 3.11.4
+"""
+
+# Environment setup
+import sys
+import numpy as np
+import pandas as pd
+import scipy.stats as stats
+import matplotlib.pyplot as plt
+
+# Set random seed for reproducibility
+RANDOM_SEED = 42
+np.random.seed(RANDOM_SEED)
+
+# Log environment info
+print("Python version:", sys.version)
+print("NumPy version:", np.__version__)
+print("Pandas version:", pd.__version__)
+print("Random seed:", RANDOM_SEED)
+
+# Configuration (should match pre-registration)
+CONFIG = {
+    'experiment_id': 'EXP-2024-042',
+    'start_date': '2024-01-01',
+    'end_date': '2024-01-14',
+    'alpha': 0.05,
+    'primary_metric': 'conversion_rate',
+    'variants': ['control', 'treatment']
+}
+
+def load_data(start_date: str, end_date: str) -> pd.DataFrame:
+    """
+    Load experiment data from data warehouse.
+
+    Returns DataFrame with columns: user_id, variant, converted, revenue
+    """
+    # SQL query or data loading code here
+    # This should be parameterized and logged
+    pass
+
+def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply standard preprocessing.
+    All transformations should be documented.
+    """
+    # Remove duplicates
+    initial_rows = len(df)
+    df = df.drop_duplicates(subset='user_id')
+    print(f"Removed {initial_rows - len(df)} duplicate users")
+
+    # Apply exclusion criteria (from pre-registration)
+    # ...
+
+    return df
+
+def run_primary_analysis(df: pd.DataFrame) -> Dict:
+    """
+    Execute pre-registered primary analysis.
+    """
+    control = df[df['variant'] == 'control']
+    treatment = df[df['variant'] == 'treatment']
+
+    # Conversion rates
+    cr_control = control['converted'].mean()
+    cr_treatment = treatment['converted'].mean()
+
+    # Two-proportion z-test
+    from statsmodels.stats.proportion import proportions_ztest
+
+    counts = np.array([treatment['converted'].sum(),
+                      control['converted'].sum()])
+    nobs = np.array([len(treatment), len(control)])
+
+    z_stat, p_value = proportions_ztest(counts, nobs)
+
+    # Effect size
+    lift = (cr_treatment - cr_control) / cr_control
+
+    return {
+        'control_cr': cr_control,
+        'treatment_cr': cr_treatment,
+        'absolute_lift': cr_treatment - cr_control,
+        'relative_lift': lift,
+        'z_statistic': z_stat,
+        'p_value': p_value,
+        'significant': p_value < CONFIG['alpha']
+    }
+
+# Execute analysis pipeline
+# df = load_data(CONFIG['start_date'], CONFIG['end_date'])
+# df = preprocess_data(df)
+# results = run_primary_analysis(df)
+
+# Save results with timestamp and hash for audit trail
+# results['analysis_timestamp'] = datetime.now().isoformat()
+# results['config_hash'] = hash(json.dumps(CONFIG, sort_keys=True))
+# with open('results.json', 'w') as f:
+#     json.dump(results, f, indent=2)
+\end{lstlisting}
+
+\subsection{Conflict of Interest Management}
+
+\textbf{Sources of conflicts:}
+\begin{itemize}
+    \item Financial incentives tied to positive results
+    \item Career advancement dependent on successful experiments
+    \item Vendor relationships influencing tool selection
+    \item Personal investment in specific outcomes
+\end{itemize}
+
+\textbf{Mitigations:}
+\begin{enumerate}
+    \item \textbf{Separation of duties:} Different people design, execute, and analyze
+
+    \item \textbf{Blinded analysis:} Analyst doesn't know which variant is which
+
+    \item \textbf{Independent review:} Third-party statistician reviews high-stakes experiments
+
+    \item \textbf{Incentive alignment:} Reward learning, not just wins
+
+    \item \textbf{Disclosure requirements:} Document potential conflicts
+\end{enumerate}
 
 \section{Building Experimentation Culture}
 
@@ -363,6 +1253,678 @@ Invest in capability building:
     \item Case study discussions
     \item Mentorship programs
     \item Documentation and runbooks
+\end{itemize}
+
+\section{Organizational Best Practices}
+
+Scaling experimentation requires deliberate organizational design and governance.
+
+\subsection{Experiment Governance Framework}
+
+\textbf{Governance tiers by risk:}
+
+\begin{center}
+\begin{tabular}{llp{4cm}p{4cm}}
+\toprule
+\textbf{Tier} & \textbf{Risk Level} & \textbf{Examples} & \textbf{Approval Required} \\
+\midrule
+1 & Minimal & UI tweaks, copy changes & Self-service \\
+2 & Low & Feature variations, algorithm parameters & Manager approval \\
+3 & Medium & New features, pricing changes & Director + data science review \\
+4 & High & Core algorithm changes, degraded experiences & VP + ethics board \\
+5 & Critical & Healthcare interventions, children's data & Legal + IRB + executive \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\lstset{language=Python, caption=Experiment Governance Template}
+\begin{lstlisting}
+from enum import Enum
+from dataclasses import dataclass
+from typing import List, Optional
+
+class RiskTier(Enum):
+    """Experiment risk classification."""
+    MINIMAL = 1
+    LOW = 2
+    MEDIUM = 3
+    HIGH = 4
+    CRITICAL = 5
+
+@dataclass
+class ExperimentGovernance:
+    """Governance framework for experiment approval."""
+
+    experiment_id: str
+    name: str
+    owner: str
+    description: str
+    risk_tier: RiskTier
+    affected_users: int
+    revenue_impact_estimated: Optional[float] = None
+    user_experience_impact: str = "neutral"  # "positive", "neutral", "negative"
+
+    # Review and approval
+    approvers: List[str] = None
+    approved: bool = False
+    approval_date: Optional[datetime] = None
+
+    def classify_risk_tier(self) -> RiskTier:
+        """
+        Automatically classify experiment risk tier based on characteristics.
+        """
+        risk_score = 0
+
+        # User impact
+        if self.affected_users > 1_000_000:
+            risk_score += 2
+        elif self.affected_users > 100_000:
+            risk_score += 1
+
+        # Revenue impact
+        if self.revenue_impact_estimated and abs(self.revenue_impact_estimated) > 1_000_000:
+            risk_score += 2
+        elif self.revenue_impact_estimated and abs(self.revenue_impact_estimated) > 100_000:
+            risk_score += 1
+
+        # User experience
+        if self.user_experience_impact == "negative":
+            risk_score += 2
+
+        # Map score to tier
+        if risk_score == 0:
+            return RiskTier.MINIMAL
+        elif risk_score <= 2:
+            return RiskTier.LOW
+        elif risk_score <= 4:
+            return RiskTier.MEDIUM
+        elif risk_score <= 6:
+            return RiskTier.HIGH
+        else:
+            return RiskTier.CRITICAL
+
+    def get_required_approvers(self) -> List[str]:
+        """Get list of required approvers based on risk tier."""
+        approver_map = {
+            RiskTier.MINIMAL: [],
+            RiskTier.LOW: ["manager"],
+            RiskTier.MEDIUM: ["manager", "director", "data_science_lead"],
+            RiskTier.HIGH: ["director", "vp", "ethics_board"],
+            RiskTier.CRITICAL: ["vp", "legal", "ethics_board", "executive"]
+        }
+        return approver_map[self.risk_tier]
+
+    def request_approval(self) -> Dict:
+        """Generate approval request with all necessary information."""
+        return {
+            'experiment_id': self.experiment_id,
+            'name': self.name,
+            'owner': self.owner,
+            'description': self.description,
+            'risk_tier': self.risk_tier.name,
+            'affected_users': self.affected_users,
+            'required_approvers': self.get_required_approvers(),
+            'approval_status': 'pending',
+            'submission_date': datetime.now().isoformat()
+        }
+
+# Example usage
+experiment = ExperimentGovernance(
+    experiment_id="EXP-2024-100",
+    name="New Checkout Flow",
+    owner="product_team@company.com",
+    description="Redesigned checkout with one-click purchase option",
+    risk_tier=RiskTier.MEDIUM,
+    affected_users=500_000,
+    revenue_impact_estimated=2_500_000,
+    user_experience_impact="positive"
+)
+
+# Auto-classify risk
+suggested_tier = experiment.classify_risk_tier()
+print(f"Suggested risk tier: {suggested_tier.name}")
+
+# Get approval requirements
+approval_request = experiment.request_approval()
+print(f"Required approvers: {approval_request['required_approvers']}")
+\end{lstlisting}
+
+\subsection{Team Structure and Responsibilities}
+
+\textbf{RACI Matrix for Experimentation:}
+
+\begin{center}
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Activity} & \textbf{Product} & \textbf{Data Science} & \textbf{Engineering} & \textbf{Legal} \\
+\midrule
+Hypothesis generation & R/A & C & C & I \\
+Experimental design & C & R/A & C & I \\
+Sample size calculation & I & R/A & I & I \\
+Implementation & C & I & R/A & I \\
+Quality assurance & I & C & R/A & I \\
+Launch approval & A & C & I & C \\
+Data analysis & C & R/A & I & I \\
+Result interpretation & R/A & C & I & I \\
+Decision making & A & C & I & C \\
+Documentation & R & C & I & I \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize R = Responsible, A = Accountable, C = Consulted, I = Informed}
+\end{tabular}
+\end{center}
+
+\textbf{Role definitions:}
+
+\begin{itemize}
+    \item \textbf{Experiment Owner (Product):} Defines business objectives, success criteria, launch decisions
+    \item \textbf{Data Scientist:} Statistical design, sample size, analysis, interpretation support
+    \item \textbf{Engineer:} Implementation, instrumentation, monitoring, infrastructure
+    \item \textbf{UX Researcher:} Qualitative insights, user research, design input
+    \item \textbf{Legal/Compliance:} Risk assessment, regulatory compliance, privacy review
+\end{itemize}
+
+\subsection{Knowledge Management System}
+
+\textbf{Experiment registry schema:}
+
+\lstset{language=Python, caption=Experiment Registry Template}
+\begin{lstlisting}
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
+from datetime import datetime
+
+@dataclass
+class ExperimentRecord:
+    """
+    Complete record for experiment registry.
+    Enables knowledge sharing and meta-analysis.
+    """
+    # Identification
+    experiment_id: str
+    name: str
+    owner: str
+    team: str
+    created_date: datetime
+
+    # Business context
+    business_objective: str
+    hypothesis: str
+    success_criteria: str
+    product_area: str
+    tags: List[str] = field(default_factory=list)
+
+    # Technical design
+    variants: List[str] = field(default_factory=list)
+    primary_metric: str
+    secondary_metrics: List[str] = field(default_factory=list)
+    guardrail_metrics: List[str] = field(default_factory=list)
+    randomization_unit: str = "user_id"
+    traffic_allocation: Dict[str, float] = field(default_factory=dict)
+
+    # Execution
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    status: str = "draft"  # draft, running, completed, cancelled
+    sample_size_achieved: Optional[int] = None
+
+    # Results
+    primary_metric_result: Optional[float] = None
+    statistical_significance: Optional[bool] = None
+    p_value: Optional[float] = None
+    confidence_interval: Optional[tuple] = None
+    decision: Optional[str] = None  # ship, don't ship, iterate
+    decision_rationale: Optional[str] = None
+
+    # Learnings
+    key_insights: List[str] = field(default_factory=list)
+    surprising_findings: List[str] = field(default_factory=list)
+    challenges_encountered: List[str] = field(default_factory=list)
+    recommendations: List[str] = field(default_factory=list)
+
+    # Links
+    analysis_notebook_url: Optional[str] = None
+    design_doc_url: Optional[str] = None
+    dashboard_url: Optional[str] = None
+
+    def to_searchable_document(self) -> Dict:
+        """Convert to searchable document for experiment discovery."""
+        return {
+            'id': self.experiment_id,
+            'name': self.name,
+            'description': f"{self.business_objective} | {self.hypothesis}",
+            'owner': self.owner,
+            'team': self.team,
+            'product_area': self.product_area,
+            'tags': self.tags,
+            'status': self.status,
+            'date_range': f"{self.start_date} to {self.end_date}",
+            'decision': self.decision,
+            'metrics_tested': [self.primary_metric] + self.secondary_metrics,
+            'searchable_text': ' '.join([
+                self.name,
+                self.business_objective,
+                self.hypothesis,
+                *self.key_insights,
+                *self.tags
+            ])
+        }
+
+    def generate_summary_report(self) -> str:
+        """Generate human-readable summary."""
+        report = [
+            f"Experiment: {self.name} ({self.experiment_id})",
+            f"Owner: {self.owner} | Team: {self.team}",
+            f"Status: {self.status}",
+            "",
+            "OBJECTIVE:",
+            f"  {self.business_objective}",
+            "",
+            "HYPOTHESIS:",
+            f"  {self.hypothesis}",
+            "",
+            "RESULTS:",
+            f"  Primary Metric: {self.primary_metric}",
+            f"  Result: {self.primary_metric_result}",
+            f"  Significant: {self.statistical_significance} (p={self.p_value})",
+            f"  Decision: {self.decision}",
+            "",
+            "KEY INSIGHTS:",
+        ]
+
+        for insight in self.key_insights:
+            report.append(f"  - {insight}")
+
+        return "\n".join(report)
+
+# Example usage
+experiment = ExperimentRecord(
+    experiment_id="EXP-2024-042",
+    name="Green Checkout Button",
+    owner="jane_doe@company.com",
+    team="Checkout Team",
+    created_date=datetime(2024, 1, 1),
+    business_objective="Increase checkout conversion rate",
+    hypothesis="Green button color will increase perceived urgency and conversions",
+    success_criteria="2% relative lift in conversion rate",
+    product_area="Checkout",
+    tags=["checkout", "ui", "conversion"],
+    variants=["control_blue", "treatment_green"],
+    primary_metric="conversion_rate",
+    secondary_metrics=["revenue_per_session", "cart_abandonment"],
+    status="completed",
+    decision="ship",
+    key_insights=[
+        "Green button increased conversions by 3.2% (p=0.012)",
+        "Effect strongest among new users (+5.1%)",
+        "No impact on returning users"
+    ]
+)
+
+# Generate searchable record
+doc = experiment.to_searchable_document()
+print(experiment.generate_summary_report())
+\end{lstlisting}
+
+\subsection{Knowledge Sharing Mechanisms}
+
+\textbf{Regular review forums:}
+
+\begin{enumerate}
+    \item \textbf{Weekly experiment reviews:}
+    \begin{itemize}
+        \item Recent launches and results
+        \item Ongoing experiments status
+        \item Upcoming experiments preview
+        \item 30-minute standup format
+    \end{itemize}
+
+    \item \textbf{Monthly deep dives:}
+    \begin{itemize}
+        \item Detailed analysis of significant experiments
+        \item Methodology discussions
+        \item Tool and technique sharing
+        \item 1-hour presentation + Q\&A
+    \end{itemize}
+
+    \item \textbf{Quarterly meta-analysis:}
+    \begin{itemize}
+        \item Patterns across experiments
+        \item Success/failure rate analysis
+        \item Organizational metrics (velocity, quality)
+        \item Strategic planning
+    \end{itemize}
+\end{enumerate}
+
+\textbf{Documentation best practices:}
+
+\begin{itemize}
+    \item \textbf{Pre-experiment:} Design doc with hypothesis, methodology, success criteria
+    \item \textbf{During execution:} Living dashboard with real-time metrics
+    \item \textbf{Post-experiment:} Results summary with insights and recommendations
+    \item \textbf{Retrospectives:} What worked, what didn't, what to improve
+\end{itemize}
+
+\subsection{Continuous Learning Culture}
+
+\textbf{Celebrating learnings, not just wins:}
+
+\begin{itemize}
+    \item \textbf{Null result awards:} Recognize valuable negative findings
+    \item \textbf{Failure postmortems:} Blameless analysis of experimental failures
+    \item \textbf{Insight of the month:} Highlight unexpected or counterintuitive findings
+    \item \textbf{Methodology innovations:} Reward improvements to experimental practice
+\end{itemize}
+
+\textbf{Metrics for experimentation program health:}
+
+\begin{center}
+\begin{tabular}{lp{6cm}p{3cm}}
+\toprule
+\textbf{Metric} & \textbf{Definition} & \textbf{Target} \\
+\midrule
+Experiment velocity & Experiments launched per quarter & Increasing \\
+Win rate & Percentage of experiments with positive results & 10-30\% \\
+Sample ratio mismatch rate & Percentage of experiments with SRM & < 1\% \\
+Documentation completeness & Percentage with full documentation & > 95\% \\
+Time to decision & Days from launch to decision & < 14 days \\
+Learning share & Percentage of results shared widely & > 80\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Quality Assurance}
+
+Systematic quality control ensures reliable and trustworthy results.
+
+\subsection{Peer Review Process}
+
+\textbf{Review stages:}
+
+\begin{enumerate}
+    \item \textbf{Design review (pre-launch):}
+    \begin{itemize}
+        \item Hypothesis clarity and testability
+        \item Statistical design appropriateness
+        \item Sample size adequacy
+        \item Metric definitions
+        \item Guardrail metrics
+        \item Ethical considerations
+    \end{itemize}
+
+    \item \textbf{Implementation review:}
+    \begin{itemize}
+        \item Randomization correctness
+        \item Instrumentation accuracy
+        \item Configuration validation
+        \item Monitoring setup
+    \end{itemize}
+
+    \item \textbf{Analysis review (pre-decision):}
+    \begin{itemize}
+        \item Data quality checks performed
+        \item Statistical methods appropriate
+        \item Multiple testing corrections applied
+        \item Assumptions validated
+        \item Segment analysis justified
+        \item Conclusions supported by data
+    \end{itemize}
+\end{enumerate}
+
+\lstset{language=Python, caption=Peer Review Checklist}
+\begin{lstlisting}
+from dataclasses import dataclass
+from typing import List, Dict, Optional
+from datetime import datetime
+
+@dataclass
+class ReviewChecklist:
+    """Structured peer review checklist."""
+
+    experiment_id: str
+    review_stage: str  # 'design', 'implementation', 'analysis'
+    reviewer: str
+    review_date: datetime
+
+    # Checklist items (True = pass, False = fail, None = not applicable)
+    checks: Dict[str, Optional[bool]]
+    comments: Dict[str, str]
+
+    def is_approved(self) -> bool:
+        """Check if review passes (no False values)."""
+        return all(v is not False for v in self.checks.values())
+
+    def get_blocking_issues(self) -> List[str]:
+        """Get list of failed checks."""
+        return [item for item, passed in self.checks.items() if passed is False]
+
+    def generate_review_report(self) -> str:
+        """Generate review summary."""
+        status = "APPROVED" if self.is_approved() else "NEEDS REVISION"
+        blocking = self.get_blocking_issues()
+
+        report = [
+            f"Peer Review Report: {self.experiment_id}",
+            f"Stage: {self.review_stage}",
+            f"Reviewer: {self.reviewer}",
+            f"Date: {self.review_date.strftime('%Y-%m-%d')}",
+            f"Status: {status}",
+            ""
+        ]
+
+        if blocking:
+            report.append("BLOCKING ISSUES:")
+            for issue in blocking:
+                report.append(f"  ✗ {issue}")
+                if issue in self.comments:
+                    report.append(f"    Comment: {self.comments[issue]}")
+            report.append("")
+
+        # Passed items
+        passed = [item for item, v in self.checks.items() if v is True]
+        if passed:
+            report.append("PASSED CHECKS:")
+            for item in passed:
+                report.append(f"  ✓ {item}")
+
+        return "\n".join(report)
+
+# Example: Design review
+design_review = ReviewChecklist(
+    experiment_id="EXP-2024-042",
+    review_stage="design",
+    reviewer="senior_data_scientist@company.com",
+    review_date=datetime.now(),
+    checks={
+        'hypothesis_clear': True,
+        'hypothesis_testable': True,
+        'primary_metric_defined': True,
+        'sample_size_calculated': True,
+        'sample_size_adequate': False,  # BLOCKING
+        'guardrails_defined': True,
+        'ethical_review_completed': True,
+        'randomization_unit_appropriate': True,
+        'success_criteria_prespecified': True,
+        'multiple_testing_plan': None  # Not applicable (single metric)
+    },
+    comments={
+        'sample_size_adequate': "Planned N=1000, but power analysis shows N=2500 needed for 80% power. Increase sample size or extend duration."
+    }
+)
+
+print(design_review.generate_review_report())
+print(f"\nApproved: {design_review.is_approved()}")
+\end{lstlisting}
+
+\subsection{Statistical Consulting}
+
+\textbf{When to engage statistical expert:}
+
+\begin{itemize}
+    \item Novel experimental designs (e.g., switchback tests, multi-armed bandits)
+    \item Complex analysis requirements (e.g., network effects, interference)
+    \item High-stakes decisions (revenue impact > \$1M)
+    \item Unusual data patterns or results
+    \item Methodology questions or disputes
+\end{itemize}
+
+\textbf{Statistical consulting workflow:}
+
+\begin{enumerate}
+    \item \textbf{Intake:} Team submits consultation request with context
+    \item \textbf{Review:} Statistician reviews design/analysis
+    \item \textbf{Consultation:} 30-60 minute discussion
+    \item \textbf{Recommendations:} Written guidance provided
+    \item \textbf{Follow-up:} Optional review of final analysis
+\end{enumerate}
+
+\subsection{Automated Validation}
+
+\textbf{Automated quality checks:}
+
+\lstset{language=Python, caption=Automated Validation Framework}
+\begin{lstlisting}
+class ExperimentValidator:
+    """Comprehensive automated validation for experiments."""
+
+    def __init__(self, experiment_data: pd.DataFrame,
+                 experiment_config: Dict):
+        self.data = experiment_data
+        self.config = experiment_config
+        self.validation_results = {}
+
+    def validate_all(self) -> Dict:
+        """Run all validation checks."""
+        validations = [
+            ('sample_ratio_mismatch', self.check_sample_ratio_mismatch),
+            ('assignment_consistency', self.check_assignment_consistency),
+            ('data_completeness', self.check_data_completeness),
+            ('metric_sanity', self.check_metric_sanity),
+            ('temporal_stability', self.check_temporal_stability),
+            ('outliers', self.check_outlier_prevalence),
+            ('guardrails', self.check_guardrail_metrics)
+        ]
+
+        results = {}
+        all_passed = True
+
+        for name, check_func in validations:
+            try:
+                result = check_func()
+                results[name] = result
+                if not result.get('passed', False):
+                    all_passed = False
+            except Exception as e:
+                results[name] = {'passed': False, 'error': str(e)}
+                all_passed = False
+
+        return {
+            'all_passed': all_passed,
+            'checks': results,
+            'summary': self._generate_summary(results)
+        }
+
+    def check_sample_ratio_mismatch(self) -> Dict:
+        """Check if variant sizes match expected allocation."""
+        from scipy import stats
+
+        variant_counts = self.data['variant'].value_counts()
+        total = len(self.data)
+
+        expected_allocation = self.config.get('traffic_allocation', {})
+
+        # Chi-square goodness of fit
+        expected_counts = [total * expected_allocation.get(v, 1/len(variant_counts))
+                          for v in variant_counts.index]
+
+        chi2, p_value = stats.chisquare(variant_counts.values, expected_counts)
+
+        passed = p_value >= 0.01  # Use stricter threshold for SRM
+
+        return {
+            'passed': passed,
+            'p_value': p_value,
+            'chi2_statistic': chi2,
+            'observed_counts': variant_counts.to_dict(),
+            'expected_counts': dict(zip(variant_counts.index, expected_counts)),
+            'severity': 'critical' if not passed else 'none',
+            'message': 'Sample Ratio Mismatch detected!' if not passed else 'Sample ratios OK'
+        }
+
+    def check_guardrail_metrics(self) -> Dict:
+        """Ensure guardrail metrics haven't degraded."""
+        guardrails = self.config.get('guardrail_metrics', [])
+        violations = []
+
+        for metric in guardrails:
+            if metric not in self.data.columns:
+                continue
+
+            control = self.data[self.data['variant'] == 'control'][metric]
+            treatment = self.data[self.data['variant'] == 'treatment'][metric]
+
+            # Check if treatment is worse than control (with margin)
+            degradation_threshold = 0.01  # 1% degradation allowed
+
+            relative_change = (treatment.mean() - control.mean()) / control.mean()
+
+            if relative_change < -degradation_threshold:
+                violations.append({
+                    'metric': metric,
+                    'degradation': relative_change,
+                    'control_mean': control.mean(),
+                    'treatment_mean': treatment.mean()
+                })
+
+        passed = len(violations) == 0
+
+        return {
+            'passed': passed,
+            'violations': violations,
+            'severity': 'high' if not passed else 'none',
+            'message': f"{len(violations)} guardrail violations" if not passed else "All guardrails OK"
+        }
+
+    def _generate_summary(self, results: Dict) -> str:
+        """Generate human-readable summary."""
+        critical = [name for name, r in results.items()
+                   if r.get('severity') == 'critical']
+        high = [name for name, r in results.items()
+               if r.get('severity') == 'high']
+
+        if critical:
+            return f"BLOCKED: Critical issues - {', '.join(critical)}"
+        elif high:
+            return f"WARNING: High-priority issues - {', '.join(high)}"
+        else:
+            return "PASS: All validation checks passed"
+
+# Example usage
+# validator = ExperimentValidator(experiment_df, config)
+# validation_results = validator.validate_all()
+# print(validation_results['summary'])
+\end{lstlisting}
+
+\subsection{External Auditing}
+
+For high-stakes or sensitive experiments, consider external audits:
+
+\textbf{External audit scope:}
+\begin{itemize}
+    \item Independent review of methodology
+    \item Data integrity verification
+    \item Statistical analysis validation
+    \item Compliance assessment
+    \item Recommendations for improvement
+\end{itemize}
+
+\textbf{When external audits are valuable:}
+\begin{itemize}
+    \item Regulatory scrutiny (healthcare, finance)
+    \item High-stakes business decisions (> \$10M impact)
+    \item Controversial or high-risk experiments
+    \item Academic publication planned
+    \item Building credibility with stakeholders
 \end{itemize}
 
 \section{Best Practices Checklist}

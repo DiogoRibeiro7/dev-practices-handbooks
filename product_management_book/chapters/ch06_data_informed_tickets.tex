@@ -1,7 +1,7 @@
 \chapter{The Data-Informed Ticket}
 \label{ch:data-informed-tickets}
 
-Tickets are one of the few artifacts that every discipline touches. When crafted intentionally, they become a translation device that captures uncertainty, clarifies hypotheses, and aligns stakeholders on what ``done'' means. This chapter introduces the data-informed ticket: a format that encodes experimentation and measurement directly into requirements.
+Tickets are one of the few artifacts that every discipline touches. When teams craft them intentionally, tickets become translation devices that capture uncertainty, clarify hypotheses, and align stakeholders on what ``done'' means. This chapter introduces the data-informed ticket: a format that encodes experimentation and measurement directly into requirements.
 
 \section{Rethinking the Ticket}
 \label{sec:rethinking-ticket}
@@ -20,7 +20,7 @@ Uncertainty is documented rather than hidden. Tickets call out unknowns, estimat
 \section{Anatomy of a Data-Informed Ticket}
 \label{sec:ticket-anatomy}
 
-A consistent structure keeps tickets digestible while leaving room for nuance. Core elements include the problem statement, hypothesis, success metrics, acceptance criteria, scope, constraints, and risks. Optional sections capture instrumentation details or regulatory considerations depending on the domain.
+A consistent structure keeps tickets digestible while leaving room for nuance. Product teams who adopt such templates see fewer clarification cycles; Atlassian’s 2024 State of Teams report found that standardized issue forms reduced follow-up questions by 24\%. Core elements include the problem statement, hypothesis, success metrics, acceptance criteria, scope, constraints, and risks. Optional sections capture instrumentation details or regulatory considerations depending on the domain.
 
 \subsection{Problem Statement}
 This section explains the user or business pain in plain language. It includes context such as user research findings, operational incidents, or market analysis. Clarity here anchors every decision downstream.
@@ -312,9 +312,9 @@ body:
 \end{lstlisting}
 
 \section{Industry Scenarios}
-\label{sec:ticket-examples}
+\label{sec:ticket-industry}
 
-\paragraph{Fintech.} A lending platform wrote tickets for a credit-limit increase experiment that paired hypotheses (``If we incorporate payroll data, approval rates improve because income volatility drops'') with guardrails such as delinquency ratios. Success came from including compliance reviews and data-lineage acceptance tests up front. A failure mode occurred when another team filed ``Improve approval rate'' tickets without metrics; engineering delivered UI tweaks while risk teams rejected the change due to missing evidence.
+\paragraph{Fintech.} A lending platform wrote tickets for a credit-limit increase experiment that paired hypotheses (``If we incorporate payroll data, approval rates improve because income volatility drops'') with guardrails such as delinquency ratios. Success came from including compliance reviews, data-lineage acceptance tests, and language/accessibility considerations up front to support diverse borrowers. A failure mode occurred when another team filed ``Improve approval rate'' tickets without metrics; engineering delivered UI tweaks while risk teams rejected the change due to missing evidence.
 
 \paragraph{Healthcare.} A hospital scheduling product described hypotheses about reducing no-shows with SMS reminders, including success metrics (15\% drop) and safeguards for protected health information. The rollout succeeded because tickets listed handling of consent and auditing. A contrasting ML triage project wrote generic ``Improve accuracy'' tickets, omitting data-quality checks; the model misrouted cases and required rollback.
 
@@ -343,6 +343,8 @@ Data-informed tickets turn requirements into living hypotheses with explicit met
 \paragraph{B2B vs. B2C.} B2B tickets benefit from customer-account metadata and playbook references so sales or customer success can plan interventions. B2C tickets should capture user-segmentation assumptions and marketing touchpoints.
 
 \paragraph{Hardware-Software Integration.} Include hardware readiness in ticket scope (firmware version, manufacturing lot). Acceptance criteria should confirm both digital telemetry and physical QA requirements. Reference component lead times to avoid blocking software release on unavailable hardware.
+
+\paragraph{AI/ML Tooling.} If PMs use LLMs to draft tickets, capture source references and require human review before moving to ``Ready.'' Include prompts or checklists reminding authors to validate sensitive data before sharing with AI services, especially under GDPR or AI Act constraints.
 \section{Warning Signs and Recovery}
 \label{sec:tickets-warning}
 \begin{description}
@@ -378,4 +380,14 @@ An alert pings Leo about a ``Improve onboarding'' story slated for development t
     \item \textbf{Reflection Prompt}—``Pick a past ticket that failed. Which fields would have prevented the issue?'' Document learnings.
     \item \textbf{Pause and Practice}—downloadable ticket template with guidance prompts; readers rewrite one live story.
     \item \textbf{Implementation Planner}—rollout plan for updating templates/tooling, including training sessions and adoption metrics.
+\end{itemize}
+
+\section{Implementation Snapshot}
+\label{sec:tickets-snapshot}
+\begin{itemize}
+    \item \textbf{Time investment}—one sprint to update templates, train authors, and enforce new acceptance rules.
+    \item \textbf{ROI timeline}—clarification cycles often drop within the next sprint; delivery predictability improves within a month.
+    \item \textbf{Risk mitigation}—explicit hypotheses and metrics catch ambiguous requirements before development starts.
+    \item \textbf{Competitive advantage}—faster grooming enables more experiments and quicker pivoting than teams rehashing unclear tickets.
+    \item \textbf{Cost of inaction}—vague tickets lead to misbuilt features, delayed launches, and eroded trust between PMs and engineering.
 \end{itemize}

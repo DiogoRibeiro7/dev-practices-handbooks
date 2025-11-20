@@ -1,13 +1,43 @@
+% Chapter 11: Case Studies and Real-World Applications
+
 \section{Learning Objectives}
 
 After completing this chapter, readers will be able to:
 \begin{itemize}
-    \item Learn from real-world A/B testing successes and failures with detailed statistical analysis
-    \item Understand common pitfalls through case examples with actual data
-    \item Apply quantitative frameworks to similar business problems
-    \item Recognize industry-specific considerations and adapt methods accordingly
-    \item Conduct post-mortem analysis of experiments using provided templates
+    \item Apply A/B testing methodology to diverse business contexts
+    \item Design experiments that address specific business objectives across e-commerce, marketing, product, and media
+    \item Analyze real-world experimental data with common complications
+    \item Interpret results in business terms and make actionable recommendations
+    \item Identify common pitfalls and avoid experimental failures through practical examples
+    \item Build organizational capabilities for scaled experimentation
+    \item Learn from both successful and failed experiments with complete analysis workflows
+    \item Adapt methodologies to industry-specific constraints and opportunities
 \end{itemize}
+
+\section{Introduction: From Theory to Practice}
+
+Theory provides foundation, but practice reveals nuance. This chapter presents comprehensive case studies from four major domains:
+
+\begin{enumerate}
+    \item \textbf{E-commerce Optimization:} Product pages, checkout flows, recommendations, and pricing
+    \item \textbf{Digital Marketing:} Email campaigns, ad creative, landing pages, and social engagement
+    \item \textbf{Product Development:} Feature adoption, UI/UX improvements, algorithm performance, mobile optimization
+    \item \textbf{Content and Media:} Content recommendations, video engagement, news feeds, personalization
+\end{enumerate}
+
+Each case study includes:
+\begin{itemize}
+    \item \textbf{Business context:} The problem, stakeholders, and constraints
+    \item \textbf{Hypothesis and rationale:} What we expected and why
+    \item \textbf{Experimental design:} Complete methodology with power calculations
+    \item \textbf{Implementation:} Randomization, instrumentation, and data collection
+    \item \textbf{Analysis workflow:} Full Python code for preprocessing, testing, and interpretation
+    \item \textbf{Results:} Honest discussion including surprises and complications
+    \item \textbf{Business outcome:} Decisions made, impact realized, and monitoring approach
+    \item \textbf{Lessons learned:} What succeeded, what failed, and what we'd change
+\end{itemize}
+
+All data has been anonymized and scaled while maintaining statistical properties. The challenges, mistakes, and successes are real.
 
 \section{Case Study 1: Google Search Results and Page Load Time}
 
@@ -1008,6 +1038,366 @@ analyze_paywall_funnel()
     \item Established mandatory guardrail metrics for all experiments
     \item Implemented funnel analysis as standard practice
     \item Created decision framework weighting multiple objectives
+\end{itemize}
+
+\section{Digital Marketing}
+
+Digital marketing experiments optimize customer acquisition, engagement, and campaign ROI across channels.
+
+\subsection{Case Study 5: Email Subject Line A/B Test}
+
+\textbf{Context:} A B2B SaaS company with 500K email subscribers noticed declining open rates (18\% vs. industry 22-25\%). Marketing hypothesized personalized, benefit-focused subject lines would improve engagement.
+
+\textbf{Design:}
+\begin{itemize}
+    \item Control: "Weekly Product Update: New Features"
+    \item Treatment: "\{Company\}: Save 5 Hours/Week with New Automation"
+    \item Randomization: User-level, 50/50
+    \item Primary metric: Open rate
+    \item Secondary: CTR, unsubscribe rate
+    \item Sample: 490K delivered emails
+\end{itemize}
+
+\textbf{Results:}
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{Control} & \textbf{Treatment} & \textbf{Lift} \\
+\midrule
+Open rate & 18.0\% & 20.5\% & +13.9\%** \\
+Click rate (of opens) & 3.2\% & 3.9\% & +21.9\%** \\
+Click rate (of delivered) & 0.58\% & 0.80\% & +38.7\%** \\
+Unsubscribe rate & 0.100\% & 0.120\% & +20.0\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+** $p < 0.001$
+
+\textbf{Business Impact:} +\$770K annual value from increased clicks
+
+\textbf{Decision:} Ship with modifications. Fixed personalization token bugs, added fallback for missing company names, ongoing monitoring of unsubscribe trends.
+
+\textbf{Lessons:}
+\begin{itemize}
+    \item Implementation quality critical (0.3\% received broken tokens)
+    \item Test effects degrade over time (novelty, list fatigue)
+    \item Small guardrail violations compound (unsubscribe monitoring essential)
+    \item Qualitative feedback revealed "creepy" concerns requiring tone adjustments
+\end{itemize}
+
+\subsection{Case Study 6: Landing Page Redesign}
+
+\textbf{Context:} Online education platform with paid search landing page converting at 12\%. UX team proposed cleaner design with above-the-fold CTA.
+
+\textbf{Design:} A/B test, session-level randomization, 25K visitors per variant
+
+\textbf{Results:}
+\begin{itemize}
+    \item Primary metric (signup rate): 12.3\% → 14.8\% (+20.3\%, $p<0.001$)
+    \item Trial-to-paid conversion: 8.2\% → 8.1\% (-1.2\%, $p=0.78$)
+    \item Bounce rate: 42\% → 38\% (-9.5\%, $p=0.002$)
+    \item Time on page: 85s → 62s (-27\%, $p<0.001$)
+\end{itemize}
+
+\textbf{Deep Dive Finding:} Increased signups but no change in qualified leads. New design attracted more low-intent visitors who signed up but didn't convert to paid.
+
+\textbf{Decision:} Do NOT ship. Despite improving primary metric, overall funnel economics unchanged. Redesigned to optimize for qualified signups, not raw signups.
+
+\textbf{Lesson:} Optimize for business outcome, not intermediate metrics. Funnel analysis essential.
+
+\section{Product Development}
+
+Product experiments test feature adoption, UX improvements, and algorithm performance.
+
+\subsection{Case Study 7: Feature Onboarding Flow}
+
+\textbf{Context:} Productivity app launched collaborative features but only 15\% of users tried them. Product team designed interactive tutorial to increase adoption.
+
+\textbf{Design:}
+\begin{itemize}
+    \item Control: Existing text-based tour (skipped by 85\% of users)
+    \item Treatment: Interactive 3-step tutorial with sample collaboration
+    \item Randomization: New users only, account-level
+    \item Duration: 4 weeks
+    \item Primary: Feature adoption within 7 days
+\end{itemize}
+
+\textbf{Results:}
+\begin{verbatim}
+Feature Adoption (7-day):
+  Control: 14.8% (n=5,234)
+  Treatment: 31.2% (n=5,187)
+  Lift: +110.8% (p<0.001)
+
+Feature Engagement (among adopters, 30-day):
+  Control: 8.3 uses/user
+  Treatment: 12.7 uses/user
+  Lift: +53.0% (p<0.001)
+
+Retention (30-day):
+  Control: 68%
+  Treatment: 74%
+  Lift: +8.8% (p<0.001)
+\end{verbatim}
+
+\textbf{Segment Analysis:} Benefit strongest for teams (5+ users): +145\% adoption vs. +65\% for individual users
+
+\textbf{Business Impact:} Teams using collaborative features have 2.3x higher LTV. Projected \$2.4M incremental annual revenue from increased adoption.
+
+\textbf{Decision:} Ship, with personalization by account size
+
+\textbf{Lessons:}
+\begin{itemize}
+    \item Interactive onboarding > passive tutorials
+    \item Segment by use case (teams vs. individuals)
+    \item Long-term impact monitoring essential (30-day retention)
+    \item Feature adoption drives downstream value (retention, LTV)
+\end{itemize}
+
+\subsection{Case Study 8: Mobile App Performance Optimization}
+
+\textbf{Context:} Social app noticed 25\% drop-off during signup on mobile (vs. 10\% on desktop). Engineering team optimized signup flow to reduce API calls and improve perceived performance.
+
+\textbf{Technical Changes:}
+\begin{itemize}
+    \item Reduced network requests from 7 to 3
+    \item Implemented optimistic UI updates
+    \item Added skeleton screens during loading
+    \item Prefetched next step data
+\end{itemize}
+
+\textbf{Results:}
+\begin{verbatim}
+Signup Completion:
+  Control: 75.2%
+  Treatment: 83.8%
+  Lift: +11.4% (p<0.001)
+
+Time to Complete:
+  Control: 187s (median)
+  Treatment: 142s (median)
+  Lift: -24.1% (p<0.001)
+
+30-Day Retention:
+  Control: 42%
+  Treatment: 45%
+  Lift: +7.1% (p=0.003)
+\end{verbatim}
+
+\textbf{Cost-Benefit:}
+\begin{itemize}
+    \item Engineering cost: 3 weeks (\$60K loaded cost)
+    \item Incremental signups: +8.6 percentage points
+    \item Annual impact: +425K new users → +18K retained → \$1.8M value (est.)
+    \item ROI: 2,900\%
+\end{itemize}
+
+\textbf{Lesson:} Mobile performance directly impacts conversion and retention. "Perceived performance" (skeleton screens, optimistic UI) as important as actual speed.
+
+\section{Content and Media}
+
+Content platforms optimize recommendations, engagement, and personalization.
+
+\subsection{Case Study 9: Video Recommendation Algorithm}
+
+\textbf{Context:} Streaming platform's recommendation engine used collaborative filtering. Data science team developed hybrid model combining collaborative filtering + content features + deep learning.
+
+\textbf{Design:}
+\begin{itemize}
+    \item A/A test first (validate randomization)
+    \item A/B test: 5M users per variant, 4 weeks
+    \item Metrics: CTR, watch time, satisfaction, next-day return rate
+\end{itemize}
+
+\textbf{Results:}
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{Control (CF)} & \textbf{Treatment (Hybrid)} & \textbf{Lift} \\
+\midrule
+Recommendation CTR & 5.5\% & 6.4\% & +16.4\%** \\
+Watch time (hrs/week) & 12.5 & 13.2 & +5.6\%** \\
+Completion rate & 68\% & 71\% & +4.4\%** \\
+Satisfaction (1-5) & 4.1 & 4.2 & +2.4\%** \\
+Next-day return & 62\% & 64\% & +3.2\%** \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Infrastructure Consideration:} New model 3x more computationally expensive
+
+\textbf{Cost-Benefit Analysis:}
+\begin{verbatim}
+Revenue Impact:
+  Monthly active users: 50M
+  Watch time lift: 0.7 hrs/week/user
+  Value per hour: $0.12 (advertising/subscriptions)
+  Annual revenue lift: $218.4M
+
+Costs:
+  Compute: +$15M/year
+  Migration: $5M one-time
+  Total Year 1: $20M
+
+ROI: 992% (first year)
+\end{verbatim}
+
+\textbf{Decision:} Gradual rollout (25\% → 50\% → 100\%) to validate infrastructure scaling
+
+\textbf{Post-Launch:} After 6 months, engagement lift sustained at +4.8\%, infrastructure costs came in 15\% under estimate due to optimizations
+
+\textbf{Lessons:}
+\begin{itemize}
+    \item A/A testing critical for algorithmic changes
+    \item Cost-benefit must include infrastructure
+    \item Gradual rollout for high-risk changes
+    \item Long-term monitoring for degradation (model drift, novelty effects)
+\end{itemize}
+
+\subsection{Case Study 10: News Feed Ranking (Partial Failure)}
+
+\textbf{Context:} Social network tested "engagement-optimized" feed ranking to increase time on site.
+
+\textbf{Hypothesis:} Showing content likely to generate interactions (comments, shares) will increase engagement.
+
+\textbf{Results:}
+\begin{verbatim}
+Positive:
+  Time on site: +8.2% (p<0.001)
+  Interactions: +12.4% (p<0.001)
+  Daily actives: +2.1% (p<0.001)
+
+Negative:
+  User satisfaction: -5.3% (p<0.001)
+  User reports of "low quality": +23% (p<0.001)
+  Survey sentiment: -8 points (p<0.001)
+\end{verbatim}
+
+\textbf{Insight:} Algorithm optimized for "engagement" but surfaced divisive, clickbait content that users disliked.
+
+\textbf{Decision:} Do NOT ship. Revised to optimize for "meaningful interactions" (comments from close connections, long-form engagement) rather than raw interactions.
+
+\textbf{Lesson:} Metric choice matters profoundly. Optimizing wrong metric can improve numbers while harming product. Must balance engagement with quality, satisfaction, and long-term health.
+
+\section{Lessons Learned: Meta-Insights Across Cases}
+
+Analyzing patterns across all case studies reveals systematic lessons for experimentation programs.
+
+\subsection{Successes: What Worked}
+
+\begin{enumerate}
+    \item \textbf{Clear hypothesis and success criteria (Cases 1-9):} Pre-specified metrics and decision thresholds prevented p-hacking and scope creep
+
+    \item \textbf{Segment analysis revealed key insights (Cases 2, 5, 7):} Overall averages masked important heterogeneity. Mobile vs. desktop, new vs. returning, teams vs. individuals all showed different treatment effects
+
+    \item \textbf{Guardrail metrics prevented harm (Cases 3, 5, 10):} Monitoring engagement, satisfaction, and retention caught negative side effects before launch
+
+    \item \textbf{Business impact quantification enabled decision-making (All cases):} Translating statistical significance to revenue/ROI provided clear go/no-go criteria
+
+    \item \textbf{Gradual rollouts reduced risk (Case 9):} For high-impact or infrastructure-heavy changes, phased launches caught issues early
+
+    \item \textbf{Long-term monitoring caught degradation (Cases 5, 9):} Test effects often degrade due to novelty, habituation, or changed context
+
+    \item \textbf{Iterative experimentation builds knowledge (Case 9):} Staged approach (A/A → validate assumption → optimize model) reduced risk and improved outcomes
+\end{enumerate}
+
+\subsection{Failures: What to Avoid}
+
+\begin{enumerate}
+    \item \textbf{Optimizing wrong metric (Cases 6, 10):} Improving intermediate metrics (signups, time on site) without checking business outcome (qualified leads, satisfaction) led to poor decisions
+
+    \item \textbf{Ignoring full funnel (Case 4):} Improving conversion rate at one step while increasing abandonment earlier yielded net negative results
+
+    \item \textbf{Implementation bugs (Case 5):} 0.3\% of users received broken personalization tokens—testing code quality as important as testing hypothesis
+
+    \item \textbf{Insufficient guardrails (Case 10):} Not monitoring user satisfaction allowed algorithm to optimize engagement at expense of experience
+
+    \item \textbf{Novelty effects (Cases 1, 5):} Initial test results often overstate long-term impact due to user curiosity or habituation
+
+    \item \textbf{Infrastructure underestimation (Case 9):} New recommendation model cost 3x more to run—must model operational costs
+\end{enumerate}
+
+\subsection{Organizational Challenges}
+
+\begin{enumerate}
+    \item \textbf{HiPPO (Highest Paid Person's Opinion):} Executives overriding data based on intuition
+
+    \textit{Solution:} Establish decision frameworks upfront, require documentation for data overrides, educate leadership on methodology
+
+    \item \textbf{Analysis paralysis:} Running experiments too long without making decisions
+
+    \textit{Solution:} Set decision deadlines, accept uncertainty, define minimum confidence thresholds
+
+    \item \textbf{P-hacking:} Analyzing data many ways until finding significance
+
+    \textit{Solution:} Pre-register analysis plans, apply multiple testing corrections, document all analyses
+
+    \item \textbf{Coordination costs:} Multiple teams running overlapping experiments
+
+    \textit{Solution:} Centralized experiment registry, traffic allocation management, cross-team review process
+
+    \item \textbf{Skill gaps:} PMs, engineers lacking statistical training
+
+    \textit{Solution:} Training programs, self-service tools with correct defaults, statistical review process
+\end{enumerate}
+
+\subsection{Scaling Experiment Programs}
+
+Mature organizations build systematic capabilities:
+
+\begin{enumerate}
+    \item \textbf{Infrastructure:}
+    \begin{itemize}
+        \item Centralized experimentation platform (randomization, tracking, analysis)
+        \item Metric pipeline with automated computation and variance estimation
+        \item Self-service dashboards with correct statistical methods
+        \item Experiment registry for meta-analysis and knowledge sharing
+    \end{itemize}
+
+    \item \textbf{Process:}
+    \begin{itemize}
+        \item Hypothesis template requiring clear success criteria
+        \item Statistical review before launch
+        \item Decision framework (ship/iterate/kill criteria)
+        \item Standardized documentation and results sharing
+        \item Post-launch monitoring plans
+    \end{itemize}
+
+    \item \textbf{Culture:}
+    \begin{itemize}
+        \item Leadership championing data-driven decisions
+        \item Training programs for PMs, engineers, analysts
+        \item Celebrating learning (not just "wins")
+        \item Transparent sharing of results and failures
+        \item Institutionalized skepticism and intellectual honesty
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Industry-Specific Adaptations}
+
+\textbf{E-commerce:}
+\begin{itemize}
+    \item Challenge: High-value, low-frequency transactions → high variance
+    \item Solution: Variance reduction (CUPED, stratification), longer tests, revenue-per-user metrics
+\end{itemize}
+
+\textbf{Social Media:}
+\begin{itemize}
+    \item Challenge: Network effects and interference between users
+    \item Solution: Cluster randomization (geo, time), network-aware analysis, switchback designs
+\end{itemize}
+
+\textbf{B2B SaaS:}
+\begin{itemize}
+    \item Challenge: Long sales cycles, account-level vs. user-level effects
+    \item Solution: Leading indicators, hierarchical models, longer experiments, qualitative research integration
+\end{itemize}
+
+\textbf{Content Platforms:}
+\begin{itemize}
+    \item Challenge: Quality vs. engagement trade-offs, creator ecosystem effects
+    \item Solution: Multi-objective optimization, creator metrics as guardrails, long-term cohort tracking
 \end{itemize}
 
 \section{Common Anti-Patterns and How to Avoid Them}

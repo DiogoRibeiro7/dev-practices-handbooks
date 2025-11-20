@@ -1,7 +1,7 @@
 \chapter{Mathematical Rigor Meets Agile Practice}
 \label{ch:mathematical-rigor}
 
-Part~III explores how mathematical thinking strengthens agile practice without slowing teams down. This chapter introduces the mindset: using precision to reveal assumptions, prevent defects, and accelerate collaboration.
+Part~III explores how mathematical thinking strengthens agile practice without slowing teams down. This chapter introduces the mindset and shows how to use precision to reveal assumptions, prevent defects, and accelerate collaboration.
 
 \section{The Case for Mathematical Thinking}
 \label{sec:case-math}
@@ -16,6 +16,9 @@ Formalizing requirements forces every assumption onto the page. When we express 
 
 \subsection{Scalable and Reusable Patterns}
 Mathematical abstractions, such as invariants or state machines, can be reused across projects. Organizations that codify these patterns build a library of proven approaches instead of reinventing logic each time.
+
+\subsection{Regulatory Alignment}
+As AI systems face scrutiny from GDPR, the EU AI Act, and emerging U.S. guidance, teams must demonstrate control over data flows, model behavior, and decision logic. Mathematical rigor produces audit-friendly artifacts—such as invariants, specs, and proofs—that show regulators how safety and fairness constraints are enforced in software.
 
 \section{The Tension: Rigor vs. Agility}
 \label{sec:rigor-agility}
@@ -100,7 +103,7 @@ Readability scores (e.g., Flesch) and domain-specific dictionaries ensure requir
 Every requirement should specify observables—logs, metrics, or user behaviors—that confirm success. Checklists or peer reviews verify testability before development begins.
 
 \section{Formal Methods in Industry}
-\label{sec:formal-industry}
+\label{sec:math-industry}
 
 Formal techniques already underpin many successful products.
 
@@ -145,7 +148,7 @@ Low-risk UI tweaks, reversible experiments, and exploratory work can rely on lig
 \section{Summary}
 \label{sec:math-rigor-summary}
 
-Mathematical thinking enhances agility by clarifying intent, exposing risks, and enabling reuse of proven patterns. The next chapters apply these concepts to requirements, metrics, and documentation practices.
+Mathematical thinking enhances agility by clarifying intent, exposing risks, and enabling reuse of proven patterns. NASA’s Jet Propulsion Laboratory has relied on formal specifications for mission-critical software since the Cassini era, and Amazon Web Services highlighted its adoption of TLA+ in re:Invent 2022 sessions. Both examples show that structured reasoning prevents high-impact failures. The next chapters apply these concepts to requirements, metrics, and documentation practices.
 
 \subsection{Action Checklist}
 \begin{enumerate}
@@ -175,8 +178,18 @@ Aisha is preparing AlloyWorks' subscription workflow revamp. Support has been dr
     \item \textbf{Pause and Practice}—worksheet for converting a user story into predicates or a decision table.
     \item \textbf{Implementation Planner}—plan for piloting one rigor technique (owner, scope, success metrics, review date).
 \end{itemize}
+
+\section{Implementation Snapshot}
+\label{sec:math-snapshot}
+\begin{itemize}
+    \item \textbf{Time investment}—2--3 design sessions to pilot structured specs or state machines on high-risk flows.
+    \item \textbf{ROI timeline}—Defect rates drop in subsequent sprints; long-term reuse benefits appear within 1--2 quarters.
+    \item \textbf{Risk mitigation}—Formalization catches logical gaps before implementation, protecting customers and compliance posture.
+    \item \textbf{Competitive advantage}—Teams with precise specs iterate faster and hand off work with fewer misunderstandings.
+    \item \textbf{Cost of inaction}—Ambiguous requirements keep causing repeated bugs, firefighting, and loss of stakeholder confidence.
+\end{itemize}
 \section{Industry Adaptations}
-\label{sec:math-industry}
+\label{sec:math-adaptations}
 \paragraph{Regulated Industries.} Formal specs often become audit artifacts. Map each invariant or state machine to compliance clauses and store signed approvals. For aviation or healthcare, consider using model-checking proofs as part of certification packages.
 
 \paragraph{Startups vs. Enterprises.} Startups should apply rigor surgically—focus on the riskiest flows (payments, critical data) to avoid slowing delivery. Enterprises can institutionalize rigor via reusable spec libraries and dedicated formal-methods champions embedded in platforms.

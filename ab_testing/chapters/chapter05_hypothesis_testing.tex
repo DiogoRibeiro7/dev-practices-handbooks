@@ -805,7 +805,7 @@ def chi_square_test(
     min_expected = expected.min()
     assumption_met = min_expected >= 5
 
-    # Cramér's V effect size
+    # Cramer's V effect size
     n = table.sum()
     min_dim = min(table.shape[0] - 1, table.shape[1] - 1)
     cramers_v = np.sqrt(chi2_stat / (n * min_dim))
@@ -878,7 +878,7 @@ def compare_chi_square_fisher(table: np.ndarray, alpha: float = 0.05):
     print(f"  Chi-squared statistic: {chi2_result['chi2_statistic']:.3f}")
     print(f"  Degrees of freedom: {chi2_result['df']}")
     print(f"  P-value: {chi2_result['p_value']:.4f}")
-    print(f"  Cramér's V: {chi2_result['cramers_v']:.3f}")
+    print(f"  Cram\'er's V: {chi2_result['cramers_v']:.3f}")
     print(f"  Min expected count: {chi2_result['min_expected']:.2f}")
     print(f"  Assumption met (E>=5): {chi2_result['assumption_met']}")
     print(f"  Decision: {chi2_result['decision']}\n")
@@ -975,7 +975,7 @@ def visualize_contingency_table(table: np.ndarray, result: Dict,
 
     plt.colorbar(im3, ax=ax)
 
-    plt.suptitle(f'Chi-Squared Test: χ² = {result["chi2_statistic"]:.2f}, '
+    plt.suptitle(f'Chi-Squared Test: $\chi^2$ = {result["chi2_statistic"]:.2f}, '
                 f'p = {result["p_value"]:.4f}',
                 fontsize=14, fontweight='bold')
     plt.tight_layout()
@@ -1004,7 +1004,7 @@ p_z = 2 * (1 - stats.norm.cdf(abs(z)))
 print("=== Equivalence Verification (2×2 table) ===")
 print(f"Z-test p-value:        {p_z:.4f}")
 print(f"Chi-squared p-value:   {chi2_1['p_value']:.4f}")
-print(f"z² = {z**2:.3f}, χ² = {chi2_1['chi2_statistic']:.3f}")
+print(f"z^2 = {z**2:.3f}, chi^2 = {chi2_1['chi2_statistic']:.3f}")
 print(f"Difference: {abs(z**2 - chi2_1['chi2_statistic']):.6f}\n")
 
 # Example 2: Small expected counts (Fisher's better)

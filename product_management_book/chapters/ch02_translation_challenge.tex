@@ -1,7 +1,7 @@
 \chapter{The Translation Challenge}
 \label{ch:translation-challenge}
 
-Product development falters when the participants lack a shared model of the problem space. Even when goals are agreed upon, the heuristics used to evaluate feasibility or risk differ drastically between software engineering, data science, and business stakeholders. This chapter unpacks the most common sources of misalignment and offers pragmatic techniques product managers can use to surface and reconcile them early.
+Product development falters when participants lack a shared model of the problem space. Teams may agree on goals yet still rely on wildly different heuristics for feasibility or risk. Software engineering, data science, and business stakeholders interpret evidence through their own lenses. This chapter unpacks the most common sources of misalignment and offers pragmatic techniques product managers can use to surface and reconcile them early.
 
 \section{Understanding Mental Models}
 \label{sec:mental-models}
@@ -84,7 +84,7 @@ Chapter~\ref{ch:translation-challenge} now ships with \texttt{tools/facilitation
     \item \textbf{Mental-model comparison grids} contrast how each discipline defines success metrics, sources of truth, or decision cadences.
 \end{itemize}
 
-\begin{lstlisting}[language=bash,caption={Generating facilitation assets for translation workshops.}]
+\begin{lstlisting}[language=bash,caption={Generating facilitation assets for translation workshops (verified with Python 3.13 and the repo's tooling).}]
 # Assumptions + risk matrix
 python tools/facilitation.py --mode assumption \
   --items "User trusts insights" "Data refreshed daily" \
@@ -156,6 +156,10 @@ Maya begins her Tuesday at MedLinea Health by reviewing overnight telemetry from
 \paragraph{B2B vs. B2C.} B2B motions require translating between buyer personas (procurement, IT, legal) as well as internal teams. Capture each external stakeholder's risk tolerance in the mental-model canvas. B2C focuses on consumer sentiment—fold marketing and support into translation workshops so messaging, product, and data signals align.
 
 \paragraph{Hardware-Software Integration.} When firmware or device constraints intersect with software changes, add physical timelines (manufacturing, certification) to the time-horizon chart and ensure telemetry definitions include both device and cloud data. Translation artifacts should list hardware dependencies and rollback plans.
+
+\paragraph{Remote/Hybrid Teams.} Distributed squads should treat translation artifacts as living documents in shared wikis or whiteboards, and record translation workshops so time-zone diverse contributors can react asynchronously.
+
+\paragraph{AI/ML Tooling.} LLM-based assistants can help summarize stakeholder input but must reference canonical sources; add provenance fields describing when AI-generated text was reviewed and by whom.
 \section{Visual Guide}
 \label{sec:translation-visuals}
 \begin{itemize}
@@ -171,4 +175,22 @@ Maya begins her Tuesday at MedLinea Health by reviewing overnight telemetry from
     \item \textbf{Reflection Prompt}—``Recall a recent misunderstanding. Which translation step was skipped?'' Encourage journaling concrete fixes.
     \item \textbf{Pause and Practice}—fillable template to run a mini translation workshop on an active feature.
     \item \textbf{Implementation Planner}—checklist for scheduling glossary creation, translation canvases, and steering updates with owners/dates.
+\end{itemize}
+\section{Implementation Snapshot}
+\label{sec:translation-snapshot}
+\begin{itemize}
+    \item \textbf{Time investment}—3--5 workshops to build translation canvases, glossary entries, and aligned roadmaps.
+    \item \textbf{ROI timeline}—Expect smoother planning cycles within 4--6 weeks as fewer escalations occur.
+    \item \textbf{Risk mitigation}—Surfaces conflicting assumptions before code starts, avoiding rework and executive churn.
+    \item \textbf{Competitive advantage}—Organizations that speak with one voice earn stakeholder trust and can pivot faster than competitors still untangling miscommunications.
+    \item \textbf{Cost of inaction}—Continued ambiguity causes repeated meetings, stalled approvals, and higher attrition among frustrated engineers and analysts.
+\end{itemize}
+\section{Scaling Guidance}
+\label{sec:translation-scaling}
+\begin{itemize}
+    \item \textbf{Start small}—Apply the translation canvas to one high-stakes feature or initiative, then gradually expand to other roadmaps.
+    \item \textbf{Team size}—Squads of 5--8 can maintain canvases during regular refinement meetings; larger programs may need cross-functional councils.
+    \item \textbf{Maturity prerequisites}—Requires basic data literacy and a shared backlog; immature teams should establish those foundations first.
+    \item \textbf{Change management}—Offer short training, provide templates, and celebrate early wins to normalize translation rituals.
+    \item \textbf{Success metrics}—Measure reductions in decision latency, fewer conflicting decks, or improved Net Promoter Scores from stakeholders.
 \end{itemize}
