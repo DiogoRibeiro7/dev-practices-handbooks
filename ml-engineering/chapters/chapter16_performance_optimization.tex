@@ -2,31 +2,3123 @@
 
 After completing this chapter, readers will be able to:
 \begin{itemize}
-    \item Optimize model inference latency
-    \item Implement model compression techniques
-    \item Use quantization and pruning
-    \item Optimize GPU utilization
-    \item Profile and benchmark ML systems
+    \item Apply model compression techniques including pruning, quantization, and knowledge distillation
+    \item Optimize models for GPU and TPU hardware acceleration
+    \item Implement memory-efficient inference and batch processing strategies
+    \item Use inference optimization patterns for production deployments
+    \item Optimize models for edge and mobile deployment
+    \item Profile and benchmark ML systems to identify bottlenecks
+    \item Measure and improve end-to-end inference latency
+    \item Balance accuracy trade-offs against performance gains
 \end{itemize}
 
-\section{Performance Optimization Techniques}
+\section{Introduction}
 
-% Placeholder content
+Performance optimization is critical for deploying machine learning models in production. While achieving high accuracy is important, a model that's too slow or resource-intensive is unusable in real-world applications. Users expect sub-second response times, edge devices have strict memory constraints, and cloud infrastructure costs scale with compute usage.
 
-\section{Model Compression}
+This chapter covers practical techniques for optimizing ML model performance:
 
-% Placeholder content
+\begin{itemize}
+    \item \textbf{Model Compression:} Reducing model size through pruning, quantization, and distillation
+    \item \textbf{Hardware Acceleration:} Leveraging GPUs, TPUs, and specialized hardware
+    \item \textbf{Memory Optimization:} Managing memory efficiently for large models and batches
+    \item \textbf{Inference Patterns:} Optimizing serving architectures and request handling
+    \item \textbf{Edge Deployment:} Adapting models for resource-constrained devices
+    \item \textbf{Profiling and Benchmarking:} Measuring performance and identifying bottlenecks
+\end{itemize}
+
+The goal is to achieve the best possible performance while maintaining acceptable accuracy for your application requirements.
+
+\section{Model Compression Techniques}
+
+\subsection{Quantization}
+
+Quantization reduces model size and improves inference speed by using lower-precision representations for weights and activations.
+
+\begin{lstlisting}[language=Python, caption=Post-Training Quantization Implementation]
+import torch
+import torch.nn as nn
+import torch.quantization as quantization
+from typing import Dict, List, Tuple, Optional
+import numpy as np
+import time
+from pathlib import Path
+import logging
+
+class ModelQuantizer:
+    """
+    Comprehensive quantization toolkit for PyTorch models
+
+    Supports dynamic, static, and QAT (Quantization-Aware Training)
+    """
+
+    def __init__(self, model: nn.Module):
+        self.model = model
+        self.logger = logging.getLogger(__name__)
+
+    def dynamic_quantization(self,
+                            dtype: torch.dtype = torch.qint8,
+                            layers_to_quantize: Optional[List[type]] = None) -> nn.Module:
+        """
+        Apply dynamic quantization (weights quantized, activations computed in float)
+
+        Best for: LSTM, RNN, Transformer models where performance is limited by
+        loading weights from memory
+        """
+
+        if layers_to_quantize is None:
+            layers_to_quantize = {nn.Linear, nn.LSTM, nn.GRU}
+
+        self.logger.info("Applying dynamic quantization...")
+
+        quantized_model = quantization.quantize_dynamic(
+            self.model,
+            layers_to_quantize,
+            dtype=dtype
+        )
+
+        # Measure size reduction
+        original_size = self._get_model_size(self.model)
+        quantized_size = self._get_model_size(quantized_model)
+        reduction = (1 - quantized_size / original_size) * 100
+
+        self.logger.info(
+            f"Model size: {original_size:.2f}MB -> {quantized_size:.2f}MB "
+            f"({reduction:.1f}% reduction)"
+        )
+
+        return quantized_model
+
+    def static_quantization(self,
+                           calibration_data: torch.utils.data.DataLoader,
+                           backend: str = 'fbgemm') -> nn.Module:
+        """
+        Apply static quantization (both weights and activations quantized)
+
+        Best for: CNN models, edge deployment
+        Requires: Calibration data to determine activation ranges
+        """
+
+        self.logger.info("Applying static quantization...")
+
+        # Set backend
+        self.model.qconfig = quantization.get_default_qconfig(backend)
+
+        # Prepare model for quantization
+        quantization.prepare(self.model, inplace=True)
+
+        # Calibration: run representative data through model
+        self.logger.info("Calibrating with representative data...")
+        self.model.eval()
+
+        with torch.no_grad():
+            for batch_idx, (data, _) in enumerate(calibration_data):
+                self.model(data)
+
+                if batch_idx >= 100:  # Calibrate on 100 batches
+                    break
+
+        # Convert to quantized model
+        quantized_model = quantization.convert(self.model, inplace=False)
+
+        # Measure improvement
+        original_size = self._get_model_size(self.model)
+        quantized_size = self._get_model_size(quantized_model)
+        reduction = (1 - quantized_size / original_size) * 100
+
+        self.logger.info(
+            f"Model size: {original_size:.2f}MB -> {quantized_size:.2f}MB "
+            f"({reduction:.1f}% reduction)"
+        )
+
+        return quantized_model
+
+    def quantization_aware_training(self,
+                                   train_loader: torch.utils.data.DataLoader,
+                                   val_loader: torch.utils.data.DataLoader,
+                                   num_epochs: int = 10,
+                                   learning_rate: float = 0.001) -> nn.Module:
+        """
+        Train with quantization in the loop (QAT)
+
+        Best for: Achieving highest accuracy with quantization
+        Requires: Ability to retrain the model
+        """
+
+        self.logger.info("Starting Quantization-Aware Training...")
+
+        # Prepare model for QAT
+        self.model.qconfig = quantization.get_default_qat_qconfig('fbgemm')
+        quantization.prepare_qat(self.model, inplace=True)
+
+        # Training setup
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+        criterion = nn.CrossEntropyLoss()
+
+        self.model.train()
+
+        for epoch in range(num_epochs):
+            train_loss = 0.0
+
+            for batch_idx, (data, target) in enumerate(train_loader):
+                optimizer.zero_grad()
+                output = self.model(data)
+                loss = criterion(output, target)
+                loss.backward()
+                optimizer.step()
+
+                train_loss += loss.item()
+
+                if batch_idx % 100 == 0:
+                    self.logger.info(
+                        f"Epoch {epoch+1}/{num_epochs}, "
+                        f"Batch {batch_idx}, Loss: {loss.item():.4f}"
+                    )
+
+            # Validation
+            val_acc = self._validate(val_loader)
+            self.logger.info(
+                f"Epoch {epoch+1}: Val Accuracy: {val_acc:.2f}%"
+            )
+
+        # Convert to quantized model
+        self.model.eval()
+        quantized_model = quantization.convert(self.model, inplace=False)
+
+        return quantized_model
+
+    def _validate(self, val_loader: torch.utils.data.DataLoader) -> float:
+        """Validate model accuracy"""
+
+        self.model.eval()
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for data, target in val_loader:
+                output = self.model(data)
+                _, predicted = torch.max(output.data, 1)
+                total += target.size(0)
+                correct += (predicted == target).sum().item()
+
+        accuracy = 100 * correct / total
+        return accuracy
+
+    def _get_model_size(self, model: nn.Module) -> float:
+        """Get model size in MB"""
+
+        # Save to temporary file
+        temp_path = Path("/tmp/temp_model.pth")
+        torch.save(model.state_dict(), temp_path)
+        size_mb = temp_path.stat().st_size / (1024 * 1024)
+        temp_path.unlink()
+
+        return size_mb
+
+    def benchmark_quantization(self,
+                              test_data: torch.Tensor,
+                              num_runs: int = 100) -> Dict[str, float]:
+        """
+        Benchmark quantized vs original model
+
+        Returns metrics: latency, throughput, size, accuracy
+        """
+
+        results = {}
+
+        # Original model
+        self.logger.info("Benchmarking original model...")
+        original_latency = self._measure_latency(self.model, test_data, num_runs)
+        original_size = self._get_model_size(self.model)
+
+        results['original'] = {
+            'latency_ms': original_latency * 1000,
+            'throughput_qps': 1.0 / original_latency,
+            'size_mb': original_size
+        }
+
+        # Quantized model (dynamic)
+        self.logger.info("Benchmarking dynamically quantized model...")
+        quantized_model = self.dynamic_quantization()
+        quantized_latency = self._measure_latency(quantized_model, test_data, num_runs)
+        quantized_size = self._get_model_size(quantized_model)
+
+        results['quantized'] = {
+            'latency_ms': quantized_latency * 1000,
+            'throughput_qps': 1.0 / quantized_latency,
+            'size_mb': quantized_size,
+            'speedup': original_latency / quantized_latency,
+            'size_reduction': (1 - quantized_size / original_size) * 100
+        }
+
+        return results
+
+    def _measure_latency(self,
+                        model: nn.Module,
+                        test_data: torch.Tensor,
+                        num_runs: int = 100) -> float:
+        """Measure average inference latency"""
+
+        model.eval()
+
+        # Warmup
+        with torch.no_grad():
+            for _ in range(10):
+                _ = model(test_data)
+
+        # Measure
+        times = []
+        with torch.no_grad():
+            for _ in range(num_runs):
+                start = time.perf_counter()
+                _ = model(test_data)
+                end = time.perf_counter()
+                times.append(end - start)
+
+        return np.mean(times)
+
+# Example: Quantize a model
+import torch.nn as nn
+
+# Define simple model
+class SimpleModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(784, 512)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, 10)
+
+    def forward(self, x):
+        x = x.view(-1, 784)
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+# Create and quantize model
+model = SimpleModel()
+quantizer = ModelQuantizer(model)
+
+# Dynamic quantization (easiest, no calibration needed)
+quantized_model = quantizer.dynamic_quantization()
+
+# Benchmark
+test_input = torch.randn(1, 1, 28, 28)
+results = quantizer.benchmark_quantization(test_input)
+
+print("\nQuantization Results:")
+print(f"Original: {results['original']['latency_ms']:.2f}ms, "
+      f"{results['original']['size_mb']:.2f}MB")
+print(f"Quantized: {results['quantized']['latency_ms']:.2f}ms, "
+      f"{results['quantized']['size_mb']:.2f}MB")
+print(f"Speedup: {results['quantized']['speedup']:.2f}x")
+print(f"Size Reduction: {results['quantized']['size_reduction']:.1f}%")
+\end{lstlisting}
+
+\subsection{Model Pruning}
+
+Pruning removes redundant weights or neurons to create sparse models that are smaller and faster.
+
+\begin{lstlisting}[language=Python, caption=Neural Network Pruning Implementation]
+import torch
+import torch.nn as nn
+import torch.nn.utils.prune as prune
+from typing import List, Tuple, Dict, Optional
+import numpy as np
+import logging
+
+class ModelPruner:
+    """
+    Comprehensive model pruning toolkit
+
+    Supports unstructured, structured, and iterative pruning
+    """
+
+    def __init__(self, model: nn.Module):
+        self.model = model
+        self.logger = logging.getLogger(__name__)
+        self.pruning_history: List[Dict] = []
+
+    def unstructured_magnitude_pruning(self,
+                                      amount: float = 0.3,
+                                      layers_to_prune: Optional[List[str]] = None) -> nn.Module:
+        """
+        Prune individual weights based on magnitude
+
+        Parameters:
+        - amount: Fraction of weights to prune (0-1)
+        - layers_to_prune: List of layer names, None = prune all
+        """
+
+        self.logger.info(f"Applying unstructured pruning (amount: {amount})")
+
+        if layers_to_prune is None:
+            layers_to_prune = [name for name, module in self.model.named_modules()
+                              if isinstance(module, (nn.Linear, nn.Conv2d))]
+
+        # Prune each layer
+        for name, module in self.model.named_modules():
+            if name in layers_to_prune:
+                if isinstance(module, nn.Linear):
+                    prune.l1_unstructured(module, name='weight', amount=amount)
+                elif isinstance(module, nn.Conv2d):
+                    prune.l1_unstructured(module, name='weight', amount=amount)
+
+                self.logger.info(f"Pruned layer: {name}")
+
+        # Calculate sparsity
+        sparsity = self._calculate_sparsity()
+        self.logger.info(f"Model sparsity: {sparsity:.2%}")
+
+        self.pruning_history.append({
+            'method': 'unstructured_magnitude',
+            'amount': amount,
+            'sparsity': sparsity
+        })
+
+        return self.model
+
+    def structured_pruning(self,
+                          amount: float = 0.3,
+                          dim: int = 0) -> nn.Module:
+        """
+        Prune entire structures (channels, neurons) for hardware efficiency
+
+        Parameters:
+        - amount: Fraction of structures to prune
+        - dim: Dimension to prune (0 for output channels, 1 for input)
+        """
+
+        self.logger.info(f"Applying structured pruning (amount: {amount}, dim: {dim})")
+
+        for name, module in self.model.named_modules():
+            if isinstance(module, nn.Conv2d):
+                # Prune entire filters/channels
+                prune.ln_structured(
+                    module,
+                    name='weight',
+                    amount=amount,
+                    n=2,  # L2 norm
+                    dim=dim
+                )
+                self.logger.info(f"Structured pruning on: {name}")
+
+            elif isinstance(module, nn.Linear):
+                # Prune entire neurons
+                prune.ln_structured(
+                    module,
+                    name='weight',
+                    amount=amount,
+                    n=2,
+                    dim=dim
+                )
+                self.logger.info(f"Structured pruning on: {name}")
+
+        sparsity = self._calculate_sparsity()
+        self.logger.info(f"Model sparsity: {sparsity:.2%}")
+
+        return self.model
+
+    def iterative_pruning(self,
+                         initial_sparsity: float = 0.0,
+                         final_sparsity: float = 0.8,
+                         num_iterations: int = 10,
+                         train_func: Optional[callable] = None) -> nn.Module:
+        """
+        Gradually increase pruning over multiple iterations with retraining
+
+        This often achieves better accuracy than one-shot pruning
+        """
+
+        self.logger.info(
+            f"Starting iterative pruning: {initial_sparsity} -> {final_sparsity} "
+            f"over {num_iterations} iterations"
+        )
+
+        # Calculate pruning schedule
+        sparsity_schedule = np.linspace(
+            initial_sparsity,
+            final_sparsity,
+            num_iterations
+        )
+
+        for iteration, target_sparsity in enumerate(sparsity_schedule):
+            self.logger.info(f"\nIteration {iteration + 1}/{num_iterations}")
+            self.logger.info(f"Target sparsity: {target_sparsity:.2%}")
+
+            # Prune to target sparsity
+            current_sparsity = self._calculate_sparsity()
+            prune_amount = (target_sparsity - current_sparsity) / (1 - current_sparsity)
+
+            if prune_amount > 0:
+                self.unstructured_magnitude_pruning(amount=prune_amount)
+
+            # Retrain (if training function provided)
+            if train_func is not None:
+                self.logger.info("Retraining pruned model...")
+                train_func(self.model)
+
+            # Validate
+            actual_sparsity = self._calculate_sparsity()
+            self.logger.info(f"Achieved sparsity: {actual_sparsity:.2%}")
+
+        return self.model
+
+    def make_pruning_permanent(self):
+        """
+        Remove pruning reparameterization and make pruning permanent
+
+        Call this after pruning to reduce memory and computation
+        """
+
+        self.logger.info("Making pruning permanent...")
+
+        for name, module in self.model.named_modules():
+            if isinstance(module, (nn.Linear, nn.Conv2d)):
+                try:
+                    prune.remove(module, 'weight')
+                except:
+                    pass  # Layer was not pruned
+
+        self.logger.info("Pruning made permanent")
+
+    def _calculate_sparsity(self) -> float:
+        """Calculate overall model sparsity"""
+
+        total_params = 0
+        zero_params = 0
+
+        for name, param in self.model.named_parameters():
+            if 'weight' in name:
+                total_params += param.numel()
+                zero_params += (param == 0).sum().item()
+
+        sparsity = zero_params / total_params if total_params > 0 else 0
+        return sparsity
+
+    def analyze_layer_sparsity(self) -> Dict[str, float]:
+        """Get sparsity for each layer"""
+
+        layer_sparsity = {}
+
+        for name, module in self.model.named_modules():
+            if isinstance(module, (nn.Linear, nn.Conv2d)):
+                if hasattr(module, 'weight'):
+                    total = module.weight.numel()
+                    zeros = (module.weight == 0).sum().item()
+                    sparsity = zeros / total
+                    layer_sparsity[name] = sparsity
+
+        return layer_sparsity
+
+    def benchmark_pruning(self,
+                         test_data: torch.Tensor,
+                         ground_truth: torch.Tensor,
+                         num_runs: int = 100) -> Dict[str, any]:
+        """
+        Benchmark pruned model: accuracy, latency, size
+        """
+
+        results = {}
+
+        # Accuracy
+        self.model.eval()
+        with torch.no_grad():
+            output = self.model(test_data)
+            _, predicted = torch.max(output.data, 1)
+            accuracy = (predicted == ground_truth).float().mean().item()
+
+        # Latency
+        times = []
+        with torch.no_grad():
+            for _ in range(num_runs):
+                start = time.perf_counter()
+                _ = self.model(test_data[:1])  # Single sample
+                end = time.perf_counter()
+                times.append(end - start)
+
+        # Size
+        total_params = sum(p.numel() for p in self.model.parameters())
+        non_zero_params = sum((p != 0).sum().item() for p in self.model.parameters())
+
+        results = {
+            'accuracy': accuracy * 100,
+            'latency_ms': np.mean(times) * 1000,
+            'latency_std': np.std(times) * 1000,
+            'total_params': total_params,
+            'non_zero_params': non_zero_params,
+            'sparsity': 1 - (non_zero_params / total_params),
+            'compression_ratio': total_params / non_zero_params
+        }
+
+        return results
+
+# Example: Prune a model
+model = SimpleModel()
+pruner = ModelPruner(model)
+
+# Method 1: One-shot unstructured pruning
+pruned_model = pruner.unstructured_magnitude_pruning(amount=0.5)
+
+# Analyze layer-wise sparsity
+layer_sparsity = pruner.analyze_layer_sparsity()
+print("\nLayer-wise Sparsity:")
+for layer, sparsity in layer_sparsity.items():
+    print(f"  {layer}: {sparsity:.2%}")
+
+# Make pruning permanent
+pruner.make_pruning_permanent()
+
+# Benchmark
+test_input = torch.randn(100, 1, 28, 28)
+test_labels = torch.randint(0, 10, (100,))
+results = pruner.benchmark_pruning(test_input, test_labels)
+
+print("\nPruning Results:")
+print(f"Sparsity: {results['sparsity']:.2%}")
+print(f"Compression: {results['compression_ratio']:.1f}x")
+print(f"Latency: {results['latency_ms']:.2f}ms")
+print(f"Accuracy: {results['accuracy']:.2f}%")
+\end{lstlisting}
+
+\subsection{Knowledge Distillation}
+
+Knowledge distillation transfers knowledge from a large "teacher" model to a smaller "student" model, enabling compact models with near-teacher performance.
+
+\begin{lstlisting}[language=Python, caption=Knowledge Distillation Framework]
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Optional, Tuple
+import logging
+
+class KnowledgeDistillation:
+    """
+    Train student model using knowledge from teacher model
+
+    The student learns from both ground truth labels and
+    soft predictions from the teacher
+    """
+
+    def __init__(self,
+                 teacher_model: nn.Module,
+                 student_model: nn.Module,
+                 temperature: float = 3.0,
+                 alpha: float = 0.7):
+        """
+        Parameters:
+        - teacher_model: Large, accurate teacher model
+        - student_model: Smaller student model to train
+        - temperature: Softens probability distributions (higher = softer)
+        - alpha: Weight for distillation loss vs hard label loss
+        """
+        self.teacher = teacher_model
+        self.student = student_model
+        self.temperature = temperature
+        self.alpha = alpha
+
+        self.logger = logging.getLogger(__name__)
+
+        # Freeze teacher
+        self.teacher.eval()
+        for param in self.teacher.parameters():
+            param.requires_grad = False
+
+    def distillation_loss(self,
+                         student_logits: torch.Tensor,
+                         teacher_logits: torch.Tensor,
+                         labels: torch.Tensor,
+                         temperature: Optional[float] = None) -> Tuple[torch.Tensor, Dict]:
+        """
+        Compute distillation loss
+
+        Loss = alpha * KL(teacher, student) + (1-alpha) * CE(student, labels)
+        """
+
+        if temperature is None:
+            temperature = self.temperature
+
+        # Soft targets from teacher
+        soft_teacher = F.softmax(teacher_logits / temperature, dim=1)
+        soft_student = F.log_softmax(student_logits / temperature, dim=1)
+
+        # Distillation loss (KL divergence)
+        distill_loss = F.kl_div(
+            soft_student,
+            soft_teacher,
+            reduction='batchmean'
+        ) * (temperature ** 2)
+
+        # Hard label loss
+        hard_loss = F.cross_entropy(student_logits, labels)
+
+        # Combined loss
+        total_loss = self.alpha * distill_loss + (1 - self.alpha) * hard_loss
+
+        loss_dict = {
+            'total_loss': total_loss.item(),
+            'distill_loss': distill_loss.item(),
+            'hard_loss': hard_loss.item()
+        }
+
+        return total_loss, loss_dict
+
+    def train_student(self,
+                     train_loader: torch.utils.data.DataLoader,
+                     val_loader: torch.utils.data.DataLoader,
+                     num_epochs: int = 20,
+                     learning_rate: float = 0.001,
+                     device: str = 'cpu') -> Dict:
+        """Train student model using knowledge distillation"""
+
+        self.logger.info("Starting knowledge distillation training...")
+
+        # Move models to device
+        self.teacher.to(device)
+        self.student.to(device)
+
+        # Optimizer
+        optimizer = torch.optim.Adam(
+            self.student.parameters(),
+            lr=learning_rate
+        )
+
+        # Training loop
+        best_val_acc = 0.0
+        history = {
+            'train_loss': [],
+            'val_acc': [],
+            'distill_loss': [],
+            'hard_loss': []
+        }
+
+        for epoch in range(num_epochs):
+            self.student.train()
+            epoch_losses = {'total': 0.0, 'distill': 0.0, 'hard': 0.0}
+            num_batches = 0
+
+            for batch_idx, (data, target) in enumerate(train_loader):
+                data, target = data.to(device), target.to(device)
+
+                # Get teacher predictions
+                with torch.no_grad():
+                    teacher_logits = self.teacher(data)
+
+                # Get student predictions
+                student_logits = self.student(data)
+
+                # Compute loss
+                loss, loss_dict = self.distillation_loss(
+                    student_logits,
+                    teacher_logits,
+                    target
+                )
+
+                # Backprop
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                # Track losses
+                epoch_losses['total'] += loss_dict['total_loss']
+                epoch_losses['distill'] += loss_dict['distill_loss']
+                epoch_losses['hard'] += loss_dict['hard_loss']
+                num_batches += 1
+
+                if batch_idx % 100 == 0:
+                    self.logger.info(
+                        f"Epoch {epoch+1}/{num_epochs}, "
+                        f"Batch {batch_idx}, Loss: {loss.item():.4f}"
+                    )
+
+            # Average losses
+            avg_losses = {k: v / num_batches for k, v in epoch_losses.items()}
+
+            # Validation
+            val_acc = self._validate_student(val_loader, device)
+
+            # Log progress
+            self.logger.info(
+                f"Epoch {epoch+1}: "
+                f"Train Loss: {avg_losses['total']:.4f}, "
+                f"Val Acc: {val_acc:.2f}%"
+            )
+
+            # Save history
+            history['train_loss'].append(avg_losses['total'])
+            history['distill_loss'].append(avg_losses['distill'])
+            history['hard_loss'].append(avg_losses['hard'])
+            history['val_acc'].append(val_acc)
+
+            # Track best
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                self.logger.info(f"New best validation accuracy: {best_val_acc:.2f}%")
+
+        history['best_val_acc'] = best_val_acc
+
+        return history
+
+    def _validate_student(self,
+                         val_loader: torch.utils.data.DataLoader,
+                         device: str) -> float:
+        """Validate student model"""
+
+        self.student.eval()
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for data, target in val_loader:
+                data, target = data.to(device), target.to(device)
+                output = self.student(data)
+                _, predicted = torch.max(output.data, 1)
+                total += target.size(0)
+                correct += (predicted == target).sum().item()
+
+        accuracy = 100 * correct / total
+        return accuracy
+
+    def compare_models(self,
+                      test_loader: torch.utils.data.DataLoader,
+                      device: str = 'cpu') -> Dict:
+        """Compare teacher and student performance"""
+
+        self.logger.info("Comparing teacher vs student...")
+
+        # Teacher accuracy
+        teacher_acc = self._validate_model(self.teacher, test_loader, device)
+
+        # Student accuracy
+        student_acc = self._validate_model(self.student, test_loader, device)
+
+        # Model sizes
+        teacher_params = sum(p.numel() for p in self.teacher.parameters())
+        student_params = sum(p.numel() for p in self.student.parameters())
+
+        results = {
+            'teacher_accuracy': teacher_acc,
+            'student_accuracy': student_acc,
+            'accuracy_drop': teacher_acc - student_acc,
+            'teacher_params': teacher_params,
+            'student_params': student_params,
+            'compression_ratio': teacher_params / student_params,
+            'params_reduction': (1 - student_params / teacher_params) * 100
+        }
+
+        self.logger.info(f"Teacher: {teacher_acc:.2f}%, {teacher_params:,} params")
+        self.logger.info(f"Student: {student_acc:.2f}%, {student_params:,} params")
+        self.logger.info(f"Compression: {results['compression_ratio']:.1f}x")
+        self.logger.info(f"Accuracy drop: {results['accuracy_drop']:.2f}%")
+
+        return results
+
+    def _validate_model(self,
+                       model: nn.Module,
+                       loader: torch.utils.data.DataLoader,
+                       device: str) -> float:
+        """Validate any model"""
+
+        model.eval()
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for data, target in loader:
+                data, target = data.to(device), target.to(device)
+                output = model(data)
+                _, predicted = torch.max(output.data, 1)
+                total += target.size(0)
+                correct += (predicted == target).sum().item()
+
+        return 100 * correct / total
+
+# Example: Distill knowledge from teacher to student
+class TeacherModel(nn.Module):
+    """Large teacher model"""
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(784, 1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, 10)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = x.view(-1, 784)
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.relu(self.fc3(x))
+        x = self.fc4(x)
+        return x
+
+class StudentModel(nn.Module):
+    """Small student model"""
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(784, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, 10)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = x.view(-1, 784)
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+# Create teacher and student
+teacher = TeacherModel()
+student = StudentModel()
+
+# Train teacher first (assume it's already trained)
+# teacher.load_state_dict(torch.load('teacher.pth'))
+
+# Distill knowledge
+distiller = KnowledgeDistillation(
+    teacher_model=teacher,
+    student_model=student,
+    temperature=3.0,
+    alpha=0.7
+)
+
+# Train student (with mock data loader)
+# history = distiller.train_student(train_loader, val_loader, num_epochs=20)
+
+# Compare models
+# results = distiller.compare_models(test_loader)
+print(f"Student has {results.get('compression_ratio', 8):.1f}x fewer parameters")
+\end{lstlisting}
 
 \section{Hardware Acceleration}
 
-% Placeholder content
+\subsection{GPU Optimization}
 
-\section{Chapter Summary}
+Leveraging GPUs effectively requires optimizing data transfer, computation, and memory usage.
 
-% Placeholder summary
+\begin{lstlisting}[language=Python, caption=GPU Optimization Techniques]
+import torch
+import torch.nn as nn
+from typing import Dict, List, Optional, Tuple
+import time
+import numpy as np
+from contextlib import contextmanager
+import logging
 
-\section{Exercises}
+class GPUOptimizer:
+    """
+    Optimize model for GPU inference
 
-\begin{exercise}
-Optimize a deep learning model for edge deployment using quantization.
-\end{exercise}
+    Implements mixed precision, kernel fusion, and efficient batching
+    """
+
+    def __init__(self, model: nn.Module, device: str = 'cuda'):
+        self.model = model
+        self.device = device
+
+        if not torch.cuda.is_available() and device == 'cuda':
+            raise RuntimeError("CUDA is not available")
+
+        self.model.to(device)
+        self.logger = logging.getLogger(__name__)
+
+    @contextmanager
+    def autocast_context(self, enabled: bool = True):
+        """Context manager for mixed precision"""
+        if enabled and torch.cuda.is_available():
+            with torch.cuda.amp.autocast():
+                yield
+        else:
+            yield
+
+    def optimize_for_inference(self):
+        """Apply inference-time optimizations"""
+
+        self.logger.info("Optimizing model for inference...")
+
+        # Set to eval mode
+        self.model.eval()
+
+        # Disable gradient computation
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        # Use inference mode context
+        torch.set_grad_enabled(False)
+
+        # Optimize with TorchScript
+        try:
+            example_input = torch.randn(1, 3, 224, 224).to(self.device)
+            self.model = torch.jit.trace(self.model, example_input)
+            self.logger.info("Model traced with TorchScript")
+        except Exception as e:
+            self.logger.warning(f"TorchScript tracing failed: {e}")
+
+        self.logger.info("Inference optimization complete")
+
+    def mixed_precision_inference(self,
+                                 data: torch.Tensor,
+                                 use_amp: bool = True) -> torch.Tensor:
+        """
+        Run inference with automatic mixed precision
+
+        Uses FP16 for computation, maintaining accuracy
+        """
+
+        data = data.to(self.device)
+
+        with self.autocast_context(enabled=use_amp):
+            with torch.no_grad():
+                output = self.model(data)
+
+        return output
+
+    def optimize_batch_size(self,
+                           sample_input: torch.Tensor,
+                           max_batch_size: int = 512) -> int:
+        """
+        Find optimal batch size for GPU memory
+
+        Returns largest batch size that fits in GPU memory
+        """
+
+        self.logger.info("Finding optimal batch size...")
+
+        batch_size = 1
+        optimal_batch = 1
+
+        while batch_size <= max_batch_size:
+            try:
+                # Try inference with this batch size
+                test_batch = sample_input.repeat(batch_size, 1, 1, 1).to(self.device)
+
+                torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
+
+                with torch.no_grad():
+                    _ = self.model(test_batch)
+
+                # Check memory usage
+                mem_used = torch.cuda.max_memory_allocated() / 1024**3
+                mem_total = torch.cuda.get_device_properties(0).total_memory / 1024**3
+
+                mem_pct = (mem_used / mem_total) * 100
+
+                self.logger.info(
+                    f"Batch size {batch_size}: {mem_used:.2f}GB / "
+                    f"{mem_total:.2f}GB ({mem_pct:.1f}%)"
+                )
+
+                # If we're using < 80% memory, this is safe
+                if mem_pct < 80:
+                    optimal_batch = batch_size
+                    batch_size *= 2
+                else:
+                    break
+
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    self.logger.warning(
+                        f"OOM at batch size {batch_size}, using {optimal_batch}"
+                    )
+                    break
+                else:
+                    raise e
+
+        self.logger.info(f"Optimal batch size: {optimal_batch}")
+        return optimal_batch
+
+    def benchmark_gpu_performance(self,
+                                 sample_input: torch.Tensor,
+                                 batch_sizes: List[int] = [1, 8, 16, 32, 64],
+                                 num_runs: int = 100) -> Dict:
+        """
+        Benchmark inference performance at different batch sizes
+        """
+
+        results = {}
+
+        for batch_size in batch_sizes:
+            try:
+                # Prepare batch
+                batch = sample_input.repeat(batch_size, 1, 1, 1).to(self.device)
+
+                # Warmup
+                for _ in range(10):
+                    with torch.no_grad():
+                        _ = self.model(batch)
+
+                torch.cuda.synchronize()
+
+                # Measure
+                times = []
+                for _ in range(num_runs):
+                    start = time.perf_counter()
+
+                    with torch.no_grad():
+                        _ = self.model(batch)
+
+                    torch.cuda.synchronize()
+                    end = time.perf_counter()
+
+                    times.append(end - start)
+
+                # Calculate metrics
+                avg_time = np.mean(times)
+                std_time = np.std(times)
+
+                results[batch_size] = {
+                    'avg_latency_ms': avg_time * 1000,
+                    'std_latency_ms': std_time * 1000,
+                    'throughput_samples_per_sec': batch_size / avg_time,
+                    'latency_per_sample_ms': (avg_time / batch_size) * 1000
+                }
+
+                self.logger.info(
+                    f"Batch {batch_size}: "
+                    f"{results[batch_size]['avg_latency_ms']:.2f}ms, "
+                    f"{results[batch_size]['throughput_samples_per_sec']:.1f} samples/sec"
+                )
+
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    self.logger.warning(f"OOM at batch size {batch_size}")
+                    torch.cuda.empty_cache()
+                    continue
+                else:
+                    raise e
+
+        return results
+
+    def profile_gpu_utilization(self,
+                               sample_input: torch.Tensor,
+                               num_iterations: int = 100):
+        """Profile GPU utilization during inference"""
+
+        self.logger.info("Profiling GPU utilization...")
+
+        sample_input = sample_input.to(self.device)
+
+        # Use PyTorch profiler
+        with torch.profiler.profile(
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True
+        ) as prof:
+            for _ in range(num_iterations):
+                with torch.no_grad():
+                    _ = self.model(sample_input)
+
+        # Print summary
+        print(prof.key_averages().table(
+            sort_by="cuda_time_total",
+            row_limit=10
+        ))
+
+        # Save trace for visualization
+        prof.export_chrome_trace("gpu_trace.json")
+        self.logger.info("Trace saved to gpu_trace.json")
+
+        return prof
+
+# Example: GPU optimization
+class ResNetLike(nn.Module):
+    """Example CNN model"""
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+        self.layer1 = self._make_layer(64, 128, 2)
+        self.layer2 = self._make_layer(128, 256, 2)
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(256, 1000)
+
+    def _make_layer(self, in_channels, out_channels, blocks):
+        layers = []
+        for _ in range(blocks):
+            layers.append(nn.Conv2d(in_channels, out_channels, 3, padding=1))
+            layers.append(nn.BatchNorm2d(out_channels))
+            layers.append(nn.ReLU(inplace=True))
+            in_channels = out_channels
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.maxpool(self.relu(self.bn1(self.conv1(x))))
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)
+        return x
+
+# Create model and optimizer
+if torch.cuda.is_available():
+    model = ResNetLike()
+    optimizer = GPUOptimizer(model, device='cuda')
+
+    # Optimize for inference
+    optimizer.optimize_for_inference()
+
+    # Find optimal batch size
+    sample = torch.randn(1, 3, 224, 224)
+    optimal_batch = optimizer.optimize_batch_size(sample)
+
+    # Benchmark
+    results = optimizer.benchmark_gpu_performance(
+        sample,
+        batch_sizes=[1, 8, 16, 32]
+    )
+
+    print("\nGPU Performance Results:")
+    for bs, metrics in results.items():
+        print(f"Batch {bs}: {metrics['throughput_samples_per_sec']:.1f} samples/sec")
+\end{lstlisting}
+
+\section{Memory Optimization and Batch Processing}
+
+\subsection{Memory-Efficient Inference}
+
+Efficient memory management is critical for serving large models and processing large batches.
+
+\begin{lstlisting}[language=Python, caption=Memory-Optimized Inference System]
+import torch
+import torch.nn as nn
+from typing import List, Iterator, Optional, Dict
+import numpy as np
+from collections import deque
+import gc
+import logging
+
+class MemoryEfficientInference:
+    """
+    Memory-optimized inference for large models
+
+    Implements gradient checkpointing, batch accumulation,
+    and efficient memory management
+    """
+
+    def __init__(self, model: nn.Module, device: str = 'cpu'):
+        self.model = model
+        self.device = device
+        self.model.to(device)
+        self.logger = logging.getLogger(__name__)
+
+    def chunked_inference(self,
+                         data: torch.Tensor,
+                         chunk_size: int = 32) -> torch.Tensor:
+        """
+        Process large batch in chunks to avoid OOM
+
+        Breaks large batch into smaller chunks, processes each,
+        and concatenates results
+        """
+
+        self.model.eval()
+
+        results = []
+        num_samples = data.size(0)
+
+        with torch.no_grad():
+            for start_idx in range(0, num_samples, chunk_size):
+                end_idx = min(start_idx + chunk_size, num_samples)
+                chunk = data[start_idx:end_idx].to(self.device)
+
+                # Process chunk
+                output = self.model(chunk)
+
+                # Move to CPU to save GPU memory
+                results.append(output.cpu())
+
+                # Clear GPU cache
+                if self.device == 'cuda':
+                    torch.cuda.empty_cache()
+
+        # Concatenate results
+        final_output = torch.cat(results, dim=0)
+
+        return final_output
+
+    def streaming_inference(self,
+                           data_iterator: Iterator[torch.Tensor],
+                           batch_size: int = 16) -> Iterator[torch.Tensor]:
+        """
+        Stream inference for continuous data
+
+        Processes data as it arrives without loading everything into memory
+        """
+
+        self.model.eval()
+
+        batch_buffer = []
+
+        with torch.no_grad():
+            for sample in data_iterator:
+                batch_buffer.append(sample)
+
+                # Process when batch is full
+                if len(batch_buffer) >= batch_size:
+                    batch = torch.stack(batch_buffer).to(self.device)
+                    output = self.model(batch)
+
+                    # Yield results one by one
+                    for result in output:
+                        yield result.cpu()
+
+                    batch_buffer.clear()
+
+                    # Clean up
+                    if self.device == 'cuda':
+                        torch.cuda.empty_cache()
+
+            # Process remaining samples
+            if batch_buffer:
+                batch = torch.stack(batch_buffer).to(self.device)
+                output = self.model(batch)
+
+                for result in output:
+                    yield result.cpu()
+
+    def measure_memory_usage(self,
+                            sample_input: torch.Tensor,
+                            batch_sizes: List[int] = [1, 8, 16, 32, 64]) -> Dict:
+        """
+        Measure memory usage at different batch sizes
+        """
+
+        results = {}
+
+        for batch_size in batch_sizes:
+            try:
+                # Prepare batch
+                batch = sample_input.repeat(batch_size, 1, 1, 1).to(self.device)
+
+                # Reset memory stats
+                if self.device == 'cuda':
+                    torch.cuda.empty_cache()
+                    torch.cuda.reset_peak_memory_stats()
+
+                # Run inference
+                with torch.no_grad():
+                    _ = self.model(batch)
+
+                # Measure memory
+                if self.device == 'cuda':
+                    mem_allocated = torch.cuda.max_memory_allocated() / 1024**3
+                    mem_reserved = torch.cuda.max_memory_reserved() / 1024**3
+                else:
+                    import psutil
+                    process = psutil.Process()
+                    mem_allocated = process.memory_info().rss / 1024**3
+                    mem_reserved = mem_allocated
+
+                results[batch_size] = {
+                    'memory_allocated_gb': mem_allocated,
+                    'memory_reserved_gb': mem_reserved,
+                    'memory_per_sample_mb': (mem_allocated / batch_size) * 1024
+                }
+
+                self.logger.info(
+                    f"Batch {batch_size}: {mem_allocated:.2f}GB allocated"
+                )
+
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    self.logger.warning(f"OOM at batch size {batch_size}")
+                    if self.device == 'cuda':
+                        torch.cuda.empty_cache()
+                    continue
+                else:
+                    raise e
+
+        return results
+
+    def optimize_memory_layout(self):
+        """
+        Optimize model memory layout for inference
+
+        Converts weights to contiguous memory, fuses operations
+        """
+
+        self.logger.info("Optimizing memory layout...")
+
+        # Make all tensors contiguous
+        for param in self.model.parameters():
+            param.data = param.data.contiguous()
+
+        # Fuse batch norm
+        self.model = self._fuse_bn(self.model)
+
+        self.logger.info("Memory layout optimized")
+
+    def _fuse_bn(self, model: nn.Module) -> nn.Module:
+        """
+        Fuse BatchNorm into Conv layers for efficiency
+
+        Reduces memory and computation
+        """
+
+        # This is a simplified version
+        # In production, use torch.quantization.fuse_modules
+
+        for name, module in model.named_children():
+            if isinstance(module, nn.Sequential):
+                # Check for Conv-BN pattern
+                fused = []
+                i = 0
+                while i < len(module):
+                    if (i + 1 < len(module) and
+                        isinstance(module[i], nn.Conv2d) and
+                        isinstance(module[i + 1], nn.BatchNorm2d)):
+
+                        # Fuse conv and bn
+                        fused.append(self._fuse_conv_bn(module[i], module[i + 1]))
+                        i += 2
+                    else:
+                        fused.append(module[i])
+                        i += 1
+
+                # Replace module
+                setattr(model, name, nn.Sequential(*fused))
+
+            else:
+                # Recursively fuse child modules
+                self._fuse_bn(module)
+
+        return model
+
+    def _fuse_conv_bn(self, conv: nn.Conv2d, bn: nn.BatchNorm2d) -> nn.Conv2d:
+        """Fuse Conv2d and BatchNorm2d"""
+
+        # Get parameters
+        w_conv = conv.weight.clone()
+        b_conv = conv.bias if conv.bias is not None else torch.zeros(conv.out_channels)
+
+        w_bn = bn.weight
+        b_bn = bn.bias
+        mean = bn.running_mean
+        var = bn.running_var
+        eps = bn.eps
+
+        # Compute fused parameters
+        std = torch.sqrt(var + eps)
+        w_fused = (w_bn / std).reshape(-1, 1, 1, 1) * w_conv
+        b_fused = (b_conv - mean) / std * w_bn + b_bn
+
+        # Create fused conv
+        fused_conv = nn.Conv2d(
+            conv.in_channels,
+            conv.out_channels,
+            conv.kernel_size,
+            conv.stride,
+            conv.padding,
+            conv.dilation,
+            conv.groups,
+            bias=True
+        )
+
+        fused_conv.weight.data = w_fused
+        fused_conv.bias.data = b_fused
+
+        return fused_conv
+
+# Example usage
+model = ResNetLike()
+memory_optimizer = MemoryEfficientInference(model, device='cuda' if torch.cuda.is_available() else 'cpu')
+
+# Optimize memory layout
+memory_optimizer.optimize_memory_layout()
+
+# Measure memory usage
+sample = torch.randn(1, 3, 224, 224)
+memory_results = memory_optimizer.measure_memory_usage(
+    sample,
+    batch_sizes=[1, 4, 8, 16]
+)
+
+print("\nMemory Usage:")
+for bs, metrics in memory_results.items():
+    print(f"Batch {bs}: {metrics['memory_allocated_gb']:.2f}GB "
+          f"({metrics['memory_per_sample_mb']:.1f}MB per sample)")
+
+# Chunked inference for large batch
+large_batch = torch.randn(1000, 3, 224, 224)
+output = memory_optimizer.chunked_inference(large_batch, chunk_size=32)
+print(f"\nProcessed {output.size(0)} samples in chunks")
+\end{lstlisting}
+
+\section{Inference Optimization Patterns}
+
+\subsection{Model Serving Architecture}
+
+Production inference requires efficient serving architecture with request batching, caching, and load balancing.
+
+\begin{lstlisting}[language=Python, caption=Optimized Inference Server]
+import torch
+import torch.nn as nn
+from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass, field
+from datetime import datetime
+import asyncio
+from queue import Queue, Empty
+import threading
+import time
+import logging
+
+@dataclass
+class InferenceRequest:
+    """Single inference request"""
+    request_id: str
+    data: torch.Tensor
+    timestamp: datetime = field(default_factory=datetime.now)
+    priority: int = 0
+
+@dataclass
+class InferenceResponse:
+    """Inference response"""
+    request_id: str
+    result: torch.Tensor
+    latency_ms: float
+    timestamp: datetime = field(default_factory=datetime.now)
+
+class BatchedInferenceServer:
+    """
+    High-performance inference server with dynamic batching
+
+    Collects requests and batches them for efficient processing
+    """
+
+    def __init__(self,
+                 model: nn.Module,
+                 max_batch_size: int = 32,
+                 max_wait_time_ms: float = 10.0,
+                 device: str = 'cpu'):
+        self.model = model
+        self.max_batch_size = max_batch_size
+        self.max_wait_time_ms = max_wait_time_ms
+        self.device = device
+
+        self.model.to(device)
+        self.model.eval()
+
+        # Request queue
+        self.request_queue = Queue()
+        self.response_dict: Dict[str, InferenceResponse] = {}
+        self.response_locks: Dict[str, threading.Event] = {}
+
+        # Server state
+        self.running = False
+        self.processing_thread: Optional[threading.Thread] = None
+
+        # Metrics
+        self.total_requests = 0
+        self.total_batches = 0
+        self.batch_size_history: List[int] = []
+
+        self.logger = logging.getLogger(__name__)
+
+    def start(self):
+        """Start inference server"""
+
+        if self.running:
+            self.logger.warning("Server already running")
+            return
+
+        self.running = True
+        self.processing_thread = threading.Thread(
+            target=self._processing_loop,
+            daemon=True
+        )
+        self.processing_thread.start()
+
+        self.logger.info("Inference server started")
+
+    def stop(self):
+        """Stop inference server"""
+
+        self.running = False
+
+        if self.processing_thread:
+            self.processing_thread.join(timeout=5)
+
+        self.logger.info("Inference server stopped")
+
+    def predict(self, request_id: str, data: torch.Tensor) -> InferenceResponse:
+        """
+        Submit inference request and wait for response
+
+        Requests are batched automatically for efficiency
+        """
+
+        # Create request
+        request = InferenceRequest(
+            request_id=request_id,
+            data=data
+        )
+
+        # Create response lock
+        self.response_locks[request_id] = threading.Event()
+
+        # Queue request
+        self.request_queue.put(request)
+        self.total_requests += 1
+
+        # Wait for response
+        self.response_locks[request_id].wait()
+
+        # Get response
+        response = self.response_dict.pop(request_id)
+        del self.response_locks[request_id]
+
+        return response
+
+    def _processing_loop(self):
+        """Main processing loop that batches requests"""
+
+        self.logger.info("Processing loop started")
+
+        while self.running:
+            try:
+                # Collect batch
+                batch = self._collect_batch()
+
+                if not batch:
+                    time.sleep(0.001)  # Short sleep if no requests
+                    continue
+
+                # Process batch
+                self._process_batch(batch)
+
+            except Exception as e:
+                self.logger.error(f"Error in processing loop: {e}")
+
+    def _collect_batch(self) -> List[InferenceRequest]:
+        """
+        Collect requests into a batch
+
+        Waits up to max_wait_time_ms to accumulate max_batch_size requests
+        """
+
+        batch = []
+        deadline = time.time() + (self.max_wait_time_ms / 1000.0)
+
+        while len(batch) < self.max_batch_size:
+            try:
+                # Calculate remaining time
+                timeout = max(0, deadline - time.time())
+
+                if timeout <= 0 and batch:
+                    # Deadline reached, process what we have
+                    break
+
+                # Get request from queue
+                request = self.request_queue.get(timeout=timeout)
+                batch.append(request)
+
+            except Empty:
+                # No more requests before deadline
+                if batch:
+                    break
+
+        return batch
+
+    def _process_batch(self, batch: List[InferenceRequest]):
+        """Process a batch of requests"""
+
+        start_time = time.perf_counter()
+
+        # Stack inputs
+        inputs = torch.stack([req.data for req in batch]).to(self.device)
+
+        # Run inference
+        with torch.no_grad():
+            outputs = self.model(inputs)
+
+        end_time = time.perf_counter()
+        batch_latency = (end_time - start_time) * 1000
+
+        # Distribute results
+        for i, request in enumerate(batch):
+            response = InferenceResponse(
+                request_id=request.request_id,
+                result=outputs[i].cpu(),
+                latency_ms=batch_latency / len(batch)
+            )
+
+            self.response_dict[request.request_id] = response
+            self.response_locks[request.request_id].set()
+
+        # Update metrics
+        self.total_batches += 1
+        self.batch_size_history.append(len(batch))
+
+        self.logger.debug(
+            f"Processed batch of {len(batch)} requests in {batch_latency:.2f}ms"
+        )
+
+    def get_metrics(self) -> Dict:
+        """Get server metrics"""
+
+        avg_batch_size = (np.mean(self.batch_size_history)
+                         if self.batch_size_history else 0)
+
+        return {
+            'total_requests': self.total_requests,
+            'total_batches': self.total_batches,
+            'avg_batch_size': avg_batch_size,
+            'max_batch_size': self.max_batch_size,
+            'queue_size': self.request_queue.qsize()
+        }
+
+class InferenceCache:
+    """
+    Cache inference results for repeated inputs
+
+    Useful when same inputs are frequently requested
+    """
+
+    def __init__(self, max_size: int = 1000):
+        self.max_size = max_size
+        self.cache: Dict[str, Tuple[torch.Tensor, datetime]] = {}
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, key: str) -> Optional[torch.Tensor]:
+        """Get cached result"""
+
+        if key in self.cache:
+            result, _ = self.cache[key]
+            self.hits += 1
+            return result
+        else:
+            self.misses += 1
+            return None
+
+    def put(self, key: str, value: torch.Tensor):
+        """Cache result"""
+
+        # Evict oldest if at capacity
+        if len(self.cache) >= self.max_size:
+            oldest_key = min(
+                self.cache.keys(),
+                key=lambda k: self.cache[k][1]
+            )
+            del self.cache[oldest_key]
+
+        self.cache[key] = (value, datetime.now())
+
+    def get_stats(self) -> Dict:
+        """Get cache statistics"""
+
+        total = self.hits + self.misses
+        hit_rate = self.hits / total if total > 0 else 0
+
+        return {
+            'size': len(self.cache),
+            'hits': self.hits,
+            'misses': self.misses,
+            'hit_rate': hit_rate
+        }
+
+# Example: Run inference server
+model = SimpleModel()
+server = BatchedInferenceServer(
+    model,
+    max_batch_size=32,
+    max_wait_time_ms=10.0,
+    device='cpu'
+)
+
+server.start()
+
+# Simulate requests
+import uuid
+
+responses = []
+for i in range(100):
+    request_id = str(uuid.uuid4())
+    data = torch.randn(1, 28, 28)
+
+    response = server.predict(request_id, data)
+    responses.append(response)
+
+server.stop()
+
+# Print metrics
+metrics = server.get_metrics()
+print("\nServer Metrics:")
+print(f"Total Requests: {metrics['total_requests']}")
+print(f"Total Batches: {metrics['total_batches']}")
+print(f"Avg Batch Size: {metrics['avg_batch_size']:.1f}")
+print(f"Avg Latency: {np.mean([r.latency_ms for r in responses]):.2f}ms")
+\end{lstlisting}
+
+\section{Edge Deployment Optimization}
+
+\subsection{Mobile and Edge Optimization}
+
+Deploying to edge devices requires aggressive optimization for memory, compute, and power constraints.
+
+\begin{lstlisting}[language=Python, caption=Edge Deployment Optimizer]
+import torch
+import torch.nn as nn
+from typing import Dict, Optional
+import logging
+
+class EdgeOptimizer:
+    """
+    Optimize models for edge/mobile deployment
+
+    Combines multiple techniques for maximum efficiency
+    """
+
+    def __init__(self, model: nn.Module):
+        self.model = model
+        self.logger = logging.getLogger(__name__)
+
+    def optimize_for_mobile(self,
+                          sample_input: torch.Tensor,
+                          quantize: bool = True) -> torch.jit.ScriptModule:
+        """
+        Complete optimization for mobile deployment
+
+        Returns TorchScript model ready for mobile
+        """
+
+        self.logger.info("Optimizing for mobile deployment...")
+
+        # Step 1: Set to eval mode
+        self.model.eval()
+
+        # Step 2: Trace model
+        traced_model = torch.jit.trace(self.model, sample_input)
+
+        # Step 3: Optimize for mobile
+        from torch.utils.mobile_optimizer import optimize_for_mobile
+        optimized_model = optimize_for_mobile(traced_model)
+
+        # Step 4: Quantize if requested
+        if quantize:
+            self.logger.info("Applying quantization...")
+            optimized_model = torch.quantization.quantize_dynamic(
+                optimized_model,
+                {torch.nn.Linear},
+                dtype=torch.qint8
+            )
+
+        self.logger.info("Mobile optimization complete")
+
+        return optimized_model
+
+    def export_to_onnx(self,
+                      sample_input: torch.Tensor,
+                      output_path: str,
+                      opset_version: int = 11):
+        """
+        Export model to ONNX format
+
+        ONNX models can run on many edge runtimes
+        """
+
+        self.logger.info(f"Exporting to ONNX: {output_path}")
+
+        self.model.eval()
+
+        torch.onnx.export(
+            self.model,
+            sample_input,
+            output_path,
+            export_params=True,
+            opset_version=opset_version,
+            do_constant_folding=True,
+            input_names=['input'],
+            output_names=['output'],
+            dynamic_axes={
+                'input': {0: 'batch_size'},
+                'output': {0: 'batch_size'}
+            }
+        )
+
+        self.logger.info("ONNX export complete")
+
+    def profile_for_edge(self,
+                        sample_input: torch.Tensor) -> Dict:
+        """
+        Profile model for edge deployment constraints
+
+        Checks model size, ops, memory usage
+        """
+
+        self.model.eval()
+
+        metrics = {}
+
+        # Model size
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            torch.save(self.model.state_dict(), tmp.name)
+            metrics['model_size_mb'] = os.path.getsize(tmp.name) / (1024 * 1024)
+            os.unlink(tmp.name)
+
+        # Parameter count
+        total_params = sum(p.numel() for p in self.model.parameters())
+        metrics['total_params'] = total_params
+        metrics['total_params_millions'] = total_params / 1e6
+
+        # FLOPs estimation (simplified)
+        from torch.profiler import profile, ProfilerActivity
+
+        with profile(activities=[ProfilerActivity.CPU]) as prof:
+            with torch.no_grad():
+                _ = self.model(sample_input)
+
+        # Parse profiler output for ops
+        events = prof.key_averages()
+        cpu_time = sum([event.cpu_time_total for event in events])
+        metrics['cpu_time_ms'] = cpu_time / 1000
+
+        # Memory usage
+        import psutil
+        import gc
+
+        gc.collect()
+        process = psutil.Process()
+        mem_before = process.memory_info().rss / 1024 ** 2
+
+        with torch.no_grad():
+            output = self.model(sample_input)
+
+        mem_after = process.memory_info().rss / 1024 ** 2
+        metrics['memory_usage_mb'] = mem_after - mem_before
+
+        # Check if suitable for edge
+        edge_constraints = {
+            'model_size_mb': 10.0,  # < 10MB
+            'total_params_millions': 1.0,  # < 1M params
+            'cpu_time_ms': 100.0,  # < 100ms
+            'memory_usage_mb': 50.0  # < 50MB
+        }
+
+        metrics['edge_suitable'] = all(
+            metrics[k] <= v for k, v in edge_constraints.items()
+            if k in metrics
+        )
+
+        return metrics
+
+    def create_edge_variants(self, sample_input: torch.Tensor) -> Dict[str, nn.Module]:
+        """
+        Create multiple optimized variants for different edge devices
+
+        Returns dict of models optimized for different constraints
+        """
+
+        variants = {}
+
+        # 1. Mobile variant (quantized)
+        mobile_model = self.optimize_for_mobile(sample_input, quantize=True)
+        variants['mobile'] = mobile_model
+
+        # 2. Raspberry Pi variant (pruned + quantized)
+        rpi_model = self.model
+        # Apply aggressive pruning here
+        variants['raspberry_pi'] = rpi_model
+
+        # 3. Microcontroller variant (heavily compressed)
+        # Extremely small model for MCUs
+        mcu_model = self.model
+        variants['microcontroller'] = mcu_model
+
+        return variants
+
+# Example: Optimize for edge
+model = SimpleModel()
+edge_optimizer = EdgeOptimizer(model)
+
+# Profile for edge
+sample = torch.randn(1, 1, 28, 28)
+profile = edge_optimizer.profile_for_edge(sample)
+
+print("\nEdge Profile:")
+print(f"Model Size: {profile['model_size_mb']:.2f}MB")
+print(f"Parameters: {profile['total_params_millions']:.2f}M")
+print(f"CPU Time: {profile['cpu_time_ms']:.2f}ms")
+print(f"Memory: {profile['memory_usage_mb']:.2f}MB")
+print(f"Edge Suitable: {profile['edge_suitable']}")
+
+# Export to mobile
+mobile_model = edge_optimizer.optimize_for_mobile(sample)
+mobile_model._save_for_lite_interpreter("model_mobile.ptl")
+print("\nMobile model saved to model_mobile.ptl")
+
+# Export to ONNX
+edge_optimizer.export_to_onnx(sample, "model.onnx")
+print("ONNX model saved to model.onnx")
+\end{lstlisting}
+
+\section{Benchmarking and Profiling Tools}
+
+\subsection{Comprehensive Performance Profiling}
+
+Systematic profiling identifies bottlenecks and guides optimization efforts.
+
+\begin{lstlisting}[language=Python, caption=Performance Profiling Framework]
+import torch
+import torch.nn as nn
+from typing import Dict, List, Optional, Callable
+import time
+import numpy as np
+from dataclasses import dataclass, field
+import json
+from pathlib import Path
+import logging
+
+@dataclass
+class LayerProfile:
+    """Profile for a single layer"""
+    name: str
+    layer_type: str
+    params: int
+    forward_time_ms: float
+    memory_mb: float
+    percentage_time: float
+    percentage_memory: float
+
+@dataclass
+class ModelProfile:
+    """Complete model profile"""
+    total_params: int
+    total_time_ms: float
+    total_memory_mb: float
+    layer_profiles: List[LayerProfile] = field(default_factory=list)
+    bottlenecks: List[str] = field(default_factory=list)
+
+class PerformanceProfiler:
+    """
+    Comprehensive performance profiling toolkit
+
+    Profiles latency, memory, throughput, and identifies bottlenecks
+    """
+
+    def __init__(self, model: nn.Module, device: str = 'cpu'):
+        self.model = model
+        self.device = device
+        self.model.to(device)
+        self.logger = logging.getLogger(__name__)
+
+    def profile_layers(self, sample_input: torch.Tensor) -> ModelProfile:
+        """
+        Profile each layer individually
+
+        Measures time and memory for each layer
+        """
+
+        self.logger.info("Profiling model layers...")
+
+        layer_profiles = []
+        total_time = 0.0
+        total_memory = 0.0
+
+        # Hook to measure layer performance
+        def create_hook(name):
+            def hook(module, input, output):
+                # Measure time
+                start = time.perf_counter()
+                with torch.no_grad():
+                    _ = module(input[0])
+                elapsed = (time.perf_counter() - start) * 1000
+
+                # Measure memory
+                if self.device == 'cuda':
+                    torch.cuda.reset_peak_memory_stats()
+                    _ = module(input[0])
+                    mem = torch.cuda.max_memory_allocated() / 1024**2
+                else:
+                    mem = 0.0
+
+                # Count parameters
+                params = sum(p.numel() for p in module.parameters())
+
+                profile = LayerProfile(
+                    name=name,
+                    layer_type=module.__class__.__name__,
+                    params=params,
+                    forward_time_ms=elapsed,
+                    memory_mb=mem,
+                    percentage_time=0.0,  # Will calculate later
+                    percentage_memory=0.0
+                )
+
+                layer_profiles.append(profile)
+
+            return hook
+
+        # Register hooks
+        hooks = []
+        for name, module in self.model.named_modules():
+            if len(list(module.children())) == 0:  # Leaf module
+                hook = module.register_forward_hook(create_hook(name))
+                hooks.append(hook)
+
+        # Run forward pass
+        with torch.no_grad():
+            _ = self.model(sample_input.to(self.device))
+
+        # Remove hooks
+        for hook in hooks:
+            hook.remove()
+
+        # Calculate percentages
+        total_time = sum(p.forward_time_ms for p in layer_profiles)
+        total_memory = sum(p.memory_mb for p in layer_profiles)
+
+        for profile in layer_profiles:
+            if total_time > 0:
+                profile.percentage_time = (profile.forward_time_ms / total_time) * 100
+            if total_memory > 0:
+                profile.percentage_memory = (profile.memory_mb / total_memory) * 100
+
+        # Identify bottlenecks (layers taking > 10% time)
+        bottlenecks = [
+            p.name for p in layer_profiles
+            if p.percentage_time > 10.0
+        ]
+
+        total_params = sum(p.numel() for p in self.model.parameters())
+
+        model_profile = ModelProfile(
+            total_params=total_params,
+            total_time_ms=total_time,
+            total_memory_mb=total_memory,
+            layer_profiles=layer_profiles,
+            bottlenecks=bottlenecks
+        )
+
+        self.logger.info(f"Profiling complete: {len(layer_profiles)} layers")
+        return model_profile
+
+    def profile_end_to_end(self,
+                          sample_input: torch.Tensor,
+                          num_runs: int = 100,
+                          warmup_runs: int = 10) -> Dict:
+        """
+        Profile end-to-end inference performance
+
+        Measures latency distribution, throughput
+        """
+
+        self.logger.info("Profiling end-to-end performance...")
+
+        self.model.eval()
+        sample_input = sample_input.to(self.device)
+
+        # Warmup
+        with torch.no_grad():
+            for _ in range(warmup_runs):
+                _ = self.model(sample_input)
+
+        if self.device == 'cuda':
+            torch.cuda.synchronize()
+
+        # Measure
+        latencies = []
+
+        with torch.no_grad():
+            for _ in range(num_runs):
+                start = time.perf_counter()
+                _ = self.model(sample_input)
+
+                if self.device == 'cuda':
+                    torch.cuda.synchronize()
+
+                end = time.perf_counter()
+                latencies.append((end - start) * 1000)  # Convert to ms
+
+        latencies = np.array(latencies)
+
+        results = {
+            'mean_latency_ms': np.mean(latencies),
+            'median_latency_ms': np.median(latencies),
+            'p95_latency_ms': np.percentile(latencies, 95),
+            'p99_latency_ms': np.percentile(latencies, 99),
+            'min_latency_ms': np.min(latencies),
+            'max_latency_ms': np.max(latencies),
+            'std_latency_ms': np.std(latencies),
+            'throughput_qps': 1000.0 / np.mean(latencies)
+        }
+
+        self.logger.info(f"Mean latency: {results['mean_latency_ms']:.2f}ms")
+        self.logger.info(f"P99 latency: {results['p99_latency_ms']:.2f}ms")
+        self.logger.info(f"Throughput: {results['throughput_qps']:.1f} QPS")
+
+        return results
+
+    def compare_optimizations(self,
+                             sample_input: torch.Tensor,
+                             optimizations: Dict[str, Callable]) -> Dict:
+        """
+        Compare different optimization techniques
+
+        Parameters:
+        - optimizations: Dict of {name: optimization_function}
+        """
+
+        results = {}
+
+        # Baseline (no optimization)
+        self.logger.info("Measuring baseline performance...")
+        results['baseline'] = self.profile_end_to_end(sample_input, num_runs=100)
+
+        # Test each optimization
+        for name, opt_func in optimizations.items():
+            self.logger.info(f"Testing optimization: {name}")
+
+            # Apply optimization
+            optimized_model = opt_func(self.model)
+
+            # Create temporary profiler
+            temp_profiler = PerformanceProfiler(optimized_model, self.device)
+
+            # Profile
+            opt_results = temp_profiler.profile_end_to_end(sample_input, num_runs=100)
+
+            # Calculate speedup
+            speedup = results['baseline']['mean_latency_ms'] / opt_results['mean_latency_ms']
+            opt_results['speedup'] = speedup
+
+            results[name] = opt_results
+
+        return results
+
+    def export_profile(self, profile: ModelProfile, output_path: str):
+        """Export profile to JSON"""
+
+        data = {
+            'total_params': profile.total_params,
+            'total_time_ms': profile.total_time_ms,
+            'total_memory_mb': profile.total_memory_mb,
+            'bottlenecks': profile.bottlenecks,
+            'layers': [
+                {
+                    'name': layer.name,
+                    'type': layer.layer_type,
+                    'params': layer.params,
+                    'time_ms': layer.forward_time_ms,
+                    'memory_mb': layer.memory_mb,
+                    'pct_time': layer.percentage_time,
+                    'pct_memory': layer.percentage_memory
+                }
+                for layer in profile.layer_profiles
+            ]
+        }
+
+        with open(output_path, 'w') as f:
+            json.dump(data, f, indent=2)
+
+        self.logger.info(f"Profile exported to {output_path}")
+
+# Example: Profile a model
+model = ResNetLike()
+profiler = PerformanceProfiler(model, device='cpu')
+
+# Profile layers
+sample = torch.randn(1, 3, 224, 224)
+layer_profile = profiler.profile_layers(sample)
+
+print("\nTop 5 Slowest Layers:")
+sorted_layers = sorted(
+    layer_profile.layer_profiles,
+    key=lambda x: x.forward_time_ms,
+    reverse=True
+)[:5]
+
+for i, layer in enumerate(sorted_layers, 1):
+    print(f"{i}. {layer.name} ({layer.layer_type}): "
+          f"{layer.forward_time_ms:.2f}ms ({layer.percentage_time:.1f}%)")
+
+# Profile end-to-end
+e2e_profile = profiler.profile_end_to_end(sample, num_runs=100)
+
+print("\nEnd-to-End Performance:")
+print(f"Mean: {e2e_profile['mean_latency_ms']:.2f}ms")
+print(f"P95: {e2e_profile['p95_latency_ms']:.2f}ms")
+print(f"P99: {e2e_profile['p99_latency_ms']:.2f}ms")
+print(f"Throughput: {e2e_profile['throughput_qps']:.1f} QPS")
+
+# Export profile
+profiler.export_profile(layer_profile, "model_profile.json")
+\end{lstlisting}
+
+\section{Practical Optimization Challenges}
+
+\subsection{Challenge 1: Compress a Large Model}
+
+Apply comprehensive compression to reduce model size while maintaining accuracy.
+
+\textbf{Objective:} Reduce a ResNet-50 model to 1/4 its original size with <2\% accuracy drop.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Start with pretrained ResNet-50 (97MB, 25M parameters)
+    \item Apply pruning: Remove 50\% of weights (structured + unstructured)
+    \item Apply quantization: Convert to INT8
+    \item Apply knowledge distillation: Train smaller student network
+    \item Target: <25MB model with >95\% of original accuracy
+    \item Measure: compression ratio, accuracy, inference latency
+\end{itemize}
+
+\textbf{Constraints:}
+\begin{itemize}
+    \item Must maintain at least 98\% of original accuracy on ImageNet validation
+    \item Model must fit in <25MB on disk
+    \item Inference latency must improve by at least 2x on CPU
+\end{itemize}
+
+\textbf{Approach:}
+\begin{enumerate}
+    \item Baseline: Profile original ResNet-50 performance
+    \item Iterative Pruning: Gradually prune to 50\% sparsity with retraining
+    \item Quantization: Apply post-training quantization or QAT
+    \item Distillation: Train MobileNetV2 student with ResNet-50 teacher
+    \item Combination: Apply multiple techniques together
+    \item Evaluation: Compare all approaches on accuracy/size/speed trade-offs
+\end{enumerate}
+
+\textbf{Success Criteria:}
+\begin{itemize}
+    \item Final model <25MB (target: ~24MB = 1/4 of 97MB)
+    \item Accuracy drop <2\% (target: <1.5\%)
+    \item Inference speedup >2x on CPU (target: 3x)
+    \item Successfully runs on mobile device with <100ms latency
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Compressed models at different operating points
+    \item Performance comparison table (size, accuracy, latency)
+    \item Pareto frontier plot showing accuracy vs size trade-offs
+    \item Mobile deployment demo on Android/iOS
+\end{itemize}
+
+\subsection{Challenge 2: Optimize Inference Latency}
+
+Achieve sub-50ms P99 latency for production inference.
+
+\textbf{Objective:} Optimize a BERT model to achieve <50ms P99 latency on CPU.
+
+\textbf{Baseline:}
+\begin{itemize}
+    \item Model: BERT-Base (110M parameters)
+    \item Current P99 latency: 250ms on CPU
+    \item Target: <50ms P99 (5x improvement)
+\end{itemize}
+
+\textbf{Optimization Techniques to Apply:}
+\begin{enumerate}
+    \item \textbf{Layer Profiling:} Identify slowest layers
+        \begin{itemize}
+            \item Profile each transformer layer
+            \item Find attention vs FFN bottlenecks
+            \item Measure operator-level performance
+        \end{itemize}
+
+    \item \textbf{Operator Fusion:} Fuse common patterns
+        \begin{itemize}
+            \item Fuse LayerNorm + Linear
+            \item Fuse GELU activation
+            \item Use TorchScript compilation
+        \end{itemize}
+
+    \item \textbf{Quantization:} Reduce precision
+        \begin{itemize}
+            \item Dynamic quantization for Linear layers
+            \item INT8 quantization with calibration
+            \item Mixed precision (FP16/INT8)
+        \end{itemize}
+
+    \item \textbf{Distillation:} Use smaller model
+        \begin{itemize}
+            \item Distill to DistilBERT (6 layers vs 12)
+            \item Maintain 97\% of accuracy
+            \item 2x speedup from smaller architecture
+        \end{itemize}
+
+    \item \textbf{Batching:} Dynamic request batching
+        \begin{itemize}
+            \item Implement batch collection (max 32, max wait 10ms)
+            \item Measure throughput vs latency trade-off
+            \item Optimize batch size for P99 latency
+        \end{itemize}
+\end{enumerate}
+
+\textbf{Metrics to Track:}
+\begin{itemize}
+    \item P50, P95, P99, P999 latency
+    \item Throughput (QPS)
+    \item Model size
+    \item Accuracy on SQuAD benchmark
+    \item Resource utilization (CPU, memory)
+\end{itemize}
+
+\textbf{Expected Results:}
+\begin{itemize}
+    \item Quantization alone: 2x speedup → 125ms P99
+    \item Distillation alone: 2x speedup → 125ms P99
+    \item Combined: 4-5x speedup → 50-60ms P99
+    \item With batching: 40-45ms P99 at 200 QPS
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Optimization report showing cumulative improvements
+    \item Latency distribution graphs before/after each optimization
+    \item Production-ready inference server meeting SLA
+    \item Load test results at various QPS levels
+\end{itemize}
+
+\subsection{Challenge 3: Optimize for Edge Deployment}
+
+Deploy an object detection model on Raspberry Pi 4.
+
+\textbf{Objective:} Run YOLOv5 on Raspberry Pi 4 at >10 FPS.
+
+\textbf{Constraints:}
+\begin{itemize}
+    \item Hardware: Raspberry Pi 4 (4GB RAM, ARM Cortex-A72)
+    \item Model size: <50MB
+    \item Memory usage: <1GB
+    \item Target FPS: >10 on 640x640 input
+    \item Accuracy: mAP >0.4 on COCO
+\end{itemize}
+
+\textbf{Optimization Strategy:}
+
+\textbf{1. Model Selection and Architecture:}
+\begin{itemize}
+    \item Start with YOLOv5-nano (1.9M parameters)
+    \item Consider MobileNet-based variants
+    \item Reduce input resolution: 640x640 → 416x416
+\end{itemize}
+
+\textbf{2. Quantization for ARM:}
+\begin{itemize}
+    \item Export to ONNX
+    \item Convert to TFLite with INT8 quantization
+    \item Test with XNNPACK backend for ARM optimization
+    \item Verify accuracy after quantization
+\end{itemize}
+
+\textbf{3. Inference Optimization:}
+\begin{itemize}
+    \item Use multi-threading (4 cores)
+    \item Implement frame skipping for video
+    \item Add motion detection to reduce unnecessary inference
+    \item Optimize pre/post-processing (resize, NMS)
+\end{itemize}
+
+\textbf{4. Power Optimization:}
+\begin{itemize}
+    \item CPU governor tuning
+    \item Thermal throttling management
+    \item Batch processing for efficiency
+\end{itemize}
+
+\textbf{Implementation Steps:}
+\begin{enumerate}
+    \item Baseline: Measure YOLOv5-nano FPS on RPi4
+    \item Convert to TFLite with quantization
+    \item Optimize inference pipeline
+    \item Add real-time video processing
+    \item Profile and iterate on bottlenecks
+\end{enumerate}
+
+\textbf{Evaluation Metrics:}
+\begin{itemize}
+    \item FPS on live camera feed
+    \item Latency per frame
+    \item mAP on COCO val2017
+    \item Power consumption (watts)
+    \item Temperature under load
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Working object detection on RPi4 camera
+    \item Performance report: FPS, accuracy, power
+    \item Optimization guide for edge deployment
+    \item Demo video showing real-time detection
+\end{itemize}
+
+\subsection{Challenge 4: Memory-Efficient Serving}
+
+Serve large language model with limited GPU memory.
+
+\textbf{Objective:} Serve GPT-2 Large (774M params) on single 8GB GPU at 100 QPS.
+
+\textbf{Problem:}
+\begin{itemize}
+    \item Model size: 3GB (FP32)
+    \item With KV cache: 5-6GB per batch
+    \item Available GPU memory: 8GB
+    \item Need to serve concurrent requests efficiently
+\end{itemize}
+
+\textbf{Memory Optimization Techniques:}
+
+\textbf{1. Quantization:}
+\begin{itemize}
+    \item INT8 quantization: 3GB → 750MB (4x reduction)
+    \item Mixed precision: FP16 for activations, INT8 for weights
+    \item Dynamic quantization for generation
+\end{itemize}
+
+\textbf{2. KV Cache Management:}
+\begin{itemize}
+    \item Implement PagedAttention for cache allocation
+    \item Reuse cache blocks across requests
+    \item Evict LRU cache entries when memory full
+\end{itemize}
+
+\textbf{3. Batching Strategy:}
+\begin{itemize}
+    \item Dynamic batching with variable sequence lengths
+    \item Continuous batching (add/remove sequences mid-batch)
+    \item Priority queue for request scheduling
+\end{itemize}
+
+\textbf{4. Operator Fusion:}
+\begin{itemize}
+    \item Fuse attention operations
+    \item Flash Attention implementation
+    \item Kernel optimization for GEMM operations
+\end{itemize}
+
+\textbf{Implementation Plan:}
+\begin{enumerate}
+    \item Baseline: Measure throughput with naive batching
+    \item Apply INT8 quantization
+    \item Implement efficient KV cache
+    \item Add dynamic batching
+    \item Profile GPU memory usage
+    \item Optimize for throughput
+\end{enumerate}
+
+\textbf{Target Metrics:}
+\begin{itemize}
+    \item Throughput: >100 QPS
+    \item P99 latency: <500ms
+    \item GPU memory usage: <7.5GB (leaves headroom)
+    \item GPU utilization: >80\%
+\end{itemize}
+
+\textbf{Success Criteria:}
+\begin{itemize}
+    \item Sustain 100 concurrent requests
+    \item Generate 100 tokens in <500ms P99
+    \item No OOM errors under load
+    \item Efficient memory usage (no fragmentation)
+\end{itemize}
+
+\subsection{Challenge 5: Multi-Model Serving Optimization}
+
+Serve multiple models efficiently on shared infrastructure.
+
+\textbf{Objective:} Serve 5 different models on 2 GPUs with optimal resource utilization.
+
+\textbf{Models to Serve:}
+\begin{enumerate}
+    \item ResNet-50: Image classification (90ms latency target)
+    \item BERT-Base: Text classification (50ms target)
+    \item YOLOv5: Object detection (100ms target)
+    \item GPT-2: Text generation (200ms target)
+    \item Whisper-Small: Speech recognition (150ms target)
+\end{enumerate}
+
+\textbf{Challenges:}
+\begin{itemize}
+    \item Different model sizes and latency requirements
+    \item Variable request rates (some models more popular)
+    \item GPU memory constraints (12GB per GPU)
+    \item Need to maintain SLAs for all models
+\end{itemize}
+
+\textbf{Optimization Strategies:}
+
+\textbf{1. Model Placement:}
+\begin{itemize}
+    \item Profile memory usage of each model
+    \item Pack models efficiently across GPUs
+    \item Consider model replication for high-traffic models
+\end{itemize}
+
+\textbf{2. Request Routing:}
+\begin{itemize}
+    \item Implement intelligent load balancer
+    \item Route based on GPU availability
+    \item Priority scheduling for latency-sensitive models
+\end{itemize}
+
+\textbf{3. Batching Per Model:}
+\begin{itemize}
+    \item Different batch sizes per model type
+    \item Adaptive batching based on load
+    \item Separate queues with backpressure
+\end{itemize}
+
+\textbf{4. Resource Sharing:}
+\begin{itemize}
+    \item CUDA MPS (Multi-Process Service) for concurrency
+    \item Dynamic GPU memory allocation
+    \item CPU offloading for pre/post-processing
+\end{itemize}
+
+\textbf{Implementation:}
+\begin{enumerate}
+    \item Measure individual model requirements
+    \item Design placement strategy
+    \item Implement multi-model server
+    \item Add routing and batching logic
+    \item Load test with realistic traffic
+    \item Optimize based on bottlenecks
+\end{enumerate}
+
+\textbf{Metrics:}
+\begin{itemize}
+    \item Per-model P99 latency
+    \item Overall throughput (requests/sec)
+    \item GPU utilization per device
+    \item GPU memory usage per device
+    \item Queue wait times
+\end{itemize}
+
+\textbf{Target Performance:}
+\begin{itemize}
+    \item All models meet latency SLAs at 95th percentile
+    \item GPU utilization >70\% on both devices
+    \item Handle 500+ requests/sec combined
+    \item No model starvation under mixed load
+\end{itemize}
+
+\subsection{Challenge 6: Optimize Training Performance}
+
+Accelerate model training with mixed precision and distributed techniques.
+
+\textbf{Objective:} Reduce training time for ResNet-50 on ImageNet from 24 hours to <6 hours.
+
+\textbf{Baseline:}
+\begin{itemize}
+    \item Model: ResNet-50
+    \item Dataset: ImageNet (1.28M training images)
+    \item Hardware: 4x NVIDIA V100 GPUs (32GB each)
+    \item Current time: 24 hours to 90 epochs
+    \item Target: <6 hours (4x speedup)
+\end{itemize}
+
+\textbf{Optimization Techniques:}
+
+\textbf{1. Mixed Precision Training:}
+\begin{itemize}
+    \item Use AMP (Automatic Mixed Precision)
+    \item FP16 for forward/backward pass
+    \item FP32 for optimizer state
+    \item Expected: 2-3x speedup
+\end{itemize}
+
+\textbf{2. Data Loading Optimization:}
+\begin{itemize}
+    \item Increase num\_workers for DataLoader
+    \item Use prefetching (pin\_memory=True)
+    \item Implement DALI for GPU preprocessing
+    \item Profile and eliminate I/O bottlenecks
+\end{itemize}
+
+\textbf{3. Distributed Training:}
+\begin{itemize}
+    \item Use DistributedDataParallel (DDP)
+    \item Optimize all-reduce operations
+    \item Gradient accumulation for larger effective batch
+    \item Overlap communication with computation
+\end{itemize}
+
+\textbf{4. Learning Rate Scaling:}
+\begin{itemize}
+    \item Linear scaling rule for large batch sizes
+    \item Warmup schedule for stability
+    \item Adjust batch size for optimal throughput
+\end{itemize}
+
+\textbf{5. Memory Optimization:}
+\begin{itemize}
+    \item Gradient checkpointing for larger batches
+    \item Zero optimizer redundancy (ZeRO-2)
+    \item Find maximum stable batch size per GPU
+\end{itemize}
+
+\textbf{Implementation Steps:}
+\begin{enumerate}
+    \item Profile baseline training (identify bottlenecks)
+    \item Enable mixed precision training
+    \item Optimize data loading pipeline
+    \item Implement distributed training across 4 GPUs
+    \item Tune batch size and learning rate
+    \item Validate accuracy at higher throughput
+\end{enumerate}
+
+\textbf{Expected Results:}
+\begin{itemize}
+    \item Mixed precision: 2.5x speedup → 9.6 hours
+    \item Distributed (4 GPUs): 3.8x speedup → 6.3 hours
+    \item Combined: 4-5x speedup → 5-6 hours
+    \item Final accuracy: $\geq$76\% Top-1 on ImageNet
+\end{itemize}
+
+\textbf{Metrics to Track:}
+\begin{itemize}
+    \item Images/sec throughput
+    \item GPU utilization (\%)
+    \item Training time per epoch
+    \item Final validation accuracy
+    \item Memory usage per GPU
+\end{itemize}
+
+\subsection{Challenge 7: End-to-End Production Optimization}
+
+Optimize complete ML pipeline from preprocessing to serving.
+
+\textbf{Objective:} Build optimized end-to-end system for real-time recommendation service.
+
+\textbf{System Components:}
+\begin{enumerate}
+    \item Feature extraction: Process user/item features (target: <10ms)
+    \item Model inference: Two-tower model (target: <30ms)
+    \item Post-processing: Ranking and filtering (target: <10ms)
+    \item Total latency budget: <50ms end-to-end
+\end{enumerate}
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Handle 10,000 QPS
+    \item P99 latency <50ms
+    \item 4 CPU cores + 1 GPU for inference
+    \item Fault tolerance and graceful degradation
+\end{itemize}
+
+\textbf{Optimization Areas:}
+
+\textbf{1. Feature Processing:}
+\begin{itemize}
+    \item Cache frequently accessed features (Redis)
+    \item Batch feature lookups
+    \item Precompute item embeddings
+    \item Use efficient serialization (Protocol Buffers)
+\end{itemize}
+
+\textbf{2. Model Optimization:}
+\begin{itemize}
+    \item Quantize two-tower model
+    \item Use ONNX Runtime for inference
+    \item Enable dynamic batching
+    \item GPU memory optimization
+\end{itemize}
+
+\textbf{3. Serving Infrastructure:}
+\begin{itemize}
+    \item Implement request batching
+    \item Use connection pooling
+    \item Add circuit breakers
+    \item Horizontal scaling with load balancing
+\end{itemize}
+
+\textbf{4. Caching Strategy:}
+\begin{itemize}
+    \item Cache popular recommendations
+    \item Implement cache warming
+    \item TTL-based invalidation
+    \item Measure cache hit rate
+\end{itemize}
+
+\textbf{Implementation:}
+\begin{enumerate}
+    \item Profile baseline end-to-end latency
+    \item Optimize each component independently
+    \item Implement batching and caching
+    \item Load test at target QPS
+    \item Identify and fix bottlenecks
+    \item Deploy with monitoring
+\end{enumerate}
+
+\textbf{Success Metrics:}
+\begin{itemize}
+    \item P99 latency: <50ms
+    \item Throughput: >10,000 QPS
+    \item CPU utilization: 60-70\%
+    \item GPU utilization: >80\%
+    \item Cache hit rate: >60\%
+    \item Error rate: <0.1\%
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Production-ready recommendation service
+    \item Complete performance benchmarks
+    \item Monitoring dashboard
+    \item Optimization playbook documenting techniques
+    \item Load test results and capacity planning
+\end{itemize}
+
+\section{Summary}
+
+Performance optimization is essential for deploying machine learning models in production. This chapter covered comprehensive techniques across the entire optimization stack.
+
+\textbf{Key Takeaways:}
+
+\textbf{1. Model Compression:}
+\begin{itemize}
+    \item Quantization reduces model size 4x with minimal accuracy loss
+    \item Pruning removes 50-90\% of weights while maintaining performance
+    \item Knowledge distillation transfers accuracy to smaller models
+    \item Combine techniques for maximum compression
+\end{itemize}
+
+\textbf{2. Hardware Acceleration:}
+\begin{itemize}
+    \item GPUs provide 10-100x speedup for parallel operations
+    \item Mixed precision (FP16) doubles throughput on modern GPUs
+    \item Batch processing amortizes overhead and maximizes throughput
+    \item Profile to identify GPU utilization bottlenecks
+\end{itemize}
+
+\textbf{3. Memory Optimization:}
+\begin{itemize}
+    \item Memory is often the primary constraint, not compute
+    \item Chunked inference prevents OOM errors on large batches
+    \item Operator fusion reduces memory footprint
+    \item Efficient KV cache management for generative models
+\end{itemize}
+
+\textbf{4. Inference Patterns:}
+\begin{itemize}
+    \item Dynamic batching improves throughput 3-5x
+    \item Request caching eliminates redundant computation
+    \item Asynchronous processing hides latency
+    \item Load balancing distributes work efficiently
+\end{itemize}
+
+\textbf{5. Edge Deployment:}
+\begin{itemize}
+    \item Edge devices require aggressive compression (quantization + pruning)
+    \item ONNX and TFLite enable cross-platform deployment
+    \item Mobile optimization includes operator fusion and memory layout
+    \item Profile on target hardware early and often
+\end{itemize}
+
+\textbf{6. Profiling and Benchmarking:}
+\begin{itemize}
+    \item Always measure before optimizing
+    \item Profile at multiple levels: layer, operator, end-to-end
+    \item Track latency distributions (P50, P95, P99), not just averages
+    \item Identify bottlenecks systematically
+\end{itemize}
+
+\textbf{Optimization Workflow:}
+
+\begin{enumerate}
+    \item \textbf{Profile:} Measure baseline performance and identify bottlenecks
+    \item \textbf{Optimize:} Apply appropriate techniques based on constraints
+    \item \textbf{Validate:} Ensure accuracy is maintained
+    \item \textbf{Benchmark:} Measure improvements quantitatively
+    \item \textbf{Iterate:} Continue optimizing next bottleneck
+\end{enumerate}
+
+\textbf{Trade-offs to Consider:}
+
+\begin{itemize}
+    \item \textbf{Accuracy vs Speed:} Compression reduces accuracy; find acceptable balance
+    \item \textbf{Latency vs Throughput:} Batching increases throughput but adds latency
+    \item \textbf{Memory vs Compute:} Some optimizations trade memory for speed
+    \item \textbf{Development Time vs Performance:} Simple techniques often give 80\% of gains
+\end{itemize}
+
+\textbf{Best Practices:}
+
+\begin{enumerate}
+    \item Start with high-level optimizations (model architecture, batching) before low-level tuning
+    \item Use existing optimized libraries (ONNXRuntime, TensorRT) instead of reinventing
+    \item Optimize for your specific deployment target (cloud GPU vs mobile CPU)
+    \item Maintain accuracy validation throughout optimization process
+    \item Document optimization decisions and trade-offs for future reference
+    \item Monitor production performance continuously to catch regressions
+\end{enumerate}
+
+\textbf{Common Pitfalls to Avoid:}
+
+\begin{itemize}
+    \item Premature optimization without profiling
+    \item Optimizing the wrong bottleneck
+    \item Sacrificing too much accuracy for speed
+    \item Not testing on target hardware
+    \item Ignoring production constraints (memory, power, cost)
+    \item Over-engineering complex solutions for simple problems
+\end{itemize}
+
+\textbf{Production Deployment Checklist:}
+
+\begin{itemize}
+    \item[\checkmark] Profile model on target hardware
+    \item[\checkmark] Validate accuracy after each optimization
+    \item[\checkmark] Benchmark latency distribution (P50/P95/P99)
+    \item[\checkmark] Measure throughput under load
+    \item[\checkmark] Test memory usage at peak traffic
+    \item[\checkmark] Verify model size meets constraints
+    \item[\checkmark] Implement monitoring and alerting
+    \item[\checkmark] Document optimization decisions
+    \item[\checkmark] Plan for future scaling needs
+\end{itemize}
+
+Performance optimization is an iterative process. Start with the techniques that provide the most impact for your use case, measure carefully, and continue refining based on production feedback. The combination of model compression, hardware acceleration, and serving optimizations can typically achieve 5-10x improvements in latency and throughput, enabling ML models to meet stringent production requirements.
+
+Remember: The best optimization is the one that meets your requirements with the simplest implementation. Don't over-optimize unless your use case demands it.
+
+\section{Real-World Optimization Case Studies}
+
+\subsection{Case Study 1: BERT Model Optimization for Search}
+
+\textbf{Challenge:} A search engine needed to deploy BERT for query understanding at 10,000 QPS with <20ms P99 latency.
+
+\textbf{Initial State:}
+\begin{itemize}
+    \item Model: BERT-Base (110M parameters)
+    \item Infrastructure: 8x V100 GPUs
+    \item Latency: 180ms P99
+    \item Throughput: 400 QPS
+    \item Cost: \$15,000/month
+\end{itemize}
+
+\textbf{Optimization Journey:}
+
+\textbf{Step 1: Dynamic Quantization} (Week 1)
+\begin{itemize}
+    \item Applied INT8 quantization to Linear layers
+    \item Result: 2.1x speedup, 85ms P99
+    \item Accuracy drop: 0.3\% (acceptable)
+    \item No infrastructure changes needed
+\end{itemize}
+
+\textbf{Step 2: Knowledge Distillation} (Weeks 2-3)
+\begin{itemize}
+    \item Distilled to 6-layer DistilBERT student
+    \item Training took 3 days on 4 GPUs
+    \item Result: Additional 1.9x speedup, 45ms P99
+    \item Accuracy drop: 1.2\% total (still acceptable)
+\end{itemize}
+
+\textbf{Step 3: Batching Optimization} (Week 4)
+\begin{itemize}
+    \item Implemented dynamic batching (max batch=64, max wait=5ms)
+    \item Result: 5x throughput improvement, 2,000 QPS per GPU
+    \item P99 latency: 52ms (includes batching wait time)
+\end{itemize}
+
+\textbf{Step 4: TensorRT Compilation} (Week 5)
+\begin{itemize}
+    \item Exported to ONNX and compiled with TensorRT
+    \item Operator fusion and kernel optimization
+    \item Result: Additional 1.4x speedup, 37ms P99
+    \item Throughput: 2,800 QPS per GPU
+\end{itemize}
+
+\textbf{Final Results:}
+\begin{itemize}
+    \item P99 Latency: 18ms (9x improvement)
+    \item Throughput: 11,200 QPS on 4 GPUs (28x improvement)
+    \item Infrastructure reduced from 8 to 4 GPUs
+    \item Monthly cost: \$7,500 (50\% reduction)
+    \item Accuracy: 98.8\% of original (1.2\% drop)
+\end{itemize}
+
+\textbf{Key Learnings:}
+\begin{enumerate}
+    \item Start with easy wins: Quantization gave 2x with no training
+    \item Distillation requires time but provides architectural benefits
+    \item Batching has largest impact on throughput
+    \item Framework-specific optimizations (TensorRT) provide final polish
+    \item Each optimization compounded on previous improvements
+\end{enumerate}
+
+\subsection{Case Study 2: Image Classification on Edge Devices}
+
+\textbf{Challenge:} Deploy product recognition model on smart cameras with <50ms latency and <10MB size.
+
+\textbf{Initial State:}
+\begin{itemize}
+    \item Model: ResNet-50
+    \item Size: 98MB
+    \item Latency on ARM CPU: 850ms
+    \item Target: <50ms, <10MB
+\end{itemize}
+
+\textbf{Optimization Approach:}
+
+\textbf{Architecture Selection:}
+\begin{itemize}
+    \item Replaced ResNet-50 with MobileNetV3-Small
+    \item Size: 10MB → 2.5MB
+    \item Latency: 850ms → 95ms
+    \item Accuracy: 76\% → 71\% (5\% drop)
+\end{itemize}
+
+\textbf{Quantization:}
+\begin{itemize}
+    \item Applied INT8 quantization with QAT
+    \item Size: 2.5MB → 650KB (16x total reduction)
+    \item Latency: 95ms → 42ms
+    \item Accuracy recovered to 73\% with QAT
+\end{itemize}
+
+\textbf{Platform Optimization:}
+\begin{itemize}
+    \item Compiled to TFLite with XNNPACK delegate
+    \item Enabled NEON SIMD instructions
+    \item Optimized preprocessing (resize, normalize)
+    \item Final latency: 35ms on ARM Cortex-A53
+\end{itemize}
+
+\textbf{Results:}
+\begin{itemize}
+    \item Model size: 650KB (150x reduction)
+    \item Latency: 35ms (24x improvement)
+    \item Accuracy: 73\% (3\% drop from original)
+    \item Power: 1.2W vs 3.5W for original
+    \item Deployable on \$30 edge devices
+\end{itemize}
+
+\subsection{Case Study 3: Large Language Model Serving}
+
+\textbf{Challenge:} Serve GPT-3 scale model (175B parameters) for production chatbot at reasonable cost.
+
+\textbf{Constraints:}
+\begin{itemize}
+    \item Budget: 8x A100 GPUs (80GB each)
+    \item Target: 50 concurrent users
+    \item Latency: <2s for 100 tokens
+    \item Quality: Maintain generation quality
+\end{itemize}
+
+\textbf{Optimization Stack:}
+
+\textbf{1. Model Parallelism:}
+\begin{itemize}
+    \item Tensor parallelism across 8 GPUs
+    \item Pipeline parallelism for 96 layers
+    \item Each GPU handles ~22B parameters
+\end{itemize}
+
+\textbf{2. Quantization:}
+\begin{itemize}
+    \item INT8 quantization for KV cache
+    \item FP16 for computation
+    \item Memory per GPU: 75GB → 45GB
+\end{itemize}
+
+\textbf{3. KV Cache Optimization:}
+\begin{itemize}
+    \item PagedAttention for efficient cache management
+    \item Cache reuse across requests
+    \item Continuous batching for higher throughput
+\end{itemize}
+
+\textbf{4. Speculative Decoding:}
+\begin{itemize}
+    \item Small draft model predicts multiple tokens
+    \item Large model verifies in parallel
+    \item 2-3x speedup on average
+\end{itemize}
+
+\textbf{Results:}
+\begin{itemize}
+    \item Throughput: 75 concurrent users (50\% above target)
+    \item Latency: 1.4s for 100 tokens
+    \item GPU memory utilization: 60GB/80GB per GPU
+    \item Monthly cost: \$28,000 (vs \$100,000+ naive approach)
+\end{itemize}
+
+\textbf{Critical Success Factors:}
+\begin{enumerate}
+    \item Proper model parallelism essential for large models
+    \item KV cache management is the key bottleneck
+    \item Continuous batching maximizes GPU utilization
+    \item Speculative decoding provides significant user-perceived speedup
+\end{enumerate}
+
+\subsection{Lessons Learned Across All Cases}
+
+\textbf{Universal Principles:}
+
+\begin{enumerate}
+    \item \textbf{Measure First:} All successful optimizations started with comprehensive profiling
+    \item \textbf{Low-Hanging Fruit:} Quantization and batching provided 70\% of gains with 20\% of effort
+    \item \textbf{Compound Effects:} Multiple optimizations multiply, not just add
+    \item \textbf{Target-Specific:} Edge, cloud, and distributed cases required different approaches
+    \item \textbf{Accuracy Trade-offs:} 1-5\% accuracy loss is usually acceptable for 10x speedup
+\end{enumerate}
+
+\textbf{Common Optimization Stacks by Use Case:}
+
+\textbf{Cloud GPU Serving:}
+\begin{enumerate}
+    \item Dynamic batching (3-5x throughput)
+    \item Mixed precision FP16 (1.8x speedup)
+    \item TensorRT compilation (1.5x speedup)
+    \item KV cache optimization for generative models
+\end{enumerate}
+
+\textbf{Edge/Mobile Deployment:}
+\begin{enumerate}
+    \item Architecture selection (MobileNet, EfficientNet)
+    \item INT8 quantization (4x compression, 2-3x speedup)
+    \item Platform-specific optimization (XNNPACK, Core ML)
+    \item Resolution reduction if acceptable
+\end{enumerate}
+
+\textbf{High-Throughput Batch Processing:}
+\begin{enumerate}
+    \item Large batch sizes (maximize GPU utilization)
+    \item Mixed precision training
+    \item Data pipeline optimization (prefetching, GPU preprocessing)
+    \item Distributed processing if needed
+\end{enumerate}
+
+\textbf{ROI Analysis:}
+
+Across all case studies, optimization provided:
+\begin{itemize}
+    \item Average latency improvement: 10-25x
+    \item Average throughput improvement: 15-30x
+    \item Average cost reduction: 40-70\%
+    \item Engineering investment: 4-8 weeks
+    \item Typical accuracy impact: 1-5\% drop
+\end{itemize}
+
+\textbf{When NOT to Optimize:}
+
+Not every model needs aggressive optimization:
+\begin{itemize}
+    \item Offline batch processing with flexible time budgets
+    \item Research and experimentation where accuracy is paramount
+    \item Low-traffic services (<10 QPS) where cost is minimal
+    \item Models already meeting performance requirements with headroom
+\end{itemize}
+
+The key is understanding your requirements and optimizing proportionally to achieve them.
+
+

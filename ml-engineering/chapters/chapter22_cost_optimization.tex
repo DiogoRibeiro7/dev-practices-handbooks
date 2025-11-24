@@ -2,31 +2,2675 @@
 
 After completing this chapter, readers will be able to:
 \begin{itemize}
-    \item Optimize compute costs for training and serving
-    \item Implement cost monitoring and allocation
-    \item Use spot instances and preemptible VMs
-    \item Optimize data storage costs
-    \item Design cost-efficient architectures
+    \item Understand the cost structure of ML systems across training and serving
+    \item Implement comprehensive training cost optimization strategies
+    \item Analyze and reduce serving infrastructure costs
+    \item Design intelligent resource allocation and scaling policies
+    \item Deploy cloud cost monitoring systems with automated alerts
+    \item Leverage spot instances and preemptible VMs effectively
+    \item Calculate and optimize ROI for ML investments
+    \item Apply cost optimization best practices across the ML lifecycle
 \end{itemize}
 
-\section{ML Cost Structure}
+\section{Introduction}
 
-% Placeholder content
+ML systems often represent significant infrastructure investments, with costs scaling rapidly as model complexity and usage increase. A production ML system can cost anywhere from thousands to millions of dollars annually, making cost optimization a critical engineering concern.
+
+\textbf{Primary Cost Centers in ML Systems:}
+
+\begin{itemize}
+    \item \textbf{Training Costs:} Compute for model training, hyperparameter optimization, experimentation
+    \item \textbf{Serving Costs:} Inference infrastructure, API endpoints, model hosting
+    \item \textbf{Storage Costs:} Training data, model artifacts, feature stores, logs
+    \item \textbf{Data Processing:} ETL pipelines, feature engineering, data validation
+    \item \textbf{Personnel:} ML engineers, data scientists, MLOps specialists
+    \item \textbf{Monitoring and Observability:} Metrics, logs, traces, dashboards
+    \item \textbf{Development and Experimentation:} Notebooks, development environments, testing
+\end{itemize}
+
+\textbf{Cost Optimization Principles:}
+
+\begin{enumerate}
+    \item \textbf{Visibility:} You can't optimize what you can't measure
+    \item \textbf{Right-sizing:} Match resources to actual requirements
+    \item \textbf{Automation:} Scale resources dynamically based on demand
+    \item \textbf{Efficiency:} Optimize algorithms and infrastructure utilization
+    \item \textbf{Trade-offs:} Balance cost, performance, and latency requirements
+\end{enumerate}
+
+\section{ML Cost Structure and Analysis}
+
+Understanding the cost breakdown of ML systems is the first step toward optimization.
+
+\subsection{Cost Breakdown Model}
+
+\begin{lstlisting}[language=Python, caption=ML System Cost Analyzer]
+#!/usr/bin/env python3
+"""
+ML System Cost Analysis Framework
+Comprehensive cost tracking and breakdown for ML infrastructure
+"""
+
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+from enum import Enum
+import pandas as pd
+import numpy as np
+
+class CostCategory(Enum):
+    """Cost categories for ML systems"""
+    TRAINING = "training"
+    SERVING = "serving"
+    STORAGE = "storage"
+    DATA_PROCESSING = "data_processing"
+    MONITORING = "monitoring"
+    DEVELOPMENT = "development"
+    NETWORKING = "networking"
+
+@dataclass
+class ResourceCost:
+    """Individual resource cost record"""
+    resource_id: str
+    resource_type: str  # compute, storage, network
+    category: CostCategory
+    cost: float
+    unit: str  # per hour, per GB, per request
+    quantity: float
+    start_time: datetime
+    end_time: datetime
+    metadata: Dict = field(default_factory=dict)
+
+    @property
+    def total_cost(self) -> float:
+        """Calculate total cost"""
+        return self.cost * self.quantity
+
+    @property
+    def duration_hours(self) -> float:
+        """Calculate duration in hours"""
+        return (self.end_time - self.start_time).total_seconds() / 3600
+
+@dataclass
+class CostReport:
+    """Cost analysis report"""
+    total_cost: float
+    breakdown_by_category: Dict[CostCategory, float]
+    breakdown_by_resource_type: Dict[str, float]
+    top_cost_drivers: List[tuple]
+    optimization_opportunities: List[str]
+    period_start: datetime
+    period_end: datetime
+
+class MLCostAnalyzer:
+    """Analyze and track ML system costs"""
+
+    def __init__(self):
+        self.cost_records: List[ResourceCost] = []
+        self.hourly_rates = {
+            # AWS pricing (example rates)
+            "ml.p3.2xlarge": 3.06,  # V100 GPU
+            "ml.p4d.24xlarge": 32.77,  # A100 GPU
+            "ml.g4dn.xlarge": 0.526,  # T4 GPU
+            "ml.m5.xlarge": 0.192,  # General compute
+            "ml.c5.2xlarge": 0.34,  # Compute optimized
+            # Storage (per GB-month)
+            "s3_standard": 0.023,
+            "ebs_gp3": 0.08,
+            "efs": 0.30,
+        }
+
+    def add_cost_record(self, record: ResourceCost):
+        """Add a cost record"""
+        self.cost_records.append(record)
+
+    def track_training_run(
+        self,
+        job_id: str,
+        instance_type: str,
+        num_instances: int,
+        start_time: datetime,
+        end_time: datetime,
+        metadata: Optional[Dict] = None
+    ) -> ResourceCost:
+        """Track cost of a training run"""
+
+        duration_hours = (end_time - start_time).total_seconds() / 3600
+        hourly_cost = self.hourly_rates.get(instance_type, 0)
+        total_quantity = duration_hours * num_instances
+
+        record = ResourceCost(
+            resource_id=job_id,
+            resource_type="compute",
+            category=CostCategory.TRAINING,
+            cost=hourly_cost,
+            unit="per_hour",
+            quantity=total_quantity,
+            start_time=start_time,
+            end_time=end_time,
+            metadata=metadata or {}
+        )
+
+        self.add_cost_record(record)
+        return record
+
+    def track_serving_endpoint(
+        self,
+        endpoint_name: str,
+        instance_type: str,
+        num_instances: int,
+        requests: int,
+        start_time: datetime,
+        end_time: datetime
+    ) -> ResourceCost:
+        """Track cost of serving endpoint"""
+
+        duration_hours = (end_time - start_time).total_seconds() / 3600
+        hourly_cost = self.hourly_rates.get(instance_type, 0)
+        total_quantity = duration_hours * num_instances
+
+        record = ResourceCost(
+            resource_id=endpoint_name,
+            resource_type="compute",
+            category=CostCategory.SERVING,
+            cost=hourly_cost,
+            unit="per_hour",
+            quantity=total_quantity,
+            start_time=start_time,
+            end_time=end_time,
+            metadata={
+                "requests": requests,
+                "cost_per_request": (hourly_cost * total_quantity) / requests if requests > 0 else 0
+            }
+        )
+
+        self.add_cost_record(record)
+        return record
+
+    def track_storage(
+        self,
+        storage_id: str,
+        storage_type: str,
+        size_gb: float,
+        duration_days: int,
+        category: CostCategory
+    ) -> ResourceCost:
+        """Track storage costs"""
+
+        monthly_cost_per_gb = self.hourly_rates.get(storage_type, 0)
+        quantity = size_gb * (duration_days / 30.0)  # GB-months
+
+        start_time = datetime.now()
+        end_time = start_time + timedelta(days=duration_days)
+
+        record = ResourceCost(
+            resource_id=storage_id,
+            resource_type="storage",
+            category=category,
+            cost=monthly_cost_per_gb,
+            unit="per_gb_month",
+            quantity=quantity,
+            start_time=start_time,
+            end_time=end_time,
+            metadata={"size_gb": size_gb}
+        )
+
+        self.add_cost_record(record)
+        return record
+
+    def generate_cost_report(
+        self,
+        start_date: datetime,
+        end_date: datetime
+    ) -> CostReport:
+        """Generate comprehensive cost report"""
+
+        # Filter records by date range
+        filtered_records = [
+            r for r in self.cost_records
+            if r.start_time >= start_date and r.end_time <= end_date
+        ]
+
+        # Calculate total cost
+        total_cost = sum(r.total_cost for r in filtered_records)
+
+        # Breakdown by category
+        breakdown_by_category = {}
+        for category in CostCategory:
+            category_records = [r for r in filtered_records if r.category == category]
+            breakdown_by_category[category] = sum(r.total_cost for r in category_records)
+
+        # Breakdown by resource type
+        breakdown_by_resource_type = {}
+        for record in filtered_records:
+            if record.resource_type not in breakdown_by_resource_type:
+                breakdown_by_resource_type[record.resource_type] = 0
+            breakdown_by_resource_type[record.resource_type] += record.total_cost
+
+        # Identify top cost drivers
+        cost_by_resource = {}
+        for record in filtered_records:
+            if record.resource_id not in cost_by_resource:
+                cost_by_resource[record.resource_id] = 0
+            cost_by_resource[record.resource_id] += record.total_cost
+
+        top_cost_drivers = sorted(
+            cost_by_resource.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:10]
+
+        # Identify optimization opportunities
+        optimization_opportunities = self._identify_optimization_opportunities(
+            filtered_records
+        )
+
+        return CostReport(
+            total_cost=total_cost,
+            breakdown_by_category=breakdown_by_category,
+            breakdown_by_resource_type=breakdown_by_resource_type,
+            top_cost_drivers=top_cost_drivers,
+            optimization_opportunities=optimization_opportunities,
+            period_start=start_date,
+            period_end=end_date
+        )
+
+    def _identify_optimization_opportunities(
+        self,
+        records: List[ResourceCost]
+    ) -> List[str]:
+        """Identify cost optimization opportunities"""
+
+        opportunities = []
+
+        # Check for long-running training jobs
+        training_records = [r for r in records if r.category == CostCategory.TRAINING]
+        for record in training_records:
+            if record.duration_hours > 24:
+                opportunities.append(
+                    f"Long training job {record.resource_id} ran for "
+                    f"{record.duration_hours:.1f} hours. Consider checkpointing "
+                    "and spot instances."
+                )
+
+        # Check for underutilized serving endpoints
+        serving_records = [r for r in records if r.category == CostCategory.SERVING]
+        for record in serving_records:
+            requests = record.metadata.get("requests", 0)
+            if requests > 0:
+                cost_per_1k_requests = (record.total_cost / requests) * 1000
+                if cost_per_1k_requests > 1.0:
+                    opportunities.append(
+                        f"Serving endpoint {record.resource_id} has high cost per request "
+                        f"(${cost_per_1k_requests:.2f} per 1K). Consider right-sizing or serverless."
+                    )
+
+        # Check for expensive storage
+        storage_records = [r for r in records if r.resource_type == "storage"]
+        for record in storage_records:
+            size_gb = record.metadata.get("size_gb", 0)
+            if size_gb > 1000 and record.cost > 0.1:  # >1TB on expensive storage
+                opportunities.append(
+                    f"Large dataset {record.resource_id} ({size_gb:.0f} GB) on expensive "
+                    "storage. Consider tiering to cheaper storage class."
+                )
+
+        return opportunities
+
+    def export_to_dataframe(self) -> pd.DataFrame:
+        """Export cost records to pandas DataFrame"""
+
+        data = []
+        for record in self.cost_records:
+            data.append({
+                "resource_id": record.resource_id,
+                "resource_type": record.resource_type,
+                "category": record.category.value,
+                "cost_per_unit": record.cost,
+                "quantity": record.quantity,
+                "total_cost": record.total_cost,
+                "start_time": record.start_time,
+                "end_time": record.end_time,
+                "duration_hours": record.duration_hours
+            })
+
+        return pd.DataFrame(data)
+
+    def calculate_monthly_projection(self, days_elapsed: int) -> float:
+        """Project monthly cost based on current spending"""
+
+        if days_elapsed == 0:
+            return 0
+
+        current_cost = sum(r.total_cost for r in self.cost_records)
+        daily_average = current_cost / days_elapsed
+        monthly_projection = daily_average * 30
+
+        return monthly_projection
+
+# Example usage
+if __name__ == "__main__":
+    analyzer = MLCostAnalyzer()
+
+    # Track training run
+    start = datetime.now() - timedelta(hours=5)
+    end = datetime.now()
+
+    analyzer.track_training_run(
+        job_id="bert-training-001",
+        instance_type="ml.p3.2xlarge",
+        num_instances=4,
+        start_time=start,
+        end_time=end,
+        metadata={"model": "BERT", "dataset": "wikipedia"}
+    )
+
+    # Track serving endpoint
+    analyzer.track_serving_endpoint(
+        endpoint_name="recommendation-api",
+        instance_type="ml.m5.xlarge",
+        num_instances=3,
+        requests=1500000,
+        start_time=start,
+        end_time=end
+    )
+
+    # Generate report
+    report = analyzer.generate_cost_report(
+        start_date=start - timedelta(days=30),
+        end_date=end
+    )
+
+    print(f"Total Cost: ${report.total_cost:.2f}")
+    print("\nCost Breakdown:")
+    for category, cost in report.breakdown_by_category.items():
+        if cost > 0:
+            percentage = (cost / report.total_cost) * 100
+            print(f"  {category.value}: ${cost:.2f} ({percentage:.1f}%)")
+
+    print("\nOptimization Opportunities:")
+    for opportunity in report.optimization_opportunities:
+        print(f"  - {opportunity}")
+\end{lstlisting}
 
 \section{Training Cost Optimization}
 
-% Placeholder content
+Training costs often dominate ML budgets, especially for large models and extensive hyperparameter searches.
 
-\section{Serving Cost Optimization}
+\subsection{Training Infrastructure Optimization}
 
-% Placeholder content
+\begin{bestpractice}
+Profile training jobs to identify compute bottlenecks before scaling to expensive hardware. A poorly optimized training loop won't benefit from larger instances.
+\end{bestpractice}
+
+\textbf{Key Training Cost Optimization Strategies:}
+
+\begin{enumerate}
+    \item \textbf{Right-size Compute Resources:} Match instance types to workload requirements
+    \item \textbf{Use Mixed Precision Training:} Reduce memory and increase throughput with FP16/BF16
+    \item \textbf{Implement Gradient Accumulation:} Train larger models on smaller instances
+    \item \textbf{Optimize Data Loading:} Eliminate I/O bottlenecks that waste GPU cycles
+    \item \textbf{Use Spot Instances:} Save 70-90\% on compute for fault-tolerant workloads
+    \item \textbf{Implement Early Stopping:} Don't waste resources on unpromising runs
+    \item \textbf{Cache Preprocessed Data:} Avoid redundant data transformations
+\end{enumerate}
+
+\subsection{Training Cost Optimizer Implementation}
+
+\begin{lstlisting}[language=Python, caption=Training Cost Optimization Framework]
+#!/usr/bin/env python3
+"""
+Training Cost Optimization
+Strategies and tools for reducing ML training costs
+"""
+
+import torch
+import torch.nn as nn
+import time
+from typing import Optional, Dict, List, Tuple
+from dataclasses import dataclass
+import psutil
+import GPUtil
+
+@dataclass
+class TrainingMetrics:
+    """Training performance metrics"""
+    samples_per_second: float
+    gpu_utilization: float
+    memory_utilization: float
+    cost_per_hour: float
+    estimated_total_cost: float
+    time_to_completion_hours: float
+
+    @property
+    def cost_per_1k_samples(self) -> float:
+        """Calculate cost per 1000 training samples"""
+        if self.samples_per_second == 0:
+            return float('inf')
+        samples_per_hour = self.samples_per_second * 3600
+        return (self.cost_per_hour / samples_per_hour) * 1000
+
+class TrainingCostOptimizer:
+    """Optimize training costs through various strategies"""
+
+    def __init__(
+        self,
+        model: nn.Module,
+        cost_per_hour: float,
+        target_samples: int
+    ):
+        self.model = model
+        self.cost_per_hour = cost_per_hour
+        self.target_samples = target_samples
+        self.training_start_time = None
+        self.samples_processed = 0
+
+    def profile_training_step(
+        self,
+        batch_size: int,
+        num_steps: int = 100
+    ) -> TrainingMetrics:
+        """Profile training performance and cost"""
+
+        device = next(self.model.parameters()).device
+        dummy_input = torch.randn(batch_size, 3, 224, 224).to(device)
+        dummy_target = torch.randint(0, 1000, (batch_size,)).to(device)
+
+        # Warmup
+        for _ in range(10):
+            output = self.model(dummy_input)
+            loss = nn.functional.cross_entropy(output, dummy_target)
+            loss.backward()
+
+        # Profile
+        start_time = time.time()
+
+        for _ in range(num_steps):
+            output = self.model(dummy_input)
+            loss = nn.functional.cross_entropy(output, dummy_target)
+            loss.backward()
+
+        torch.cuda.synchronize() if torch.cuda.is_available() else None
+        elapsed_time = time.time() - start_time
+
+        # Calculate metrics
+        samples_per_second = (num_steps * batch_size) / elapsed_time
+
+        # Get GPU utilization
+        gpu_utilization = 0
+        memory_utilization = 0
+        if torch.cuda.is_available():
+            gpus = GPUtil.getGPUs()
+            if gpus:
+                gpu_utilization = gpus[0].load * 100
+                memory_utilization = gpus[0].memoryUtil * 100
+
+        # Cost calculations
+        remaining_samples = self.target_samples - self.samples_processed
+        time_to_completion_hours = remaining_samples / (samples_per_second * 3600)
+        estimated_total_cost = time_to_completion_hours * self.cost_per_hour
+
+        return TrainingMetrics(
+            samples_per_second=samples_per_second,
+            gpu_utilization=gpu_utilization,
+            memory_utilization=memory_utilization,
+            cost_per_hour=self.cost_per_hour,
+            estimated_total_cost=estimated_total_cost,
+            time_to_completion_hours=time_to_completion_hours
+        )
+
+    def find_optimal_batch_size(
+        self,
+        min_batch_size: int = 8,
+        max_batch_size: int = 512
+    ) -> Tuple[int, TrainingMetrics]:
+        """Find batch size that maximizes throughput per dollar"""
+
+        best_batch_size = min_batch_size
+        best_cost_efficiency = float('inf')
+        best_metrics = None
+
+        batch_size = min_batch_size
+        while batch_size <= max_batch_size:
+            try:
+                metrics = self.profile_training_step(batch_size)
+
+                # Cost efficiency: dollars per 1000 samples
+                cost_efficiency = metrics.cost_per_1k_samples
+
+                if cost_efficiency < best_cost_efficiency:
+                    best_cost_efficiency = cost_efficiency
+                    best_batch_size = batch_size
+                    best_metrics = metrics
+
+                batch_size *= 2
+
+            except RuntimeError as e:
+                # OOM error, stop increasing batch size
+                if "out of memory" in str(e):
+                    break
+                raise
+
+        return best_batch_size, best_metrics
+
+    def enable_mixed_precision(self) -> Dict[str, float]:
+        """Enable mixed precision training for cost savings"""
+
+        # Profile FP32
+        metrics_fp32 = self.profile_training_step(batch_size=32)
+
+        # Enable mixed precision
+        scaler = torch.cuda.amp.GradScaler()
+
+        # Profile with mixed precision
+        device = next(self.model.parameters()).device
+        dummy_input = torch.randn(32, 3, 224, 224).to(device)
+        dummy_target = torch.randint(0, 1000, (32,)).to(device)
+
+        start_time = time.time()
+        for _ in range(100):
+            with torch.cuda.amp.autocast():
+                output = self.model(dummy_input)
+                loss = nn.functional.cross_entropy(output, dummy_target)
+
+            scaler.scale(loss).backward()
+            scaler.step(torch.optim.SGD(self.model.parameters(), lr=0.01))
+            scaler.update()
+
+        torch.cuda.synchronize() if torch.cuda.is_available() else None
+        elapsed_time = time.time() - start_time
+
+        samples_per_second_fp16 = (100 * 32) / elapsed_time
+
+        # Calculate speedup and cost savings
+        speedup = samples_per_second_fp16 / metrics_fp32.samples_per_second
+        cost_reduction = (1 - (1 / speedup)) * 100
+
+        return {
+            "speedup": speedup,
+            "cost_reduction_percent": cost_reduction,
+            "fp32_samples_per_sec": metrics_fp32.samples_per_second,
+            "fp16_samples_per_sec": samples_per_second_fp16
+        }
+
+    def implement_gradient_accumulation(
+        self,
+        target_batch_size: int,
+        available_memory_batch_size: int
+    ) -> Dict[str, any]:
+        """Use gradient accumulation to simulate larger batches"""
+
+        accumulation_steps = target_batch_size // available_memory_batch_size
+
+        # This allows training with larger effective batch sizes
+        # on smaller, cheaper instances
+
+        # Cost comparison
+        large_instance_cost = self.cost_per_hour * 2  # Assume 2x cost
+        small_instance_time_multiplier = 1.1  # Slight overhead from accumulation
+
+        large_instance_total = large_instance_cost
+        small_instance_total = self.cost_per_hour * small_instance_time_multiplier
+
+        cost_savings = ((large_instance_total - small_instance_total) /
+                       large_instance_total) * 100
+
+        return {
+            "accumulation_steps": accumulation_steps,
+            "effective_batch_size": target_batch_size,
+            "physical_batch_size": available_memory_batch_size,
+            "estimated_cost_savings_percent": cost_savings
+        }
+
+    def calculate_early_stopping_savings(
+        self,
+        total_epochs: int,
+        early_stop_epoch: int,
+        num_runs: int
+    ) -> Dict[str, float]:
+        """Calculate cost savings from early stopping"""
+
+        # Without early stopping
+        cost_per_epoch = self.cost_per_hour * (self.target_samples /
+                        (self.profile_training_step(32).samples_per_second * 3600))
+        total_cost_without = cost_per_epoch * total_epochs * num_runs
+
+        # With early stopping (average case)
+        average_stop_epoch = (early_stop_epoch + total_epochs) / 2
+        total_cost_with = cost_per_epoch * average_stop_epoch * num_runs
+
+        savings = total_cost_without - total_cost_with
+        savings_percent = (savings / total_cost_without) * 100
+
+        return {
+            "cost_without_early_stopping": total_cost_without,
+            "cost_with_early_stopping": total_cost_with,
+            "savings_dollars": savings,
+            "savings_percent": savings_percent
+        }
+
+class HyperparameterSearchCostOptimizer:
+    """Optimize costs for hyperparameter search"""
+
+    def __init__(self, cost_per_hour: float):
+        self.cost_per_hour = cost_per_hour
+
+    def compare_search_strategies(
+        self,
+        num_hyperparameters: int,
+        values_per_param: int,
+        max_trials: int,
+        avg_trial_hours: float
+    ) -> Dict[str, Dict[str, float]]:
+        """Compare cost of different search strategies"""
+
+        # Grid Search
+        grid_search_trials = values_per_param ** num_hyperparameters
+        grid_search_cost = min(grid_search_trials, max_trials) * avg_trial_hours * self.cost_per_hour
+
+        # Random Search
+        random_search_trials = max_trials
+        random_search_cost = random_search_trials * avg_trial_hours * self.cost_per_hour
+
+        # Bayesian Optimization (typically needs fewer trials)
+        bayesian_trials = max_trials // 2
+        bayesian_cost = bayesian_trials * avg_trial_hours * self.cost_per_hour
+
+        # Hyperband (early stopping poor configurations)
+        hyperband_trials = max_trials
+        hyperband_avg_hours = avg_trial_hours * 0.3  # Many trials stopped early
+        hyperband_cost = hyperband_trials * hyperband_avg_hours * self.cost_per_hour
+
+        return {
+            "grid_search": {
+                "trials": grid_search_trials,
+                "cost": grid_search_cost,
+                "hours": grid_search_trials * avg_trial_hours
+            },
+            "random_search": {
+                "trials": random_search_trials,
+                "cost": random_search_cost,
+                "hours": random_search_trials * avg_trial_hours
+            },
+            "bayesian_optimization": {
+                "trials": bayesian_trials,
+                "cost": bayesian_cost,
+                "hours": bayesian_trials * avg_trial_hours
+            },
+            "hyperband": {
+                "trials": hyperband_trials,
+                "cost": hyperband_cost,
+                "hours": hyperband_trials * hyperband_avg_hours
+            }
+        }
+
+    def calculate_sequential_halving_savings(
+        self,
+        initial_configurations: int,
+        max_budget_per_config: float,
+        halving_rounds: int
+    ) -> Dict[str, float]:
+        """Calculate savings from successive halving"""
+
+        # Full training cost
+        full_cost = initial_configurations * max_budget_per_config * self.cost_per_hour
+
+        # Successive halving cost
+        halving_cost = 0
+        configs = initial_configurations
+        budget = max_budget_per_config / (2 ** (halving_rounds - 1))
+
+        for round_num in range(halving_rounds):
+            halving_cost += configs * budget * self.cost_per_hour
+            configs = configs // 2
+            budget = budget * 2
+
+        savings = full_cost - halving_cost
+        savings_percent = (savings / full_cost) * 100
+
+        return {
+            "full_training_cost": full_cost,
+            "successive_halving_cost": halving_cost,
+            "savings_dollars": savings,
+            "savings_percent": savings_percent
+        }
+
+# Example usage
+if __name__ == "__main__":
+    # Create dummy model
+    model = torch.nn.Sequential(
+        torch.nn.Linear(100, 256),
+        torch.nn.ReLU(),
+        torch.nn.Linear(256, 10)
+    )
+
+    if torch.cuda.is_available():
+        model = model.cuda()
+
+    # Initialize optimizer
+    optimizer = TrainingCostOptimizer(
+        model=model,
+        cost_per_hour=3.06,  # ml.p3.2xlarge
+        target_samples=1000000
+    )
+
+    # Find optimal batch size
+    optimal_batch, metrics = optimizer.find_optimal_batch_size()
+    print(f"Optimal batch size: {optimal_batch}")
+    print(f"Cost per 1K samples: ${metrics.cost_per_1k_samples:.4f}")
+    print(f"Estimated total cost: ${metrics.estimated_total_cost:.2f}")
+
+    # Analyze mixed precision savings
+    mp_savings = optimizer.enable_mixed_precision()
+    print(f"\nMixed Precision Speedup: {mp_savings['speedup']:.2f}x")
+    print(f"Cost Reduction: {mp_savings['cost_reduction_percent']:.1f}%")
+\end{lstlisting}
+
+\subsection{Spot Instance Strategy for Training}
+
+Spot instances can reduce training costs by 70-90\%, but require fault-tolerance mechanisms.
+
+\begin{lstlisting}[language=Python, caption=Spot Instance Training Manager]
+#!/usr/bin/env python3
+"""
+Spot Instance Training Management
+Handle interruptions and optimize costs with spot instances
+"""
+
+import boto3
+import time
+import json
+from datetime import datetime
+from typing import Optional, Dict, List
+from dataclasses import dataclass
+import threading
+
+@dataclass
+class SpotInstanceConfig:
+    """Spot instance configuration"""
+    instance_type: str
+    max_price: float  # Maximum price per hour
+    availability_zones: List[str]
+    interruption_behavior: str = "terminate"  # or "stop", "hibernate"
+
+@dataclass
+class CheckpointConfig:
+    """Checkpointing configuration"""
+    checkpoint_interval_minutes: int
+    s3_bucket: str
+    checkpoint_path: str
+    max_checkpoints_to_keep: int = 3
+
+class SpotInstanceTrainingManager:
+    """Manage training on spot instances with fault tolerance"""
+
+    def __init__(
+        self,
+        spot_config: SpotInstanceConfig,
+        checkpoint_config: CheckpointConfig,
+        aws_region: str = "us-east-1"
+    ):
+        self.spot_config = spot_config
+        self.checkpoint_config = checkpoint_config
+        self.ec2_client = boto3.client('ec2', region_name=aws_region)
+        self.s3_client = boto3.client('s3', region_name=aws_region)
+        self.instance_id: Optional[str] = None
+        self.interruption_monitor_thread: Optional[threading.Thread] = None
+        self.interrupted = False
+
+    def request_spot_instance(self) -> str:
+        """Request a spot instance"""
+
+        # Get current spot price
+        current_price = self._get_current_spot_price()
+
+        if current_price > self.spot_config.max_price:
+            raise ValueError(
+                f"Current spot price (${current_price:.3f}) exceeds "
+                f"max price (${self.spot_config.max_price:.3f})"
+            )
+
+        # Create launch specification
+        launch_specification = {
+            'ImageId': 'ami-0c55b159cbfafe1f0',  # Deep Learning AMI
+            'InstanceType': self.spot_config.instance_type,
+            'KeyName': 'your-key-pair',
+            'SecurityGroups': ['ml-training-sg'],
+            'UserData': self._generate_user_data(),
+            'IamInstanceProfile': {
+                'Name': 'ml-training-role'
+            },
+            'BlockDeviceMappings': [
+                {
+                    'DeviceName': '/dev/sda1',
+                    'Ebs': {
+                        'VolumeSize': 100,
+                        'VolumeType': 'gp3'
+                    }
+                }
+            ]
+        }
+
+        # Request spot instance
+        response = self.ec2_client.request_spot_instances(
+            SpotPrice=str(self.spot_config.max_price),
+            InstanceCount=1,
+            Type='one-time',
+            LaunchSpecification=launch_specification,
+            InstanceInterruptionBehavior=self.spot_config.interruption_behavior
+        )
+
+        request_id = response['SpotInstanceRequests'][0]['SpotInstanceRequestId']
+
+        # Wait for instance to be running
+        self.instance_id = self._wait_for_spot_instance(request_id)
+
+        # Start monitoring for interruptions
+        self._start_interruption_monitoring()
+
+        return self.instance_id
+
+    def _get_current_spot_price(self) -> float:
+        """Get current spot price for instance type"""
+
+        response = self.ec2_client.describe_spot_price_history(
+            InstanceTypes=[self.spot_config.instance_type],
+            MaxResults=1,
+            ProductDescriptions=['Linux/UNIX'],
+            AvailabilityZone=self.spot_config.availability_zones[0]
+        )
+
+        if response['SpotPriceHistory']:
+            return float(response['SpotPriceHistory'][0]['SpotPrice'])
+        return float('inf')
+
+    def _wait_for_spot_instance(self, request_id: str, timeout: int = 300) -> str:
+        """Wait for spot instance to be fulfilled"""
+
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            response = self.ec2_client.describe_spot_instance_requests(
+                SpotInstanceRequestIds=[request_id]
+            )
+
+            request = response['SpotInstanceRequests'][0]
+            state = request['State']
+
+            if state == 'active':
+                return request['InstanceId']
+            elif state in ['closed', 'cancelled', 'failed']:
+                raise RuntimeError(f"Spot request failed: {request.get('Fault', {})}")
+
+            time.sleep(10)
+
+        raise TimeoutError("Spot instance request timed out")
+
+    def _start_interruption_monitoring(self):
+        """Start monitoring for spot interruption notices"""
+
+        def monitor():
+            # Check EC2 instance metadata for interruption notice
+            # This would run on the instance itself
+            while not self.interrupted:
+                try:
+                    # Check for interruption notice
+                    # (simplified - actual implementation would check instance metadata)
+                    time.sleep(5)
+                except Exception:
+                    pass
+
+        self.interruption_monitor_thread = threading.Thread(target=monitor)
+        self.interruption_monitor_thread.daemon = True
+        self.interruption_monitor_thread.start()
+
+    def save_checkpoint(
+        self,
+        model_state: Dict,
+        optimizer_state: Dict,
+        epoch: int,
+        global_step: int,
+        metadata: Optional[Dict] = None
+    ):
+        """Save training checkpoint to S3"""
+
+        checkpoint = {
+            'model_state_dict': model_state,
+            'optimizer_state_dict': optimizer_state,
+            'epoch': epoch,
+            'global_step': global_step,
+            'timestamp': datetime.now().isoformat(),
+            'metadata': metadata or {}
+        }
+
+        # Save locally first
+        local_path = f'/tmp/checkpoint_{global_step}.pt'
+        import torch
+        torch.save(checkpoint, local_path)
+
+        # Upload to S3
+        s3_key = f"{self.checkpoint_config.checkpoint_path}/checkpoint_{global_step}.pt"
+
+        self.s3_client.upload_file(
+            local_path,
+            self.checkpoint_config.s3_bucket,
+            s3_key
+        )
+
+        print(f"Checkpoint saved to s3://{self.checkpoint_config.s3_bucket}/{s3_key}")
+
+        # Clean up old checkpoints
+        self._cleanup_old_checkpoints()
+
+    def load_latest_checkpoint(self) -> Optional[Dict]:
+        """Load the most recent checkpoint from S3"""
+
+        # List checkpoints
+        response = self.s3_client.list_objects_v2(
+            Bucket=self.checkpoint_config.s3_bucket,
+            Prefix=self.checkpoint_config.checkpoint_path
+        )
+
+        if 'Contents' not in response:
+            return None
+
+        # Sort by last modified
+        checkpoints = sorted(
+            response['Contents'],
+            key=lambda x: x['LastModified'],
+            reverse=True
+        )
+
+        if not checkpoints:
+            return None
+
+        # Download latest checkpoint
+        latest_key = checkpoints[0]['Key']
+        local_path = '/tmp/latest_checkpoint.pt'
+
+        self.s3_client.download_file(
+            self.checkpoint_config.s3_bucket,
+            latest_key,
+            local_path
+        )
+
+        import torch
+        checkpoint = torch.load(local_path)
+
+        print(f"Loaded checkpoint from epoch {checkpoint['epoch']}, "
+              f"step {checkpoint['global_step']}")
+
+        return checkpoint
+
+    def _cleanup_old_checkpoints(self):
+        """Remove old checkpoints to save storage costs"""
+
+        response = self.s3_client.list_objects_v2(
+            Bucket=self.checkpoint_config.s3_bucket,
+            Prefix=self.checkpoint_config.checkpoint_path
+        )
+
+        if 'Contents' not in response:
+            return
+
+        checkpoints = sorted(
+            response['Contents'],
+            key=lambda x: x['LastModified'],
+            reverse=True
+        )
+
+        # Delete old checkpoints
+        checkpoints_to_delete = checkpoints[self.checkpoint_config.max_checkpoints_to_keep:]
+
+        for checkpoint in checkpoints_to_delete:
+            self.s3_client.delete_object(
+                Bucket=self.checkpoint_config.s3_bucket,
+                Key=checkpoint['Key']
+            )
+
+    def _generate_user_data(self) -> str:
+        """Generate user data script for instance startup"""
+
+        script = f"""#!/bin/bash
+# Download training code and resume from checkpoint
+aws s3 cp s3://{self.checkpoint_config.s3_bucket}/training_code/ /home/ubuntu/training/ --recursive
+
+# Start training with automatic checkpoint resumption
+cd /home/ubuntu/training
+python train.py --resume-from-checkpoint
+"""
+        return script
+
+    def calculate_cost_savings(
+        self,
+        training_hours: float,
+        on_demand_price: float,
+        interruption_overhead_percent: float = 5.0
+    ) -> Dict[str, float]:
+        """Calculate cost savings from using spot instances"""
+
+        # On-demand cost
+        on_demand_cost = training_hours * on_demand_price
+
+        # Spot cost (including interruption overhead)
+        effective_training_hours = training_hours * (1 + interruption_overhead_percent / 100)
+        spot_price = self._get_current_spot_price()
+        spot_cost = effective_training_hours * spot_price
+
+        # Savings
+        savings = on_demand_cost - spot_cost
+        savings_percent = (savings / on_demand_cost) * 100
+
+        return {
+            "on_demand_cost": on_demand_cost,
+            "spot_cost": spot_cost,
+            "savings_dollars": savings,
+            "savings_percent": savings_percent,
+            "spot_price": spot_price,
+            "on_demand_price": on_demand_price
+        }
+
+# Example usage
+if __name__ == "__main__":
+    spot_config = SpotInstanceConfig(
+        instance_type="ml.p3.2xlarge",
+        max_price=1.50,  # 50% of on-demand price
+        availability_zones=["us-east-1a", "us-east-1b"]
+    )
+
+    checkpoint_config = CheckpointConfig(
+        checkpoint_interval_minutes=15,
+        s3_bucket="my-ml-checkpoints",
+        checkpoint_path="training/resnet50"
+    )
+
+    manager = SpotInstanceTrainingManager(spot_config, checkpoint_config)
+
+    # Calculate potential savings
+    savings = manager.calculate_cost_savings(
+        training_hours=48,
+        on_demand_price=3.06
+    )
+
+    print(f"Training on spot instances:")
+    print(f"  On-demand cost: ${savings['on_demand_cost']:.2f}")
+    print(f"  Spot cost: ${savings['spot_cost']:.2f}")
+    print(f"  Savings: ${savings['savings_dollars']:.2f} ({savings['savings_percent']:.1f}%)")
+\end{lstlisting}
+
+\section{Serving Cost Analysis and Reduction}
+
+Serving costs scale with traffic and can exceed training costs for high-traffic applications.
+
+\subsection{Serving Cost Optimization Strategies}
+
+\textbf{Key Serving Cost Drivers:}
+
+\begin{itemize}
+    \item \textbf{Compute Resources:} Instance types and count for model hosting
+    \item \textbf{Request Volume:} Number of inference requests
+    \item \textbf{Model Complexity:} Inference latency and resource requirements
+    \item \textbf{Always-On Infrastructure:} Fixed costs vs. usage-based costs
+    \item \textbf{Data Transfer:} Network egress charges
+\end{itemize}
+
+\begin{lstlisting}[language=Python, caption=Serving Cost Analyzer and Optimizer]
+#!/usr/bin/env python3
+"""
+Serving Cost Optimization
+Analyze and optimize model serving infrastructure costs
+"""
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+import numpy as np
+
+@dataclass
+class ServingConfig:
+    """Model serving configuration"""
+    instance_type: str
+    num_instances: int
+    requests_per_second: float
+    avg_latency_ms: float
+    cost_per_hour: float
+
+    @property
+    def total_hourly_cost(self) -> float:
+        return self.cost_per_hour * self.num_instances
+
+    @property
+    def cost_per_1m_requests(self) -> float:
+        requests_per_hour = self.requests_per_second * 3600
+        if requests_per_hour == 0:
+            return float('inf')
+        return (self.total_hourly_cost / requests_per_hour) * 1_000_000
+
+@dataclass
+class ServerlessConfig:
+    """Serverless serving configuration"""
+    cost_per_request: float
+    cost_per_gb_second: float
+    avg_memory_gb: float
+    avg_duration_seconds: float
+
+    def cost_per_1m_requests(self) -> float:
+        compute_cost = self.cost_per_gb_second * self.avg_memory_gb * self.avg_duration_seconds
+        total_cost_per_request = self.cost_per_request + compute_cost
+        return total_cost_per_request * 1_000_000
+
+class ServingCostOptimizer:
+    """Optimize model serving costs"""
+
+    def __init__(self):
+        self.pricing = {
+            # AWS pricing (example)
+            "ml.m5.xlarge": 0.269,
+            "ml.m5.2xlarge": 0.538,
+            "ml.c5.xlarge": 0.238,
+            "ml.c5.2xlarge": 0.476,
+            "ml.g4dn.xlarge": 0.736,  # With GPU
+            "ml.inf1.xlarge": 0.368,  # AWS Inferentia
+        }
+
+    def compare_deployment_options(
+        self,
+        daily_requests: int,
+        avg_latency_ms: float,
+        p99_latency_ms: float,
+        peak_rps: float,
+        avg_rps: float
+    ) -> Dict[str, Dict]:
+        """Compare different deployment strategies"""
+
+        results = {}
+
+        # Option 1: Always-on instances sized for peak
+        peak_instances = self._calculate_required_instances(
+            peak_rps,
+            instance_type="ml.m5.xlarge",
+            requests_per_instance=100
+        )
+
+        results["always_on_peak"] = {
+            "instance_type": "ml.m5.xlarge",
+            "num_instances": peak_instances,
+            "monthly_cost": peak_instances * self.pricing["ml.m5.xlarge"] * 24 * 30,
+            "cost_per_1m_requests": self._calculate_cost_per_1m_requests(
+                peak_instances,
+                self.pricing["ml.m5.xlarge"],
+                daily_requests
+            ),
+            "description": "Always-on instances sized for peak traffic"
+        }
+
+        # Option 2: Always-on for baseline + auto-scaling
+        baseline_instances = self._calculate_required_instances(
+            avg_rps,
+            instance_type="ml.m5.xlarge",
+            requests_per_instance=100
+        )
+
+        # Assume auto-scaling covers 20% of time at peak
+        auto_scale_instance_hours = (peak_instances - baseline_instances) * 24 * 30 * 0.2
+        baseline_instance_hours = baseline_instances * 24 * 30
+
+        results["autoscaling"] = {
+            "baseline_instances": baseline_instances,
+            "peak_instances": peak_instances,
+            "monthly_cost": (
+                (baseline_instance_hours + auto_scale_instance_hours) *
+                self.pricing["ml.m5.xlarge"]
+            ),
+            "cost_per_1m_requests": self._calculate_cost_per_1m_requests(
+                baseline_instances,
+                self.pricing["ml.m5.xlarge"],
+                daily_requests,
+                autoscaling=True
+            ),
+            "description": "Baseline instances + auto-scaling"
+        }
+
+        # Option 3: Serverless (AWS Lambda / SageMaker Serverless)
+        # Lambda pricing: $0.20 per 1M requests + compute time
+        avg_duration_seconds = avg_latency_ms / 1000
+        memory_gb = 2.0  # Example memory allocation
+
+        compute_cost_per_request = 0.0000166667 * memory_gb * avg_duration_seconds
+        request_cost = 0.20 / 1_000_000
+        total_cost_per_request = compute_cost_per_request + request_cost
+
+        results["serverless"] = {
+            "monthly_cost": total_cost_per_request * daily_requests * 30,
+            "cost_per_1m_requests": total_cost_per_request * 1_000_000,
+            "memory_gb": memory_gb,
+            "avg_duration_seconds": avg_duration_seconds,
+            "description": "Serverless compute (pay per request)"
+        }
+
+        # Option 4: Optimized instances (Inferentia/GPU)
+        opt_instances = self._calculate_required_instances(
+            peak_rps,
+            instance_type="ml.inf1.xlarge",
+            requests_per_instance=200  # Better throughput with optimization
+        )
+
+        results["optimized_hardware"] = {
+            "instance_type": "ml.inf1.xlarge",
+            "num_instances": opt_instances,
+            "monthly_cost": opt_instances * self.pricing["ml.inf1.xlarge"] * 24 * 30,
+            "cost_per_1m_requests": self._calculate_cost_per_1m_requests(
+                opt_instances,
+                self.pricing["ml.inf1.xlarge"],
+                daily_requests
+            ),
+            "description": "Optimized hardware (Inferentia)"
+        }
+
+        return results
+
+    def _calculate_required_instances(
+        self,
+        target_rps: float,
+        instance_type: str,
+        requests_per_instance: float
+    ) -> int:
+        """Calculate number of instances needed"""
+        # Add 20% headroom for spikes
+        required = int(np.ceil(target_rps / requests_per_instance * 1.2))
+        return max(required, 1)
+
+    def _calculate_cost_per_1m_requests(
+        self,
+        num_instances: int,
+        cost_per_hour: float,
+        daily_requests: int,
+        autoscaling: bool = False
+    ) -> float:
+        """Calculate cost per million requests"""
+        monthly_requests = daily_requests * 30
+        monthly_instance_hours = num_instances * 24 * 30
+
+        if autoscaling:
+            monthly_instance_hours *= 0.7  # Assume 30% reduction with autoscaling
+
+        monthly_cost = monthly_instance_hours * cost_per_hour
+
+        if monthly_requests == 0:
+            return float('inf')
+
+        return (monthly_cost / monthly_requests) * 1_000_000
+
+    def optimize_batch_size(
+        self,
+        model_latency_by_batch: Dict[int, float],
+        cost_per_hour: float,
+        target_p99_latency_ms: float
+    ) -> Dict:
+        """Find optimal batch size for serving"""
+
+        best_batch_size = 1
+        best_cost_per_1k_requests = float('inf')
+
+        results = {}
+
+        for batch_size, latency_ms in model_latency_by_batch.items():
+            if latency_ms > target_p99_latency_ms:
+                continue  # Violates latency SLA
+
+            # Throughput (requests per hour)
+            requests_per_second = batch_size / (latency_ms / 1000)
+            requests_per_hour = requests_per_second * 3600
+
+            # Cost per 1K requests
+            cost_per_1k = (cost_per_hour / requests_per_hour) * 1000
+
+            results[batch_size] = {
+                "latency_ms": latency_ms,
+                "requests_per_second": requests_per_second,
+                "cost_per_1k_requests": cost_per_1k
+            }
+
+            if cost_per_1k < best_cost_per_1k_requests:
+                best_cost_per_1k_requests = cost_per_1k
+                best_batch_size = batch_size
+
+        return {
+            "optimal_batch_size": best_batch_size,
+            "cost_per_1k_requests": best_cost_per_1k_requests,
+            "all_results": results
+        }
+
+    def calculate_model_compression_savings(
+        self,
+        original_latency_ms: float,
+        compressed_latency_ms: float,
+        original_memory_gb: float,
+        compressed_memory_gb: float,
+        daily_requests: int
+    ) -> Dict:
+        """Calculate savings from model compression"""
+
+        # Original deployment
+        original_instances = max(1, int(np.ceil(original_memory_gb / 8)))  # 8GB per instance
+        original_cost_per_hour = self.pricing["ml.m5.xlarge"] * original_instances
+
+        # Compressed deployment
+        compressed_instances = max(1, int(np.ceil(compressed_memory_gb / 8)))
+        compressed_cost_per_hour = self.pricing["ml.m5.xlarge"] * compressed_instances
+
+        # If latency improved, might handle more load per instance
+        throughput_improvement = original_latency_ms / compressed_latency_ms
+
+        # Monthly costs
+        original_monthly = original_cost_per_hour * 24 * 30
+        compressed_monthly = (compressed_cost_per_hour / throughput_improvement) * 24 * 30
+
+        savings = original_monthly - compressed_monthly
+        savings_percent = (savings / original_monthly) * 100
+
+        return {
+            "original_monthly_cost": original_monthly,
+            "compressed_monthly_cost": compressed_monthly,
+            "savings_dollars": savings,
+            "savings_percent": savings_percent,
+            "latency_improvement_percent": ((original_latency_ms - compressed_latency_ms) /
+                                           original_latency_ms) * 100,
+            "memory_reduction_percent": ((original_memory_gb - compressed_memory_gb) /
+                                        original_memory_gb) * 100
+        }
+
+    def analyze_caching_opportunity(
+        self,
+        total_daily_requests: int,
+        cache_hit_rate: float,
+        cached_request_cost: float,
+        uncached_request_cost: float
+    ) -> Dict:
+        """Calculate savings from response caching"""
+
+        cache_hits = total_daily_requests * cache_hit_rate
+        cache_misses = total_daily_requests * (1 - cache_hit_rate)
+
+        # Without caching
+        cost_without_cache = total_daily_requests * uncached_request_cost
+
+        # With caching
+        cost_with_cache = (
+            cache_hits * cached_request_cost +
+            cache_misses * uncached_request_cost
+        )
+
+        # Cache infrastructure cost (Redis/Memcached)
+        cache_infrastructure_cost_daily = 5.0  # Example: $5/day for cache
+
+        total_cost_with_cache = cost_with_cache + cache_infrastructure_cost_daily
+
+        savings = cost_without_cache - total_cost_with_cache
+        savings_percent = (savings / cost_without_cache) * 100
+
+        monthly_savings = savings * 30
+
+        return {
+            "cost_without_cache_monthly": cost_without_cache * 30,
+            "cost_with_cache_monthly": total_cost_with_cache * 30,
+            "savings_monthly": monthly_savings,
+            "savings_percent": savings_percent,
+            "cache_hit_rate": cache_hit_rate,
+            "break_even_hit_rate": self._calculate_break_even_hit_rate(
+                uncached_request_cost,
+                cached_request_cost,
+                cache_infrastructure_cost_daily,
+                total_daily_requests
+            )
+        }
+
+    def _calculate_break_even_hit_rate(
+        self,
+        uncached_cost: float,
+        cached_cost: float,
+        infrastructure_cost: float,
+        daily_requests: int
+    ) -> float:
+        """Calculate minimum cache hit rate to break even"""
+        # Solve: infrastructure_cost = (hit_rate * daily_requests * (uncached_cost - cached_cost))
+        cost_saving_per_hit = uncached_cost - cached_cost
+        if cost_saving_per_hit <= 0:
+            return 1.0
+
+        break_even_rate = infrastructure_cost / (daily_requests * cost_saving_per_hit)
+        return min(break_even_rate, 1.0)
+
+# Example usage
+if __name__ == "__main__":
+    optimizer = ServingCostOptimizer()
+
+    # Compare deployment options
+    comparison = optimizer.compare_deployment_options(
+        daily_requests=10_000_000,
+        avg_latency_ms=50,
+        p99_latency_ms=200,
+        peak_rps=500,
+        avg_rps=115
+    )
+
+    print("Deployment Option Comparison:")
+    for option_name, details in comparison.items():
+        print(f"\n{option_name}:")
+        print(f"  Monthly Cost: ${details['monthly_cost']:.2f}")
+        print(f"  Cost per 1M requests: ${details['cost_per_1m_requests']:.2f}")
+        print(f"  Description: {details['description']}")
+
+    # Analyze caching
+    caching_analysis = optimizer.analyze_caching_opportunity(
+        total_daily_requests=10_000_000,
+        cache_hit_rate=0.60,
+        cached_request_cost=0.001,
+        uncached_request_cost=0.01
+    )
+
+    print(f"\nCaching Analysis:")
+    print(f"  Monthly savings: ${caching_analysis['savings_monthly']:.2f}")
+    print(f"  Savings percent: {caching_analysis['savings_percent']:.1f}%")
+    print(f"  Break-even hit rate: {caching_analysis['break_even_hit_rate']*100:.1f}%")
+\end{lstlisting}
+
+\section{Resource Allocation and Scaling Policies}
+
+Intelligent scaling policies ensure you pay only for resources you need.
+
+\subsection{Autoscaling Implementation}
+
+\begin{lstlisting}[language=Python, caption=ML-Aware Autoscaling Policy]
+#!/usr/bin/env python3
+"""
+ML-Aware Autoscaling
+Intelligent scaling policies for ML workloads
+"""
+
+from dataclasses import dataclass
+from typing import List, Optional, Callable
+from datetime import datetime, timedelta
+import numpy as np
+
+@dataclass
+class ScalingMetrics:
+    """Metrics for scaling decisions"""
+    timestamp: datetime
+    cpu_utilization: float
+    memory_utilization: float
+    requests_per_second: float
+    avg_latency_ms: float
+    p99_latency_ms: float
+    queue_depth: int
+
+@dataclass
+class ScalingPolicy:
+    """Autoscaling policy configuration"""
+    min_instances: int
+    max_instances: int
+    target_cpu_utilization: float = 70.0
+    target_latency_p99_ms: float = 200.0
+    scale_up_cooldown_seconds: int = 300
+    scale_down_cooldown_seconds: int = 600
+    scale_up_threshold_breaches: int = 2
+    scale_down_threshold_breaches: int = 3
+
+class MLAutoscaler:
+    """ML-aware autoscaling engine"""
+
+    def __init__(self, policy: ScalingPolicy):
+        self.policy = policy
+        self.current_instances = policy.min_instances
+        self.metrics_history: List[ScalingMetrics] = []
+        self.last_scale_up_time: Optional[datetime] = None
+        self.last_scale_down_time: Optional[datetime] = None
+        self.consecutive_scale_up_signals = 0
+        self.consecutive_scale_down_signals = 0
+
+    def add_metrics(self, metrics: ScalingMetrics):
+        """Add new metrics for scaling decision"""
+        self.metrics_history.append(metrics)
+
+        # Keep only last hour of metrics
+        cutoff_time = datetime.now() - timedelta(hours=1)
+        self.metrics_history = [
+            m for m in self.metrics_history
+            if m.timestamp > cutoff_time
+        ]
+
+    def should_scale_up(self, metrics: ScalingMetrics) -> bool:
+        """Determine if should scale up"""
+
+        if self.current_instances >= self.policy.max_instances:
+            return False
+
+        # Check cooldown
+        if self.last_scale_up_time:
+            elapsed = (datetime.now() - self.last_scale_up_time).total_seconds()
+            if elapsed < self.policy.scale_up_cooldown_seconds:
+                return False
+
+        # Check thresholds
+        should_scale = (
+            metrics.cpu_utilization > self.policy.target_cpu_utilization or
+            metrics.p99_latency_ms > self.policy.target_latency_p99_ms or
+            metrics.queue_depth > 100
+        )
+
+        if should_scale:
+            self.consecutive_scale_up_signals += 1
+            self.consecutive_scale_down_signals = 0
+        else:
+            self.consecutive_scale_up_signals = 0
+
+        # Require multiple consecutive signals
+        return self.consecutive_scale_up_signals >= self.policy.scale_up_threshold_breaches
+
+    def should_scale_down(self, metrics: ScalingMetrics) -> bool:
+        """Determine if should scale down"""
+
+        if self.current_instances <= self.policy.min_instances:
+            return False
+
+        # Check cooldown
+        if self.last_scale_down_time:
+            elapsed = (datetime.now() - self.last_scale_down_time).total_seconds()
+            if elapsed < self.policy.scale_down_cooldown_seconds:
+                return False
+
+        # More conservative for scale down
+        should_scale = (
+            metrics.cpu_utilization < self.policy.target_cpu_utilization * 0.5 and
+            metrics.p99_latency_ms < self.policy.target_latency_p99_ms * 0.7 and
+            metrics.queue_depth == 0
+        )
+
+        if should_scale:
+            self.consecutive_scale_down_signals += 1
+            self.consecutive_scale_up_signals = 0
+        else:
+            self.consecutive_scale_down_signals = 0
+
+        return self.consecutive_scale_down_signals >= self.policy.scale_down_threshold_breaches
+
+    def calculate_target_instances(self, metrics: ScalingMetrics) -> int:
+        """Calculate target number of instances"""
+
+        # Calculate based on different metrics
+        cpu_based = int(np.ceil(
+            self.current_instances *
+            (metrics.cpu_utilization / self.policy.target_cpu_utilization)
+        ))
+
+        # Estimate instances needed for latency SLA
+        # Simple heuristic: if latency is high, we need more capacity
+        latency_ratio = metrics.p99_latency_ms / self.policy.target_latency_p99_ms
+        latency_based = int(np.ceil(self.current_instances * latency_ratio))
+
+        # Take the maximum
+        target = max(cpu_based, latency_based)
+
+        # Constrain to policy limits
+        target = max(self.policy.min_instances, min(target, self.policy.max_instances))
+
+        return target
+
+    def execute_scaling_decision(self, metrics: ScalingMetrics) -> Optional[int]:
+        """Make and execute scaling decision"""
+
+        self.add_metrics(metrics)
+
+        if self.should_scale_up(metrics):
+            target = self.calculate_target_instances(metrics)
+            scale_amount = target - self.current_instances
+
+            # Don't scale too aggressively
+            scale_amount = min(scale_amount, max(1, self.current_instances // 2))
+
+            new_instances = self.current_instances + scale_amount
+            self.current_instances = new_instances
+            self.last_scale_up_time = datetime.now()
+            self.consecutive_scale_up_signals = 0
+
+            return new_instances
+
+        elif self.should_scale_down(metrics):
+            # Scale down gradually
+            new_instances = max(
+                self.policy.min_instances,
+                self.current_instances - 1
+            )
+
+            self.current_instances = new_instances
+            self.last_scale_down_time = datetime.now()
+            self.consecutive_scale_down_signals = 0
+
+            return new_instances
+
+        return None
+
+    def estimate_cost_savings(
+        self,
+        without_autoscaling_instances: int,
+        cost_per_instance_hour: float,
+        hours: int = 24 * 30
+    ) -> Dict:
+        """Estimate cost savings from autoscaling"""
+
+        # Without autoscaling (always at peak)
+        cost_without = without_autoscaling_instances * cost_per_instance_hour * hours
+
+        # With autoscaling (estimate 60% average utilization)
+        avg_instances_with_autoscaling = without_autoscaling_instances * 0.6
+        cost_with = avg_instances_with_autoscaling * cost_per_instance_hour * hours
+
+        savings = cost_without - cost_with
+        savings_percent = (savings / cost_without) * 100
+
+        return {
+            "cost_without_autoscaling": cost_without,
+            "cost_with_autoscaling": cost_with,
+            "monthly_savings": savings,
+            "savings_percent": savings_percent
+        }
+
+class PredictiveScaler:
+    """Predictive autoscaling using historical patterns"""
+
+    def __init__(self, autoscaler: MLAutoscaler):
+        self.autoscaler = autoscaler
+        self.traffic_patterns: Dict[int, List[float]] = {}  # hour -> [rps]
+
+    def learn_traffic_pattern(self, metrics: ScalingMetrics):
+        """Learn traffic patterns over time"""
+        hour_of_day = metrics.timestamp.hour
+
+        if hour_of_day not in self.traffic_patterns:
+            self.traffic_patterns[hour_of_day] = []
+
+        self.traffic_patterns[hour_of_day].append(metrics.requests_per_second)
+
+        # Keep only last 30 days
+        if len(self.traffic_patterns[hour_of_day]) > 30:
+            self.traffic_patterns[hour_of_day].pop(0)
+
+    def predict_next_hour_load(self) -> float:
+        """Predict load for next hour"""
+        next_hour = (datetime.now() + timedelta(hours=1)).hour
+
+        if next_hour not in self.traffic_patterns:
+            return 0
+
+        historical_loads = self.traffic_patterns[next_hour]
+
+        if not historical_loads:
+            return 0
+
+        # Use 90th percentile for conservative prediction
+        return np.percentile(historical_loads, 90)
+
+    def proactive_scale(self) -> Optional[int]:
+        """Proactively scale based on prediction"""
+        predicted_rps = self.predict_next_hour_load()
+
+        if predicted_rps == 0:
+            return None
+
+        # Estimate instances needed
+        # Assume 100 RPS per instance
+        target_instances = int(np.ceil(predicted_rps / 100))
+        target_instances = max(
+            self.autoscaler.policy.min_instances,
+            min(target_instances, self.autoscaler.policy.max_instances)
+        )
+
+        # Only scale up proactively, let reactive scaling handle scale down
+        if target_instances > self.autoscaler.current_instances:
+            self.autoscaler.current_instances = target_instances
+            return target_instances
+
+        return None
+
+# Example usage
+if __name__ == "__main__":
+    policy = ScalingPolicy(
+        min_instances=2,
+        max_instances=20,
+        target_cpu_utilization=70.0,
+        target_latency_p99_ms=200.0
+    )
+
+    autoscaler = MLAutoscaler(policy)
+
+    # Simulate high load
+    high_load_metrics = ScalingMetrics(
+        timestamp=datetime.now(),
+        cpu_utilization=85.0,
+        memory_utilization=70.0,
+        requests_per_second=500,
+        avg_latency_ms=150,
+        p99_latency_ms=250,
+        queue_depth=50
+    )
+
+    # Make scaling decision
+    new_instances = autoscaler.execute_scaling_decision(high_load_metrics)
+
+    if new_instances:
+        print(f"Scaled to {new_instances} instances")
+
+    # Estimate savings
+    savings = autoscaler.estimate_cost_savings(
+        without_autoscaling_instances=10,
+        cost_per_instance_hour=0.50
+    )
+
+    print(f"\nAutoscaling Savings:")
+    print(f"  Monthly savings: ${savings['monthly_savings']:.2f}")
+    print(f"  Savings percent: {savings['savings_percent']:.1f}%")
+\end{lstlisting}
+
+\section{Cloud Cost Monitoring and Alerts}
+
+Continuous cost monitoring prevents budget overruns and identifies optimization opportunities.
+
+\subsection{Cost Monitoring System}
+
+\begin{lstlisting}[language=Python, caption=Cloud Cost Monitoring and Alerting]
+#!/usr/bin/env python3
+"""
+Cloud Cost Monitoring
+Real-time cost tracking and alerting system
+"""
+
+import boto3
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+import json
+
+@dataclass
+class CostAlert:
+    """Cost alert configuration"""
+    alert_name: str
+    threshold_amount: float
+    threshold_percent: Optional[float]
+    period_days: int
+    notification_emails: List[str]
+    severity: str = "warning"  # warning, critical
+
+@dataclass
+class CostAnomaly:
+    """Detected cost anomaly"""
+    service: str
+    current_cost: float
+    expected_cost: float
+    deviation_percent: float
+    timestamp: datetime
+
+class CloudCostMonitor:
+    """Monitor cloud costs and send alerts"""
+
+    def __init__(self, aws_account_id: str, region: str = "us-east-1"):
+        self.account_id = aws_account_id
+        self.ce_client = boto3.client('ce', region_name=region)  # Cost Explorer
+        self.sns_client = boto3.client('sns', region_name=region)
+        self.cloudwatch_client = boto3.client('cloudwatch', region_name=region)
+        self.alerts: List[CostAlert] = []
+
+    def get_cost_and_usage(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+        granularity: str = "DAILY",
+        group_by: Optional[List[Dict]] = None
+    ) -> Dict:
+        """Get cost and usage data from AWS Cost Explorer"""
+
+        if group_by is None:
+            group_by = [{"Type": "DIMENSION", "Key": "SERVICE"}]
+
+        response = self.ce_client.get_cost_and_usage(
+            TimePeriod={
+                'Start': start_date.strftime('%Y-%m-%d'),
+                'End': end_date.strftime('%Y-%m-%d')
+            },
+            Granularity=granularity,
+            Metrics=['UnblendedCost', 'UsageQuantity'],
+            GroupBy=group_by
+        )
+
+        return response
+
+    def get_current_month_cost(self) -> float:
+        """Get month-to-date cost"""
+
+        start_of_month = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now()
+
+        response = self.get_cost_and_usage(
+            start_date=start_of_month,
+            end_date=today,
+            granularity="MONTHLY",
+            group_by=[]
+        )
+
+        if response['ResultsByTime']:
+            total_cost = float(
+                response['ResultsByTime'][0]['Total']['UnblendedCost']['Amount']
+            )
+            return total_cost
+
+        return 0.0
+
+    def get_forecast(self, days_ahead: int = 30) -> float:
+        """Get cost forecast"""
+
+        start_date = datetime.now()
+        end_date = start_date + timedelta(days=days_ahead)
+
+        response = self.ce_client.get_cost_forecast(
+            TimePeriod={
+                'Start': start_date.strftime('%Y-%m-%d'),
+                'End': end_date.strftime('%Y-%m-%d')
+            },
+            Metric='UNBLENDED_COST',
+            Granularity='MONTHLY'
+        )
+
+        forecast = float(response['Total']['Amount'])
+        return forecast
+
+    def add_cost_alert(self, alert: CostAlert):
+        """Add a cost alert"""
+        self.alerts.append(alert)
+
+        # Create CloudWatch alarm
+        self._create_cloudwatch_alarm(alert)
+
+    def _create_cloudwatch_alarm(self, alert: CostAlert):
+        """Create CloudWatch alarm for cost threshold"""
+
+        # Note: AWS Cost Explorer metrics are delayed, so this is simplified
+        # In practice, you'd need to set up AWS Budgets or custom metrics
+
+        alarm_name = f"cost-alert-{alert.alert_name}"
+
+        try:
+            self.cloudwatch_client.put_metric_alarm(
+                AlarmName=alarm_name,
+                ComparisonOperator='GreaterThanThreshold',
+                EvaluationPeriods=1,
+                MetricName='EstimatedCharges',
+                Namespace='AWS/Billing',
+                Period=86400,  # Daily
+                Statistic='Maximum',
+                Threshold=alert.threshold_amount,
+                ActionsEnabled=True,
+                AlarmDescription=f'Cost alert for {alert.alert_name}',
+                Dimensions=[
+                    {
+                        'Name': 'Currency',
+                        'Value': 'USD'
+                    }
+                ]
+            )
+
+            print(f"Created CloudWatch alarm: {alarm_name}")
+
+        except Exception as e:
+            print(f"Error creating alarm: {e}")
+
+    def check_alerts(self) -> List[str]:
+        """Check all alerts and return triggered ones"""
+
+        triggered_alerts = []
+        current_cost = self.get_current_month_cost()
+
+        for alert in self.alerts:
+            # Calculate threshold for period
+            if alert.threshold_percent:
+                # Compare to previous period
+                prev_period_cost = self._get_previous_period_cost(alert.period_days)
+                threshold = prev_period_cost * (1 + alert.threshold_percent / 100)
+            else:
+                threshold = alert.threshold_amount
+
+            if current_cost > threshold:
+                message = (
+                    f"Cost Alert: {alert.alert_name}\n"
+                    f"Current cost: ${current_cost:.2f}\n"
+                    f"Threshold: ${threshold:.2f}\n"
+                    f"Severity: {alert.severity}"
+                )
+
+                triggered_alerts.append(message)
+                self._send_alert_notification(alert, message)
+
+        return triggered_alerts
+
+    def _get_previous_period_cost(self, period_days: int) -> float:
+        """Get cost from previous period"""
+
+        end_date = datetime.now() - timedelta(days=period_days)
+        start_date = end_date - timedelta(days=period_days)
+
+        response = self.get_cost_and_usage(
+            start_date=start_date,
+            end_date=end_date,
+            granularity="MONTHLY",
+            group_by=[]
+        )
+
+        if response['ResultsByTime']:
+            return float(
+                response['ResultsByTime'][0]['Total']['UnblendedCost']['Amount']
+            )
+
+        return 0.0
+
+    def _send_alert_notification(self, alert: CostAlert, message: str):
+        """Send alert notification via SNS"""
+
+        # In practice, you'd have an SNS topic set up
+        print(f"ALERT: {message}")
+
+        # Example SNS publish (requires topic ARN)
+        # self.sns_client.publish(
+        #     TopicArn='arn:aws:sns:us-east-1:123456789:cost-alerts',
+        #     Subject=f'Cost Alert: {alert.alert_name}',
+        #     Message=message
+        # )
+
+    def detect_cost_anomalies(self) -> List[CostAnomaly]:
+        """Detect unusual cost patterns"""
+
+        # Get last 7 days of costs by service
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=7)
+
+        response = self.get_cost_and_usage(
+            start_date=start_date,
+            end_date=end_date,
+            granularity="DAILY",
+            group_by=[{"Type": "DIMENSION", "Key": "SERVICE"}]
+        )
+
+        anomalies = []
+
+        # Analyze each service
+        service_costs = {}
+
+        for result in response['ResultsByTime']:
+            for group in result['Groups']:
+                service = group['Keys'][0]
+                cost = float(group['Metrics']['UnblendedCost']['Amount'])
+
+                if service not in service_costs:
+                    service_costs[service] = []
+
+                service_costs[service].append(cost)
+
+        # Detect anomalies (simple threshold: >50% above average)
+        for service, costs in service_costs.items():
+            if len(costs) < 2:
+                continue
+
+            avg_cost = sum(costs[:-1]) / len(costs[:-1])
+            current_cost = costs[-1]
+
+            if current_cost > avg_cost * 1.5:
+                deviation = ((current_cost - avg_cost) / avg_cost) * 100
+
+                anomalies.append(CostAnomaly(
+                    service=service,
+                    current_cost=current_cost,
+                    expected_cost=avg_cost,
+                    deviation_percent=deviation,
+                    timestamp=datetime.now()
+                ))
+
+        return anomalies
+
+    def generate_cost_report(self) -> Dict:
+        """Generate comprehensive cost report"""
+
+        current_month_cost = self.get_current_month_cost()
+        forecast = self.get_forecast(days_ahead=30)
+
+        # Get cost by service
+        start_of_month = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        today = datetime.now()
+
+        by_service = self.get_cost_and_usage(
+            start_date=start_of_month,
+            end_date=today,
+            granularity="MONTHLY"
+        )
+
+        service_costs = {}
+        if by_service['ResultsByTime']:
+            for group in by_service['ResultsByTime'][0]['Groups']:
+                service = group['Keys'][0]
+                cost = float(group['Metrics']['UnblendedCost']['Amount'])
+                service_costs[service] = cost
+
+        # Detect anomalies
+        anomalies = self.detect_cost_anomalies()
+
+        return {
+            "current_month_cost": current_month_cost,
+            "forecasted_month_end_cost": forecast,
+            "cost_by_service": service_costs,
+            "anomalies": [
+                {
+                    "service": a.service,
+                    "deviation_percent": a.deviation_percent,
+                    "current_cost": a.current_cost
+                }
+                for a in anomalies
+            ],
+            "generated_at": datetime.now().isoformat()
+        }
+
+    def set_budget(
+        self,
+        budget_name: str,
+        budget_limit: float,
+        notification_threshold_percent: float = 80.0
+    ):
+        """Set up AWS Budget"""
+
+        budgets_client = boto3.client('budgets')
+
+        try:
+            budgets_client.create_budget(
+                AccountId=self.account_id,
+                Budget={
+                    'BudgetName': budget_name,
+                    'BudgetLimit': {
+                        'Amount': str(budget_limit),
+                        'Unit': 'USD'
+                    },
+                    'TimeUnit': 'MONTHLY',
+                    'BudgetType': 'COST'
+                },
+                NotificationsWithSubscribers=[
+                    {
+                        'Notification': {
+                            'NotificationType': 'ACTUAL',
+                            'ComparisonOperator': 'GREATER_THAN',
+                            'Threshold': notification_threshold_percent,
+                            'ThresholdType': 'PERCENTAGE'
+                        },
+                        'Subscribers': [
+                            {
+                                'SubscriptionType': 'EMAIL',
+                                'Address': 'team@example.com'
+                            }
+                        ]
+                    }
+                ]
+            )
+
+            print(f"Created budget: {budget_name}")
+
+        except Exception as e:
+            print(f"Error creating budget: {e}")
+
+# Example usage
+if __name__ == "__main__":
+    monitor = CloudCostMonitor(aws_account_id="123456789012")
+
+    # Add cost alerts
+    alert = CostAlert(
+        alert_name="monthly-budget",
+        threshold_amount=10000.0,
+        threshold_percent=None,
+        period_days=30,
+        notification_emails=["team@example.com"],
+        severity="warning"
+    )
+
+    monitor.add_cost_alert(alert)
+
+    # Generate cost report
+    report = monitor.generate_cost_report()
+
+    print(f"Current Month Cost: ${report['current_month_cost']:.2f}")
+    print(f"Forecasted Cost: ${report['forecasted_month_end_cost']:.2f}")
+
+    print("\nCost by Service:")
+    for service, cost in sorted(
+        report['cost_by_service'].items(),
+        key=lambda x: x[1],
+        reverse=True
+    )[:5]:
+        print(f"  {service}: ${cost:.2f}")
+
+    if report['anomalies']:
+        print("\nCost Anomalies Detected:")
+        for anomaly in report['anomalies']:
+            print(f"  {anomaly['service']}: +{anomaly['deviation_percent']:.1f}% "
+                  f"(${anomaly['current_cost']:.2f})")
+\end{lstlisting}
+
+\section{ROI Analysis for ML Investments}
+
+Quantifying the return on ML investments justifies costs and guides resource allocation.
+
+\subsection{ML ROI Calculator}
+
+\begin{lstlisting}[language=Python, caption=ML Investment ROI Calculator]
+#!/usr/bin/env python3
+"""
+ML Investment ROI Calculator
+Calculate and analyze return on investment for ML projects
+"""
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+import numpy as np
+
+@dataclass
+class MLProjectCosts:
+    """ML project cost breakdown"""
+    development_costs: float
+    training_infrastructure: float
+    serving_infrastructure_monthly: float
+    data_costs: float
+    personnel_costs_monthly: float
+    maintenance_costs_monthly: float
+    monitoring_costs_monthly: float
+
+    def total_initial_investment(self) -> float:
+        """Calculate total initial investment"""
+        return (
+            self.development_costs +
+            self.training_infrastructure +
+            self.data_costs
+        )
+
+    def monthly_operating_cost(self) -> float:
+        """Calculate monthly operating costs"""
+        return (
+            self.serving_infrastructure_monthly +
+            self.personnel_costs_monthly +
+            self.maintenance_costs_monthly +
+            self.monitoring_costs_monthly
+        )
+
+@dataclass
+class MLProjectBenefits:
+    """ML project benefits"""
+    revenue_increase_monthly: float
+    cost_savings_monthly: float
+    efficiency_gains_monthly: float
+    customer_satisfaction_value_monthly: float
+
+    def total_monthly_benefit(self) -> float:
+        """Calculate total monthly benefit"""
+        return (
+            self.revenue_increase_monthly +
+            self.cost_savings_monthly +
+            self.efficiency_gains_monthly +
+            self.customer_satisfaction_value_monthly
+        )
+
+class MLROICalculator:
+    """Calculate ROI for ML projects"""
+
+    def __init__(
+        self,
+        project_costs: MLProjectCosts,
+        project_benefits: MLProjectBenefits,
+        discount_rate: float = 0.10
+    ):
+        self.costs = project_costs
+        self.benefits = project_benefits
+        self.discount_rate = discount_rate
+
+    def calculate_simple_roi(self, months: int = 12) -> float:
+        """Calculate simple ROI"""
+
+        total_cost = (
+            self.costs.total_initial_investment() +
+            self.costs.monthly_operating_cost() * months
+        )
+
+        total_benefit = self.benefits.total_monthly_benefit() * months
+
+        roi = ((total_benefit - total_cost) / total_cost) * 100
+
+        return roi
+
+    def calculate_payback_period(self) -> float:
+        """Calculate payback period in months"""
+
+        initial_investment = self.costs.total_initial_investment()
+        monthly_net_benefit = (
+            self.benefits.total_monthly_benefit() -
+            self.costs.monthly_operating_cost()
+        )
+
+        if monthly_net_benefit <= 0:
+            return float('inf')
+
+        payback_months = initial_investment / monthly_net_benefit
+
+        return payback_months
+
+    def calculate_npv(self, months: int = 36) -> float:
+        """Calculate Net Present Value"""
+
+        initial_investment = self.costs.total_initial_investment()
+        monthly_rate = self.discount_rate / 12
+
+        npv = -initial_investment
+
+        for month in range(1, months + 1):
+            monthly_cash_flow = (
+                self.benefits.total_monthly_benefit() -
+                self.costs.monthly_operating_cost()
+            )
+
+            discounted_cash_flow = monthly_cash_flow / ((1 + monthly_rate) ** month)
+            npv += discounted_cash_flow
+
+        return npv
+
+    def calculate_irr(self, months: int = 36, precision: float = 0.0001) -> float:
+        """Calculate Internal Rate of Return"""
+
+        # Use binary search to find IRR
+        low_rate = -0.99
+        high_rate = 1.0
+
+        while high_rate - low_rate > precision:
+            mid_rate = (low_rate + high_rate) / 2
+
+            # Calculate NPV at mid_rate
+            npv = self._npv_at_rate(mid_rate, months)
+
+            if npv > 0:
+                low_rate = mid_rate
+            else:
+                high_rate = mid_rate
+
+        return (low_rate + high_rate) / 2
+
+    def _npv_at_rate(self, annual_rate: float, months: int) -> float:
+        """Calculate NPV at a specific discount rate"""
+
+        initial_investment = self.costs.total_initial_investment()
+        monthly_rate = annual_rate / 12
+
+        npv = -initial_investment
+
+        for month in range(1, months + 1):
+            monthly_cash_flow = (
+                self.benefits.total_monthly_benefit() -
+                self.costs.monthly_operating_cost()
+            )
+
+            discounted_cash_flow = monthly_cash_flow / ((1 + monthly_rate) ** month)
+            npv += discounted_cash_flow
+
+        return npv
+
+    def sensitivity_analysis(
+        self,
+        parameter: str,
+        variation_range: tuple = (-0.3, 0.3),
+        steps: int = 7
+    ) -> Dict:
+        """Perform sensitivity analysis on a parameter"""
+
+        variations = np.linspace(variation_range[0], variation_range[1], steps)
+        results = {
+            "variations": [],
+            "roi": [],
+            "npv": [],
+            "payback_period": []
+        }
+
+        original_costs = self.costs
+        original_benefits = self.benefits
+
+        for variation in variations:
+            # Modify parameter
+            if parameter == "revenue_increase":
+                self.benefits.revenue_increase_monthly = (
+                    original_benefits.revenue_increase_monthly * (1 + variation)
+                )
+            elif parameter == "serving_cost":
+                self.costs.serving_infrastructure_monthly = (
+                    original_costs.serving_infrastructure_monthly * (1 + variation)
+                )
+            # Add more parameters as needed
+
+            # Calculate metrics
+            results["variations"].append(variation)
+            results["roi"].append(self.calculate_simple_roi())
+            results["npv"].append(self.calculate_npv())
+            results["payback_period"].append(self.calculate_payback_period())
+
+        # Restore original values
+        self.costs = original_costs
+        self.benefits = original_benefits
+
+        return results
+
+    def compare_scenarios(
+        self,
+        scenarios: Dict[str, tuple]
+    ) -> Dict:
+        """Compare different scenarios"""
+
+        results = {}
+
+        for scenario_name, (costs, benefits) in scenarios.items():
+            calculator = MLROICalculator(costs, benefits, self.discount_rate)
+
+            results[scenario_name] = {
+                "roi_12_months": calculator.calculate_simple_roi(12),
+                "roi_36_months": calculator.calculate_simple_roi(36),
+                "payback_period_months": calculator.calculate_payback_period(),
+                "npv_36_months": calculator.calculate_npv(36),
+                "irr": calculator.calculate_irr(36) * 100  # Convert to percentage
+            }
+
+        return results
+
+    def generate_roi_report(self) -> Dict:
+        """Generate comprehensive ROI report"""
+
+        roi_12m = self.calculate_simple_roi(12)
+        roi_36m = self.calculate_simple_roi(36)
+        payback = self.calculate_payback_period()
+        npv = self.calculate_npv(36)
+        irr = self.calculate_irr(36) * 100
+
+        # Calculate break-even
+        monthly_net = (
+            self.benefits.total_monthly_benefit() -
+            self.costs.monthly_operating_cost()
+        )
+
+        # Cost efficiency metrics
+        cost_per_prediction = (
+            self.costs.monthly_operating_cost() /
+            (self.benefits.revenue_increase_monthly / 10)  # Assume $10 per conversion
+        )
+
+        return {
+            "financial_metrics": {
+                "roi_12_months_percent": roi_12m,
+                "roi_36_months_percent": roi_36m,
+                "payback_period_months": payback,
+                "npv_36_months": npv,
+                "irr_percent": irr
+            },
+            "cost_breakdown": {
+                "initial_investment": self.costs.total_initial_investment(),
+                "monthly_operating_cost": self.costs.monthly_operating_cost(),
+                "annual_operating_cost": self.costs.monthly_operating_cost() * 12
+            },
+            "benefit_breakdown": {
+                "monthly_benefit": self.benefits.total_monthly_benefit(),
+                "annual_benefit": self.benefits.total_monthly_benefit() * 12
+            },
+            "efficiency_metrics": {
+                "monthly_net_benefit": monthly_net,
+                "cost_per_prediction": cost_per_prediction
+            },
+            "recommendation": self._get_recommendation(roi_36m, payback, npv)
+        }
+
+    def _get_recommendation(
+        self,
+        roi: float,
+        payback_months: float,
+        npv: float
+    ) -> str:
+        """Generate investment recommendation"""
+
+        if npv > 0 and roi > 20 and payback_months < 12:
+            return "Strongly Recommended: Excellent ROI with quick payback"
+        elif npv > 0 and roi > 10 and payback_months < 24:
+            return "Recommended: Positive ROI with reasonable payback period"
+        elif npv > 0:
+            return "Consider: Positive but modest returns"
+        else:
+            return "Not Recommended: Negative returns expected"
+
+# Example usage
+if __name__ == "__main__":
+    # Recommendation system project
+    costs = MLProjectCosts(
+        development_costs=150000,  # 6 months * 2 engineers
+        training_infrastructure=5000,
+        serving_infrastructure_monthly=3000,
+        data_costs=10000,
+        personnel_costs_monthly=25000,
+        maintenance_costs_monthly=2000,
+        monitoring_costs_monthly=500
+    )
+
+    # Benefits: 5% increase in conversion rate
+    benefits = MLProjectBenefits(
+        revenue_increase_monthly=50000,  # Increased sales
+        cost_savings_monthly=10000,  # Reduced manual curation
+        efficiency_gains_monthly=5000,  # Engineering time saved
+        customer_satisfaction_value_monthly=5000  # Reduced churn
+    )
+
+    calculator = MLROICalculator(costs, benefits)
+
+    # Generate report
+    report = calculator.generate_roi_report()
+
+    print("ML Project ROI Analysis")
+    print("=" * 50)
+    print(f"\nFinancial Metrics:")
+    print(f"  12-month ROI: {report['financial_metrics']['roi_12_months_percent']:.1f}%")
+    print(f"  36-month ROI: {report['financial_metrics']['roi_36_months_percent']:.1f}%")
+    print(f"  Payback Period: {report['financial_metrics']['payback_period_months']:.1f} months")
+    print(f"  NPV (36 months): ${report['financial_metrics']['npv_36_months']:,.2f}")
+    print(f"  IRR: {report['financial_metrics']['irr_percent']:.1f}%")
+
+    print(f"\nCost Breakdown:")
+    print(f"  Initial Investment: ${report['cost_breakdown']['initial_investment']:,.2f}")
+    print(f"  Annual Operating Cost: ${report['cost_breakdown']['annual_operating_cost']:,.2f}")
+
+    print(f"\nBenefit Breakdown:")
+    print(f"  Annual Benefit: ${report['benefit_breakdown']['annual_benefit']:,.2f}")
+
+    print(f"\nRecommendation: {report['recommendation']}")
+\end{lstlisting}
+
+\section{Best Practices for Cost Optimization}
+
+\begin{bestpractice}
+Implement cost allocation tags across all ML resources. Tag by project, team, environment, and cost center to enable detailed cost tracking and chargeback.
+\end{bestpractice}
+
+\textbf{Cost Optimization Checklist:}
+
+\begin{enumerate}
+    \item \textbf{Training Optimization:}
+    \begin{itemize}
+        \item Profile training jobs before scaling to expensive hardware
+        \item Use mixed precision training (FP16/BF16) for 2-3x speedup
+        \item Implement spot instances with checkpointing for 70-90\% savings
+        \item Use efficient hyperparameter search (Bayesian, Hyperband)
+        \item Cache preprocessed training data
+        \item Implement early stopping for unpromising runs
+    \end{itemize}
+
+    \item \textbf{Serving Optimization:}
+    \begin{itemize}
+        \item Right-size serving instances based on actual load
+        \item Implement autoscaling with ML-aware policies
+        \item Use model compression (quantization, distillation)
+        \item Implement response caching for repeated requests
+        \item Consider serverless for variable/low traffic
+        \item Use batch prediction for non-real-time workloads
+    \end{itemize}
+
+    \item \textbf{Storage Optimization:}
+    \begin{itemize}
+        \item Implement data lifecycle policies (hot/warm/cold tiers)
+        \item Compress training data and model artifacts
+        \item Delete old checkpoints and experiment artifacts
+        \item Use efficient file formats (Parquet, TFRecord)
+        \item Archive infrequently accessed data
+    \end{itemize}
+
+    \item \textbf{Development Optimization:}
+    \begin{itemize}
+        \item Automatically shut down unused notebook instances
+        \item Use smaller instances for development/testing
+        \item Share development infrastructure across teams
+        \item Implement resource quotas per user/team
+    \end{itemize}
+
+    \item \textbf{Monitoring and Governance:}
+    \begin{itemize}
+        \item Set up cost alerts and budgets
+        \item Review cost reports weekly
+        \item Track cost per prediction/request
+        \item Calculate and optimize ROI
+        \item Implement showback/chargeback for accountability
+    \end{itemize}
+\end{enumerate}
 
 \section{Chapter Summary}
 
-% Placeholder summary
+This chapter covered comprehensive cost optimization strategies for ML systems:
+
+\begin{itemize}
+    \item \textbf{Cost Analysis:} Implemented tools to track and analyze ML system costs across training, serving, and storage
+
+    \item \textbf{Training Optimization:} Covered mixed precision, gradient accumulation, spot instances, and efficient hyperparameter search
+
+    \item \textbf{Serving Optimization:} Explored deployment options, autoscaling, model compression, and caching strategies
+
+    \item \textbf{Resource Allocation:} Designed intelligent scaling policies that balance performance and cost
+
+    \item \textbf{Cost Monitoring:} Built monitoring systems with alerts and anomaly detection
+
+    \item \textbf{ROI Analysis:} Developed frameworks to calculate and justify ML investments
+\end{itemize}
+
+Cost optimization is not a one-time activity but an ongoing process. Regular analysis, monitoring, and refinement of cost strategies ensure ML systems deliver maximum value relative to their infrastructure investments.
 
 \section{Exercises}
 
 \begin{exercise}
-Analyze and optimize costs for a production ML system.
+\textbf{Training Cost Analysis}
+
+Profile a deep learning training workload and optimize its cost:
+
+\begin{enumerate}
+    \item Profile a model training job on different instance types
+    \item Calculate cost per epoch for each instance type
+    \item Implement mixed precision training and measure speedup
+    \item Calculate cost savings from using spot instances
+    \item Determine optimal batch size for cost efficiency
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Performance profiling report with throughput metrics
+    \item Cost comparison table across instance types
+    \item Recommended configuration with estimated annual savings
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Serving Cost Optimization}
+
+Analyze and optimize serving infrastructure costs:
+
+\begin{enumerate}
+    \item Collect metrics from a production serving endpoint (RPS, latency, instance utilization)
+    \item Compare costs of always-on vs. autoscaling vs. serverless deployment
+    \item Implement model compression (quantization or distillation)
+    \item Measure latency and throughput impact of compression
+    \item Calculate ROI of compression investment
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Current serving cost breakdown
+    \item Deployment option comparison with recommendations
+    \item Model compression analysis with accuracy/latency/cost tradeoffs
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Autoscaling Policy Design}
+
+Design and implement an ML-aware autoscaling policy:
+
+\begin{enumerate}
+    \item Analyze historical traffic patterns for a serving endpoint
+    \item Design scaling policy based on CPU, latency, and queue depth
+    \item Implement predictive scaling using traffic patterns
+    \item Simulate autoscaling with historical data
+    \item Calculate cost savings compared to fixed capacity
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Traffic pattern analysis and visualization
+    \item Autoscaling policy specification
+    \item Simulation results showing scaling behavior
+    \item Cost savings analysis over 30 days
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Cost Monitoring Dashboard}
+
+Build a comprehensive cost monitoring system:
+
+\begin{enumerate}
+    \item Set up cost tracking for ML infrastructure (use AWS Cost Explorer API or equivalent)
+    \item Create dashboard showing costs by service, project, and environment
+    \item Implement cost anomaly detection
+    \item Configure budget alerts at 50\%, 80\%, and 100\% thresholds
+    \item Generate weekly cost optimization reports
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Cost monitoring dashboard (Grafana/CloudWatch)
+    \item Anomaly detection rules and alert configurations
+    \item Sample weekly cost optimization report
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{ML Project ROI Analysis}
+
+Perform ROI analysis for an ML project:
+
+\begin{enumerate}
+    \item Identify and quantify all costs (development, infrastructure, personnel)
+    \item Quantify benefits (revenue increase, cost savings, efficiency gains)
+    \item Calculate ROI, NPV, IRR, and payback period
+    \item Perform sensitivity analysis on key assumptions
+    \item Create executive summary with investment recommendation
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Detailed cost and benefit breakdown
+    \item Financial metrics (ROI, NPV, IRR, payback period)
+    \item Sensitivity analysis charts
+    \item Executive summary with recommendation
+\end{itemize}
 \end{exercise}

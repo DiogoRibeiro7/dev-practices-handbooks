@@ -1,0 +1,673 @@
+\chapter{Code Style Guide}
+
+This appendix defines the coding standards and conventions used throughout the book. All code examples follow these guidelines to ensure consistency and readability.
+
+\section{Python Style Standards}
+
+\subsection{General Principles}
+
+All Python code in this book adheres to:
+
+\begin{itemize}
+    \item \textbf{PEP 8} style guide for Python code
+    \item \textbf{PEP 257} for docstring conventions
+    \item \textbf{Type hints} (PEP 484) for function signatures
+    \item \textbf{Black} code formatter (line length: 88 characters)
+    \item \textbf{isort} for import sorting
+\end{itemize}
+
+\subsection{Naming Conventions}
+
+\begin{lstlisting}[style=python, caption=Naming Convention Examples]
+# Classes: PascalCase
+class FeatureStore:
+    pass
+
+class ModelTrainer:
+    pass
+
+# Functions and variables: snake_case
+def train_model(data: pd.DataFrame) -> Model:
+    model_name = "fraud_detector"
+    training_data = prepare_data(data)
+    return model
+
+# Constants: UPPER_SNAKE_CASE
+MAX_RETRIES = 3
+DEFAULT_TIMEOUT = 30
+API_BASE_URL = "https://api.example.com"
+
+# Private methods/attributes: leading underscore
+class DataProcessor:
+    def __init__(self):
+        self._cache = {}
+
+    def _validate_data(self, data):
+        pass
+
+# Type aliases: PascalCase
+FeatureDict = Dict[str, Union[int, float, str]]
+ModelConfig = Dict[str, Any]
+\end{lstlisting}
+
+\subsection{Import Organization}
+
+Imports are organized in three groups, separated by blank lines:
+
+\begin{lstlisting}[style=python, caption=Import Organization]
+# Standard library imports
+import os
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Any, Tuple
+
+# Third-party imports
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+import mlflow
+import mlflow.sklearn
+
+# Local application imports
+from src.data.loaders import DataLoader
+from src.features.transformers import FeatureTransformer
+from src.models.trainer import ModelTrainer
+from src.utils.logger import setup_logger
+\end{lstlisting}
+
+\subsection{Type Hints}
+
+All function signatures include type hints:
+
+\begin{lstlisting}[style=python, caption=Type Hint Examples]
+from typing import Dict, List, Optional, Union, Tuple, Any
+import pandas as pd
+import numpy as np
+
+# Simple types
+def calculate_score(value: float) -> float:
+    return value * 2.0
+
+# Complex types
+def process_features(
+    data: pd.DataFrame,
+    feature_names: List[str],
+    config: Dict[str, Any]
+) -> Tuple[np.ndarray, List[str]]:
+    """Process features with given configuration."""
+    processed_data = data[feature_names].values
+    return processed_data, feature_names
+
+# Optional types
+def load_model(path: str, version: Optional[str] = None) -> Model:
+    """Load model from path, optionally specific version."""
+    if version is None:
+        version = "latest"
+    return Model.load(path, version)
+
+# Union types
+def parse_value(value: Union[str, int, float]) -> float:
+    """Parse value to float."""
+    return float(value)
+
+# Generic types
+from typing import TypeVar, Generic
+
+T = TypeVar('T')
+
+class Cache(Generic[T]):
+    def __init__(self) -> None:
+        self._data: Dict[str, T] = {}
+
+    def get(self, key: str) -> Optional[T]:
+        return self._data.get(key)
+
+    def set(self, key: str, value: T) -> None:
+        self._data[key] = value
+\end{lstlisting}
+
+\subsection{Docstrings}
+
+Use Google-style docstrings for all public functions and classes:
+
+\begin{lstlisting}[style=python, caption=Docstring Examples]
+def train_model(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    model_config: Dict[str, Any],
+    validation_split: float = 0.2
+) -> Tuple[Model, Dict[str, float]]:
+    """Train machine learning model with cross-validation.
+
+    This function trains a model using the provided training data
+    and configuration. It performs internal validation and returns
+    both the trained model and validation metrics.
+
+    Args:
+        X_train: Training features array of shape (n_samples, n_features)
+        y_train: Training labels array of shape (n_samples,)
+        model_config: Configuration dictionary containing model parameters
+        validation_split: Fraction of data to use for validation (default: 0.2)
+
+    Returns:
+        Tuple containing:
+            - Trained model instance
+            - Dictionary of validation metrics (accuracy, precision, recall, f1)
+
+    Raises:
+        ValueError: If validation_split is not in range [0, 1]
+        RuntimeError: If model training fails
+
+    Example:
+        >>> model_config = {"n_estimators": 100, "max_depth": 10}
+        >>> model, metrics = train_model(X_train, y_train, model_config)
+        >>> print(f"Accuracy: {metrics['accuracy']:.3f}")
+        Accuracy: 0.923
+
+    Note:
+        The model is automatically logged to MLflow if tracking is enabled.
+        See Chapter 8 for details on experiment tracking.
+
+    References:
+        See Section 7.3 for model architecture details.
+    """
+    if not (0 <= validation_split <= 1):
+        raise ValueError("validation_split must be in range [0, 1]")
+
+    # Implementation...
+    pass
+
+class FeatureStore:
+    """Centralized feature storage and retrieval system.
+
+    The FeatureStore provides a unified interface for storing and
+    retrieving features for machine learning models. It supports
+    both batch and real-time feature access.
+
+    Attributes:
+        connection: Database connection instance
+        cache: In-memory feature cache
+        feature_specs: Dictionary of feature specifications
+
+    Example:
+        >>> store = FeatureStore(connection_string="postgresql://...")
+        >>> features = store.get_features(user_id="123", feature_names=["age", "income"])
+        >>> print(features)
+        {"age": 35, "income": 75000}
+
+    See Also:
+        Chapter 6: Feature Engineering and Feature Stores
+    """
+
+    def __init__(self, connection_string: str) -> None:
+        """Initialize feature store connection.
+
+        Args:
+            connection_string: Database connection string
+        """
+        self.connection = self._create_connection(connection_string)
+        self.cache = {}
+        self.feature_specs = {}
+\end{lstlisting}
+
+\subsection{Error Handling}
+
+Explicit error handling with informative messages:
+
+\begin{lstlisting}[style=python, caption=Error Handling Patterns]
+import logging
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+# Specific exceptions
+class ModelNotFoundError(Exception):
+    """Raised when model cannot be found in registry."""
+    pass
+
+class DataValidationError(Exception):
+    """Raised when data validation fails."""
+    pass
+
+# Error handling with logging
+def load_model(model_id: str) -> Model:
+    """Load model with proper error handling."""
+    try:
+        logger.info(f"Loading model: {model_id}")
+        model = Model.load(model_id)
+        logger.info(f"Successfully loaded model: {model_id}")
+        return model
+
+    except FileNotFoundError as e:
+        logger.error(f"Model file not found: {model_id}")
+        raise ModelNotFoundError(
+            f"Model {model_id} not found in registry"
+        ) from e
+
+    except Exception as e:
+        logger.exception(f"Unexpected error loading model: {model_id}")
+        raise
+
+# Validation with early returns
+def validate_config(config: Dict[str, Any]) -> None:
+    """Validate configuration dictionary."""
+    if not config:
+        raise ValueError("Configuration cannot be empty")
+
+    if "model_type" not in config:
+        raise ValueError("Configuration must specify 'model_type'")
+
+    if config["model_type"] not in ["classifier", "regressor"]:
+        raise ValueError(
+            f"Invalid model_type: {config['model_type']}. "
+            f"Must be 'classifier' or 'regressor'"
+        )
+
+    logger.info("Configuration validated successfully")
+\end{lstlisting}
+
+\section{Configuration Management}
+
+\subsection{YAML Configuration Files}
+
+All configuration uses YAML format:
+
+\begin{lstlisting}[style=yaml, caption=Configuration File Structure]
+# config/training_config.yaml
+model:
+  name: "fraud_detector"
+  type: "xgboost"
+  hyperparameters:
+    n_estimators: 100
+    max_depth: 10
+    learning_rate: 0.1
+    subsample: 0.8
+
+data:
+  training_path: "s3://bucket/data/train.parquet"
+  validation_path: "s3://bucket/data/val.parquet"
+  test_path: "s3://bucket/data/test.parquet"
+  batch_size: 1000
+
+training:
+  num_epochs: 10
+  early_stopping_patience: 3
+  validation_split: 0.2
+  random_seed: 42
+
+logging:
+  level: "INFO"
+  log_dir: "logs/"
+  mlflow_tracking_uri: "http://mlflow:5000"
+
+deployment:
+  serving_endpoint: "http://api:8000/predict"
+  max_batch_size: 100
+  timeout_ms: 100
+\end{lstlisting}
+
+\subsection{Configuration Loading}
+
+\begin{lstlisting}[style=python, caption=Configuration Loading Pattern]
+from pathlib import Path
+from typing import Dict, Any
+import yaml
+from dataclasses import dataclass
+
+@dataclass
+class ModelConfig:
+    """Model configuration data class."""
+    name: str
+    type: str
+    hyperparameters: Dict[str, Any]
+
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'ModelConfig':
+        """Create ModelConfig from dictionary."""
+        return cls(**config_dict)
+
+def load_config(config_path: str) -> Dict[str, Any]:
+    """Load configuration from YAML file.
+
+    Args:
+        config_path: Path to YAML configuration file
+
+    Returns:
+        Dictionary containing configuration
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        ValueError: If YAML is invalid
+    """
+    path = Path(config_path)
+
+    if not path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    try:
+        with open(path, 'r') as f:
+            config = yaml.safe_load(f)
+        return config
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML in config file: {e}")
+
+# Usage
+config = load_config("config/training_config.yaml")
+model_config = ModelConfig.from_dict(config['model'])
+\end{lstlisting}
+
+\section{Logging Standards}
+
+\subsection{Logger Setup}
+
+\begin{lstlisting}[style=python, caption=Logging Configuration]
+import logging
+import sys
+from pathlib import Path
+
+def setup_logger(
+    name: str,
+    level: str = "INFO",
+    log_file: Optional[str] = None
+) -> logging.Logger:
+    """Configure logger with consistent format.
+
+    Args:
+        name: Logger name (usually __name__)
+        level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        log_file: Optional file path for logging
+
+    Returns:
+        Configured logger instance
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(getattr(logging, level.upper()))
+
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+
+    # Formatter
+    formatter = logging.Formatter(
+        fmt='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # File handler (optional)
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    return logger
+
+# Usage in modules
+logger = setup_logger(__name__)
+
+logger.debug("Detailed debugging information")
+logger.info("General information messages")
+logger.warning("Warning messages")
+logger.error("Error messages")
+logger.critical("Critical error messages")
+\end{lstlisting}
+
+\section{Testing Patterns}
+
+\subsection{Unit Test Structure}
+
+\begin{lstlisting}[style=python, caption=Unit Test Example]
+import pytest
+import numpy as np
+import pandas as pd
+from src.models.trainer import ModelTrainer
+from src.data.loaders import DataLoader
+
+class TestModelTrainer:
+    """Test suite for ModelTrainer class."""
+
+    @pytest.fixture
+    def sample_data(self):
+        """Create sample training data."""
+        np.random.seed(42)
+        X = np.random.randn(100, 10)
+        y = np.random.randint(0, 2, 100)
+        return X, y
+
+    @pytest.fixture
+    def trainer(self):
+        """Create ModelTrainer instance."""
+        config = {
+            "model": {
+                "type": "random_forest",
+                "hyperparameters": {
+                    "n_estimators": 10,
+                    "max_depth": 5
+                }
+            }
+        }
+        return ModelTrainer(config)
+
+    def test_train_model_shape(self, trainer, sample_data):
+        """Test that trained model produces correct output shape."""
+        X, y = sample_data
+        model = trainer.train(X, y)
+
+        predictions = model.predict(X)
+        assert predictions.shape == y.shape
+
+    def test_train_model_accuracy(self, trainer, sample_data):
+        """Test that model achieves minimum accuracy."""
+        X, y = sample_data
+        model = trainer.train(X, y)
+
+        accuracy = model.score(X, y)
+        assert accuracy > 0.5  # Better than random
+
+    def test_invalid_config_raises_error(self):
+        """Test that invalid configuration raises ValueError."""
+        invalid_config = {"model": {"type": "invalid_model"}}
+
+        with pytest.raises(ValueError):
+            trainer = ModelTrainer(invalid_config)
+
+    @pytest.mark.parametrize("n_estimators,expected_min_accuracy", [
+        (10, 0.6),
+        (50, 0.7),
+        (100, 0.75),
+    ])
+    def test_accuracy_improves_with_trees(
+        self,
+        sample_data,
+        n_estimators,
+        expected_min_accuracy
+    ):
+        """Test that accuracy improves with more trees."""
+        X, y = sample_data
+        config = {
+            "model": {
+                "type": "random_forest",
+                "hyperparameters": {"n_estimators": n_estimators}
+            }
+        }
+        trainer = ModelTrainer(config)
+        model = trainer.train(X, y)
+
+        accuracy = model.score(X, y)
+        assert accuracy >= expected_min_accuracy
+\end{lstlisting}
+
+\section{Code Comments}
+
+\subsection{When to Comment}
+
+\begin{enumerate}
+    \item \textbf{Complex algorithms:} Explain non-obvious logic
+    \item \textbf{Business rules:} Document domain-specific requirements
+    \item \textbf{Workarounds:} Explain why hacky code is necessary
+    \item \textbf{TODOs:} Mark incomplete implementations
+    \item \textbf{Performance considerations:} Explain optimization choices
+\end{enumerate}
+
+\subsection{Comment Examples}
+
+\begin{lstlisting}[style=python, caption=Good Comment Examples]
+# Good: Explains WHY, not WHAT
+def calculate_fraud_score(transaction: Dict) -> float:
+    """Calculate fraud probability score."""
+    # Use log transformation to handle skewed amount distribution
+    # Reference: Section 5.2.3 for feature engineering rationale
+    log_amount = np.log1p(transaction['amount'])
+
+    # Apply higher weight to international transactions
+    # based on historical fraud patterns (85% of fraud is international)
+    int_multiplier = 2.5 if transaction['is_international'] else 1.0
+
+    return log_amount * int_multiplier
+
+# Bad: States the obvious
+x = x + 1  # Increment x by 1
+
+# Good: Documents business rule
+MAX_TRANSACTION_AMOUNT = 10000  # Regulatory limit from PCI-DSS v3.2.1
+
+# Good: Explains workaround
+def process_batch(data):
+    # HACK: pandas groupby has memory leak in version 1.2.3
+    # Explicitly delete intermediate dataframes to avoid OOM
+    # TODO: Remove after upgrading to pandas 1.3.0
+    grouped = data.groupby('user_id')
+    result = grouped.apply(aggregate_features)
+    del grouped
+    return result
+\end{lstlisting}
+
+\section{Code Organization Patterns}
+
+\subsection{Module Structure}
+
+Each module follows this structure:
+
+\begin{lstlisting}[style=python, caption=Standard Module Structure]
+"""Module docstring describing purpose.
+
+This module provides functionality for...
+
+Example:
+    >>> from module import ClassName
+    >>> instance = ClassName()
+    >>> result = instance.method()
+"""
+
+# Imports (standard, third-party, local)
+import os
+from typing import Dict, List
+
+import numpy as np
+
+from .utils import helper_function
+
+# Module-level constants
+DEFAULT_CONFIG = {"param": "value"}
+
+# Module-level variables (if necessary)
+_cache: Dict[str, any] = {}
+
+# Helper functions (private)
+def _internal_helper(data: np.ndarray) -> np.ndarray:
+    """Internal helper function."""
+    pass
+
+# Public functions
+def public_function(param: str) -> str:
+    """Public API function."""
+    pass
+
+# Classes
+class PublicClass:
+    """Main class implementation."""
+    pass
+
+# Main execution block
+if __name__ == "__main__":
+    # CLI or testing code
+    pass
+\end{lstlisting}
+
+\section{Performance Patterns}
+
+\subsection{Vectorization}
+
+Prefer vectorized operations over loops:
+
+\begin{lstlisting}[style=python, caption=Vectorization Examples]
+import numpy as np
+import pandas as pd
+
+# Bad: Slow loop
+result = []
+for x in data:
+    result.append(x ** 2 + 2 * x + 1)
+
+# Good: Vectorized
+result = data ** 2 + 2 * data + 1
+
+# Bad: DataFrame iteration
+for idx, row in df.iterrows():
+    df.at[idx, 'result'] = row['a'] + row['b']
+
+# Good: Vectorized DataFrame operations
+df['result'] = df['a'] + df['b']
+
+# Good: Using .apply() when vectorization isn't possible
+df['result'] = df.apply(lambda row: complex_function(row), axis=1)
+\end{lstlisting}
+
+\section{Cross-Reference Style}
+
+Use consistent cross-references throughout the book:
+
+\begin{lstlisting}[language=TeX, caption=Cross-Reference Examples]
+% Chapter references
+See Chapter~\ref{ch:data_pipelines} for details on data processing.
+
+% Section references
+As discussed in Section~\ref{sec:feature_engineering}, features must be...
+
+% Figure references
+Figure~\ref{fig:architecture} shows the system architecture.
+
+% Table references
+Table~\ref{tab:metrics} compares model performance.
+
+% Equation references
+Using Equation~\eqref{eq:precision}, we calculate...
+
+% Code listing references
+Listing~\ref{lst:training} demonstrates the training loop.
+
+% Multiple references
+Chapters~\ref{ch:serving}--\ref{ch:monitoring} cover production operations.
+\end{lstlisting}
+
+\section{Summary}
+
+These coding standards ensure consistency and quality across all book examples:
+
+\begin{itemize}
+    \item \textbf{Follow PEP 8} for all Python code
+    \item \textbf{Use type hints} for function signatures
+    \item \textbf{Write comprehensive docstrings} with examples
+    \item \textbf{Handle errors explicitly} with informative messages
+    \item \textbf{Use YAML for configuration} with validation
+    \item \textbf{Set up proper logging} in all modules
+    \item \textbf{Write tests} for critical functionality
+    \item \textbf{Comment why, not what} for complex logic
+    \item \textbf{Prefer vectorization} over loops
+    \item \textbf{Use consistent cross-references} to other chapters
+\end{itemize}
+
+All code examples in this book are production-ready and can be adapted for real-world ML systems.

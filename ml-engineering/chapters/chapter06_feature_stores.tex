@@ -2,39 +2,2882 @@
 
 After completing this chapter, readers will be able to:
 \begin{itemize}
-    \item Understand the role of feature stores in ML systems
-    \item Implement feature engineering pipelines
-    \item Design and deploy feature stores
-    \item Manage feature versioning and lineage
-    \item Ensure consistency between training and serving features
+    \item Understand the role of feature stores in ML systems and the training-serving skew problem
+    \item Apply feature engineering best practices and design patterns
+    \item Implement a complete feature store using Feast with online and offline serving
+    \item Design feature versioning strategies and track feature lineage
+    \item Build architectures for online and offline feature serving
+    \item Implement feature monitoring and drift detection systems
+    \item Integrate feature stores with training and serving pipelines
+    \item Apply real-world feature engineering patterns from industry case studies
 \end{itemize}
 
-\section{Introduction to Feature Stores}
+\section{Introduction: The Feature Engineering Challenge}
 
-\subsection{The Feature Engineering Challenge}
+Feature stores have emerged as a critical component in production ML systems, addressing one of the most persistent challenges in machine learning: \textbf{training-serving skew}. This phenomenon occurs when features computed during training differ from those generated during inference, leading to degraded model performance despite strong offline metrics.
 
-Feature stores solve the training-serving skew problem by providing a centralized repository for features used in both training and inference.
+Consider a recommendation system that uses a user's average purchase value over the last 30 days as a feature. During training, this feature is computed in batch using SQL queries over historical data. During serving, the same feature must be computed in real-time from a streaming data source. Without careful engineering, these two pipelines can diverge due to:
+
+\begin{itemize}
+    \item Different computation logic (SQL vs. Python)
+    \item Different data sources (data warehouse vs. production database)
+    \item Different aggregation windows (calendar days vs. rolling windows)
+    \item Different handling of missing values or edge cases
+    \item Time zone differences or timestamp precision issues
+\end{itemize}
+
+A feature store solves this by providing:
+
+\begin{enumerate}
+    \item \textbf{Centralized Feature Definitions:} Single source of truth for feature logic
+    \item \textbf{Dual-Mode Serving:} Consistent feature computation for training (batch) and serving (online)
+    \item \textbf{Feature Versioning:} Track changes to feature definitions over time
+    \item \textbf{Feature Discovery:} Catalog of available features with metadata
+    \item \textbf{Point-in-Time Correctness:} Prevent data leakage by respecting temporal boundaries
+\end{enumerate}
+
+\begin{figure}[h]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=2.5cm, auto]
+    \tikzstyle{source} = [rectangle, rounded corners, draw, fill=blue!20, text width=2.2cm, text centered, minimum height=1cm]
+    \tikzstyle{store} = [rectangle, draw, fill=purple!30, text width=2.5cm, text centered, minimum height=1.5cm, font=\bfseries]
+    \tikzstyle{consumer} = [rectangle, rounded corners, draw, fill=green!20, text width=2.2cm, text centered, minimum height=1cm]
+    \tikzstyle{arrow} = [thick,->,>=stealth]
+
+    % Data sources
+    \node [source] (batch) {Batch Data\\(S3, BigQuery)};
+    \node [source, below of=batch, node distance=2cm] (stream) {Stream Data\\(Kafka)};
+
+    % Feature Store
+    \node [store, right of=batch, node distance=4cm, yshift=-1cm] (featurestore) {Feature Store\\Offline + Online};
+
+    % Consumers
+    \node [consumer, right of=featurestore, node distance=4cm, yshift=1cm] (training) {Training\\Pipeline};
+    \node [consumer, right of=featurestore, node distance=4cm, yshift=-1cm] (serving) {Model\\Serving};
+
+    \draw [arrow] (batch) -- node[above] {materialize} (featurestore);
+    \draw [arrow] (stream) -- node[above] {ingest} (featurestore);
+    \draw [arrow] (featurestore) -- node[above] {historical} (training);
+    \draw [arrow] (featurestore) -- node[above] {real-time} (serving);
+\end{tikzpicture}}
+\caption{Feature store architecture overview}
+\label{fig:feature_store_overview}
+\end{figure}
 
 \section{Feature Engineering Best Practices}
 
-% Placeholder content
+Effective feature engineering requires both art and science. This section presents battle-tested patterns for creating robust, maintainable features.
 
-\section{Feature Store Architecture}
+\subsection{Feature Design Principles}
 
-% Placeholder content
+\textbf{1. Reproducibility:} Features must produce identical results given the same input data and timestamp. This requires:
 
-\section{Popular Feature Store Implementations}
+\begin{itemize}
+    \item Deterministic transformations (avoid random operations)
+    \item Explicit timestamp handling (no implicit "now()")
+    \item Versioned dependencies (libraries, models)
+    \item Documented assumptions
+\end{itemize}
 
-\subsection{Feast}
-\subsection{Tecton}
-\subsection{Hopsworks}
+\textbf{2. Modularity:} Break complex features into composable primitives.
 
-\section{Chapter Summary}
+\begin{lstlisting}[style=python, caption=Modular feature composition]
+from typing import List, Dict
+import pandas as pd
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
-% Placeholder summary
+@dataclass
+class FeatureConfig:
+    """Configuration for feature computation"""
+    window_days: int
+    aggregation: str
+    min_samples: int = 1
+
+class FeaturePrimitive:
+    """Base class for reusable feature primitives"""
+    def __init__(self, config: FeatureConfig):
+        self.config = config
+
+    def compute(self, df: pd.DataFrame, timestamp: datetime) -> pd.Series:
+        """Compute feature at specific timestamp"""
+        raise NotImplementedError
+
+class WindowAggregation(FeaturePrimitive):
+    """Aggregate values over time window"""
+    def compute(self, df: pd.DataFrame, timestamp: datetime) -> pd.Series:
+        # Point-in-time filtering
+        cutoff = timestamp - timedelta(days=self.config.window_days)
+        windowed = df[
+            (df['timestamp'] >= cutoff) &
+            (df['timestamp'] < timestamp)
+        ]
+
+        # Apply aggregation
+        if self.config.aggregation == 'mean':
+            return windowed.groupby('entity_id')['value'].mean()
+        elif self.config.aggregation == 'sum':
+            return windowed.groupby('entity_id')['value'].sum()
+        elif self.config.aggregation == 'count':
+            return windowed.groupby('entity_id')['value'].count()
+        else:
+            raise ValueError(f"Unknown aggregation: {self.config.aggregation}")
+
+class RatioFeature(FeaturePrimitive):
+    """Compute ratio between two aggregated features"""
+    def __init__(self, numerator: FeaturePrimitive,
+                 denominator: FeaturePrimitive):
+        self.numerator = numerator
+        self.denominator = denominator
+
+    def compute(self, df: pd.DataFrame, timestamp: datetime) -> pd.Series:
+        num = self.numerator.compute(df, timestamp)
+        denom = self.denominator.compute(df, timestamp)
+        # Handle division by zero
+        return (num / denom.replace(0, float('nan'))).fillna(0)
+
+# Example: Conversion rate feature
+purchase_count = WindowAggregation(
+    FeatureConfig(window_days=30, aggregation='count')
+)
+pageview_count = WindowAggregation(
+    FeatureConfig(window_days=30, aggregation='count')
+)
+conversion_rate = RatioFeature(purchase_count, pageview_count)
+\end{lstlisting}
+
+\textbf{3. Point-in-Time Correctness:} Prevent data leakage by ensuring features only use data available at prediction time.
+
+\begin{lstlisting}[style=python, caption=Point-in-time correct feature computation]
+import pandas as pd
+from typing import Optional
+
+class PointInTimeCorrectFeatures:
+    """Ensures no data leakage in feature computation"""
+
+    def __init__(self, entity_df: pd.DataFrame,
+                 event_df: pd.DataFrame):
+        """
+        Args:
+            entity_df: DataFrame with entity_id and timestamp columns
+            event_df: DataFrame with entity_id, event_timestamp, and features
+        """
+        self.entity_df = entity_df.sort_values('timestamp')
+        self.event_df = event_df.sort_values('event_timestamp')
+
+    def get_features(self, feature_cols: List[str]) -> pd.DataFrame:
+        """
+        Get features at each entity timestamp without leakage.
+        Uses merge_asof to join on nearest earlier event.
+        """
+        # Rename for merge_asof
+        entity = self.entity_df.copy()
+        events = self.event_df[['entity_id', 'event_timestamp'] + feature_cols].copy()
+
+        # Merge as-of join: for each entity timestamp,
+        # get latest feature values from before that time
+        result = pd.merge_asof(
+            entity.sort_values('timestamp'),
+            events.sort_values('event_timestamp'),
+            left_on='timestamp',
+            right_on='event_timestamp',
+            by='entity_id',
+            direction='backward',  # Only look backward in time
+            allow_exact_matches=False  # Exclude events at exact timestamp
+        )
+
+        return result[['entity_id', 'timestamp'] + feature_cols]
+
+# Example usage
+entity_df = pd.DataFrame({
+    'entity_id': ['user_1', 'user_1', 'user_2'],
+    'timestamp': pd.to_datetime([
+        '2024-01-15 10:00:00',
+        '2024-01-20 14:00:00',
+        '2024-01-18 09:00:00'
+    ])
+})
+
+event_df = pd.DataFrame({
+    'entity_id': ['user_1', 'user_1', 'user_2'],
+    'event_timestamp': pd.to_datetime([
+        '2024-01-10 08:00:00',
+        '2024-01-17 12:00:00',
+        '2024-01-16 11:00:00'
+    ]),
+    'total_purchases': [5, 7, 3],
+    'avg_order_value': [45.2, 52.1, 38.5]
+})
+
+pit_features = PointInTimeCorrectFeatures(entity_df, event_df)
+result = pit_features.get_features(['total_purchases', 'avg_order_value'])
+print(result)
+# Ensures each row only uses data from BEFORE the timestamp
+\end{lstlisting}
+
+\subsection{Feature Transformation Patterns}
+
+\textbf{Temporal Features:}
+
+\begin{lstlisting}[style=python, caption=Temporal feature engineering patterns]
+import numpy as np
+from typing import Union
+
+class TemporalFeatureEngineering:
+    """Common patterns for time-based features"""
+
+    @staticmethod
+    def cyclical_encoding(values: pd.Series, period: int) -> pd.DataFrame:
+        """
+        Encode cyclical features (hour, day, month) as sin/cos.
+        Preserves cyclical nature (hour 23 is close to hour 0).
+        """
+        sin_values = np.sin(2 * np.pi * values / period)
+        cos_values = np.cos(2 * np.pi * values / period)
+        return pd.DataFrame({
+            f'{values.name}_sin': sin_values,
+            f'{values.name}_cos': cos_values
+        })
+
+    @staticmethod
+    def time_since_event(timestamps: pd.Series,
+                        event_timestamp: pd.Series,
+                        unit: str = 'days') -> pd.Series:
+        """
+        Calculate time elapsed since an event.
+        Useful for recency features.
+        """
+        delta = timestamps - event_timestamp
+        if unit == 'days':
+            return delta.dt.total_seconds() / 86400
+        elif unit == 'hours':
+            return delta.dt.total_seconds() / 3600
+        elif unit == 'minutes':
+            return delta.dt.total_seconds() / 60
+        else:
+            return delta.dt.total_seconds()
+
+    @staticmethod
+    def business_day_features(timestamps: pd.Series) -> pd.DataFrame:
+        """Extract business-relevant temporal features"""
+        df = pd.DataFrame()
+        df['is_weekend'] = timestamps.dt.dayofweek.isin([5, 6]).astype(int)
+        df['is_month_start'] = timestamps.dt.is_month_start.astype(int)
+        df['is_month_end'] = timestamps.dt.is_month_end.astype(int)
+        df['is_quarter_start'] = timestamps.dt.is_quarter_start.astype(int)
+        df['is_quarter_end'] = timestamps.dt.is_quarter_end.astype(int)
+        df['day_of_week'] = timestamps.dt.dayofweek
+        df['week_of_year'] = timestamps.dt.isocalendar().week
+        df['month'] = timestamps.dt.month
+        df['quarter'] = timestamps.dt.quarter
+        return df
+
+# Example usage
+df = pd.DataFrame({
+    'timestamp': pd.date_range('2024-01-01', periods=100, freq='6H')
+})
+
+tfe = TemporalFeatureEngineering()
+
+# Cyclical encoding for hour of day
+df['hour'] = df['timestamp'].dt.hour
+hour_encoded = tfe.cyclical_encoding(df['hour'], period=24)
+
+# Business day features
+business_features = tfe.business_day_features(df['timestamp'])
+
+print(hour_encoded.head())
+print(business_features.head())
+\end{lstlisting}
+
+\textbf{Aggregation Features:}
+
+\begin{lstlisting}[style=python, caption=Advanced aggregation patterns for ML features]
+from typing import List, Callable, Dict
+import pandas as pd
+
+class AggregationFeatures:
+    """Patterns for aggregating transactional data into features"""
+
+    @staticmethod
+    def multi_window_aggregation(
+        df: pd.DataFrame,
+        entity_col: str,
+        value_col: str,
+        timestamp_col: str,
+        windows: List[int],
+        agg_funcs: List[str]
+    ) -> pd.DataFrame:
+        """
+        Create features with multiple time windows and aggregations.
+        Essential for capture temporal patterns.
+        """
+        features = []
+
+        for window in windows:
+            for agg in agg_funcs:
+                feature_name = f'{value_col}_{agg}_{window}d'
+
+                # Rolling aggregation
+                windowed = df.groupby(entity_col).rolling(
+                    window=f'{window}D',
+                    on=timestamp_col
+                )[value_col].agg(agg).reset_index()
+
+                windowed = windowed.rename(columns={value_col: feature_name})
+                features.append(windowed[[entity_col, timestamp_col, feature_name]])
+
+        # Merge all features
+        result = features[0]
+        for feat in features[1:]:
+            result = result.merge(feat, on=[entity_col, timestamp_col], how='outer')
+
+        return result
+
+    @staticmethod
+    def recency_frequency_monetary(
+        df: pd.DataFrame,
+        entity_col: str,
+        timestamp_col: str,
+        value_col: str,
+        as_of_date: pd.Timestamp
+    ) -> pd.DataFrame:
+        """
+        RFM analysis - classic pattern for customer segmentation.
+
+        Recency: Days since last transaction
+        Frequency: Number of transactions
+        Monetary: Total/average transaction value
+        """
+        rfm = df.groupby(entity_col).agg({
+            timestamp_col: lambda x: (as_of_date - x.max()).days,  # Recency
+            value_col: ['count', 'sum', 'mean']  # Frequency, Monetary
+        })
+
+        rfm.columns = ['recency_days', 'frequency', 'monetary_total', 'monetary_avg']
+        return rfm.reset_index()
+
+    @staticmethod
+    def trend_features(
+        df: pd.DataFrame,
+        entity_col: str,
+        value_col: str,
+        timestamp_col: str,
+        short_window: int = 7,
+        long_window: int = 30
+    ) -> pd.DataFrame:
+        """
+        Compute trend features by comparing short vs long windows.
+        Useful for detecting changes in user behavior.
+        """
+        df_sorted = df.sort_values([entity_col, timestamp_col])
+
+        # Short window average
+        short_avg = df_sorted.groupby(entity_col)[value_col].rolling(
+            window=short_window, min_periods=1
+        ).mean().reset_index(level=0, drop=True)
+
+        # Long window average
+        long_avg = df_sorted.groupby(entity_col)[value_col].rolling(
+            window=long_window, min_periods=1
+        ).mean().reset_index(level=0, drop=True)
+
+        df_sorted['trend_ratio'] = short_avg / long_avg.replace(0, np.nan)
+        df_sorted['trend_diff'] = short_avg - long_avg
+        df_sorted['is_trending_up'] = (df_sorted['trend_ratio'] > 1.2).astype(int)
+        df_sorted['is_trending_down'] = (df_sorted['trend_ratio'] < 0.8).astype(int)
+
+        return df_sorted
+
+# Example: User engagement features
+user_events = pd.DataFrame({
+    'user_id': ['u1', 'u1', 'u1', 'u2', 'u2'] * 10,
+    'timestamp': pd.date_range('2024-01-01', periods=50, freq='1D'),
+    'purchase_amount': np.random.uniform(10, 100, 50)
+})
+
+agg_features = AggregationFeatures()
+
+# Multi-window features
+multi_window = agg_features.multi_window_aggregation(
+    user_events,
+    entity_col='user_id',
+    value_col='purchase_amount',
+    timestamp_col='timestamp',
+    windows=[7, 14, 30],
+    agg_funcs=['sum', 'mean', 'count']
+)
+
+# RFM features
+rfm = agg_features.recency_frequency_monetary(
+    user_events,
+    entity_col='user_id',
+    timestamp_col='timestamp',
+    value_col='purchase_amount',
+    as_of_date=pd.Timestamp('2024-02-20')
+)
+
+print("Multi-window features:")
+print(multi_window.head())
+print("\nRFM features:")
+print(rfm)
+\end{lstlisting}
+
+\textbf{Categorical Feature Engineering:}
+
+\begin{lstlisting}[style=python, caption=Production-ready categorical feature encoding]
+from sklearn.preprocessing import LabelEncoder
+from category_encoders import TargetEncoder, WOEEncoder
+import warnings
+
+class CategoricalFeatureEngineering:
+    """Enterprise patterns for categorical feature encoding"""
+
+    @staticmethod
+    def frequency_encoding(
+        train: pd.Series,
+        test: pd.Series = None,
+        smoothing: float = 1.0
+    ) -> tuple:
+        """
+        Encode categories by their frequency.
+        Smoothing prevents overfitting to rare categories.
+        """
+        # Calculate frequencies from training data
+        freq_map = train.value_counts(normalize=True).to_dict()
+
+        # Apply smoothing (additive smoothing)
+        total_categories = len(freq_map)
+        smoothed_freq = {
+            k: (v + smoothing) / (1 + smoothing * total_categories)
+            for k, v in freq_map.items()
+        }
+
+        # Default frequency for unseen categories
+        default_freq = smoothing / (1 + smoothing * total_categories)
+
+        train_encoded = train.map(smoothed_freq).fillna(default_freq)
+        test_encoded = test.map(smoothed_freq).fillna(default_freq) if test is not None else None
+
+        return train_encoded, test_encoded
+
+    @staticmethod
+    def target_encoding_safe(
+        train_cat: pd.Series,
+        train_target: pd.Series,
+        test_cat: pd.Series = None,
+        smoothing: float = 10.0,
+        min_samples: int = 5
+    ) -> tuple:
+        """
+        Target encoding with proper cross-validation handling.
+        Uses smoothing to prevent overfitting.
+
+        Formula: (count_in_category * mean_target_in_category + smoothing * global_mean) /
+                 (count_in_category + smoothing)
+        """
+        global_mean = train_target.mean()
+
+        # Aggregate by category
+        stats = pd.DataFrame({
+            'count': train_cat.groupby(train_cat).size(),
+            'mean': train_target.groupby(train_cat).mean()
+        })
+
+        # Apply smoothing formula
+        stats['smoothed_mean'] = (
+            (stats['count'] * stats['mean'] + smoothing * global_mean) /
+            (stats['count'] + smoothing)
+        )
+
+        # Handle rare categories
+        stats.loc[stats['count'] < min_samples, 'smoothed_mean'] = global_mean
+
+        # Map to data
+        encoding_map = stats['smoothed_mean'].to_dict()
+        train_encoded = train_cat.map(encoding_map).fillna(global_mean)
+        test_encoded = test_cat.map(encoding_map).fillna(global_mean) if test_cat is not None else None
+
+        return train_encoded, test_encoded
+
+    @staticmethod
+    def entity_embedding_features(
+        categories: pd.Series,
+        embedding_dim: int = 10,
+        pretrained_embeddings: Dict[str, np.ndarray] = None
+    ) -> np.ndarray:
+        """
+        Use learned embeddings for high-cardinality categorical features.
+        Can use pretrained embeddings from neural networks.
+        """
+        if pretrained_embeddings is None:
+            # Initialize random embeddings (in practice, learn these)
+            unique_cats = categories.unique()
+            pretrained_embeddings = {
+                cat: np.random.randn(embedding_dim)
+                for cat in unique_cats
+            }
+
+        # Default embedding for unseen categories
+        default_embedding = np.zeros(embedding_dim)
+
+        # Map categories to embeddings
+        embeddings = categories.map(
+            lambda x: pretrained_embeddings.get(x, default_embedding)
+        )
+
+        return np.vstack(embeddings.values)
+
+# Example usage
+np.random.seed(42)
+train_data = pd.DataFrame({
+    'category': np.random.choice(['A', 'B', 'C', 'D', 'E'], 1000),
+    'target': np.random.binomial(1, 0.3, 1000)
+})
+test_data = pd.DataFrame({
+    'category': np.random.choice(['A', 'B', 'C', 'D', 'E', 'F'], 200)  # F is unseen
+})
+
+cfe = CategoricalFeatureEngineering()
+
+# Frequency encoding
+train_freq, test_freq = cfe.frequency_encoding(
+    train_data['category'],
+    test_data['category']
+)
+
+# Target encoding
+train_target, test_target = cfe.target_encoding_safe(
+    train_data['category'],
+    train_data['target'],
+    test_data['category']
+)
+
+print("Frequency encoding (first 10):")
+print(train_freq.head(10))
+print("\nTarget encoding (first 10):")
+print(train_target.head(10))
+\end{lstlisting}
+
+\section{Complete Feast Feature Store Implementation}
+
+Feast (Feature Store) is an open-source feature store that provides a unified data layer for ML features. This section demonstrates a production-ready implementation.
+
+\subsection{Feast Architecture and Setup}
+
+\begin{figure}[h]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=2.5cm, auto]
+\tikzstyle{component} = [rectangle, draw, fill=blue!20, text width=3.2cm, text centered, minimum height=1cm]
+\tikzstyle{storage} = [cylinder, draw, fill=orange!20, text width=4cm, text centered, minimum height=1.2cm, shape aspect=0.3]
+    \tikzstyle{arrow} = [thick,->,>=stealth]
+
+    % Components
+    \node [component] (registry) {Feature Registry};
+    \node [storage, below of=registry, node distance=2.5cm] (offline) {Offline Store\\(BigQuery/S3)};
+    \node [storage, right of=offline, node distance=4cm] (online) {Online Store\\(Redis/DynamoDB)};
+    \node [component, above of=online, node distance=2.5cm] (materialization) {Materialization\\Engine};
+
+    \draw [arrow] (registry) -- node[left] {metadata} (offline);
+    \draw [arrow] (registry) -- (materialization);
+    \draw [arrow] (offline) -- node[below] {materialize} (online);
+    \draw [arrow, dashed] (materialization) -- (online);
+\end{tikzpicture}}
+\caption{Feast feature store architecture}
+\label{fig:feast_architecture}
+\end{figure}
+
+\begin{lstlisting}[style=yaml, caption=Feast feature store setup and configuration]
+# feast_repo/feature_store.yaml
+project: ml_production
+registry: data/registry.db
+provider: local
+online_store:
+    type: redis
+    connection_string: "localhost:6379"
+offline_store:
+    type: file
+\end{lstlisting}
+
+\begin{lstlisting}[style=python, caption=Complete Feast feature definitions]
+# feast_repo/features.py
+from feast import Entity, Feature, FeatureView, FileSource, ValueType
+from feast.types import Float32, Float64, Int64, String
+from datetime import timedelta
+import pandas as pd
+
+# Define entities
+user = Entity(
+    name="user_id",
+    value_type=ValueType.STRING,
+    description="User identifier"
+)
+
+product = Entity(
+    name="product_id",
+    value_type=ValueType.STRING,
+    description="Product identifier"
+)
+
+# Define data sources
+user_activity_source = FileSource(
+    path="data/user_activity.parquet",
+    timestamp_field="event_timestamp",
+    created_timestamp_column="created_timestamp"
+)
+
+user_profile_source = FileSource(
+    path="data/user_profile.parquet",
+    timestamp_field="event_timestamp",
+    created_timestamp_column="created_timestamp"
+)
+
+product_features_source = FileSource(
+    path="data/product_features.parquet",
+    timestamp_field="event_timestamp"
+)
+
+# Define feature views
+user_activity_features = FeatureView(
+    name="user_activity_features",
+    entities=["user_id"],
+    ttl=timedelta(days=90),
+    schema=[
+        Feature(name="total_pageviews_7d", dtype=Float32),
+        Feature(name="total_pageviews_30d", dtype=Float32),
+        Feature(name="unique_products_viewed_7d", dtype=Int64),
+        Feature(name="unique_products_viewed_30d", dtype=Int64),
+        Feature(name="avg_session_duration_7d", dtype=Float32),
+        Feature(name="purchase_count_7d", dtype=Int64),
+        Feature(name="purchase_count_30d", dtype=Int64),
+        Feature(name="total_purchase_amount_30d", dtype=Float32),
+        Feature(name="avg_purchase_amount_30d", dtype=Float32),
+        Feature(name="days_since_last_purchase", dtype=Float32),
+        Feature(name="conversion_rate_30d", dtype=Float32),
+    ],
+    online=True,
+    source=user_activity_source,
+    tags={"team": "recommendations", "domain": "user_behavior"}
+)
+
+user_profile_features = FeatureView(
+    name="user_profile_features",
+    entities=["user_id"],
+    ttl=timedelta(days=365),
+    schema=[
+        Feature(name="account_age_days", dtype=Float32),
+        Feature(name="is_premium_member", dtype=Int64),
+        Feature(name="preferred_category", dtype=String),
+        Feature(name="lifetime_purchase_count", dtype=Int64),
+        Feature(name="lifetime_purchase_amount", dtype=Float32),
+        Feature(name="email_engagement_score", dtype=Float32),
+    ],
+    online=True,
+    source=user_profile_source,
+    tags={"team": "growth", "domain": "user_profile"}
+)
+
+product_features = FeatureView(
+    name="product_features",
+    entities=["product_id"],
+    ttl=timedelta(days=30),
+    schema=[
+        Feature(name="price", dtype=Float32),
+        Feature(name="discount_percentage", dtype=Float32),
+        Feature(name="rating_avg", dtype=Float32),
+        Feature(name="rating_count", dtype=Int64),
+        Feature(name="view_count_7d", dtype=Int64),
+        Feature(name="purchase_count_7d", dtype=Int64),
+        Feature(name="inventory_level", dtype=Int64),
+        Feature(name="category_popularity_score", dtype=Float32),
+    ],
+    online=True,
+    source=product_features_source,
+    tags={"team": "catalog", "domain": "product"}
+)
+\end{lstlisting}
+
+\subsection{Feature Materialization Pipeline}
+
+\begin{lstlisting}[style=python, caption=Production feature materialization pipeline]
+# feature_pipeline.py
+"""
+Production pipeline for computing and materializing features to Feast.
+Runs on schedule (e.g., daily) to keep offline and online stores updated.
+"""
+
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+from feast import FeatureStore
+from typing import Dict, List
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class FeatureMaterializationPipeline:
+    """
+    Pipeline to compute features from raw data and materialize to Feast.
+    """
+
+    def __init__(self, feast_repo_path: str):
+        self.fs = FeatureStore(repo_path=feast_repo_path)
+        self.computation_timestamp = datetime.now()
+
+    def compute_user_activity_features(
+        self,
+        events_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Compute user activity features from event log.
+
+        Args:
+            events_df: DataFrame with columns [user_id, event_timestamp,
+                       event_type, product_id, session_duration, purchase_amount]
+        """
+        logger.info("Computing user activity features...")
+
+        # Ensure timestamp is datetime
+        events_df['event_timestamp'] = pd.to_datetime(events_df['event_timestamp'])
+
+        features_list = []
+
+        # Define windows
+        windows = {
+            '7d': timedelta(days=7),
+            '30d': timedelta(days=30)
+        }
+
+        # Compute features for each user
+        for user_id, user_events in events_df.groupby('user_id'):
+            user_features = {'user_id': user_id}
+
+            # Use current timestamp for point-in-time correctness
+            cutoff = self.computation_timestamp
+
+            for window_name, window_delta in windows.items():
+                window_start = cutoff - window_delta
+                windowed_events = user_events[
+                    (user_events['event_timestamp'] >= window_start) &
+                    (user_events['event_timestamp'] < cutoff)
+                ]
+
+                # Pageview features
+                pageviews = windowed_events[windowed_events['event_type'] == 'pageview']
+                user_features[f'total_pageviews_{window_name}'] = len(pageviews)
+                user_features[f'unique_products_viewed_{window_name}'] = \
+                    pageviews['product_id'].nunique()
+
+                # Session duration
+                user_features[f'avg_session_duration_{window_name}'] = \
+                    windowed_events['session_duration'].mean() \
+                    if len(windowed_events) > 0 else 0.0
+
+                # Purchase features
+                purchases = windowed_events[windowed_events['event_type'] == 'purchase']
+                user_features[f'purchase_count_{window_name}'] = len(purchases)
+
+                if window_name == '30d':  # Only for 30-day window
+                    user_features['total_purchase_amount_30d'] = \
+                        purchases['purchase_amount'].sum()
+                    user_features['avg_purchase_amount_30d'] = \
+                        purchases['purchase_amount'].mean() \
+                        if len(purchases) > 0 else 0.0
+
+                    # Conversion rate
+                    total_sessions = windowed_events['session_id'].nunique()
+                    user_features['conversion_rate_30d'] = \
+                        len(purchases) / total_sessions if total_sessions > 0 else 0.0
+
+            # Recency feature
+            last_purchase = user_events[
+                user_events['event_type'] == 'purchase'
+            ]['event_timestamp'].max()
+
+            if pd.notna(last_purchase):
+                user_features['days_since_last_purchase'] = \
+                    (cutoff - last_purchase).total_seconds() / 86400
+            else:
+                user_features['days_since_last_purchase'] = 9999.0  # Never purchased
+
+            # Event timestamp for Feast
+            user_features['event_timestamp'] = cutoff
+            user_features['created_timestamp'] = datetime.now()
+
+            features_list.append(user_features)
+
+        result_df = pd.DataFrame(features_list)
+        logger.info(f"Computed features for {len(result_df)} users")
+
+        return result_df
+
+    def compute_product_features(
+        self,
+        products_df: pd.DataFrame,
+        events_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """
+        Compute product features from product catalog and events.
+        """
+        logger.info("Computing product features...")
+
+        features_list = []
+        cutoff = self.computation_timestamp
+        window_7d = cutoff - timedelta(days=7)
+
+        for product_id, product_info in products_df.groupby('product_id'):
+            product_events = events_df[events_df['product_id'] == product_id]
+            windowed_events = product_events[
+                (product_events['event_timestamp'] >= window_7d) &
+                (product_events['event_timestamp'] < cutoff)
+            ]
+
+            features = {
+                'product_id': product_id,
+                'price': product_info['price'].iloc[-1],
+                'discount_percentage': product_info['discount_percentage'].iloc[-1],
+                'rating_avg': product_info['rating_avg'].iloc[-1],
+                'rating_count': product_info['rating_count'].iloc[-1],
+                'inventory_level': product_info['inventory_level'].iloc[-1],
+                'view_count_7d': len(windowed_events[windowed_events['event_type'] == 'pageview']),
+                'purchase_count_7d': len(windowed_events[windowed_events['event_type'] == 'purchase']),
+                'event_timestamp': cutoff,
+                'created_timestamp': datetime.now()
+            }
+
+            # Category popularity (simplified)
+            category = product_info['category'].iloc[-1]
+            category_products = products_df[products_df['category'] == category]
+            features['category_popularity_score'] = \
+                len(category_products) / len(products_df)
+
+            features_list.append(features)
+
+        result_df = pd.DataFrame(features_list)
+        logger.info(f"Computed features for {len(result_df)} products")
+
+        return result_df
+
+    def materialize_to_feast(
+        self,
+        features_df: pd.DataFrame,
+        feature_view_name: str,
+        output_path: str
+    ):
+        """
+        Write features to parquet and materialize to Feast online store.
+        """
+        logger.info(f"Materializing {feature_view_name} to Feast...")
+
+        # Write to offline store (parquet file)
+        features_df.to_parquet(output_path, index=False)
+        logger.info(f"Wrote features to {output_path}")
+
+        # Apply feature definitions (syncs to registry)
+        self.fs.apply([
+            # Feature views are defined in features.py
+        ])
+
+        # Materialize to online store
+        end_date = self.computation_timestamp
+        start_date = end_date - timedelta(days=1)  # Materialize last day
+
+        self.fs.materialize(
+            start_date=start_date,
+            end_date=end_date,
+            feature_views=[feature_view_name]
+        )
+
+        logger.info(f"Materialized {feature_view_name} to online store")
+
+    def run(self, raw_data_path: str, output_dir: str):
+        """Execute complete materialization pipeline"""
+        logger.info("Starting feature materialization pipeline...")
+
+        # Load raw data (in practice, from data warehouse)
+        events_df = pd.read_parquet(f"{raw_data_path}/events.parquet")
+        products_df = pd.read_parquet(f"{raw_data_path}/products.parquet")
+
+        # Compute features
+        user_activity = self.compute_user_activity_features(events_df)
+        product_features = self.compute_product_features(products_df, events_df)
+
+        # Materialize to Feast
+        self.materialize_to_feast(
+            user_activity,
+            "user_activity_features",
+            f"{output_dir}/user_activity.parquet"
+        )
+
+        self.materialize_to_feast(
+            product_features,
+            "product_features",
+            f"{output_dir}/product_features.parquet"
+        )
+
+        logger.info("Feature materialization pipeline completed successfully")
+
+# Example usage
+if __name__ == "__main__":
+    pipeline = FeatureMaterializationPipeline(feast_repo_path="./feast_repo")
+    pipeline.run(
+        raw_data_path="./data/raw",
+        output_dir="./data/features"
+    )
+\end{lstlisting}
+
+\subsection{Online and Offline Feature Serving}
+
+\begin{lstlisting}[style=python, caption=Feature serving for training and inference]
+# feature_serving.py
+"""
+Demonstrate both offline (training) and online (inference) feature retrieval.
+"""
+
+from feast import FeatureStore
+import pandas as pd
+from datetime import datetime, timedelta
+from typing import List
+
+class FeatureServingService:
+    """
+    Service for retrieving features for both training and serving.
+    """
+
+    def __init__(self, feast_repo_path: str):
+        self.fs = FeatureStore(repo_path=feast_repo_path)
+
+    def get_historical_features(
+        self,
+        entity_df: pd.DataFrame,
+        features: List[str]
+    ) -> pd.DataFrame:
+        """
+        Retrieve historical features for training.
+        Ensures point-in-time correctness.
+
+        Args:
+            entity_df: DataFrame with entity keys and timestamps
+            features: List of feature references
+                      (e.g., ["user_activity_features:purchase_count_30d"])
+
+        Returns:
+            DataFrame with requested features joined to entity_df
+        """
+        # Feast retrieves features as they existed at each timestamp
+        training_df = self.fs.get_historical_features(
+            entity_df=entity_df,
+            features=features
+        ).to_df()
+
+        return training_df
+
+    def get_online_features(
+        self,
+        entity_rows: List[dict],
+        features: List[str]
+    ) -> dict:
+        """
+        Retrieve latest features from online store for real-time inference.
+
+        Args:
+            entity_rows: List of entity dictionaries
+                         (e.g., [{"user_id": "user_123"}])
+            features: List of feature references
+
+        Returns:
+            Dictionary with features for each entity
+        """
+        feature_vector = self.fs.get_online_features(
+            entity_rows=entity_rows,
+            features=features
+        ).to_dict()
+
+        return feature_vector
+
+# Example: Training pipeline
+def training_pipeline_example():
+    """
+    Example of retrieving features for model training.
+    """
+    fs_service = FeatureServingService("./feast_repo")
+
+    # Historical training data with labels
+    # In practice, this comes from your label generation process
+    entity_df = pd.DataFrame({
+        'user_id': ['user_1', 'user_2', 'user_3', 'user_4'],
+        'product_id': ['prod_A', 'prod_B', 'prod_C', 'prod_D'],
+        'event_timestamp': [
+            datetime(2024, 1, 15, 10, 0),
+            datetime(2024, 1, 16, 14, 30),
+            datetime(2024, 1, 17, 9, 15),
+            datetime(2024, 1, 18, 16, 45)
+        ],
+        'label': [1, 0, 1, 0]  # Purchase/no purchase
+    })
+
+    # Request features from Feast
+    features = [
+        "user_activity_features:purchase_count_30d",
+        "user_activity_features:conversion_rate_30d",
+        "user_activity_features:days_since_last_purchase",
+        "user_profile_features:is_premium_member",
+        "user_profile_features:lifetime_purchase_count",
+        "product_features:price",
+        "product_features:rating_avg",
+        "product_features:discount_percentage"
+    ]
+
+    training_data = fs_service.get_historical_features(
+        entity_df=entity_df,
+        features=features
+    )
+
+    print("Training data with features:")
+    print(training_data.head())
+
+    # Now use training_data for model training
+    # X = training_data.drop(['label', 'event_timestamp'], axis=1)
+    # y = training_data['label']
+
+    return training_data
+
+# Example: Inference pipeline
+def inference_pipeline_example():
+    """
+    Example of retrieving features for real-time prediction.
+    """
+    fs_service = FeatureServingService("./feast_repo")
+
+    # Real-time inference request
+    entity_rows = [
+        {"user_id": "user_123", "product_id": "prod_XYZ"}
+    ]
+
+    features = [
+        "user_activity_features:purchase_count_30d",
+        "user_activity_features:conversion_rate_30d",
+        "user_profile_features:is_premium_member",
+        "product_features:price",
+        "product_features:rating_avg"
+    ]
+
+    # Retrieve from online store (Redis) - low latency
+    feature_vector = fs_service.get_online_features(
+        entity_rows=entity_rows,
+        features=features
+    )
+
+    print("Online features for inference:")
+    print(feature_vector)
+
+    # Now use feature_vector for model prediction
+    # prediction = model.predict([feature_vector])
+
+    return feature_vector
+
+if __name__ == "__main__":
+    print("=== Training Example ===")
+    training_pipeline_example()
+
+    print("\n=== Inference Example ===")
+    inference_pipeline_example()
+\end{lstlisting}
+
+\section{Feature Versioning and Lineage Tracking}
+
+Managing feature evolution is critical for reproducibility and debugging production issues. This section presents patterns for versioning and lineage.
+
+\subsection{Feature Versioning Strategy}
+
+\begin{lstlisting}[style=python, caption=Feature versioning and registry management]
+# feature_versioning.py
+"""
+System for versioning features and tracking their evolution.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Optional, List, Dict
+import hashlib
+import json
+
+@dataclass
+class FeatureVersion:
+    """
+    Represents a specific version of a feature.
+    """
+    feature_name: str
+    version: str
+    definition_hash: str
+    created_at: datetime
+    created_by: str
+    description: str
+    code: str
+    dependencies: List[str] = field(default_factory=list)
+    schema: Dict = field(default_factory=dict)
+    deprecated: bool = False
+    deprecated_at: Optional[datetime] = None
+    successor_version: Optional[str] = None
+
+class FeatureVersionRegistry:
+    """
+    Registry for managing feature versions and their metadata.
+    """
+
+    def __init__(self, storage_backend):
+        self.storage = storage_backend
+        self.versions: Dict[str, List[FeatureVersion]] = {}
+
+    def register_feature(
+        self,
+        feature_name: str,
+        definition: Dict,
+        code: str,
+        created_by: str,
+        description: str = ""
+    ) -> FeatureVersion:
+        """
+        Register a new version of a feature.
+        """
+        # Compute hash of definition for change detection
+        definition_str = json.dumps(definition, sort_keys=True)
+        definition_hash = hashlib.sha256(definition_str.encode()).hexdigest()[:16]
+
+        # Check if this exact definition already exists
+        existing_versions = self.versions.get(feature_name, [])
+        for existing in existing_versions:
+            if existing.definition_hash == definition_hash:
+                return existing  # Return existing version
+
+        # Create new version
+        version_num = len(existing_versions) + 1
+        version_id = f"v{version_num}"
+
+        feature_version = FeatureVersion(
+            feature_name=feature_name,
+            version=version_id,
+            definition_hash=definition_hash,
+            created_at=datetime.now(),
+            created_by=created_by,
+            description=description,
+            code=code,
+            dependencies=definition.get('dependencies', []),
+            schema=definition.get('schema', {})
+        )
+
+        # Store in registry
+        if feature_name not in self.versions:
+            self.versions[feature_name] = []
+        self.versions[feature_name].append(feature_version)
+
+        # Persist to storage
+        self.storage.save(feature_version)
+
+        return feature_version
+
+    def get_feature_version(
+        self,
+        feature_name: str,
+        version: Optional[str] = None
+    ) -> FeatureVersion:
+        """
+        Retrieve a specific version of a feature.
+        If version is None, returns latest non-deprecated version.
+        """
+        if feature_name not in self.versions:
+            raise ValueError(f"Feature {feature_name} not found in registry")
+
+        versions = self.versions[feature_name]
+
+        if version is None:
+            # Get latest non-deprecated version
+            active_versions = [v for v in versions if not v.deprecated]
+            if not active_versions:
+                raise ValueError(f"No active versions for feature {feature_name}")
+            return active_versions[-1]
+        else:
+            # Get specific version
+            for v in versions:
+                if v.version == version:
+                    return v
+            raise ValueError(f"Version {version} of feature {feature_name} not found")
+
+    def deprecate_feature(
+        self,
+        feature_name: str,
+        version: str,
+        successor_version: Optional[str] = None
+    ):
+        """
+        Mark a feature version as deprecated.
+        """
+        feature_version = self.get_feature_version(feature_name, version)
+        feature_version.deprecated = True
+        feature_version.deprecated_at = datetime.now()
+        feature_version.successor_version = successor_version
+
+        self.storage.update(feature_version)
+
+    def get_feature_lineage(
+        self,
+        feature_name: str
+    ) -> List[FeatureVersion]:
+        """
+        Get complete version history of a feature.
+        """
+        return self.versions.get(feature_name, [])
+
+# Example usage
+class InMemoryStorage:
+    """Simple in-memory storage for demo"""
+    def __init__(self):
+        self.data = {}
+
+    def save(self, feature_version: FeatureVersion):
+        key = f"{feature_version.feature_name}:{feature_version.version}"
+        self.data[key] = feature_version
+
+    def update(self, feature_version: FeatureVersion):
+        self.save(feature_version)
+
+storage = InMemoryStorage()
+registry = FeatureVersionRegistry(storage)
+
+# Register initial version
+v1 = registry.register_feature(
+    feature_name="user_purchase_rate_30d",
+    definition={
+        "window_days": 30,
+        "aggregation": "mean",
+        "schema": {"type": "float32"}
+    },
+    code="""
+def compute(user_events, timestamp):
+    window_start = timestamp - timedelta(days=30)
+    purchases = user_events[
+        (user_events['event_type'] == 'purchase') &
+        (user_events['timestamp'] >= window_start)
+    ]
+    return len(purchases) / 30
+    """,
+    created_by="data_scientist_1",
+    description="Average purchases per day over 30 days"
+)
+
+# Register updated version with bug fix
+v2 = registry.register_feature(
+    feature_name="user_purchase_rate_30d",
+    definition={
+        "window_days": 30,
+        "aggregation": "mean",
+        "schema": {"type": "float32"},
+        "min_days": 7  # New: require minimum data
+    },
+    code="""
+def compute(user_events, timestamp):
+    window_start = timestamp - timedelta(days=30)
+    purchases = user_events[
+        (user_events['event_type'] == 'purchase') &
+        (user_events['timestamp'] >= window_start)
+    ]
+    days_active = user_events['timestamp'].dt.date.nunique()
+    if days_active < 7:
+        return None  # Not enough data
+    return len(purchases) / days_active  # Fixed: use actual days, not 30
+    """,
+    created_by="ml_engineer_1",
+    description="Fixed: Average purchases per active day over 30 days"
+)
+
+# Deprecate old version
+registry.deprecate_feature(
+    "user_purchase_rate_30d",
+    version="v1",
+    successor_version="v2"
+)
+
+# Retrieve feature versions
+latest = registry.get_feature_version("user_purchase_rate_30d")
+print(f"Latest version: {latest.version} (hash: {latest.definition_hash})")
+
+lineage = registry.get_feature_lineage("user_purchase_rate_30d")
+print(f"\nFeature lineage ({len(lineage)} versions):")
+for v in lineage:
+    status = "DEPRECATED" if v.deprecated else "ACTIVE"
+    print(f"  {v.version}: {status} - {v.description}")
+\end{lstlisting}
+
+\subsection{Feature Lineage Tracking}
+
+\begin{lstlisting}[style=python, caption=End-to-end feature lineage tracking system]
+# feature_lineage.py
+"""
+Track data lineage from raw data through features to model predictions.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import List, Dict, Optional, Set
+from enum import Enum
+import networkx as nx
+import matplotlib.pyplot as plt
+
+class NodeType(Enum):
+    RAW_DATA = "raw_data"
+    INTERMEDIATE = "intermediate"
+    FEATURE = "feature"
+    MODEL = "model"
+    PREDICTION = "prediction"
+
+@dataclass
+class LineageNode:
+    """Represents a node in the feature lineage graph"""
+    node_id: str
+    node_type: NodeType
+    name: str
+    version: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+    metadata: Dict = field(default_factory=dict)
+
+@dataclass
+class LineageEdge:
+    """Represents a transformation between nodes"""
+    source_id: str
+    target_id: str
+    transformation: str
+    code: Optional[str] = None
+    created_at: datetime = field(default_factory=datetime.now)
+
+class FeatureLineageTracker:
+    """
+    Track complete lineage from raw data to predictions.
+    Enables impact analysis and root cause debugging.
+    """
+
+    def __init__(self):
+        self.graph = nx.DiGraph()
+        self.nodes: Dict[str, LineageNode] = {}
+        self.edges: List[LineageEdge] = []
+
+    def add_node(self, node: LineageNode):
+        """Add a node to the lineage graph"""
+        self.nodes[node.node_id] = node
+        self.graph.add_node(
+            node.node_id,
+            type=node.node_type.value,
+            name=node.name,
+            version=node.version
+        )
+
+    def add_edge(self, edge: LineageEdge):
+        """Add a transformation edge to the lineage graph"""
+        self.edges.append(edge)
+        self.graph.add_edge(
+            edge.source_id,
+            edge.target_id,
+            transformation=edge.transformation,
+            code=edge.code
+        )
+
+    def get_upstream_lineage(
+        self,
+        node_id: str,
+        max_depth: Optional[int] = None
+    ) -> Set[str]:
+        """
+        Get all upstream dependencies of a node.
+        Useful for understanding what data affects a feature.
+        """
+        if max_depth is None:
+            # Get all ancestors
+            ancestors = nx.ancestors(self.graph, node_id)
+        else:
+            # BFS with depth limit
+            ancestors = set()
+            queue = [(node_id, 0)]
+            visited = {node_id}
+
+            while queue:
+                current, depth = queue.pop(0)
+                if depth >= max_depth:
+                    continue
+
+                for predecessor in self.graph.predecessors(current):
+                    if predecessor not in visited:
+                        ancestors.add(predecessor)
+                        visited.add(predecessor)
+                        queue.append((predecessor, depth + 1))
+
+        return ancestors
+
+    def get_downstream_impact(self, node_id: str) -> Set[str]:
+        """
+        Get all downstream nodes affected by a node.
+        Critical for impact analysis when changing features.
+        """
+        return nx.descendants(self.graph, node_id)
+
+    def get_feature_path(
+        self,
+        feature_id: str,
+        source_data_id: str
+    ) -> List[LineageNode]:
+        """
+        Get the transformation path from raw data to feature.
+        """
+        try:
+            path_ids = nx.shortest_path(
+                self.graph,
+                source=source_data_id,
+                target=feature_id
+            )
+            return [self.nodes[node_id] for node_id in path_ids]
+        except nx.NetworkXNoPath:
+            return []
+
+    def visualize_lineage(
+        self,
+        focus_node: Optional[str] = None,
+        output_path: str = "lineage.png"
+    ):
+        """
+        Visualize the feature lineage graph.
+        """
+        if focus_node:
+            # Create subgraph around focus node
+            upstream = self.get_upstream_lineage(focus_node)
+            downstream = self.get_downstream_impact(focus_node)
+            relevant_nodes = upstream | downstream | {focus_node}
+            subgraph = self.graph.subgraph(relevant_nodes)
+        else:
+            subgraph = self.graph
+
+        # Color by node type
+        color_map = {
+            NodeType.RAW_DATA.value: 'lightblue',
+            NodeType.INTERMEDIATE.value: 'lightgreen',
+            NodeType.FEATURE.value: 'orange',
+            NodeType.MODEL.value: 'red',
+            NodeType.PREDICTION.value: 'purple'
+        }
+
+        node_colors = [
+            color_map.get(subgraph.nodes[node]['type'], 'gray')
+            for node in subgraph.nodes()
+        ]
+
+        plt.figure(figsize=(12, 8))
+        pos = nx.spring_layout(subgraph)
+        nx.draw(
+            subgraph,
+            pos,
+            node_color=node_colors,
+            with_labels=True,
+            labels={n: subgraph.nodes[n]['name'] for n in subgraph.nodes()},
+            arrows=True,
+            node_size=3000,
+            font_size=8
+        )
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        plt.close()
+
+# Example: Building a lineage graph
+tracker = FeatureLineageTracker()
+
+# Raw data sources
+user_events = LineageNode(
+    node_id="data_user_events",
+    node_type=NodeType.RAW_DATA,
+    name="user_events",
+    metadata={"source": "production_db", "table": "events"}
+)
+user_profile = LineageNode(
+    node_id="data_user_profile",
+    node_type=NodeType.RAW_DATA,
+    name="user_profile",
+    metadata={"source": "production_db", "table": "users"}
+)
+
+tracker.add_node(user_events)
+tracker.add_node(user_profile)
+
+# Intermediate aggregations
+purchases_30d = LineageNode(
+    node_id="agg_purchases_30d",
+    node_type=NodeType.INTERMEDIATE,
+    name="purchases_last_30d",
+    metadata={"window": "30days", "aggregation": "count"}
+)
+
+tracker.add_node(purchases_30d)
+tracker.add_edge(LineageEdge(
+    source_id="data_user_events",
+    target_id="agg_purchases_30d",
+    transformation="filter_and_count",
+    code="events[events.type == 'purchase'].groupby('user_id').count()"
+))
+
+# Features
+conversion_rate = LineageNode(
+    node_id="feat_conversion_rate",
+    node_type=NodeType.FEATURE,
+    name="conversion_rate_30d",
+    version="v2"
+)
+
+tracker.add_node(conversion_rate)
+tracker.add_edge(LineageEdge(
+    source_id="agg_purchases_30d",
+    target_id="feat_conversion_rate",
+    transformation="ratio",
+    code="purchases / sessions"
+))
+
+# Model
+recommendation_model = LineageNode(
+    node_id="model_recsys_v5",
+    node_type=NodeType.MODEL,
+    name="recommendation_model",
+    version="v5"
+)
+
+tracker.add_node(recommendation_model)
+tracker.add_edge(LineageEdge(
+    source_id="feat_conversion_rate",
+    target_id="model_recsys_v5",
+    transformation="training_input"
+))
+
+# Analysis examples
+print("Upstream lineage for conversion_rate feature:")
+upstream = tracker.get_upstream_lineage("feat_conversion_rate")
+for node_id in upstream:
+    node = tracker.nodes[node_id]
+    print(f"  - {node.name} ({node.node_type.value})")
+
+print("\nDownstream impact of user_events data:")
+downstream = tracker.get_downstream_impact("data_user_events")
+for node_id in downstream:
+    node = tracker.nodes[node_id]
+    print(f"  - {node.name} ({node.node_type.value})")
+
+print("\nPath from raw data to feature:")
+path = tracker.get_feature_path("feat_conversion_rate", "data_user_events")
+for i, node in enumerate(path):
+    print(f"  {i+1}. {node.name} ({node.node_type.value})")
+\end{lstlisting}
+
+\section{Online and Offline Feature Serving Architecture}
+
+A production feature store must support two distinct serving patterns with different latency and consistency requirements.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[node distance=2.5cm, auto]
+    \tikzstyle{component} = [rectangle, draw, fill=blue!20, text width=3.2cm, text centered, minimum height=1cm]
+    \tikzstyle{storage} = [cylinder, draw, fill=orange!20, text width=4cm, text centered, minimum height=1.2cm, shape aspect=0.3]
+    \tikzstyle{arrow} = [thick,->,>=stealth]
+
+    % Offline path
+    \node [storage] (warehouse) {Data\\Warehouse};
+    \node [component, right of=warehouse, node distance=3.5cm] (batch) {Batch\\Compute};
+    \node [storage, right of=batch, node distance=3.5cm] (offline) {Offline Store\\(S3/BigQuery)};
+
+    % Online path
+    \node [component, below of=offline, node distance=2.5cm] (stream) {Stream\\Processor};
+    \node [storage, left of=stream, node distance=3.5cm] (online) {Online Store\\(Redis)};
+
+    % Consumers
+    \node [component, right of=offline, node distance=3.5cm] (training) {Training};
+    \node [component, below of=training, node distance=2.5cm] (serving) {Serving};
+
+    \draw [arrow] (warehouse) -- (batch);
+    \draw [arrow] (batch) -- (offline);
+    \draw [arrow] (offline) -- (training);
+    \draw [arrow] (offline) -- node[right] {materialize} (online);
+    \draw [arrow] (online) -- (serving);
+    \draw [arrow, dashed] (stream) -- (online);
+
+    \node [below of=warehouse, node distance=1.5cm, text width=2.5cm] {Historical\\Batch Data};
+    \node [below of=stream, node distance=1.5cm, text width=2.5cm] {Real-time\\Streaming};
+\end{tikzpicture}
+\caption{Dual-mode feature serving architecture}
+\label{fig:dual_serving}
+\end{figure}
+
+\subsection{Offline Feature Store Implementation}
+
+\begin{lstlisting}[style=python, caption=Scalable offline feature store with partitioning]
+# offline_feature_store.py
+"""
+Offline feature store optimized for batch training workloads.
+Uses partitioned storage for efficient historical retrieval.
+"""
+
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pandas as pd
+from datetime import datetime, date
+from typing import List, Optional
+from pathlib import Path
+
+class OfflineFeatureStore:
+    """
+    Offline store using Parquet with Hive partitioning.
+    Optimized for point-in-time correct historical retrieval.
+    """
+
+    def __init__(self, base_path: str):
+        self.base_path = Path(base_path)
+        self.base_path.mkdir(parents=True, exist_ok=True)
+
+    def write_features(
+        self,
+        features_df: pd.DataFrame,
+        feature_view: str,
+        partition_cols: List[str] = ['date']
+    ):
+        """
+        Write features with partitioning for efficient queries.
+
+        Args:
+            features_df: DataFrame with features and timestamp
+            feature_view: Name of the feature view
+            partition_cols: Columns to partition by (usually date)
+        """
+        # Add date partition if not present
+        if 'date' not in features_df.columns and 'event_timestamp' in features_df.columns:
+            features_df['date'] = pd.to_datetime(
+                features_df['event_timestamp']
+            ).dt.date
+
+        # Convert to PyArrow table for efficient write
+        table = pa.Table.from_pandas(features_df)
+
+        # Write with partitioning
+        output_path = self.base_path / feature_view
+        pq.write_to_dataset(
+            table,
+            root_path=str(output_path),
+            partition_cols=partition_cols,
+            existing_data_behavior='overwrite_or_ignore',
+            compression='snappy'
+        )
+
+    def read_features(
+        self,
+        feature_view: str,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        columns: Optional[List[str]] = None,
+        filters: Optional[List] = None
+    ) -> pd.DataFrame:
+        """
+        Read features with predicate pushdown for efficiency.
+
+        Args:
+            feature_view: Name of the feature view
+            start_date: Optional start date filter
+            end_date: Optional end date filter
+            columns: Optional column subset
+            filters: PyArrow filters for additional predicates
+
+        Returns:
+            DataFrame with requested features
+        """
+        dataset_path = self.base_path / feature_view
+
+        # Build filters
+        query_filters = []
+        if filters:
+            query_filters.extend(filters)
+
+        if start_date:
+            query_filters.append(('date', '>=', start_date))
+        if end_date:
+            query_filters.append(('date', '<=', end_date))
+
+        # Read dataset
+        dataset = pq.ParquetDataset(
+            dataset_path,
+            filters=query_filters if query_filters else None
+        )
+
+        table = dataset.read(columns=columns)
+        return table.to_pandas()
+
+    def get_historical_features(
+        self,
+        entity_df: pd.DataFrame,
+        feature_views: List[str],
+        entity_col: str = 'entity_id',
+        timestamp_col: str = 'timestamp'
+    ) -> pd.DataFrame:
+        """
+        Point-in-time correct historical feature retrieval.
+
+        For each row in entity_df, retrieves feature values
+        as they existed at the specified timestamp.
+        """
+        result = entity_df.copy()
+
+        for feature_view in feature_views:
+            # Read all relevant features
+            min_date = entity_df[timestamp_col].min().date()
+            max_date = entity_df[timestamp_col].max().date()
+
+            features_df = self.read_features(
+                feature_view,
+                start_date=min_date,
+                end_date=max_date
+            )
+
+            # Point-in-time join using merge_asof
+            # Ensures we only use data available before each timestamp
+            features_df = features_df.sort_values('event_timestamp')
+            result = result.sort_values(timestamp_col)
+
+            result = pd.merge_asof(
+                result,
+                features_df,
+                left_on=timestamp_col,
+                right_on='event_timestamp',
+                by=entity_col,
+                direction='backward',
+                allow_exact_matches=False
+            )
+
+        return result
+
+# Example usage
+offline_store = OfflineFeatureStore("./data/offline_store")
+
+# Write features
+features = pd.DataFrame({
+    'user_id': ['u1', 'u2', 'u3'] * 100,
+    'event_timestamp': pd.date_range('2024-01-01', periods=300, freq='1H'),
+    'purchase_count_7d': np.random.randint(0, 10, 300),
+    'avg_order_value': np.random.uniform(20, 200, 300)
+})
+
+offline_store.write_features(
+    features,
+    feature_view='user_features',
+    partition_cols=['date']
+)
+
+# Read features for training
+entity_df = pd.DataFrame({
+    'user_id': ['u1', 'u2'],
+    'timestamp': pd.to_datetime(['2024-01-15 10:00', '2024-01-16 14:00'])
+})
+
+training_data = offline_store.get_historical_features(
+    entity_df,
+    feature_views=['user_features'],
+    entity_col='user_id'
+)
+
+print(training_data)
+\end{lstlisting}
+
+\subsection{Online Feature Store with Redis}
+
+\begin{lstlisting}[style=python, caption=Low-latency online feature store implementation]
+# online_feature_store.py
+"""
+Online feature store using Redis for sub-millisecond feature retrieval.
+"""
+
+import redis
+import json
+import pickle
+from typing import Dict, List, Optional, Any
+from datetime import timedelta
+import numpy as np
+
+class OnlineFeatureStore:
+    """
+    Online store for real-time feature serving with Redis.
+    Optimized for low-latency, high-throughput access.
+    """
+
+    def __init__(
+        self,
+        host: str = 'localhost',
+        port: int = 6379,
+        db: int = 0,
+        password: Optional[str] = None
+    ):
+        self.client = redis.Redis(
+            host=host,
+            port=port,
+            db=db,
+            password=password,
+            decode_responses=False  # Handle binary data
+        )
+        self.default_ttl = timedelta(days=7)
+
+    def _make_key(
+        self,
+        feature_view: str,
+        entity_key: str,
+        entity_value: str
+    ) -> str:
+        """Generate Redis key for feature"""
+        return f"feast:{feature_view}:{entity_key}:{entity_value}"
+
+    def write_features(
+        self,
+        feature_view: str,
+        entity_key: str,
+        entity_value: str,
+        features: Dict[str, Any],
+        ttl: Optional[timedelta] = None
+    ):
+        """
+        Write feature vector to online store.
+
+        Args:
+            feature_view: Name of feature view
+            entity_key: Entity key name (e.g., 'user_id')
+            entity_value: Entity value (e.g., 'user_123')
+            features: Dictionary of feature values
+            ttl: Time-to-live for features
+        """
+        key = self._make_key(feature_view, entity_key, entity_value)
+
+        # Serialize features (use pickle for numpy arrays, etc.)
+        serialized = pickle.dumps(features)
+
+        # Write to Redis with TTL
+        ttl_seconds = int((ttl or self.default_ttl).total_seconds())
+        self.client.setex(key, ttl_seconds, serialized)
+
+    def write_features_batch(
+        self,
+        feature_view: str,
+        entity_key: str,
+        entity_features: Dict[str, Dict[str, Any]],
+        ttl: Optional[timedelta] = None
+    ):
+        """
+        Batch write features for multiple entities.
+        Uses pipeline for efficiency.
+        """
+        pipe = self.client.pipeline()
+        ttl_seconds = int((ttl or self.default_ttl).total_seconds())
+
+        for entity_value, features in entity_features.items():
+            key = self._make_key(feature_view, entity_key, entity_value)
+            serialized = pickle.dumps(features)
+            pipe.setex(key, ttl_seconds, serialized)
+
+        pipe.execute()
+
+    def read_features(
+        self,
+        feature_view: str,
+        entity_key: str,
+        entity_value: str,
+        feature_names: Optional[List[str]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Read features for a single entity.
+
+        Returns:
+            Dictionary of features, or None if not found
+        """
+        key = self._make_key(feature_view, entity_key, entity_value)
+        serialized = self.client.get(key)
+
+        if serialized is None:
+            return None
+
+        features = pickle.loads(serialized)
+
+        # Filter to requested features if specified
+        if feature_names:
+            features = {k: v for k, v in features.items() if k in feature_names}
+
+        return features
+
+    def read_features_batch(
+        self,
+        feature_view: str,
+        entity_key: str,
+        entity_values: List[str],
+        feature_names: Optional[List[str]] = None
+    ) -> Dict[str, Optional[Dict[str, Any]]]:
+        """
+        Batch read features for multiple entities.
+        Uses pipeline for efficiency.
+        """
+        # Build keys
+        keys = [
+            self._make_key(feature_view, entity_key, ev)
+            for ev in entity_values
+        ]
+
+        # Batch fetch
+        pipe = self.client.pipeline()
+        for key in keys:
+            pipe.get(key)
+        results = pipe.execute()
+
+        # Deserialize results
+        output = {}
+        for entity_value, serialized in zip(entity_values, results):
+            if serialized is None:
+                output[entity_value] = None
+            else:
+                features = pickle.loads(serialized)
+                if feature_names:
+                    features = {k: v for k, v in features.items() if k in feature_names}
+                output[entity_value] = features
+
+        return output
+
+    def delete_features(
+        self,
+        feature_view: str,
+        entity_key: str,
+        entity_value: str
+    ):
+        """Delete features for an entity"""
+        key = self._make_key(feature_view, entity_key, entity_value)
+        self.client.delete(key)
+
+    def get_online_features(
+        self,
+        feature_views: List[str],
+        entity_rows: List[Dict[str, str]],
+        feature_names: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Multi-view feature retrieval for real-time serving.
+
+        Args:
+            feature_views: List of feature view names
+            entity_rows: List of entity dictionaries
+                         e.g., [{"user_id": "u1", "product_id": "p1"}]
+            feature_names: Optional list of specific features to retrieve
+
+        Returns:
+            List of feature dictionaries, one per entity row
+        """
+        results = []
+
+        for entity_row in entity_rows:
+            merged_features = {}
+
+            for feature_view in feature_views:
+                # Determine entity key for this view
+                # (in practice, this comes from feature view metadata)
+                entity_key = self._infer_entity_key(feature_view, entity_row)
+                if entity_key is None:
+                    continue
+
+                entity_value = entity_row.get(entity_key)
+                if entity_value is None:
+                    continue
+
+                # Fetch features
+                features = self.read_features(
+                    feature_view,
+                    entity_key,
+                    entity_value,
+                    feature_names
+                )
+
+                if features:
+                    # Prefix feature names with view name to avoid collisions
+                    prefixed = {
+                        f"{feature_view}:{k}": v
+                        for k, v in features.items()
+                    }
+                    merged_features.update(prefixed)
+
+            # Add entity keys to result
+            merged_features.update(entity_row)
+            results.append(merged_features)
+
+        return results
+
+    def _infer_entity_key(
+        self,
+        feature_view: str,
+        entity_row: Dict[str, str]
+    ) -> Optional[str]:
+        """Infer which entity key to use for this view"""
+        # Simplified: in production, consult feature view metadata
+        if 'user_id' in entity_row:
+            return 'user_id'
+        elif 'product_id' in entity_row:
+            return 'product_id'
+        return None
+
+# Example usage
+online_store = OnlineFeatureStore(host='localhost', port=6379)
+
+# Materialize features to online store
+user_features = {
+    'user_123': {
+        'purchase_count_7d': 5,
+        'purchase_count_30d': 23,
+        'conversion_rate': 0.15,
+        'avg_order_value': 45.20
+    },
+    'user_456': {
+        'purchase_count_7d': 2,
+        'purchase_count_30d': 8,
+        'conversion_rate': 0.08,
+        'avg_order_value': 62.50
+    }
+}
+
+online_store.write_features_batch(
+    feature_view='user_activity_features',
+    entity_key='user_id',
+    entity_features=user_features,
+    ttl=timedelta(days=7)
+)
+
+# Real-time feature retrieval
+entity_rows = [
+    {"user_id": "user_123", "product_id": "prod_XYZ"},
+    {"user_id": "user_456", "product_id": "prod_ABC"}
+]
+
+features = online_store.get_online_features(
+    feature_views=['user_activity_features'],
+    entity_rows=entity_rows,
+    feature_names=['purchase_count_30d', 'conversion_rate']
+)
+
+print("Online features:")
+for i, row in enumerate(features):
+    print(f"Row {i+1}: {row}")
+\end{lstlisting}
+
+\section{Feature Monitoring and Drift Detection}
+
+Production feature stores require continuous monitoring to detect data quality issues and feature drift.
+
+\begin{lstlisting}[style=python, caption=Comprehensive feature monitoring and drift detection]
+# feature_monitoring.py
+"""
+Monitor feature quality and detect drift in production.
+"""
+
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from scipy import stats
+from scipy.spatial.distance import jensenshannon
+import warnings
+
+@dataclass
+class FeatureStats:
+    """Statistical summary of a feature"""
+    feature_name: str
+    timestamp: datetime
+    count: int
+    null_count: int
+    null_rate: float
+    mean: Optional[float] = None
+    std: Optional[float] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
+    quantiles: Optional[Dict[str, float]] = None
+    unique_count: Optional[int] = None
+    distribution: Optional[np.ndarray] = None
+
+@dataclass
+class DriftDetectionResult:
+    """Result of drift detection analysis"""
+    feature_name: str
+    drift_detected: bool
+    drift_score: float
+    drift_type: str  # 'statistical', 'distribution', 'data_quality'
+    baseline_stats: FeatureStats
+    current_stats: FeatureStats
+    details: Dict
+
+class FeatureMonitor:
+    """
+    Monitor feature quality and detect drift.
+    """
+
+    def __init__(
+        self,
+        drift_threshold: float = 0.05,  # P-value threshold
+        distribution_threshold: float = 0.1  # JS divergence threshold
+    ):
+        self.drift_threshold = drift_threshold
+        self.distribution_threshold = distribution_threshold
+        self.baseline_stats: Dict[str, FeatureStats] = {}
+
+    def compute_feature_stats(
+        self,
+        feature_data: pd.Series,
+        timestamp: datetime,
+        n_bins: int = 50
+    ) -> FeatureStats:
+        """
+        Compute comprehensive statistics for a feature.
+        """
+        stats_dict = {
+            'feature_name': feature_data.name,
+            'timestamp': timestamp,
+            'count': len(feature_data),
+            'null_count': feature_data.isna().sum(),
+            'null_rate': feature_data.isna().mean()
+        }
+
+        # Numeric features
+        if pd.api.types.is_numeric_dtype(feature_data):
+            valid_data = feature_data.dropna()
+            if len(valid_data) > 0:
+                stats_dict.update({
+                    'mean': valid_data.mean(),
+                    'std': valid_data.std(),
+                    'min': valid_data.min(),
+                    'max': valid_data.max(),
+                    'quantiles': {
+                        'p25': valid_data.quantile(0.25),
+                        'p50': valid_data.quantile(0.50),
+                        'p75': valid_data.quantile(0.75),
+                        'p95': valid_data.quantile(0.95),
+                        'p99': valid_data.quantile(0.99)
+                    }
+                })
+
+                # Histogram for distribution comparison
+                hist, _ = np.histogram(valid_data, bins=n_bins)
+                stats_dict['distribution'] = hist / hist.sum()  # Normalize
+
+        # Categorical features
+        else:
+            stats_dict['unique_count'] = feature_data.nunique()
+            # For categorical, store value counts as distribution
+            value_counts = feature_data.value_counts(normalize=True)
+            stats_dict['distribution'] = value_counts.to_dict()
+
+        return FeatureStats(**stats_dict)
+
+    def set_baseline(
+        self,
+        baseline_data: pd.DataFrame,
+        timestamp: Optional[datetime] = None
+    ):
+        """
+        Establish baseline statistics from training/reference data.
+        """
+        if timestamp is None:
+            timestamp = datetime.now()
+
+        for column in baseline_data.columns:
+            self.baseline_stats[column] = self.compute_feature_stats(
+                baseline_data[column],
+                timestamp
+            )
+
+    def detect_statistical_drift(
+        self,
+        baseline: FeatureStats,
+        current: FeatureStats
+    ) -> Tuple[bool, float, Dict]:
+        """
+        Detect drift using statistical tests.
+
+        For numeric features: Kolmogorov-Smirnov test
+        For categorical features: Chi-square test
+        """
+        details = {}
+
+        # Check if distributions are available
+        if baseline.distribution is None or current.distribution is None:
+            return False, 1.0, {'error': 'No distribution data'}
+
+        # Numeric features: KS test
+        if isinstance(baseline.distribution, np.ndarray):
+            # KS statistic measures max distance between CDFs
+            ks_statistic = np.max(np.abs(
+                np.cumsum(baseline.distribution) - np.cumsum(current.distribution)
+            ))
+
+            # Approximate p-value (simplified)
+            n1 = baseline.count
+            n2 = current.count
+            p_value = stats.ks_2samp(
+                np.repeat(np.arange(len(baseline.distribution)),
+                         (baseline.distribution * n1).astype(int)),
+                np.repeat(np.arange(len(current.distribution)),
+                         (current.distribution * n2).astype(int))
+            ).pvalue
+
+            drift_detected = p_value < self.drift_threshold
+            details = {
+                'test': 'kolmogorov_smirnov',
+                'ks_statistic': ks_statistic,
+                'p_value': p_value,
+                'threshold': self.drift_threshold
+            }
+
+            return drift_detected, p_value, details
+
+        # Categorical features: Chi-square test
+        else:
+            # Align categories
+            all_categories = set(baseline.distribution.keys()) | \
+                           set(current.distribution.keys())
+
+            baseline_counts = [
+                baseline.distribution.get(cat, 0) * baseline.count
+                for cat in all_categories
+            ]
+            current_counts = [
+                current.distribution.get(cat, 0) * current.count
+                for cat in all_categories
+            ]
+
+            # Chi-square test
+            chi2, p_value = stats.chisquare(current_counts, baseline_counts)
+
+            drift_detected = p_value < self.drift_threshold
+            details = {
+                'test': 'chi_square',
+                'chi2_statistic': chi2,
+                'p_value': p_value,
+                'threshold': self.drift_threshold,
+                'new_categories': list(
+                    set(current.distribution.keys()) - set(baseline.distribution.keys())
+                )
+            }
+
+            return drift_detected, p_value, details
+
+    def detect_distribution_drift(
+        self,
+        baseline: FeatureStats,
+        current: FeatureStats
+    ) -> Tuple[bool, float, Dict]:
+        """
+        Detect drift using distribution distance metrics.
+        Uses Jensen-Shannon divergence.
+        """
+        if baseline.distribution is None or current.distribution is None:
+            return False, 0.0, {'error': 'No distribution data'}
+
+        # Numeric features
+        if isinstance(baseline.distribution, np.ndarray):
+            js_divergence = jensenshannon(
+                baseline.distribution,
+                current.distribution
+            )
+
+            drift_detected = js_divergence > self.distribution_threshold
+            details = {
+                'metric': 'jensen_shannon_divergence',
+                'js_divergence': js_divergence,
+                'threshold': self.distribution_threshold
+            }
+
+            return drift_detected, js_divergence, details
+
+        # Categorical features
+        else:
+            all_categories = set(baseline.distribution.keys()) | \
+                           set(current.distribution.keys())
+
+            baseline_probs = [
+                baseline.distribution.get(cat, 0) for cat in all_categories
+            ]
+            current_probs = [
+                current.distribution.get(cat, 0) for cat in all_categories
+            ]
+
+            js_divergence = jensenshannon(baseline_probs, current_probs)
+
+            drift_detected = js_divergence > self.distribution_threshold
+            details = {
+                'metric': 'jensen_shannon_divergence',
+                'js_divergence': js_divergence,
+                'threshold': self.distribution_threshold
+            }
+
+            return drift_detected, js_divergence, details
+
+    def detect_data_quality_issues(
+        self,
+        baseline: FeatureStats,
+        current: FeatureStats,
+        null_rate_threshold: float = 0.1,
+        mean_shift_threshold: float = 3.0  # In standard deviations
+    ) -> Tuple[bool, List[str]]:
+        """
+        Detect data quality degradation.
+        """
+        issues = []
+
+        # Null rate increase
+        if current.null_rate > baseline.null_rate + null_rate_threshold:
+            issues.append(
+                f"Null rate increased from {baseline.null_rate:.2%} to "
+                f"{current.null_rate:.2%}"
+            )
+
+        # Mean shift (for numeric features)
+        if baseline.mean is not None and current.mean is not None:
+            if baseline.std and baseline.std > 0:
+                z_score = abs(current.mean - baseline.mean) / baseline.std
+                if z_score > mean_shift_threshold:
+                    issues.append(
+                        f"Mean shifted by {z_score:.2f} standard deviations "
+                        f"(from {baseline.mean:.2f} to {current.mean:.2f})"
+                    )
+
+        # Out-of-range values
+        if baseline.min is not None and current.min is not None:
+            if current.min < baseline.min:
+                issues.append(
+                    f"New minimum value {current.min:.2f} < "
+                    f"baseline {baseline.min:.2f}"
+                )
+            if current.max > baseline.max:
+                issues.append(
+                    f"New maximum value {current.max:.2f} > "
+                    f"baseline {baseline.max:.2f}"
+                )
+
+        # Cardinality change (for categorical)
+        if baseline.unique_count is not None:
+            cardinality_change = abs(
+                current.unique_count - baseline.unique_count
+            ) / baseline.unique_count
+
+            if cardinality_change > 0.2:  # 20% change
+                issues.append(
+                    f"Cardinality changed by {cardinality_change:.1%} "
+                    f"(from {baseline.unique_count} to {current.unique_count})"
+                )
+
+        return len(issues) > 0, issues
+
+    def detect_drift(
+        self,
+        current_data: pd.DataFrame,
+        timestamp: Optional[datetime] = None
+    ) -> List[DriftDetectionResult]:
+        """
+        Comprehensive drift detection across all features.
+        """
+        if timestamp is None:
+            timestamp = datetime.now()
+
+        results = []
+
+        for column in current_data.columns:
+            if column not in self.baseline_stats:
+                continue
+
+            baseline = self.baseline_stats[column]
+            current = self.compute_feature_stats(
+                current_data[column],
+                timestamp
+            )
+
+            # Run all drift detection methods
+            stat_drift, stat_score, stat_details = \
+                self.detect_statistical_drift(baseline, current)
+
+            dist_drift, dist_score, dist_details = \
+                self.detect_distribution_drift(baseline, current)
+
+            quality_issues, quality_details = \
+                self.detect_data_quality_issues(baseline, current)
+
+            # Aggregate results
+            drift_detected = stat_drift or dist_drift or quality_issues
+
+            if drift_detected:
+                # Determine primary drift type
+                if quality_issues:
+                    drift_type = 'data_quality'
+                    drift_score = 1.0 if quality_issues else 0.0
+                elif stat_drift:
+                    drift_type = 'statistical'
+                    drift_score = 1 - stat_score  # Lower p-value = higher drift
+                else:
+                    drift_type = 'distribution'
+                    drift_score = dist_score
+
+                result = DriftDetectionResult(
+                    feature_name=column,
+                    drift_detected=True,
+                    drift_score=drift_score,
+                    drift_type=drift_type,
+                    baseline_stats=baseline,
+                    current_stats=current,
+                    details={
+                        'statistical_test': stat_details,
+                        'distribution_test': dist_details,
+                        'quality_issues': quality_details
+                    }
+                )
+
+                results.append(result)
+
+        return results
+
+# Example usage
+np.random.seed(42)
+
+# Baseline data (training)
+baseline_df = pd.DataFrame({
+    'purchase_count_30d': np.random.poisson(10, 1000),
+    'avg_order_value': np.random.normal(50, 15, 1000),
+    'user_category': np.random.choice(['A', 'B', 'C'], 1000, p=[0.5, 0.3, 0.2])
+})
+
+# Initialize monitor
+monitor = FeatureMonitor(drift_threshold=0.05, distribution_threshold=0.1)
+monitor.set_baseline(baseline_df)
+
+# Current data with drift
+current_df = pd.DataFrame({
+    'purchase_count_30d': np.random.poisson(12, 500),  # Mean shifted
+    'avg_order_value': np.random.normal(50, 25, 500),  # Variance increased
+    'user_category': np.random.choice(['A', 'B', 'C', 'D'], 500,
+                                     p=[0.4, 0.3, 0.2, 0.1])  # New category
+})
+
+# Detect drift
+drift_results = monitor.detect_drift(current_df)
+
+print(f"Drift detection results: {len(drift_results)} features with drift\n")
+for result in drift_results:
+    print(f"Feature: {result.feature_name}")
+    print(f"  Drift Type: {result.drift_type}")
+    print(f"  Drift Score: {result.drift_score:.4f}")
+    print(f"  Details: {result.details}")
+    print()
+\end{lstlisting}
+
+\section{Integration with Training and Serving Pipelines}
+
+\begin{lstlisting}[style=python, caption=End-to-end pipeline integration]
+# integrated_pipeline.py
+"""
+Complete integration of feature store with training and serving.
+"""
+
+from feast import FeatureStore
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+import mlflow
+from datetime import datetime, timedelta
+from typing import Dict, List
+import joblib
+
+class MLPipelineWithFeatureStore:
+    """
+    Integrated ML pipeline using feature store for consistency.
+    """
+
+    def __init__(
+        self,
+        feast_repo_path: str,
+        mlflow_tracking_uri: str = "http://localhost:5000"
+    ):
+        self.fs = FeatureStore(repo_path=feast_repo_path)
+        mlflow.set_tracking_uri(mlflow_tracking_uri)
+        self.model = None
+        self.feature_names = []
+
+    def create_training_dataset(
+        self,
+        entity_df: pd.DataFrame,
+        feature_services: List[str],
+        label_col: str
+    ) -> tuple:
+        """
+        Create training dataset using feature store.
+
+        Args:
+            entity_df: DataFrame with entities, timestamps, and labels
+            feature_services: List of Feast feature services to use
+            label_col: Name of the label column
+
+        Returns:
+            X_train, X_test, y_train, y_test
+        """
+        # Get historical features from Feast
+        training_df = self.fs.get_historical_features(
+            entity_df=entity_df,
+            features=feature_services
+        ).to_df()
+
+        # Separate features and labels
+        self.feature_names = [
+            col for col in training_df.columns
+            if col not in ['entity_id', 'event_timestamp', label_col]
+        ]
+
+        X = training_df[self.feature_names]
+        y = training_df[label_col]
+
+        # Split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
+
+        return X_train, X_test, y_train, y_test
+
+    def train_model(
+        self,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_test: pd.DataFrame,
+        y_test: pd.Series,
+        experiment_name: str = "feature_store_model"
+    ):
+        """
+        Train model and log to MLflow.
+        """
+        mlflow.set_experiment(experiment_name)
+
+        with mlflow.start_run():
+            # Train model
+            self.model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42
+            )
+            self.model.fit(X_train, y_train)
+
+            # Evaluate
+            train_score = self.model.score(X_train, y_train)
+            test_score = self.model.score(X_test, y_test)
+
+            # Log metrics
+            mlflow.log_metric("train_accuracy", train_score)
+            mlflow.log_metric("test_accuracy", test_score)
+
+            # Log parameters
+            mlflow.log_param("n_estimators", 100)
+            mlflow.log_param("max_depth", 10)
+            mlflow.log_param("feature_count", len(self.feature_names))
+            mlflow.log_param("feature_names", ",".join(self.feature_names))
+
+            # Log model
+            mlflow.sklearn.log_model(
+                self.model,
+                "model",
+                registered_model_name="purchase_prediction_model"
+            )
+
+            # Log feature importance
+            feature_importance = pd.DataFrame({
+                'feature': self.feature_names,
+                'importance': self.model.feature_importances_
+            }).sort_values('importance', ascending=False)
+
+            mlflow.log_table(
+                feature_importance,
+                "feature_importance.json"
+            )
+
+            print(f"Model trained - Train: {train_score:.3f}, Test: {test_score:.3f}")
+
+    def predict_online(
+        self,
+        entity_rows: List[Dict],
+        feature_services: List[str]
+    ) -> np.ndarray:
+        """
+        Make predictions using online features.
+
+        Args:
+            entity_rows: List of entity dictionaries
+            feature_services: Feature services to retrieve
+
+        Returns:
+            Array of predictions
+        """
+        if self.model is None:
+            raise ValueError("Model not trained. Call train_model first.")
+
+        # Get online features from Feast
+        online_features = self.fs.get_online_features(
+            entity_rows=entity_rows,
+            features=feature_services
+        ).to_df()
+
+        # Ensure feature order matches training
+        X = online_features[self.feature_names]
+
+        # Predict
+        predictions = self.model.predict(X)
+        probabilities = self.model.predict_proba(X)
+
+        return predictions, probabilities
+
+# Example: End-to-end workflow
+def run_integrated_pipeline():
+    """
+    Complete example of integrated training and serving pipeline.
+    """
+
+    # Initialize pipeline
+    pipeline = MLPipelineWithFeatureStore(
+        feast_repo_path="./feast_repo",
+        mlflow_tracking_uri="./mlruns"
+    )
+
+    # Step 1: Prepare training data
+    print("Step 1: Creating training dataset from feature store...")
+
+    # Historical entity-label pairs
+    entity_df = pd.DataFrame({
+        'user_id': [f'user_{i}' for i in range(1000)],
+        'event_timestamp': [
+            datetime.now() - timedelta(days=np.random.randint(1, 90))
+            for _ in range(1000)
+        ],
+        'made_purchase': np.random.binomial(1, 0.3, 1000)  # Labels
+    })
+
+    # Feature services to use
+    feature_services = [
+        "user_activity_features:purchase_count_30d",
+        "user_activity_features:conversion_rate_30d",
+        "user_activity_features:days_since_last_purchase",
+        "user_profile_features:is_premium_member",
+        "user_profile_features:lifetime_purchase_count"
+    ]
+
+    # Create dataset
+    X_train, X_test, y_train, y_test = pipeline.create_training_dataset(
+        entity_df=entity_df,
+        feature_services=feature_services,
+        label_col='made_purchase'
+    )
+
+    print(f"Training set: {X_train.shape}, Test set: {X_test.shape}")
+
+    # Step 2: Train model
+    print("\nStep 2: Training model...")
+    pipeline.train_model(X_train, y_train, X_test, y_test)
+
+    # Step 3: Online prediction
+    print("\nStep 3: Making online predictions...")
+
+    # Real-time prediction requests
+    prediction_requests = [
+        {"user_id": "user_123"},
+        {"user_id": "user_456"},
+        {"user_id": "user_789"}
+    ]
+
+    predictions, probabilities = pipeline.predict_online(
+        entity_rows=prediction_requests,
+        feature_services=feature_services
+    )
+
+    print("\nPredictions:")
+    for i, request in enumerate(prediction_requests):
+        print(f"  {request['user_id']}: {predictions[i]} "
+              f"(prob: {probabilities[i][1]:.3f})")
+
+if __name__ == "__main__":
+    run_integrated_pipeline()
+\end{lstlisting}
+
+\section{Real-World Case Studies}
+
+\subsection{Case Study 1: E-Commerce Recommendation System}
+
+\textbf{Challenge:} A large e-commerce platform needed to serve personalized product recommendations with sub-100ms latency while maintaining model accuracy. The system processes 100M+ daily events and serves 50K requests per second.
+
+\textbf{Solution Architecture:}
+\begin{itemize}
+    \item \textbf{Offline Pipeline:} Daily Spark jobs compute user and product features over multiple time windows (7d, 30d, 90d)
+    \item \textbf{Feature Store:} Feast with BigQuery offline store and Redis online store
+    \item \textbf{Online Pipeline:} Kafka streams for real-time session features
+    \item \textbf{Serving:} Two-tier model architecture (candidate generation + ranking)
+\end{itemize}
+
+\textbf{Key Features Engineered:}
+\begin{itemize}
+    \item User engagement features: pageviews, cart additions, purchase history across windows
+    \item Product popularity features: view/purchase counts by category and time
+    \item User-product affinity: co-occurrence patterns, category preferences
+    \item Real-time session features: current session behavior, time on site
+    \item Temporal features: day of week, time of day, seasonality indicators
+\end{itemize}
+
+\textbf{Results:}
+\begin{itemize}
+    \item P99 latency: 45ms (down from 200ms)
+    \item CTR improvement: +18\%
+    \item Revenue per user: +12\%
+    \item Training-serving consistency: 99.9\% feature value match
+\end{itemize}
+
+\subsection{Case Study 2: Fraud Detection System}
+
+\textbf{Challenge:} Financial services company needed real-time fraud detection with complex behavioral features while handling 10M+ transactions daily.
+
+\textbf{Solution Architecture:}
+\begin{itemize}
+    \item \textbf{Streaming Features:} Flink for real-time aggregations (velocity features)
+    \item \textbf{Batch Features:} Airflow DAGs for historical pattern analysis
+    \item \textbf{Feature Store:} Tecton with Snowflake and DynamoDB
+    \item \textbf{Serving:} Multi-model ensemble with feature-based routing
+\end{itemize}
+
+\textbf{Critical Features:}
+\begin{itemize}
+    \item Velocity features: Transaction count/amount in last 1min, 5min, 1hour
+    \item Geographic features: Distance from previous transaction, usual locations
+    \item Behavioral features: Deviation from spending patterns, unusual merchants
+    \item Network features: Graph-based features from transaction networks
+    \item Device fingerprinting: Device changes, IP reputation scores
+\end{itemize}
+
+\textbf{Results:}
+\begin{itemize}
+    \item Fraud detection rate: +35\%
+    \item False positive rate: -40\%
+    \item Average detection time: 150ms
+    \item Prevented losses: \$15M annually
+\end{itemize}
 
 \section{Exercises}
 
-\begin{exercise}
-Implement a feature store using Feast for a recommendation system.
+\begin{exercise}[Feature Engineering Pipeline]
+Implement a complete feature engineering pipeline for a retail dataset:
+\begin{enumerate}
+    \item Load transaction data with columns: user\_id, product\_id, timestamp, amount
+    \item Create RFM (Recency, Frequency, Monetary) features
+    \item Add time-window aggregations (7d, 30d, 90d)
+    \item Implement point-in-time correct feature computation
+    \item Validate no data leakage with temporal splits
+\end{enumerate}
+\textbf{Deliverable:} Python script with documented feature engineering functions and validation tests.
 \end{exercise}
+
+\begin{exercise}[Feast Feature Store Setup]
+Deploy a complete Feast feature store:
+\begin{enumerate}
+    \item Set up Feast with local file offline store and Redis online store
+    \item Define at least 3 feature views with different entities
+    \item Implement materialization pipeline with scheduling
+    \item Create both batch and online feature retrieval functions
+    \item Demonstrate point-in-time correct historical retrieval
+\end{enumerate}
+\textbf{Deliverable:} Feast repository with feature definitions, materialization scripts, and usage examples.
+\end{exercise}
+
+\begin{exercise}[Feature Versioning System]
+Build a feature versioning and lineage system:
+\begin{enumerate}
+    \item Implement feature registry with version tracking
+    \item Create feature definition hashing for change detection
+    \item Build lineage graph tracking data dependencies
+    \item Implement backward compatibility checks
+    \item Add deprecation workflow with successor versioning
+\end{enumerate}
+\textbf{Deliverable:} Feature registry system with API documentation and test cases.
+\end{exercise}
+
+\begin{exercise}[Online Feature Store Performance]
+Optimize online feature store for high throughput:
+\begin{enumerate}
+    \item Implement Redis-based online store with pipelining
+    \item Add caching layer with TTL management
+    \item Implement batch read/write for efficiency
+    \item Measure latency under load (use locust or similar)
+    \item Optimize to achieve p99 latency < 10ms for 1000 QPS
+\end{enumerate}
+\textbf{Deliverable:} Optimized online store implementation with performance benchmarks and load test results.
+\end{exercise}
+
+\begin{exercise}[Feature Drift Detection]
+Implement comprehensive feature monitoring:
+\begin{enumerate}
+    \item Create baseline statistics from training data
+    \item Implement statistical drift tests (KS test, Chi-square)
+    \item Add distribution-based drift detection (JS divergence)
+    \item Build data quality checks (null rates, range violations)
+    \item Create alerting for detected drift
+\end{enumerate}
+\textbf{Deliverable:} Feature monitoring system with drift detection reports and alert configurations.
+\end{exercise}
+
+\begin{exercise}[Streaming Feature Pipeline]
+Build real-time feature computation with Kafka:
+\begin{enumerate}
+    \item Set up Kafka cluster with topic for events
+    \item Implement streaming aggregations (tumbling windows)
+    \item Add sessionization features
+    \item Materialize to online feature store
+    \item Handle late-arriving data correctly
+\end{enumerate}
+\textbf{Deliverable:} Streaming pipeline with Kafka consumers/producers and feature computation logic.
+\end{exercise}
+
+\begin{exercise}[Feature Store Integration]
+Integrate feature store with full ML pipeline:
+\begin{enumerate}
+    \item Build training pipeline using offline feature store
+    \item Implement serving pipeline using online features
+    \item Add feature logging for monitoring
+    \item Track feature importance and usage
+    \item Implement feature A/B testing framework
+\end{enumerate}
+\textbf{Deliverable:} End-to-end pipeline with training, serving, monitoring, and experimentation.
+\end{exercise}
+
+\begin{exercise}[Advanced Feature Engineering]
+Implement sophisticated feature engineering techniques:
+\begin{enumerate}
+    \item Build entity embeddings for high-cardinality categoricals
+    \item Implement graph-based features from interaction networks
+    \item Create polynomial feature interactions
+    \item Add automatic feature selection based on importance
+    \item Implement feature crosses for interaction effects
+\end{enumerate}
+\textbf{Deliverable:} Advanced feature engineering library with documentation and examples.
+\end{exercise}
+
+\section{Chapter Summary}
+
+This chapter presented a comprehensive treatment of feature stores and feature engineering in production ML systems. Key takeaways include:
+
+\begin{itemize}
+    \item \textbf{Training-Serving Consistency:} Feature stores solve the critical problem of training-serving skew by providing a unified interface for feature computation and retrieval.
+
+    \item \textbf{Feature Engineering Best Practices:} Reproducible, modular feature definitions with point-in-time correctness are essential for production systems.
+
+    \item \textbf{Dual-Mode Serving:} Production feature stores must support both offline (training) and online (serving) access patterns with different latency and throughput characteristics.
+
+    \item \textbf{Feature Lifecycle Management:} Versioning, lineage tracking, and deprecation workflows are critical for maintaining feature quality over time.
+
+    \item \textbf{Monitoring and Drift Detection:} Continuous monitoring of feature distributions and data quality prevents silent model degradation.
+
+    \item \textbf{Architecture Patterns:} Successful implementations balance batch and streaming processing, optimize for access patterns, and integrate seamlessly with ML pipelines.
+\end{itemize}
+
+Feature stores have matured from experimental tools to production-critical infrastructure. Organizations implementing feature stores report significant improvements in model development velocity, feature reuse, and production reliability. However, success requires careful attention to architecture, governance, and operational practices detailed in this chapter.

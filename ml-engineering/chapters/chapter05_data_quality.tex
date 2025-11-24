@@ -2,40 +2,3741 @@
 
 After completing this chapter, readers will be able to:
 \begin{itemize}
-    \item Implement comprehensive data validation strategies
-    \item Use Great Expectations for data quality testing
-    \item Design data quality metrics and monitoring
-    \item Handle data anomalies and outliers
-    \item Build automated data quality pipelines
+    \item Implement comprehensive data validation strategies for ML pipelines
+    \item Use Great Expectations for automated data quality testing
+    \item Design and track data quality metrics and monitoring dashboards
+    \item Handle data anomalies, outliers, and drift detection
+    \item Build automated data quality pipelines with continuous validation
+    \item Create custom validation rules for ML-specific requirements
+    \item Integrate data quality checks into production workflows
 \end{itemize}
+
+\section{Introduction}
+
+Data quality is the foundation of successful machine learning systems. Poor data quality leads to unreliable models, incorrect predictions, and costly business decisions. In production ML systems, data quality issues can arise from various sources: upstream data changes, data pipeline failures, sensor malfunctions, or user behavior changes. This chapter provides comprehensive frameworks and practical tools for ensuring data quality throughout the ML lifecycle.
+
+The cost of poor data quality is significant. IBM estimates that poor data quality costs the U.S. economy around \$3.1 trillion annually. In ML systems, the impact is even more critical because models learn from data patterns—garbage in, garbage out. A model trained on high-quality data but serving predictions on degraded data will fail silently, producing incorrect results without raising obvious errors.
 
 \section{Data Quality Dimensions}
 
 \subsection{The Six Dimensions of Data Quality}
 
+Understanding data quality requires examining multiple dimensions. Each dimension addresses a specific aspect of data reliability:
+
 \begin{itemize}
-    \item \textbf{Accuracy:} Data correctly represents reality
-    \item \textbf{Completeness:} All required data is present
-    \item \textbf{Consistency:} Data is consistent across systems
-    \item \textbf{Timeliness:} Data is up-to-date
-    \item \textbf{Validity:} Data conforms to defined formats
-    \item \textbf{Uniqueness:} No duplicate records
+    \item \textbf{Accuracy:} Data correctly represents reality. For example, customer addresses match actual locations, transaction amounts reflect true values.
+
+    \item \textbf{Completeness:} All required data is present. Missing values are within acceptable thresholds, and critical fields are always populated.
+
+    \item \textbf{Consistency:} Data is consistent across systems and over time. The same entity has identical attributes across different databases.
+
+    \item \textbf{Timeliness:} Data is up-to-date and available when needed. Fresh data arrives within expected time windows.
+
+    \item \textbf{Validity:} Data conforms to defined formats, ranges, and business rules. Email addresses follow proper format, dates are valid, numerical values fall within expected ranges.
+
+    \item \textbf{Uniqueness:} No duplicate records exist unless intentional. Primary keys are truly unique.
 \end{itemize}
 
-\section{Automated Data Validation}
+\subsection{ML-Specific Quality Dimensions}
 
-% Placeholder content
-\section{Data Quality Metrics}
+Beyond traditional data quality dimensions, ML systems require additional considerations:
 
-% Placeholder content
-\section{Handling Data Quality Issues}
+\begin{itemize}
+    \item \textbf{Feature Distribution Stability:} Features should maintain consistent statistical properties over time.
 
-% Placeholder content
+    \item \textbf{Label Quality:} Training labels must be accurate, consistent, and representative.
+
+    \item \textbf{Data Freshness:} Training data should reflect current patterns to avoid model staleness.
+
+    \item \textbf{Representation Balance:} Data should adequately represent all important subgroups and edge cases.
+
+    \item \textbf{Correlation Stability:} Relationships between features and targets should remain stable.
+\end{itemize}
+
+\section{Data Quality Frameworks and Metrics}
+
+\subsection{Comprehensive Data Quality Framework}
+
+A robust data quality framework consists of multiple layers working together to ensure data reliability at every stage.
+
+\begin{lstlisting}[language=Python, caption=Data Quality Framework Implementation]
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Callable, Any
+from enum import Enum
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import logging
+
+class Severity(Enum):
+    """Severity levels for data quality issues"""
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+@dataclass
+class ValidationResult:
+    """Result of a data validation check"""
+    check_name: str
+    passed: bool
+    severity: Severity
+    message: str
+    metric_value: Optional[float] = None
+    threshold: Optional[float] = None
+    timestamp: datetime = None
+
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.now()
+
+class DataQualityMetrics:
+    """Calculate comprehensive data quality metrics"""
+
+    @staticmethod
+    def completeness_score(df: pd.DataFrame,
+                          critical_columns: List[str] = None) -> Dict[str, float]:
+        """
+        Calculate completeness metrics for dataset
+
+        Args:
+            df: Input DataFrame
+            critical_columns: Columns that must be complete
+
+        Returns:
+            Dictionary of completeness metrics
+        """
+        metrics = {}
+
+        # Overall completeness
+        total_cells = df.shape[0] * df.shape[1]
+        non_null_cells = df.count().sum()
+        metrics['overall_completeness'] = non_null_cells / total_cells
+
+        # Per-column completeness
+        column_completeness = df.count() / len(df)
+        metrics['column_completeness'] = column_completeness.to_dict()
+
+        # Critical columns completeness
+        if critical_columns:
+            critical_complete = all(
+                df[col].notna().all() for col in critical_columns
+            )
+            metrics['critical_columns_complete'] = critical_complete
+            metrics['critical_completeness_rate'] = sum(
+                df[col].notna().sum() for col in critical_columns
+            ) / (len(df) * len(critical_columns))
+
+        return metrics
+
+    @staticmethod
+    def uniqueness_score(df: pd.DataFrame,
+                        id_columns: List[str]) -> Dict[str, float]:
+        """Calculate uniqueness metrics"""
+        metrics = {}
+
+        # Check uniqueness of ID columns
+        for col in id_columns:
+            total_rows = len(df)
+            unique_rows = df[col].nunique()
+            metrics[f'{col}_uniqueness'] = unique_rows / total_rows
+
+            # Count duplicates
+            duplicate_count = total_rows - unique_rows
+            metrics[f'{col}_duplicates'] = duplicate_count
+
+        # Overall record uniqueness
+        duplicate_rows = df.duplicated().sum()
+        metrics['record_uniqueness'] = 1 - (duplicate_rows / len(df))
+
+        return metrics
+
+    @staticmethod
+    def validity_score(df: pd.DataFrame,
+                      validation_rules: Dict[str, Callable]) -> Dict[str, float]:
+        """
+        Calculate validity metrics based on custom rules
+
+        Args:
+            df: Input DataFrame
+            validation_rules: Dict mapping column names to validation functions
+
+        Returns:
+            Dictionary of validity metrics
+        """
+        metrics = {}
+
+        for column, validation_func in validation_rules.items():
+            if column in df.columns:
+                valid_mask = df[column].apply(validation_func)
+                validity_rate = valid_mask.sum() / len(df)
+                metrics[f'{column}_validity'] = validity_rate
+                metrics[f'{column}_invalid_count'] = (~valid_mask).sum()
+
+        # Overall validity
+        if validation_rules:
+            avg_validity = np.mean([
+                v for k, v in metrics.items() if k.endswith('_validity')
+            ])
+            metrics['overall_validity'] = avg_validity
+
+        return metrics
+
+    @staticmethod
+    def consistency_score(df: pd.DataFrame,
+                         consistency_rules: List[Dict]) -> Dict[str, Any]:
+        """
+        Check consistency between related fields
+
+        Args:
+            df: Input DataFrame
+            consistency_rules: List of consistency rule definitions
+
+        Example rule:
+            {
+                'name': 'price_consistency',
+                'condition': lambda row: row['total'] == row['price'] * row['qty'],
+                'severity': Severity.ERROR
+            }
+        """
+        metrics = {}
+
+        for rule in consistency_rules:
+            rule_name = rule['name']
+            condition = rule['condition']
+
+            # Apply consistency check
+            consistent_mask = df.apply(condition, axis=1)
+            consistency_rate = consistent_mask.sum() / len(df)
+
+            metrics[f'{rule_name}_consistency'] = consistency_rate
+            metrics[f'{rule_name}_violations'] = (~consistent_mask).sum()
+
+        return metrics
+
+    @staticmethod
+    def timeliness_score(df: pd.DataFrame,
+                        timestamp_column: str,
+                        max_age_hours: float = 24) -> Dict[str, Any]:
+        """Check data timeliness"""
+        metrics = {}
+
+        if timestamp_column not in df.columns:
+            return metrics
+
+        # Convert to datetime
+        timestamps = pd.to_datetime(df[timestamp_column])
+        now = datetime.now()
+
+        # Calculate age statistics
+        ages = (now - timestamps).dt.total_seconds() / 3600  # hours
+
+        metrics['max_age_hours'] = ages.max()
+        metrics['mean_age_hours'] = ages.mean()
+        metrics['median_age_hours'] = ages.median()
+
+        # Check against threshold
+        within_threshold = (ages <= max_age_hours).sum()
+        metrics['timeliness_rate'] = within_threshold / len(df)
+        metrics['stale_records'] = len(df) - within_threshold
+
+        return metrics
+
+    @staticmethod
+    def accuracy_score(df: pd.DataFrame,
+                      reference_df: pd.DataFrame,
+                      join_keys: List[str],
+                      compare_columns: List[str]) -> Dict[str, float]:
+        """
+        Calculate accuracy by comparing against reference data
+
+        Args:
+            df: Dataset to validate
+            reference_df: Ground truth reference data
+            join_keys: Columns to join on
+            compare_columns: Columns to compare for accuracy
+        """
+        metrics = {}
+
+        # Merge datasets
+        merged = df.merge(
+            reference_df,
+            on=join_keys,
+            suffixes=('_actual', '_reference'),
+            how='inner'
+        )
+
+        if len(merged) == 0:
+            return metrics
+
+        # Compare each column
+        for col in compare_columns:
+            actual_col = f'{col}_actual'
+            ref_col = f'{col}_reference'
+
+            if actual_col in merged.columns and ref_col in merged.columns:
+                # For numeric columns, calculate error metrics
+                if pd.api.types.is_numeric_dtype(merged[actual_col]):
+                    errors = np.abs(
+                        merged[actual_col] - merged[ref_col]
+                    )
+                    metrics[f'{col}_mae'] = errors.mean()
+                    metrics[f'{col}_mse'] = (errors ** 2).mean()
+
+                # For all columns, calculate match rate
+                matches = (merged[actual_col] == merged[ref_col]).sum()
+                metrics[f'{col}_accuracy'] = matches / len(merged)
+
+        return metrics
+
+class DataQualityValidator:
+    """Comprehensive data quality validation framework"""
+
+    def __init__(self, name: str = "DataQualityValidator"):
+        self.name = name
+        self.metrics_calculator = DataQualityMetrics()
+        self.validation_results: List[ValidationResult] = []
+        self.logger = logging.getLogger(name)
+
+    def validate(self, df: pd.DataFrame,
+                config: Dict[str, Any]) -> List[ValidationResult]:
+        """
+        Run comprehensive validation suite
+
+        Args:
+            df: DataFrame to validate
+            config: Validation configuration
+
+        Returns:
+            List of validation results
+        """
+        self.validation_results = []
+
+        # Completeness checks
+        if 'completeness' in config:
+            self._check_completeness(df, config['completeness'])
+
+        # Uniqueness checks
+        if 'uniqueness' in config:
+            self._check_uniqueness(df, config['uniqueness'])
+
+        # Validity checks
+        if 'validity' in config:
+            self._check_validity(df, config['validity'])
+
+        # Consistency checks
+        if 'consistency' in config:
+            self._check_consistency(df, config['consistency'])
+
+        # Timeliness checks
+        if 'timeliness' in config:
+            self._check_timeliness(df, config['timeliness'])
+
+        # Range checks
+        if 'ranges' in config:
+            self._check_ranges(df, config['ranges'])
+
+        # Distribution checks
+        if 'distributions' in config:
+            self._check_distributions(df, config['distributions'])
+
+        return self.validation_results
+
+    def _check_completeness(self, df: pd.DataFrame, config: Dict):
+        """Check completeness requirements"""
+        critical_columns = config.get('critical_columns', [])
+        threshold = config.get('threshold', 0.95)
+
+        metrics = self.metrics_calculator.completeness_score(
+            df, critical_columns
+        )
+
+        # Overall completeness
+        overall = metrics['overall_completeness']
+        passed = overall >= threshold
+
+        self.validation_results.append(ValidationResult(
+            check_name="overall_completeness",
+            passed=passed,
+            severity=Severity.ERROR if not passed else Severity.INFO,
+            message=f"Overall completeness: {overall:.2%} (threshold: {threshold:.2%})",
+            metric_value=overall,
+            threshold=threshold
+        ))
+
+        # Critical columns
+        if critical_columns and 'critical_columns_complete' in metrics:
+            critical_complete = metrics['critical_columns_complete']
+            self.validation_results.append(ValidationResult(
+                check_name="critical_columns_completeness",
+                passed=critical_complete,
+                severity=Severity.CRITICAL if not critical_complete else Severity.INFO,
+                message=f"Critical columns complete: {critical_complete}",
+                metric_value=metrics.get('critical_completeness_rate')
+            ))
+
+    def _check_uniqueness(self, df: pd.DataFrame, config: Dict):
+        """Check uniqueness requirements"""
+        id_columns = config.get('id_columns', [])
+
+        metrics = self.metrics_calculator.uniqueness_score(df, id_columns)
+
+        for col in id_columns:
+            uniqueness = metrics[f'{col}_uniqueness']
+            duplicates = metrics[f'{col}_duplicates']
+
+            passed = uniqueness == 1.0
+
+            self.validation_results.append(ValidationResult(
+                check_name=f"{col}_uniqueness",
+                passed=passed,
+                severity=Severity.ERROR if not passed else Severity.INFO,
+                message=f"{col} uniqueness: {uniqueness:.2%} ({duplicates} duplicates)",
+                metric_value=uniqueness,
+                threshold=1.0
+            ))
+
+    def _check_validity(self, df: pd.DataFrame, config: Dict):
+        """Check validity rules"""
+        validation_rules = config.get('rules', {})
+        threshold = config.get('threshold', 0.99)
+
+        metrics = self.metrics_calculator.validity_score(
+            df, validation_rules
+        )
+
+        for key, value in metrics.items():
+            if key.endswith('_validity'):
+                column = key.replace('_validity', '')
+                passed = value >= threshold
+
+                self.validation_results.append(ValidationResult(
+                    check_name=f"{column}_validity",
+                    passed=passed,
+                    severity=Severity.WARNING if not passed else Severity.INFO,
+                    message=f"{column} validity: {value:.2%}",
+                    metric_value=value,
+                    threshold=threshold
+                ))
+
+    def _check_consistency(self, df: pd.DataFrame, config: Dict):
+        """Check consistency rules"""
+        rules = config.get('rules', [])
+
+        metrics = self.metrics_calculator.consistency_score(df, rules)
+
+        for rule in rules:
+            rule_name = rule['name']
+            consistency = metrics[f'{rule_name}_consistency']
+            violations = metrics[f'{rule_name}_violations']
+            severity = rule.get('severity', Severity.WARNING)
+
+            passed = consistency == 1.0
+
+            self.validation_results.append(ValidationResult(
+                check_name=rule_name,
+                passed=passed,
+                severity=severity if not passed else Severity.INFO,
+                message=f"{rule_name}: {consistency:.2%} ({violations} violations)",
+                metric_value=consistency
+            ))
+
+    def _check_timeliness(self, df: pd.DataFrame, config: Dict):
+        """Check timeliness requirements"""
+        timestamp_column = config.get('timestamp_column')
+        max_age_hours = config.get('max_age_hours', 24)
+        threshold = config.get('threshold', 0.95)
+
+        metrics = self.metrics_calculator.timeliness_score(
+            df, timestamp_column, max_age_hours
+        )
+
+        if metrics:
+            timeliness_rate = metrics['timeliness_rate']
+            passed = timeliness_rate >= threshold
+
+            self.validation_results.append(ValidationResult(
+                check_name="data_timeliness",
+                passed=passed,
+                severity=Severity.WARNING if not passed else Severity.INFO,
+                message=f"Timeliness: {timeliness_rate:.2%} within {max_age_hours}h "
+                       f"(max age: {metrics['max_age_hours']:.1f}h)",
+                metric_value=timeliness_rate,
+                threshold=threshold
+            ))
+
+    def _check_ranges(self, df: pd.DataFrame, config: Dict):
+        """Check numerical ranges"""
+        range_specs = config.get('specs', {})
+
+        for column, spec in range_specs.items():
+            if column not in df.columns:
+                continue
+
+            min_val = spec.get('min')
+            max_val = spec.get('max')
+
+            violations = 0
+            if min_val is not None:
+                violations += (df[column] < min_val).sum()
+            if max_val is not None:
+                violations += (df[column] > max_val).sum()
+
+            in_range_rate = 1 - (violations / len(df))
+            passed = violations == 0
+
+            self.validation_results.append(ValidationResult(
+                check_name=f"{column}_range",
+                passed=passed,
+                severity=Severity.WARNING if not passed else Severity.INFO,
+                message=f"{column} range check: {in_range_rate:.2%} in range "
+                       f"[{min_val}, {max_val}] ({violations} violations)",
+                metric_value=in_range_rate
+            ))
+
+    def _check_distributions(self, df: pd.DataFrame, config: Dict):
+        """Check statistical distributions"""
+        distribution_specs = config.get('specs', {})
+
+        for column, spec in distribution_specs.items():
+            if column not in df.columns:
+                continue
+
+            expected_mean = spec.get('mean')
+            expected_std = spec.get('std')
+            tolerance = spec.get('tolerance', 0.1)
+
+            actual_mean = df[column].mean()
+            actual_std = df[column].std()
+
+            mean_passed = True
+            if expected_mean is not None:
+                mean_diff = abs(actual_mean - expected_mean) / expected_mean
+                mean_passed = mean_diff <= tolerance
+
+            std_passed = True
+            if expected_std is not None:
+                std_diff = abs(actual_std - expected_std) / expected_std
+                std_passed = std_diff <= tolerance
+
+            passed = mean_passed and std_passed
+
+            self.validation_results.append(ValidationResult(
+                check_name=f"{column}_distribution",
+                passed=passed,
+                severity=Severity.WARNING if not passed else Severity.INFO,
+                message=f"{column} distribution: mean={actual_mean:.2f} "
+                       f"(expected={expected_mean}), std={actual_std:.2f} "
+                       f"(expected={expected_std})"
+            ))
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Get summary of validation results"""
+        total = len(self.validation_results)
+        passed = sum(1 for r in self.validation_results if r.passed)
+
+        severity_counts = {}
+        for severity in Severity:
+            count = sum(
+                1 for r in self.validation_results
+                if r.severity == severity and not r.passed
+            )
+            severity_counts[severity.value] = count
+
+        return {
+            'total_checks': total,
+            'passed': passed,
+            'failed': total - passed,
+            'pass_rate': passed / total if total > 0 else 0,
+            'severity_counts': severity_counts,
+            'has_critical_issues': severity_counts.get('critical', 0) > 0,
+            'has_errors': severity_counts.get('error', 0) > 0
+        }
+
+    def print_report(self):
+        """Print formatted validation report"""
+        summary = self.get_summary()
+
+        print(f"\n{'='*60}")
+        print(f"Data Quality Validation Report - {self.name}")
+        print(f"{'='*60}")
+        print(f"Total Checks: {summary['total_checks']}")
+        print(f"Passed: {summary['passed']}")
+        print(f"Failed: {summary['failed']}")
+        print(f"Pass Rate: {summary['pass_rate']:.2%}")
+        print(f"\nIssues by Severity:")
+        for severity, count in summary['severity_counts'].items():
+            if count > 0:
+                print(f"  {severity.upper()}: {count}")
+
+        print(f"\n{'='*60}")
+        print("Failed Checks:")
+        print(f"{'='*60}")
+
+        for result in self.validation_results:
+            if not result.passed:
+                severity_marker = {
+                    Severity.INFO: "[i]",
+                    Severity.WARNING: "[!]",
+                    Severity.ERROR: "[X]",
+                    Severity.CRITICAL: "[!!]"
+                }
+                marker = severity_marker.get(result.severity, "[-]")
+                print(f"{marker} [{result.severity.value.upper()}] {result.check_name}")
+                print(f"  {result.message}")
+\end{lstlisting}
+
+\subsection{Usage Example: Complete Validation Pipeline}
+
+\begin{lstlisting}[language=Python, caption=Using the Data Quality Framework]
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+# Create sample data with quality issues
+np.random.seed(42)
+data = {
+    'user_id': list(range(1000)) + [1, 2, 3],  # Duplicates
+    'email': [f'user{i}@example.com' for i in range(1000)] +
+             ['invalid', 'bad@', 'nope'],
+    'age': np.random.randint(18, 80, 1003).tolist(),
+    'signup_date': [
+        datetime.now() - timedelta(days=np.random.randint(0, 365))
+        for _ in range(1003)
+    ],
+    'total_purchase': np.random.uniform(0, 1000, 1003),
+    'num_purchases': np.random.randint(0, 50, 1003)
+}
+
+# Introduce some quality issues
+data['age'][10:20] = -1  # Invalid ages
+data['email'][50:60] = [None] * 10  # Missing emails
+data['total_purchase'][100] = -50  # Invalid negative
+
+df = pd.DataFrame(data)
+
+# Define validation configuration
+validation_config = {
+    'completeness': {
+        'critical_columns': ['user_id', 'email'],
+        'threshold': 0.95
+    },
+    'uniqueness': {
+        'id_columns': ['user_id']
+    },
+    'validity': {
+        'rules': {
+            'email': lambda x: pd.notna(x) and '@' in str(x) and '.' in str(x),
+            'age': lambda x: 0 <= x <= 120
+        },
+        'threshold': 0.99
+    },
+    'consistency': {
+        'rules': [
+            {
+                'name': 'purchase_consistency',
+                'condition': lambda row: (
+                    row['total_purchase'] >= 0 and
+                    row['num_purchases'] >= 0
+                ),
+                'severity': Severity.ERROR
+            }
+        ]
+    },
+    'timeliness': {
+        'timestamp_column': 'signup_date',
+        'max_age_hours': 8760,  # 1 year
+        'threshold': 0.8
+    },
+    'ranges': {
+        'specs': {
+            'age': {'min': 0, 'max': 120},
+            'total_purchase': {'min': 0, 'max': 100000}
+        }
+    }
+}
+
+# Run validation
+validator = DataQualityValidator(name="Customer Data Validator")
+results = validator.validate(df, validation_config)
+
+# Print report
+validator.print_report()
+
+# Get programmatic summary
+summary = validator.get_summary()
+if summary['has_critical_issues'] or summary['has_errors']:
+    print("\n[!]  Data quality issues detected! Review before proceeding.")
+else:
+    print("\n[OK] Data quality checks passed!")
+\end{lstlisting}
+
+\section{Great Expectations Implementation}
+
+Great Expectations is a powerful Python library for data validation, documentation, and profiling. It provides a rich set of expectations (assertions about data) that can be combined into validation suites.
+
+\subsection{Setting Up Great Expectations}
+
+\begin{lstlisting}[language=Python, caption=Great Expectations Setup and Configuration]
+import great_expectations as gx
+from great_expectations.core.batch import RuntimeBatchRequest
+from great_expectations.checkpoint import SimpleCheckpoint
+import pandas as pd
+
+class GreatExpectationsManager:
+    """Manager class for Great Expectations workflows"""
+
+    def __init__(self, project_root: str):
+        """
+        Initialize Great Expectations context
+
+        Args:
+            project_root: Root directory for GE project
+        """
+        self.context = gx.get_context(project_root_dir=project_root)
+        self.datasource_name = "pandas_datasource"
+        self._setup_datasource()
+
+    def _setup_datasource(self):
+        """Configure pandas datasource"""
+        try:
+            self.context.get_datasource(self.datasource_name)
+        except:
+            # Create new datasource
+            datasource_config = {
+                "name": self.datasource_name,
+                "class_name": "Datasource",
+                "execution_engine": {
+                    "class_name": "PandasExecutionEngine"
+                },
+                "data_connectors": {
+                    "runtime_data_connector": {
+                        "class_name": "RuntimeDataConnector",
+                        "batch_identifiers": ["batch_id"]
+                    }
+                }
+            }
+            self.context.add_datasource(**datasource_config)
+
+    def create_expectation_suite(self,
+                                 suite_name: str,
+                                 df: pd.DataFrame) -> None:
+        """
+        Create expectation suite with common ML data expectations
+
+        Args:
+            suite_name: Name for the expectation suite
+            df: Sample DataFrame for profiling
+        """
+        # Create empty suite
+        suite = self.context.create_expectation_suite(
+            expectation_suite_name=suite_name,
+            overwrite_existing=True
+        )
+
+        # Create validator
+        batch_request = RuntimeBatchRequest(
+            datasource_name=self.datasource_name,
+            data_connector_name="runtime_data_connector",
+            data_asset_name=suite_name,
+            runtime_parameters={"batch_data": df},
+            batch_identifiers={"batch_id": "initial"}
+        )
+
+        validator = self.context.get_validator(
+            batch_request=batch_request,
+            expectation_suite_name=suite_name
+        )
+
+        # Add table-level expectations
+        validator.expect_table_row_count_to_be_between(
+            min_value=1,
+            max_value=None
+        )
+
+        validator.expect_table_column_count_to_equal(
+            value=len(df.columns)
+        )
+
+        # Add column-level expectations for each column
+        for column in df.columns:
+            # Column exists
+            validator.expect_column_to_exist(column=column)
+
+            # Type expectations based on dtype
+            if pd.api.types.is_numeric_dtype(df[column]):
+                # Numeric columns
+                validator.expect_column_values_to_be_of_type(
+                    column=column,
+                    type_="float64"
+                )
+
+                # Check for nulls
+                null_fraction = df[column].isna().mean()
+                if null_fraction < 0.01:  # Less than 1% nulls
+                    validator.expect_column_values_to_not_be_null(
+                        column=column
+                    )
+
+                # Set range based on current data
+                col_min = df[column].min()
+                col_max = df[column].max()
+                col_mean = df[column].mean()
+                col_std = df[column].std()
+
+                # Allow 3 std deviations from mean
+                validator.expect_column_values_to_be_between(
+                    column=column,
+                    min_value=col_mean - 3 * col_std,
+                    max_value=col_mean + 3 * col_std,
+                    mostly=0.95  # 95% of values should be in range
+                )
+
+            elif pd.api.types.is_string_dtype(df[column]):
+                # String columns
+                validator.expect_column_values_to_be_of_type(
+                    column=column,
+                    type_="str"
+                )
+
+                # Check unique values for potential categorical
+                unique_ratio = df[column].nunique() / len(df)
+                if unique_ratio < 0.5:  # Likely categorical
+                    value_set = df[column].unique().tolist()
+                    validator.expect_column_values_to_be_in_set(
+                        column=column,
+                        value_set=value_set
+                    )
+
+            elif pd.api.types.is_datetime64_any_dtype(df[column]):
+                # Datetime columns
+                validator.expect_column_values_to_be_of_type(
+                    column=column,
+                    type_="datetime64"
+                )
+
+                # Check recency
+                min_date = df[column].min()
+                max_date = df[column].max()
+                validator.expect_column_values_to_be_between(
+                    column=column,
+                    min_value=min_date,
+                    max_value=max_date
+                )
+
+        # Save suite
+        validator.save_expectation_suite(discard_failed_expectations=False)
+
+        print(f"Created expectation suite '{suite_name}' with "
+              f"{len(validator.get_expectation_suite().expectations)} expectations")
+
+        return validator
+
+    def validate_dataframe(self,
+                          df: pd.DataFrame,
+                          suite_name: str,
+                          checkpoint_name: str = None) -> dict:
+        """
+        Validate DataFrame against expectation suite
+
+        Args:
+            df: DataFrame to validate
+            suite_name: Name of expectation suite
+            checkpoint_name: Optional checkpoint name
+
+        Returns:
+            Validation results dictionary
+        """
+        if checkpoint_name is None:
+            checkpoint_name = f"{suite_name}_checkpoint"
+
+        # Create batch request
+        batch_request = RuntimeBatchRequest(
+            datasource_name=self.datasource_name,
+            data_connector_name="runtime_data_connector",
+            data_asset_name=suite_name,
+            runtime_parameters={"batch_data": df},
+            batch_identifiers={"batch_id": "validation"}
+        )
+
+        # Create checkpoint
+        checkpoint_config = {
+            "name": checkpoint_name,
+            "config_version": 1.0,
+            "class_name": "SimpleCheckpoint",
+            "validations": [
+                {
+                    "batch_request": batch_request,
+                    "expectation_suite_name": suite_name
+                }
+            ]
+        }
+
+        # Run validation
+        results = self.context.run_checkpoint(
+            checkpoint_name=checkpoint_name,
+            **checkpoint_config
+        )
+
+        return results
+
+    def create_ml_data_suite(self,
+                            df: pd.DataFrame,
+                            suite_name: str,
+                            feature_columns: List[str],
+                            target_column: str = None,
+                            categorical_columns: List[str] = None) -> None:
+        """
+        Create ML-specific expectation suite
+
+        Args:
+            df: Sample DataFrame
+            suite_name: Name for expectation suite
+            feature_columns: List of feature column names
+            target_column: Target column name (if supervised)
+            categorical_columns: List of categorical column names
+        """
+        suite = self.context.create_expectation_suite(
+            expectation_suite_name=suite_name,
+            overwrite_existing=True
+        )
+
+        batch_request = RuntimeBatchRequest(
+            datasource_name=self.datasource_name,
+            data_connector_name="runtime_data_connector",
+            data_asset_name=suite_name,
+            runtime_parameters={"batch_data": df},
+            batch_identifiers={"batch_id": "ml_suite"}
+        )
+
+        validator = self.context.get_validator(
+            batch_request=batch_request,
+            expectation_suite_name=suite_name
+        )
+
+        # Feature column expectations
+        for col in feature_columns:
+            # No nulls in features
+            validator.expect_column_values_to_not_be_null(column=col)
+
+            # Feature distribution stability
+            if pd.api.types.is_numeric_dtype(df[col]):
+                mean = df[col].mean()
+                std = df[col].std()
+
+                # Mean should be within 20% of baseline
+                validator.expect_column_mean_to_be_between(
+                    column=col,
+                    min_value=mean * 0.8,
+                    max_value=mean * 1.2
+                )
+
+                # Std should be within 30% of baseline
+                validator.expect_column_stdev_to_be_between(
+                    column=col,
+                    min_value=std * 0.7,
+                    max_value=std * 1.3
+                )
+
+        # Categorical column expectations
+        if categorical_columns:
+            for col in categorical_columns:
+                # Known categories
+                categories = df[col].unique().tolist()
+                validator.expect_column_values_to_be_in_set(
+                    column=col,
+                    value_set=categories,
+                    mostly=0.99  # Allow 1% unknown categories
+                )
+
+                # No single category dominates (check for imbalance)
+                value_counts = df[col].value_counts(normalize=True)
+                max_frequency = value_counts.max()
+                if max_frequency < 0.9:  # No category > 90%
+                    validator.expect_column_most_common_value_to_be_in_set(
+                        column=col,
+                        value_set=categories
+                    )
+
+        # Target column expectations
+        if target_column:
+            validator.expect_column_values_to_not_be_null(column=target_column)
+
+            # For classification targets
+            if df[target_column].dtype == 'object' or df[target_column].nunique() < 20:
+                classes = df[target_column].unique().tolist()
+                validator.expect_column_values_to_be_in_set(
+                    column=target_column,
+                    value_set=classes
+                )
+
+                # Check class balance
+                class_distribution = df[target_column].value_counts(normalize=True)
+                min_class_freq = class_distribution.min()
+
+                # Warn if minority class < 5%
+                if min_class_freq < 0.05:
+                    print(f"[!]  Warning: Minority class frequency is {min_class_freq:.2%}")
+
+        # Correlation expectations (features shouldn't be too correlated)
+        numeric_features = [
+            col for col in feature_columns
+            if pd.api.types.is_numeric_dtype(df[col])
+        ]
+
+        if len(numeric_features) > 1:
+            corr_matrix = df[numeric_features].corr()
+            # Find highly correlated pairs
+            for i, col1 in enumerate(numeric_features):
+                for col2 in numeric_features[i+1:]:
+                    corr = abs(corr_matrix.loc[col1, col2])
+                    if corr > 0.95:
+                        print(f"[!]  High correlation between {col1} and {col2}: {corr:.3f}")
+
+        validator.save_expectation_suite(discard_failed_expectations=False)
+
+        return validator
+
+# Example usage
+def example_great_expectations():
+    """Example of using Great Expectations for ML data validation"""
+
+    # Create sample ML dataset
+    np.random.seed(42)
+    n_samples = 1000
+
+    df = pd.DataFrame({
+        'feature_1': np.random.normal(100, 15, n_samples),
+        'feature_2': np.random.uniform(0, 1, n_samples),
+        'feature_3': np.random.exponential(2, n_samples),
+        'category_a': np.random.choice(['A', 'B', 'C'], n_samples),
+        'category_b': np.random.choice(['X', 'Y'], n_samples, p=[0.7, 0.3]),
+        'target': np.random.choice([0, 1], n_samples, p=[0.6, 0.4])
+    })
+
+    # Initialize GE Manager
+    ge_manager = GreatExpectationsManager(project_root="./ge_project")
+
+    # Create ML-specific suite
+    validator = ge_manager.create_ml_data_suite(
+        df=df,
+        suite_name="ml_features_suite",
+        feature_columns=['feature_1', 'feature_2', 'feature_3',
+                        'category_a', 'category_b'],
+        target_column='target',
+        categorical_columns=['category_a', 'category_b']
+    )
+
+    # Validate new batch of data
+    new_df = pd.DataFrame({
+        'feature_1': np.random.normal(105, 15, 100),  # Slight drift
+        'feature_2': np.random.uniform(0, 1, 100),
+        'feature_3': np.random.exponential(2, 100),
+        'category_a': np.random.choice(['A', 'B', 'C'], 100),
+        'category_b': np.random.choice(['X', 'Y'], 100, p=[0.7, 0.3]),
+        'target': np.random.choice([0, 1], 100, p=[0.6, 0.4])
+    })
+
+    results = ge_manager.validate_dataframe(
+        df=new_df,
+        suite_name="ml_features_suite"
+    )
+
+    # Check results
+    if results.success:
+        print("[OK] Validation passed!")
+    else:
+        print("[X] Validation failed!")
+        print(f"Success rate: {results.statistics['successful_expectations'] / results.statistics['evaluated_expectations']:.2%}")
+\end{lstlisting}
+
+\subsection{Custom Great Expectations for ML}
+
+\begin{lstlisting}[language=Python, caption=Custom Great Expectations for ML Use Cases]
+from great_expectations.expectations.expectation import ColumnMapExpectation
+from great_expectations.expectations.metrics import (
+    ColumnMapMetricProvider,
+    column_condition_partial
+)
+from scipy import stats
+import numpy as np
+
+class ExpectColumnValuesTo BeWithinIQRRange(ColumnMapExpectation):
+    """
+    Custom expectation: values should be within IQR-based range
+    Useful for outlier detection in ML features
+    """
+
+    map_metric = "column_values.within_iqr_range"
+    success_keys = ("iqr_multiplier", "mostly")
+
+    default_kwarg_values = {
+        "iqr_multiplier": 1.5,
+        "mostly": 0.95,
+        "result_format": "BASIC"
+    }
+
+    @classmethod
+    def _atomic_prescriptive_template(
+        cls,
+        configuration=None,
+        result=None,
+        runtime_configuration=None
+    ):
+        runtime_configuration = runtime_configuration or {}
+        iqr_mult = configuration.kwargs.get("iqr_multiplier", 1.5)
+        mostly = configuration.kwargs.get("mostly", 1.0)
+
+        return (
+            f"Values must be within {iqr_mult} * IQR from quartiles "
+            f"at least {mostly*100:.0f}% of the time."
+        )
+
+class ColumnValuesWithinIQRRange(ColumnMapMetricProvider):
+    """Metric provider for IQR-based outlier detection"""
+
+    condition_metric_name = "column_values.within_iqr_range"
+
+    @column_condition_partial(engine=PandasExecutionEngine)
+    def _pandas(cls, column, iqr_multiplier=1.5, **kwargs):
+        q1 = column.quantile(0.25)
+        q3 = column.quantile(0.75)
+        iqr = q3 - q1
+
+        lower_bound = q1 - iqr_multiplier * iqr
+        upper_bound = q3 + iqr_multiplier * iqr
+
+        return (column >= lower_bound) & (column <= upper_bound)
+
+class ExpectColumnKSTestPValue(ColumnExpectation):
+    """
+    Custom expectation: Kolmogorov-Smirnov test for distribution drift
+    """
+
+    metric_dependencies = ("column.ks_test_p_value",)
+    success_keys = ("reference_distribution", "p_value_threshold")
+
+    default_kwarg_values = {
+        "p_value_threshold": 0.05,
+        "result_format": "BASIC"
+    }
+
+    def validate_configuration(self, configuration):
+        super().validate_configuration(configuration)
+        if "reference_distribution" not in configuration.kwargs:
+            raise ValueError("reference_distribution is required")
+
+    def _validate(
+        self,
+        configuration,
+        metrics,
+        runtime_configuration=None,
+        execution_engine=None
+    ):
+        p_value = metrics["column.ks_test_p_value"]
+        threshold = configuration.kwargs["p_value_threshold"]
+
+        success = p_value >= threshold
+
+        return {
+            "success": success,
+            "result": {
+                "observed_value": p_value,
+                "element_count": metrics.get("table.row_count"),
+                "threshold": threshold
+            }
+        }
+
+def create_data_drift_expectations(
+    baseline_df: pd.DataFrame,
+    current_df: pd.DataFrame,
+    feature_columns: List[str],
+    context: gx.DataContext,
+    suite_name: str = "drift_detection_suite"
+):
+    """
+    Create expectations to detect data drift
+
+    Args:
+        baseline_df: Reference/baseline DataFrame
+        current_df: Current DataFrame to validate
+        feature_columns: List of feature columns to monitor
+        context: Great Expectations context
+        suite_name: Name for expectation suite
+    """
+    suite = context.create_expectation_suite(
+        expectation_suite_name=suite_name,
+        overwrite_existing=True
+    )
+
+    batch_request = RuntimeBatchRequest(
+        datasource_name="pandas_datasource",
+        data_connector_name="runtime_data_connector",
+        data_asset_name=suite_name,
+        runtime_parameters={"batch_data": current_df},
+        batch_identifiers={"batch_id": "drift_check"}
+    )
+
+    validator = context.get_validator(
+        batch_request=batch_request,
+        expectation_suite_name=suite_name
+    )
+
+    for col in feature_columns:
+        if col not in baseline_df.columns or col not in current_df.columns:
+            continue
+
+        if pd.api.types.is_numeric_dtype(baseline_df[col]):
+            # Statistical tests for numeric features
+            baseline_mean = baseline_df[col].mean()
+            baseline_std = baseline_df[col].std()
+            baseline_median = baseline_df[col].median()
+
+            # Mean drift check (within 10%)
+            validator.expect_column_mean_to_be_between(
+                column=col,
+                min_value=baseline_mean * 0.9,
+                max_value=baseline_mean * 1.1
+            )
+
+            # Std drift check (within 20%)
+            validator.expect_column_stdev_to_be_between(
+                column=col,
+                min_value=baseline_std * 0.8,
+                max_value=baseline_std * 1.2
+            )
+
+            # Median drift check
+            validator.expect_column_median_to_be_between(
+                column=col,
+                min_value=baseline_median * 0.9,
+                max_value=baseline_median * 1.1
+            )
+
+            # Quantile checks
+            for q in [0.25, 0.75, 0.95]:
+                baseline_quantile = baseline_df[col].quantile(q)
+                validator.expect_column_quantile_values_to_be_between(
+                    column=col,
+                    quantile_ranges={
+                        "quantiles": [q],
+                        "value_ranges": [[
+                            baseline_quantile * 0.9,
+                            baseline_quantile * 1.1
+                        ]]
+                    }
+                )
+
+        elif baseline_df[col].dtype == 'object':
+            # Categorical drift detection
+            baseline_categories = set(baseline_df[col].unique())
+
+            # Check for new categories
+            validator.expect_column_values_to_be_in_set(
+                column=col,
+                value_set=list(baseline_categories),
+                mostly=0.95  # Allow 5% new categories
+            )
+
+            # Check category distribution
+            baseline_dist = baseline_df[col].value_counts(normalize=True)
+            for category, freq in baseline_dist.items():
+                # Each category frequency within 50% of baseline
+                if freq > 0.01:  # Only check significant categories
+                    print(f"Monitoring {col}={category}: baseline freq={freq:.2%}")
+
+    validator.save_expectation_suite(discard_failed_expectations=False)
+
+    return validator
+\end{lstlisting}
+
+\section{Data Profiling and Anomaly Detection}
+
+\subsection{Automated Data Profiling}
+
+Data profiling generates statistical summaries and insights about datasets. Profiling helps establish baselines, detect anomalies, and understand data characteristics before building validation rules.
+
+\begin{lstlisting}[language=Python, caption=Comprehensive Data Profiling Framework]
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Any, Optional
+from dataclasses import dataclass, field
+from datetime import datetime
+import json
+
+@dataclass
+class ColumnProfile:
+    """Statistical profile for a single column"""
+    column_name: str
+    dtype: str
+    count: int
+    null_count: int
+    null_percentage: float
+    unique_count: int
+    unique_percentage: float
+
+    # Numeric statistics
+    mean: Optional[float] = None
+    std: Optional[float] = None
+    min: Optional[float] = None
+    max: Optional[float] = None
+    median: Optional[float] = None
+    q25: Optional[float] = None
+    q75: Optional[float] = None
+    skewness: Optional[float] = None
+    kurtosis: Optional[float] = None
+
+    # Categorical statistics
+    mode: Optional[Any] = None
+    mode_frequency: Optional[int] = None
+    top_values: Dict[Any, int] = field(default_factory=dict)
+
+    # String statistics
+    min_length: Optional[int] = None
+    max_length: Optional[int] = None
+    avg_length: Optional[float] = None
+
+class DataProfiler:
+    """Comprehensive data profiling tool"""
+
+    def __init__(self):
+        self.profile_timestamp = None
+        self.row_count = 0
+        self.column_count = 0
+        self.column_profiles: Dict[str, ColumnProfile] = {}
+
+    def profile_dataframe(self, df: pd.DataFrame,
+                         sample_size: int = None) -> Dict[str, Any]:
+        """
+        Generate comprehensive data profile
+
+        Args:
+            df: DataFrame to profile
+            sample_size: Optional sample size for large datasets
+
+        Returns:
+            Dictionary containing profile information
+        """
+        self.profile_timestamp = datetime.now()
+        self.row_count = len(df)
+        self.column_count = len(df.columns)
+
+        # Sample if needed
+        if sample_size and len(df) > sample_size:
+            df_sample = df.sample(n=sample_size, random_state=42)
+        else:
+            df_sample = df
+
+        # Profile each column
+        for column in df.columns:
+            self.column_profiles[column] = self._profile_column(
+                df_sample[column],
+                column
+            )
+
+        return self.get_profile_summary()
+
+    def _profile_column(self, series: pd.Series,
+                       column_name: str) -> ColumnProfile:
+        """Profile a single column"""
+        count = len(series)
+        null_count = series.isna().sum()
+        null_percentage = null_count / count if count > 0 else 0
+        unique_count = series.nunique()
+        unique_percentage = unique_count / count if count > 0 else 0
+
+        profile = ColumnProfile(
+            column_name=column_name,
+            dtype=str(series.dtype),
+            count=count,
+            null_count=null_count,
+            null_percentage=null_percentage,
+            unique_count=unique_count,
+            unique_percentage=unique_percentage
+        )
+
+        # Remove nulls for statistics
+        series_clean = series.dropna()
+
+        if len(series_clean) == 0:
+            return profile
+
+        # Numeric profiling
+        if pd.api.types.is_numeric_dtype(series):
+            profile.mean = float(series_clean.mean())
+            profile.std = float(series_clean.std())
+            profile.min = float(series_clean.min())
+            profile.max = float(series_clean.max())
+            profile.median = float(series_clean.median())
+            profile.q25 = float(series_clean.quantile(0.25))
+            profile.q75 = float(series_clean.quantile(0.75))
+            profile.skewness = float(series_clean.skew())
+            profile.kurtosis = float(series_clean.kurtosis())
+
+        # Categorical profiling
+        value_counts = series_clean.value_counts()
+        if len(value_counts) > 0:
+            profile.mode = value_counts.index[0]
+            profile.mode_frequency = int(value_counts.iloc[0])
+
+            # Top 10 values
+            top_n = min(10, len(value_counts))
+            profile.top_values = {
+                str(k): int(v) for k, v in
+                value_counts.head(top_n).items()
+            }
+
+        # String profiling
+        if pd.api.types.is_string_dtype(series):
+            lengths = series_clean.astype(str).str.len()
+            profile.min_length = int(lengths.min())
+            profile.max_length = int(lengths.max())
+            profile.avg_length = float(lengths.mean())
+
+        return profile
+
+    def get_profile_summary(self) -> Dict[str, Any]:
+        """Get complete profile summary"""
+        return {
+            'timestamp': self.profile_timestamp.isoformat(),
+            'row_count': self.row_count,
+            'column_count': self.column_count,
+            'columns': {
+                name: self._profile_to_dict(profile)
+                for name, profile in self.column_profiles.items()
+            }
+        }
+
+    def _profile_to_dict(self, profile: ColumnProfile) -> Dict:
+        """Convert ColumnProfile to dictionary"""
+        return {
+            'dtype': profile.dtype,
+            'count': profile.count,
+            'null_count': profile.null_count,
+            'null_percentage': profile.null_percentage,
+            'unique_count': profile.unique_count,
+            'unique_percentage': profile.unique_percentage,
+            'statistics': {
+                'mean': profile.mean,
+                'std': profile.std,
+                'min': profile.min,
+                'max': profile.max,
+                'median': profile.median,
+                'q25': profile.q25,
+                'q75': profile.q75,
+                'skewness': profile.skewness,
+                'kurtosis': profile.kurtosis
+            },
+            'mode': str(profile.mode) if profile.mode is not None else None,
+            'mode_frequency': profile.mode_frequency,
+            'top_values': profile.top_values,
+            'string_stats': {
+                'min_length': profile.min_length,
+                'max_length': profile.max_length,
+                'avg_length': profile.avg_length
+            }
+        }
+
+    def compare_profiles(self, other_profile: Dict[str, Any],
+                        threshold: float = 0.1) -> List[Dict[str, Any]]:
+        """
+        Compare current profile with another profile
+
+        Args:
+            other_profile: Previous profile to compare against
+            threshold: Threshold for significant changes (10% by default)
+
+        Returns:
+            List of detected changes
+        """
+        changes = []
+        current_profile = self.get_profile_summary()
+
+        # Compare row counts
+        row_count_change = abs(
+            current_profile['row_count'] - other_profile['row_count']
+        ) / other_profile['row_count']
+
+        if row_count_change > threshold:
+            changes.append({
+                'type': 'row_count_change',
+                'severity': 'warning',
+                'message': f"Row count changed by {row_count_change:.2%}",
+                'previous': other_profile['row_count'],
+                'current': current_profile['row_count']
+            })
+
+        # Compare column profiles
+        for col_name in current_profile['columns']:
+            if col_name not in other_profile['columns']:
+                changes.append({
+                    'type': 'new_column',
+                    'severity': 'info',
+                    'column': col_name,
+                    'message': f"New column detected: {col_name}"
+                })
+                continue
+
+            current_col = current_profile['columns'][col_name]
+            other_col = other_profile['columns'][col_name]
+
+            # Check null percentage change
+            null_pct_change = abs(
+                current_col['null_percentage'] -
+                other_col['null_percentage']
+            )
+            if null_pct_change > threshold:
+                changes.append({
+                    'type': 'null_percentage_change',
+                    'severity': 'warning',
+                    'column': col_name,
+                    'message': f"{col_name}: Null % changed by {null_pct_change:.2%}",
+                    'previous': other_col['null_percentage'],
+                    'current': current_col['null_percentage']
+                })
+
+            # Check numeric statistics changes
+            if current_col['statistics']['mean'] is not None:
+                for stat in ['mean', 'std', 'median']:
+                    if other_col['statistics'][stat] is not None:
+                        change = abs(
+                            (current_col['statistics'][stat] -
+                             other_col['statistics'][stat]) /
+                            other_col['statistics'][stat]
+                        )
+                        if change > threshold:
+                            changes.append({
+                                'type': f'{stat}_change',
+                                'severity': 'warning',
+                                'column': col_name,
+                                'message': f"{col_name}: {stat} changed by {change:.2%}",
+                                'previous': other_col['statistics'][stat],
+                                'current': current_col['statistics'][stat]
+                            })
+
+        # Check for missing columns
+        for col_name in other_profile['columns']:
+            if col_name not in current_profile['columns']:
+                changes.append({
+                    'type': 'missing_column',
+                    'severity': 'error',
+                    'column': col_name,
+                    'message': f"Column removed: {col_name}"
+                })
+
+        return changes
+
+    def save_profile(self, filepath: str):
+        """Save profile to JSON file"""
+        profile = self.get_profile_summary()
+        with open(filepath, 'w') as f:
+            json.dump(profile, f, indent=2)
+
+    @classmethod
+    def load_profile(cls, filepath: str) -> Dict[str, Any]:
+        """Load profile from JSON file"""
+        with open(filepath, 'r') as f:
+            return json.load(f)
+\end{lstlisting}
+
+\subsection{Anomaly Detection in Data}
+
+Anomaly detection identifies unusual patterns or outliers in data that may indicate quality issues.
+
+\begin{lstlisting}[language=Python, caption=Anomaly Detection Framework]
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
+from sklearn.covariance import EllipticEnvelope
+from scipy import stats
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Tuple, Optional
+
+class AnomalyDetector:
+    """Multi-method anomaly detection for data quality"""
+
+    def __init__(self):
+        self.methods = {
+            'zscore': self._detect_zscore,
+            'iqr': self._detect_iqr,
+            'isolation_forest': self._detect_isolation_forest,
+            'elliptic_envelope': self._detect_elliptic_envelope
+        }
+
+    def detect_anomalies(self,
+                        df: pd.DataFrame,
+                        method: str = 'zscore',
+                        columns: List[str] = None,
+                        **kwargs) -> pd.DataFrame:
+        """
+        Detect anomalies in DataFrame
+
+        Args:
+            df: Input DataFrame
+            method: Detection method ('zscore', 'iqr', 'isolation_forest', 'elliptic_envelope')
+            columns: Columns to check (default: all numeric)
+            **kwargs: Method-specific parameters
+
+        Returns:
+            DataFrame with anomaly flags
+        """
+        if columns is None:
+            columns = df.select_dtypes(include=[np.number]).columns.tolist()
+
+        if method not in self.methods:
+            raise ValueError(f"Unknown method: {method}")
+
+        return self.methods[method](df, columns, **kwargs)
+
+    def _detect_zscore(self,
+                       df: pd.DataFrame,
+                       columns: List[str],
+                       threshold: float = 3.0,
+                       **kwargs) -> pd.DataFrame:
+        """
+        Detect anomalies using Z-score method
+
+        Args:
+            threshold: Number of standard deviations (default: 3)
+        """
+        result = df.copy()
+        anomaly_flags = pd.DataFrame(False, index=df.index, columns=columns)
+
+        for col in columns:
+            if col not in df.columns:
+                continue
+
+            z_scores = np.abs(stats.zscore(df[col].dropna()))
+            # Map back to original indices
+            non_null_idx = df[col].dropna().index
+            anomaly_flags.loc[non_null_idx, col] = z_scores > threshold
+
+        result['anomaly_count'] = anomaly_flags.sum(axis=1)
+        result['is_anomaly'] = result['anomaly_count'] > 0
+
+        for col in columns:
+            result[f'{col}_anomaly'] = anomaly_flags[col]
+
+        return result
+
+    def _detect_iqr(self,
+                    df: pd.DataFrame,
+                    columns: List[str],
+                    multiplier: float = 1.5,
+                    **kwargs) -> pd.DataFrame:
+        """
+        Detect anomalies using Interquartile Range method
+
+        Args:
+            multiplier: IQR multiplier (default: 1.5)
+        """
+        result = df.copy()
+        anomaly_flags = pd.DataFrame(False, index=df.index, columns=columns)
+
+        for col in columns:
+            if col not in df.columns:
+                continue
+
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+
+            lower_bound = Q1 - multiplier * IQR
+            upper_bound = Q3 + multiplier * IQR
+
+            anomaly_flags[col] = (
+                (df[col] < lower_bound) | (df[col] > upper_bound)
+            )
+
+        result['anomaly_count'] = anomaly_flags.sum(axis=1)
+        result['is_anomaly'] = result['anomaly_count'] > 0
+
+        for col in columns:
+            result[f'{col}_anomaly'] = anomaly_flags[col]
+
+        return result
+
+    def _detect_isolation_forest(self,
+                                 df: pd.DataFrame,
+                                 columns: List[str],
+                                 contamination: float = 0.1,
+                                 random_state: int = 42,
+                                 **kwargs) -> pd.DataFrame:
+        """
+        Detect anomalies using Isolation Forest
+
+        Args:
+            contamination: Expected proportion of outliers (default: 0.1)
+        """
+        result = df.copy()
+
+        # Prepare data
+        X = df[columns].copy()
+        X = X.fillna(X.mean())  # Handle missing values
+
+        # Scale features
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # Train Isolation Forest
+        clf = IsolationForest(
+            contamination=contamination,
+            random_state=random_state,
+            n_estimators=100
+        )
+        predictions = clf.fit_predict(X_scaled)
+
+        # -1 for anomalies, 1 for normal
+        result['is_anomaly'] = predictions == -1
+        result['anomaly_score'] = clf.score_samples(X_scaled)
+
+        return result
+
+    def _detect_elliptic_envelope(self,
+                                  df: pd.DataFrame,
+                                  columns: List[str],
+                                  contamination: float = 0.1,
+                                  **kwargs) -> pd.DataFrame:
+        """
+        Detect anomalies using Elliptic Envelope (assumes Gaussian distribution)
+
+        Args:
+            contamination: Expected proportion of outliers
+        """
+        result = df.copy()
+
+        # Prepare data
+        X = df[columns].copy()
+        X = X.fillna(X.mean())
+
+        # Scale features
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # Train Elliptic Envelope
+        clf = EllipticEnvelope(contamination=contamination, random_state=42)
+        predictions = clf.fit_predict(X_scaled)
+
+        result['is_anomaly'] = predictions == -1
+        result['anomaly_score'] = clf.score_samples(X_scaled)
+
+        return result
+
+    def analyze_anomalies(self, df_with_anomalies: pd.DataFrame,
+                         columns: List[str]) -> Dict[str, Any]:
+        """Analyze detected anomalies"""
+        total_rows = len(df_with_anomalies)
+        anomaly_rows = df_with_anomalies['is_anomaly'].sum()
+
+        analysis = {
+            'total_rows': total_rows,
+            'anomaly_rows': int(anomaly_rows),
+            'anomaly_percentage': float(anomaly_rows / total_rows),
+            'column_anomalies': {}
+        }
+
+        for col in columns:
+            anomaly_col = f'{col}_anomaly'
+            if anomaly_col in df_with_anomalies.columns:
+                count = df_with_anomalies[anomaly_col].sum()
+                analysis['column_anomalies'][col] = {
+                    'count': int(count),
+                    'percentage': float(count / total_rows)
+                }
+
+        return analysis
+
+class TimeSeriesAnomalyDetector:
+    """Detect anomalies in time series data"""
+
+    @staticmethod
+    def detect_point_anomalies(series: pd.Series,
+                               window: int = 10,
+                               threshold: float = 3.0) -> pd.Series:
+        """
+        Detect point anomalies using rolling statistics
+
+        Args:
+            series: Time series data
+            window: Rolling window size
+            threshold: Number of standard deviations
+        """
+        rolling_mean = series.rolling(window=window, center=True).mean()
+        rolling_std = series.rolling(window=window, center=True).std()
+
+        # Calculate z-scores
+        z_scores = np.abs((series - rolling_mean) / rolling_std)
+
+        return z_scores > threshold
+
+    @staticmethod
+    def detect_trend_changes(series: pd.Series,
+                            window: int = 10,
+                            threshold: float = 0.5) -> pd.Series:
+        """
+        Detect sudden trend changes
+
+        Args:
+            series: Time series data
+            window: Window for trend calculation
+            threshold: Threshold for trend change
+        """
+        # Calculate rolling trend (slope)
+        def calculate_slope(y):
+            x = np.arange(len(y))
+            if len(y) < 2:
+                return 0
+            slope, _ = np.polyfit(x, y, 1)
+            return slope
+
+        rolling_slope = series.rolling(window=window).apply(
+            calculate_slope, raw=True
+        )
+
+        # Detect sudden slope changes
+        slope_change = rolling_slope.diff().abs()
+
+        return slope_change > threshold
+
+    @staticmethod
+    def detect_seasonal_anomalies(series: pd.Series,
+                                  period: int,
+                                  threshold: float = 3.0) -> pd.Series:
+        """
+        Detect anomalies considering seasonality
+
+        Args:
+            series: Time series data
+            period: Seasonal period (e.g., 7 for weekly, 12 for monthly)
+            threshold: Number of standard deviations
+        """
+        # Calculate seasonal baseline
+        seasonal_means = series.groupby(series.index % period).transform('mean')
+        seasonal_stds = series.groupby(series.index % period).transform('std')
+
+        # Calculate z-scores relative to seasonal pattern
+        z_scores = np.abs((series - seasonal_means) / seasonal_stds)
+
+        return z_scores > threshold
+
+# Example usage
+def example_anomaly_detection():
+    """Example of anomaly detection in ML data"""
+
+    # Create sample data with anomalies
+    np.random.seed(42)
+    n_samples = 1000
+
+    data = {
+        'feature_1': np.random.normal(100, 15, n_samples),
+        'feature_2': np.random.normal(50, 10, n_samples),
+        'feature_3': np.random.uniform(0, 1, n_samples)
+    }
+
+    # Inject anomalies
+    anomaly_indices = np.random.choice(n_samples, 50, replace=False)
+    data['feature_1'][anomaly_indices[:25]] = np.random.uniform(200, 300, 25)
+    data['feature_2'][anomaly_indices[25:]] = np.random.uniform(-50, 0, 25)
+
+    df = pd.DataFrame(data)
+
+    # Detect anomalies using multiple methods
+    detector = AnomalyDetector()
+
+    # Method 1: Z-score
+    result_zscore = detector.detect_anomalies(
+        df,
+        method='zscore',
+        threshold=3.0
+    )
+
+    # Method 2: IQR
+    result_iqr = detector.detect_anomalies(
+        df,
+        method='iqr',
+        multiplier=1.5
+    )
+
+    # Method 3: Isolation Forest
+    result_if = detector.detect_anomalies(
+        df,
+        method='isolation_forest',
+        contamination=0.05
+    )
+
+    # Analyze results
+    analysis_zscore = detector.analyze_anomalies(
+        result_zscore,
+        ['feature_1', 'feature_2', 'feature_3']
+    )
+
+    print("Z-Score Anomaly Detection:")
+    print(f"  Total anomalies: {analysis_zscore['anomaly_rows']} "
+          f"({analysis_zscore['anomaly_percentage']:.2%})")
+
+    for col, stats in analysis_zscore['column_anomalies'].items():
+        print(f"  {col}: {stats['count']} anomalies ({stats['percentage']:.2%})")
+\end{lstlisting}
+
+\section{Automated Data Quality Monitoring Pipelines}
+
+\subsection{Continuous Monitoring Architecture}
+
+Building automated pipelines that continuously monitor data quality ensures early detection of issues in production.
+
+\begin{lstlisting}[language=Python, caption=Automated Data Quality Monitoring Pipeline]
+from typing import Dict, List, Any, Optional, Callable
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import pandas as pd
+import logging
+from enum import Enum
+import json
+
+class MonitoringFrequency(Enum):
+    """Monitoring frequency options"""
+    REALTIME = "realtime"
+    HOURLY = "hourly"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+
+@dataclass
+class MonitoringAlert:
+    """Data quality alert"""
+    timestamp: datetime
+    alert_type: str
+    severity: str
+    metric_name: str
+    current_value: float
+    expected_value: float
+    threshold: float
+    message: str
+    metadata: Dict[str, Any] = None
+
+class DataQualityMonitor:
+    """Continuous data quality monitoring system"""
+
+    def __init__(self, name: str):
+        self.name = name
+        self.logger = logging.getLogger(name)
+        self.metrics_history: List[Dict] = []
+        self.alerts: List[MonitoringAlert] = []
+        self.baseline_profile: Optional[Dict] = None
+
+    def set_baseline(self, df: pd.DataFrame):
+        """Establish baseline profile from reference data"""
+        profiler = DataProfiler()
+        profiler.profile_dataframe(df)
+        self.baseline_profile = profiler.get_profile_summary()
+        self.logger.info(f"Baseline established with {len(df)} rows")
+
+    def monitor_batch(self,
+                     df: pd.DataFrame,
+                     batch_id: str,
+                     timestamp: datetime = None) -> Dict[str, Any]:
+        """
+        Monitor a batch of data
+
+        Args:
+            df: DataFrame to monitor
+            batch_id: Unique identifier for this batch
+            timestamp: Timestamp for this batch
+
+        Returns:
+            Monitoring results
+        """
+        if timestamp is None:
+            timestamp = datetime.now()
+
+        results = {
+            'batch_id': batch_id,
+            'timestamp': timestamp.isoformat(),
+            'row_count': len(df),
+            'column_count': len(df.columns),
+            'checks': [],
+            'alerts': []
+        }
+
+        # Profile current batch
+        profiler = DataProfiler()
+        profiler.profile_dataframe(df)
+        current_profile = profiler.get_profile_summary()
+
+        # Compare with baseline
+        if self.baseline_profile:
+            changes = profiler.compare_profiles(
+                self.baseline_profile,
+                threshold=0.1
+            )
+
+            results['changes'] = changes
+
+            # Generate alerts for significant changes
+            for change in changes:
+                if change['severity'] in ['warning', 'error']:
+                    alert = MonitoringAlert(
+                        timestamp=timestamp,
+                        alert_type=change['type'],
+                        severity=change['severity'],
+                        metric_name=change.get('column', 'table'),
+                        current_value=change.get('current', 0),
+                        expected_value=change.get('previous', 0),
+                        threshold=0.1,
+                        message=change['message'],
+                        metadata={'batch_id': batch_id}
+                    )
+                    self.alerts.append(alert)
+                    results['alerts'].append(self._alert_to_dict(alert))
+
+        # Run data quality checks
+        validator = DataQualityValidator(name=f"{self.name}_validator")
+
+        validation_config = self._build_validation_config(df)
+        validation_results = validator.validate(df, validation_config)
+
+        results['checks'] = [
+            {
+                'check_name': r.check_name,
+                'passed': r.passed,
+                'severity': r.severity.value,
+                'message': r.message,
+                'metric_value': r.metric_value
+            }
+            for r in validation_results
+        ]
+
+        # Track metrics over time
+        self.metrics_history.append({
+            'timestamp': timestamp.isoformat(),
+            'batch_id': batch_id,
+            'metrics': {
+                'row_count': len(df),
+                'null_percentage': df.isna().sum().sum() / (df.shape[0] * df.shape[1]),
+                'duplicate_rows': df.duplicated().sum(),
+                'validation_pass_rate': sum(
+                    1 for r in validation_results if r.passed
+                ) / len(validation_results) if validation_results else 1.0
+            }
+        })
+
+        return results
+
+    def _build_validation_config(self, df: pd.DataFrame) -> Dict[str, Any]:
+        """Build validation configuration based on data characteristics"""
+        numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+
+        config = {
+            'completeness': {
+                'threshold': 0.95
+            },
+            'ranges': {
+                'specs': {}
+            }
+        }
+
+        # Add range checks for numeric columns based on baseline
+        if self.baseline_profile:
+            for col in numeric_columns:
+                if col in self.baseline_profile['columns']:
+                    baseline_col = self.baseline_profile['columns'][col]
+                    stats = baseline_col['statistics']
+
+                    if stats['min'] is not None and stats['max'] is not None:
+                        # Allow some margin based on baseline
+                        margin = (stats['max'] - stats['min']) * 0.2
+                        config['ranges']['specs'][col] = {
+                            'min': stats['min'] - margin,
+                            'max': stats['max'] + margin
+                        }
+
+        return config
+
+    def _alert_to_dict(self, alert: MonitoringAlert) -> Dict:
+        """Convert alert to dictionary"""
+        return {
+            'timestamp': alert.timestamp.isoformat(),
+            'type': alert.alert_type,
+            'severity': alert.severity,
+            'metric': alert.metric_name,
+            'current': alert.current_value,
+            'expected': alert.expected_value,
+            'message': alert.message,
+            'metadata': alert.metadata
+        }
+
+    def get_metrics_trend(self,
+                         metric_name: str,
+                         lookback_hours: int = 24) -> pd.DataFrame:
+        """Get trend for a specific metric"""
+        cutoff_time = datetime.now() - timedelta(hours=lookback_hours)
+
+        relevant_metrics = [
+            m for m in self.metrics_history
+            if datetime.fromisoformat(m['timestamp']) >= cutoff_time
+        ]
+
+        if not relevant_metrics:
+            return pd.DataFrame()
+
+        data = []
+        for m in relevant_metrics:
+            row = {
+                'timestamp': m['timestamp'],
+                'batch_id': m['batch_id']
+            }
+            if metric_name in m['metrics']:
+                row['value'] = m['metrics'][metric_name]
+                data.append(row)
+
+        return pd.DataFrame(data)
+
+    def get_active_alerts(self,
+                         severity: str = None,
+                         hours: int = 24) -> List[MonitoringAlert]:
+        """Get recent active alerts"""
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+
+        alerts = [
+            a for a in self.alerts
+            if a.timestamp >= cutoff_time
+        ]
+
+        if severity:
+            alerts = [a for a in alerts if a.severity == severity]
+
+        return alerts
+
+    def generate_report(self,
+                       lookback_hours: int = 24) -> str:
+        """Generate monitoring report"""
+        cutoff_time = datetime.now() - timedelta(hours=lookback_hours)
+
+        recent_alerts = self.get_active_alerts(hours=lookback_hours)
+        critical_alerts = [a for a in recent_alerts if a.severity == 'error']
+
+        report = f"""
+Data Quality Monitoring Report - {self.name}
+{'=' * 60}
+Time Period: Last {lookback_hours} hours
+Generated: {datetime.now().isoformat()}
+
+Summary:
+  Total Batches Monitored: {len([m for m in self.metrics_history
+                                  if datetime.fromisoformat(m['timestamp']) >= cutoff_time])}
+  Total Alerts: {len(recent_alerts)}
+  Critical Alerts: {len(critical_alerts)}
+
+Recent Alerts:
+"""
+
+        for alert in recent_alerts[:10]:  # Show last 10 alerts
+            report += f"""
+  [{alert.severity.upper()}] {alert.alert_type}
+    Metric: {alert.metric_name}
+    Message: {alert.message}
+    Time: {alert.timestamp.isoformat()}
+"""
+
+        return report
+
+class DataQualityDashboard:
+    """Dashboard for visualizing data quality metrics"""
+
+    def __init__(self, monitor: DataQualityMonitor):
+        self.monitor = monitor
+
+    def plot_metrics_over_time(self,
+                               metrics: List[str],
+                               hours: int = 24):
+        """Plot metrics trends over time"""
+        import matplotlib.pyplot as plt
+
+        fig, axes = plt.subplots(len(metrics), 1, figsize=(12, 4 * len(metrics)))
+
+        if len(metrics) == 1:
+            axes = [axes]
+
+        for idx, metric in enumerate(metrics):
+            df = self.monitor.get_metrics_trend(metric, lookback_hours=hours)
+
+            if not df.empty:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df = df.sort_values('timestamp')
+
+                axes[idx].plot(df['timestamp'], df['value'], marker='o')
+                axes[idx].set_title(f'{metric} Over Time')
+                axes[idx].set_xlabel('Time')
+                axes[idx].set_ylabel(metric)
+                axes[idx].grid(True)
+                axes[idx].tick_params(axis='x', rotation=45)
+
+        plt.tight_layout()
+        return fig
+
+    def create_quality_scorecard(self) -> Dict[str, Any]:
+        """Create quality scorecard summary"""
+        if not self.monitor.metrics_history:
+            return {}
+
+        latest_metrics = self.monitor.metrics_history[-1]['metrics']
+
+        scorecard = {
+            'data_quality_score': self._calculate_overall_score(latest_metrics),
+            'metrics': latest_metrics,
+            'status': self._determine_status(latest_metrics),
+            'recommendations': self._generate_recommendations(latest_metrics)
+        }
+
+        return scorecard
+
+    def _calculate_overall_score(self, metrics: Dict) -> float:
+        """Calculate overall data quality score (0-100)"""
+        score = 100.0
+
+        # Deduct points for issues
+        null_pct = metrics.get('null_percentage', 0)
+        score -= null_pct * 100 * 0.3  # 30% weight
+
+        dup_pct = metrics.get('duplicate_rows', 0) / max(metrics.get('row_count', 1), 1)
+        score -= dup_pct * 100 * 0.2  # 20% weight
+
+        validation_rate = metrics.get('validation_pass_rate', 1.0)
+        score -= (1 - validation_rate) * 100 * 0.5  # 50% weight
+
+        return max(0, min(100, score))
+
+    def _determine_status(self, metrics: Dict) -> str:
+        """Determine overall data quality status"""
+        score = self._calculate_overall_score(metrics)
+
+        if score >= 90:
+            return "EXCELLENT"
+        elif score >= 75:
+            return "GOOD"
+        elif score >= 60:
+            return "FAIR"
+        else:
+            return "POOR"
+
+    def _generate_recommendations(self, metrics: Dict) -> List[str]:
+        """Generate actionable recommendations"""
+        recommendations = []
+
+        null_pct = metrics.get('null_percentage', 0)
+        if null_pct > 0.05:
+            recommendations.append(
+                f"High null percentage ({null_pct:.2%}). "
+                "Review data collection and imputation strategies."
+            )
+
+        dup_rows = metrics.get('duplicate_rows', 0)
+        if dup_rows > 0:
+            recommendations.append(
+                f"Found {dup_rows} duplicate rows. "
+                "Implement deduplication logic."
+            )
+
+        validation_rate = metrics.get('validation_pass_rate', 1.0)
+        if validation_rate < 0.95:
+            recommendations.append(
+                f"Validation pass rate is {validation_rate:.2%}. "
+                "Review and fix failing validation rules."
+            )
+
+        if not recommendations:
+            recommendations.append("Data quality looks good! Continue monitoring.")
+
+        return recommendations
+\end{lstlisting}
+
+\subsection{Integration with Apache Airflow}
+
+Integrating data quality checks into orchestration platforms like Airflow enables automated, scheduled monitoring.
+
+\begin{lstlisting}[language=Python, caption=Airflow DAG with Data Quality Checks]
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.sensors.external_task import ExternalTaskSensor
+from datetime import datetime, timedelta
+import pandas as pd
+
+# Initialize data quality monitor
+monitor = DataQualityMonitor(name="production_data_monitor")
+
+def load_baseline_data(**context):
+    """Load and establish baseline from historical data"""
+    # Load baseline dataset
+    baseline_df = pd.read_parquet('s3://data-bucket/baseline/data.parquet')
+
+    # Establish baseline
+    monitor.set_baseline(baseline_df)
+
+    context['ti'].xcom_push(key='baseline_established', value=True)
+
+def validate_incoming_data(**context):
+    """Validate incoming data batch"""
+    execution_date = context['execution_date']
+    batch_id = execution_date.strftime('%Y%m%d_%H%M%S')
+
+    # Load incoming data
+    df = pd.read_parquet(
+        f's3://data-bucket/incoming/{execution_date.date()}/data.parquet'
+    )
+
+    # Monitor batch
+    results = monitor.monitor_batch(df, batch_id, execution_date)
+
+    # Check for critical issues
+    has_critical = any(
+        alert['severity'] == 'error'
+        for alert in results.get('alerts', [])
+    )
+
+    if has_critical:
+        raise ValueError(f"Critical data quality issues detected in batch {batch_id}")
+
+    # Push results to XCom
+    context['ti'].xcom_push(key='validation_results', value=results)
+
+    return results
+
+def send_quality_report(**context):
+    """Send daily data quality report"""
+    report = monitor.generate_report(lookback_hours=24)
+
+    # Send via email/Slack (implementation depends on notification system)
+    print(report)
+
+    context['ti'].xcom_push(key='report_sent', value=True)
+
+# Define DAG
+default_args = {
+    'owner': 'ml_team',
+    'depends_on_past': False,
+    'start_date': datetime(2024, 1, 1),
+    'email_on_failure': True,
+    'email_on_retry': False,
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5)
+}
+
+dag = DAG(
+    'data_quality_monitoring',
+    default_args=default_args,
+    description='Monitor data quality for ML pipeline',
+    schedule_interval='@hourly',
+    catchup=False
+)
+
+# Task 1: Establish baseline (runs once daily)
+baseline_task = PythonOperator(
+    task_id='establish_baseline',
+    python_callable=load_baseline_data,
+    dag=dag
+)
+
+# Task 2: Validate incoming data
+validation_task = PythonOperator(
+    task_id='validate_data',
+    python_callable=validate_incoming_data,
+    dag=dag
+)
+
+# Task 3: Send quality report
+report_task = PythonOperator(
+    task_id='send_quality_report',
+    python_callable=send_quality_report,
+    dag=dag,
+    trigger_rule='all_done'
+)
+
+# Set task dependencies
+baseline_task >> validation_task >> report_task
+\end{lstlisting}
+
+\section{Custom Validation Rules for ML-Specific Requirements}
+
+Machine learning systems often require specialized validation beyond standard data quality checks.
+
+\subsection{ML-Specific Validation Rules}
+
+\begin{lstlisting}[language=Python, caption=Custom ML Validation Rules]
+from typing import Callable, List, Dict, Any
+import pandas as pd
+import numpy as np
+from scipy import stats
+
+class MLDataValidator:
+    """Custom validation rules for ML-specific requirements"""
+
+    @staticmethod
+    def validate_feature_distributions(
+        df: pd.DataFrame,
+        baseline_df: pd.DataFrame,
+        feature_columns: List[str],
+        p_value_threshold: float = 0.05
+    ) -> Dict[str, Any]:
+        """
+        Validate that feature distributions haven't changed significantly
+
+        Uses Kolmogorov-Smirnov test for continuous features
+        and Chi-square test for categorical features
+        """
+        results = []
+
+        for col in feature_columns:
+            if col not in df.columns or col not in baseline_df.columns:
+                continue
+
+            # For numeric features, use KS test
+            if pd.api.types.is_numeric_dtype(df[col]):
+                statistic, p_value = stats.ks_2samp(
+                    df[col].dropna(),
+                    baseline_df[col].dropna()
+                )
+
+                passed = p_value >= p_value_threshold
+
+                results.append({
+                    'feature': col,
+                    'test': 'KS-test',
+                    'statistic': statistic,
+                    'p_value': p_value,
+                    'passed': passed,
+                    'message': f"{'[OK]' if passed else '[X]'} {col} distribution "
+                              f"{'matches' if passed else 'differs from'} baseline "
+                              f"(p={p_value:.4f})"
+                })
+
+            # For categorical features, use chi-square test
+            elif df[col].dtype == 'object':
+                # Get value counts
+                current_counts = df[col].value_counts()
+                baseline_counts = baseline_df[col].value_counts()
+
+                # Align categories
+                all_categories = set(current_counts.index) | set(baseline_counts.index)
+                current_freq = [current_counts.get(cat, 0) for cat in all_categories]
+                baseline_freq = [baseline_counts.get(cat, 0) for cat in all_categories]
+
+                # Chi-square test
+                statistic, p_value = stats.chisquare(
+                    f_obs=current_freq,
+                    f_exp=baseline_freq
+                )
+
+                passed = p_value >= p_value_threshold
+
+                results.append({
+                    'feature': col,
+                    'test': 'Chi-square',
+                    'statistic': statistic,
+                    'p_value': p_value,
+                    'passed': passed,
+                    'message': f"{'[OK]' if passed else '[X]'} {col} distribution "
+                              f"{'matches' if passed else 'differs from'} baseline "
+                              f"(p={p_value:.4f})"
+                })
+
+        return results
+
+    @staticmethod
+    def validate_class_balance(
+        df: pd.DataFrame,
+        target_column: str,
+        min_class_frequency: float = 0.01,
+        max_imbalance_ratio: float = 100.0
+    ) -> Dict[str, Any]:
+        """
+        Validate that class distribution is reasonable
+
+        Args:
+            min_class_frequency: Minimum frequency for any class
+            max_imbalance_ratio: Maximum ratio between largest and smallest class
+        """
+        class_counts = df[target_column].value_counts()
+        class_frequencies = class_counts / len(df)
+
+        min_freq = class_frequencies.min()
+        max_freq = class_frequencies.max()
+        imbalance_ratio = max_freq / min_freq if min_freq > 0 else float('inf')
+
+        passed_min_freq = min_freq >= min_class_frequency
+        passed_imbalance = imbalance_ratio <= max_imbalance_ratio
+
+        return {
+            'passed': passed_min_freq and passed_imbalance,
+            'class_distribution': class_frequencies.to_dict(),
+            'min_frequency': float(min_freq),
+            'max_frequency': float(max_freq),
+            'imbalance_ratio': float(imbalance_ratio),
+            'checks': {
+                'min_frequency_check': {
+                    'passed': passed_min_freq,
+                    'threshold': min_class_frequency,
+                    'actual': float(min_freq)
+                },
+                'imbalance_check': {
+                    'passed': passed_imbalance,
+                    'threshold': max_imbalance_ratio,
+                    'actual': float(imbalance_ratio)
+                }
+            }
+        }
+
+    @staticmethod
+    def validate_feature_correlations(
+        df: pd.DataFrame,
+        feature_columns: List[str],
+        max_correlation: float = 0.95
+    ) -> Dict[str, Any]:
+        """
+        Check for highly correlated features that may cause multicollinearity
+
+        Args:
+            max_correlation: Maximum acceptable correlation between features
+        """
+        # Calculate correlation matrix
+        corr_matrix = df[feature_columns].corr().abs()
+
+        # Find highly correlated pairs
+        high_correlations = []
+        for i in range(len(feature_columns)):
+            for j in range(i + 1, len(feature_columns)):
+                col1 = feature_columns[i]
+                col2 = feature_columns[j]
+                correlation = corr_matrix.loc[col1, col2]
+
+                if correlation > max_correlation:
+                    high_correlations.append({
+                        'feature_1': col1,
+                        'feature_2': col2,
+                        'correlation': float(correlation)
+                    })
+
+        return {
+            'passed': len(high_correlations) == 0,
+            'high_correlations': high_correlations,
+            'count': len(high_correlations),
+            'threshold': max_correlation,
+            'message': f"Found {len(high_correlations)} highly correlated feature pairs"
+        }
+
+    @staticmethod
+    def validate_feature_importance_coverage(
+        df: pd.DataFrame,
+        feature_importance_dict: Dict[str, float],
+        top_n_features: int = 10,
+        coverage_threshold: float = 0.8
+    ) -> Dict[str, Any]:
+        """
+        Validate that data contains top important features
+
+        Args:
+            feature_importance_dict: Dict mapping feature names to importance scores
+            top_n_features: Number of top features to check
+            coverage_threshold: Minimum cumulative importance that must be present
+        """
+        # Sort features by importance
+        sorted_features = sorted(
+            feature_importance_dict.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:top_n_features]
+
+        # Check which features are present
+        present_features = []
+        missing_features = []
+        cumulative_importance = 0.0
+        total_importance = sum(f[1] for f in sorted_features)
+
+        for feature, importance in sorted_features:
+            if feature in df.columns:
+                present_features.append(feature)
+                cumulative_importance += importance
+            else:
+                missing_features.append(feature)
+
+        coverage = cumulative_importance / total_importance if total_importance > 0 else 0.0
+
+        return {
+            'passed': coverage >= coverage_threshold,
+            'coverage': coverage,
+            'threshold': coverage_threshold,
+            'present_features': present_features,
+            'missing_features': missing_features,
+            'message': f"Feature importance coverage: {coverage:.2%} "
+                      f"({'[OK] passed' if coverage >= coverage_threshold else '[X] failed'})"
+        }
+
+    @staticmethod
+    def validate_no_data_leakage(
+        train_df: pd.DataFrame,
+        test_df: pd.DataFrame,
+        id_columns: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Check for data leakage between train and test sets
+
+        Args:
+            train_df: Training dataset
+            test_df: Test dataset
+            id_columns: Columns that uniquely identify records
+        """
+        if not id_columns:
+            return {
+                'passed': True,
+                'message': 'No ID columns specified, cannot check for leakage'
+            }
+
+        # Check for overlapping IDs
+        train_ids = set(train_df[id_columns[0]].unique())
+        test_ids = set(test_df[id_columns[0]].unique())
+
+        overlap = train_ids & test_ids
+        overlap_count = len(overlap)
+
+        return {
+            'passed': overlap_count == 0,
+            'overlap_count': overlap_count,
+            'overlap_percentage': overlap_count / len(test_ids) if test_ids else 0,
+            'overlapping_ids': list(overlap)[:10],  # Show first 10
+            'message': f"{'[OK] No' if overlap_count == 0 else f'[X] {overlap_count}'} "
+                      f"overlapping IDs between train and test sets"
+        }
+
+    @staticmethod
+    def validate_temporal_consistency(
+        df: pd.DataFrame,
+        timestamp_column: str,
+        feature_columns: List[str],
+        window_size: int = 100,
+        max_drift_score: float = 0.3
+    ) -> Dict[str, Any]:
+        """
+        Check for temporal drift in feature distributions
+
+        Args:
+            timestamp_column: Column containing timestamps
+            feature_columns: Features to check for drift
+            window_size: Size of rolling window
+            max_drift_score: Maximum acceptable drift score
+        """
+        # Sort by timestamp
+        df_sorted = df.sort_values(timestamp_column)
+
+        drift_scores = []
+
+        for col in feature_columns:
+            if not pd.api.types.is_numeric_dtype(df_sorted[col]):
+                continue
+
+            # Calculate rolling statistics
+            rolling_mean = df_sorted[col].rolling(window=window_size).mean()
+            rolling_std = df_sorted[col].rolling(window=window_size).std()
+
+            # Calculate drift score (coefficient of variation of rolling mean)
+            mean_cv = rolling_mean.std() / rolling_mean.mean() if rolling_mean.mean() != 0 else 0
+            std_cv = rolling_std.std() / rolling_std.mean() if rolling_std.mean() != 0 else 0
+
+            drift_score = (mean_cv + std_cv) / 2
+
+            drift_scores.append({
+                'feature': col,
+                'drift_score': float(drift_score),
+                'passed': drift_score <= max_drift_score
+            })
+
+        overall_passed = all(d['passed'] for d in drift_scores)
+
+        return {
+            'passed': overall_passed,
+            'drift_scores': drift_scores,
+            'max_drift_score': max_drift_score,
+            'message': f"{'[OK] No' if overall_passed else '[X]'} significant temporal drift detected"
+        }
+
+# Example usage
+def example_ml_validation():
+    """Example of ML-specific validation"""
+
+    # Create sample training and test data
+    np.random.seed(42)
+    n_train = 1000
+    n_test = 200
+
+    train_df = pd.DataFrame({
+        'id': range(n_train),
+        'feature_1': np.random.normal(100, 15, n_train),
+        'feature_2': np.random.uniform(0, 1, n_train),
+        'feature_3': np.random.exponential(2, n_train),
+        'category': np.random.choice(['A', 'B', 'C'], n_train),
+        'target': np.random.choice([0, 1], n_train, p=[0.7, 0.3]),
+        'timestamp': pd.date_range('2024-01-01', periods=n_train, freq='H')
+    })
+
+    test_df = pd.DataFrame({
+        'id': range(n_train, n_train + n_test),
+        'feature_1': np.random.normal(105, 15, n_test),  # Slight drift
+        'feature_2': np.random.uniform(0, 1, n_test),
+        'feature_3': np.random.exponential(2, n_test),
+        'category': np.random.choice(['A', 'B', 'C'], n_test),
+        'target': np.random.choice([0, 1], n_test, p=[0.7, 0.3]),
+        'timestamp': pd.date_range('2024-02-11', periods=n_test, freq='H')
+    })
+
+    validator = MLDataValidator()
+
+    # Check 1: Feature distributions
+    dist_results = validator.validate_feature_distributions(
+        df=test_df,
+        baseline_df=train_df,
+        feature_columns=['feature_1', 'feature_2', 'feature_3']
+    )
+
+    print("Feature Distribution Validation:")
+    for result in dist_results:
+        print(f"  {result['message']}")
+
+    # Check 2: Class balance
+    balance_results = validator.validate_class_balance(
+        df=train_df,
+        target_column='target',
+        min_class_frequency=0.01,
+        max_imbalance_ratio=10.0
+    )
+
+    print(f"\nClass Balance: {'[OK] Passed' if balance_results['passed'] else '[X] Failed'}")
+    print(f"  Imbalance Ratio: {balance_results['imbalance_ratio']:.2f}")
+
+    # Check 3: Feature correlations
+    corr_results = validator.validate_feature_correlations(
+        df=train_df,
+        feature_columns=['feature_1', 'feature_2', 'feature_3'],
+        max_correlation=0.95
+    )
+
+    print(f"\nFeature Correlations: {'[OK] Passed' if corr_results['passed'] else '[X] Failed'}")
+
+    # Check 4: Data leakage
+    leakage_results = validator.validate_no_data_leakage(
+        train_df=train_df,
+        test_df=test_df,
+        id_columns=['id']
+    )
+
+    print(f"\nData Leakage Check: {leakage_results['message']}")
+
+    # Check 5: Temporal consistency
+    temporal_results = validator.validate_temporal_consistency(
+        df=train_df,
+        timestamp_column='timestamp',
+        feature_columns=['feature_1', 'feature_2'],
+        window_size=100,
+        max_drift_score=0.3
+    )
+
+    print(f"\nTemporal Consistency: {temporal_results['message']}")
+\end{lstlisting}
+
+\section{Pipeline Integration for Continuous Validation}
+
+\subsection{End-to-End Data Quality Pipeline}
+
+\begin{lstlisting}[language=Python, caption=Complete Data Quality Pipeline Integration]
+from typing import Dict, List, Optional
+import pandas as pd
+from dataclasses import dataclass
+import logging
+
+@dataclass
+class PipelineConfig:
+    """Configuration for data quality pipeline"""
+    enable_profiling: bool = True
+    enable_validation: bool = True
+    enable_anomaly_detection: bool = True
+    enable_drift_detection: bool = True
+    fail_on_error: bool = True
+    fail_on_warning: bool = False
+
+class DataQualityPipeline:
+    """
+    Integrated data quality pipeline for ML workflows
+
+    Combines profiling, validation, anomaly detection, and monitoring
+    """
+
+    def __init__(self, config: PipelineConfig, name: str = "DataQualityPipeline"):
+        self.config = config
+        self.name = name
+        self.logger = logging.getLogger(name)
+
+        # Initialize components
+        self.profiler = DataProfiler()
+        self.validator = DataQualityValidator(name=f"{name}_validator")
+        self.anomaly_detector = AnomalyDetector()
+        self.ml_validator = MLDataValidator()
+        self.monitor = DataQualityMonitor(name=name)
+
+        self.baseline_profile: Optional[Dict] = None
+
+    def run(self,
+            df: pd.DataFrame,
+            validation_config: Dict,
+            batch_id: str = None,
+            is_baseline: bool = False) -> Dict[str, Any]:
+        """
+        Run complete data quality pipeline
+
+        Args:
+            df: DataFrame to process
+            validation_config: Validation rules configuration
+            batch_id: Optional batch identifier
+            is_baseline: If True, establishes this as baseline
+
+        Returns:
+            Dictionary with all results
+        """
+        results = {
+            'batch_id': batch_id,
+            'row_count': len(df),
+            'column_count': len(df.columns),
+            'passed': True,
+            'errors': [],
+            'warnings': []
+        }
+
+        try:
+            # Step 1: Data Profiling
+            if self.config.enable_profiling:
+                self.logger.info("Running data profiling...")
+                profile = self.profiler.profile_dataframe(df)
+                results['profile'] = profile
+
+                if is_baseline:
+                    self.baseline_profile = profile
+                    self.monitor.set_baseline(df)
+                    self.logger.info("Baseline established")
+
+            # Step 2: Data Validation
+            if self.config.enable_validation:
+                self.logger.info("Running data validation...")
+                validation_results = self.validator.validate(df, validation_config)
+                results['validation'] = [
+                    {
+                        'check': r.check_name,
+                        'passed': r.passed,
+                        'severity': r.severity.value,
+                        'message': r.message
+                    }
+                    for r in validation_results
+                ]
+
+                # Check for failures
+                for r in validation_results:
+                    if not r.passed:
+                        if r.severity.value == 'error' or r.severity.value == 'critical':
+                            results['errors'].append(r.message)
+                            results['passed'] = False
+                        elif r.severity.value == 'warning':
+                            results['warnings'].append(r.message)
+                            if self.config.fail_on_warning:
+                                results['passed'] = False
+
+            # Step 3: Anomaly Detection
+            if self.config.enable_anomaly_detection:
+                self.logger.info("Running anomaly detection...")
+                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+
+                if numeric_cols:
+                    anomaly_df = self.anomaly_detector.detect_anomalies(
+                        df,
+                        method='isolation_forest',
+                        contamination=0.05
+                    )
+
+                    anomaly_analysis = self.anomaly_detector.analyze_anomalies(
+                        anomaly_df,
+                        numeric_cols
+                    )
+
+                    results['anomalies'] = anomaly_analysis
+
+                    # Warn if too many anomalies
+                    if anomaly_analysis['anomaly_percentage'] > 0.1:
+                        warning = (f"High anomaly rate: "
+                                 f"{anomaly_analysis['anomaly_percentage']:.2%}")
+                        results['warnings'].append(warning)
+
+            # Step 4: Drift Detection
+            if self.config.enable_drift_detection and self.baseline_profile:
+                self.logger.info("Running drift detection...")
+
+                changes = self.profiler.compare_profiles(
+                    self.baseline_profile,
+                    threshold=0.1
+                )
+
+                results['drift'] = changes
+
+                # Check for significant drift
+                for change in changes:
+                    if change['severity'] == 'error':
+                        results['errors'].append(change['message'])
+                        results['passed'] = False
+                    elif change['severity'] == 'warning':
+                        results['warnings'].append(change['message'])
+
+            # Step 5: Monitoring
+            if batch_id:
+                monitor_results = self.monitor.monitor_batch(df, batch_id)
+                results['monitoring'] = monitor_results
+
+            # Final status
+            results['status'] = 'PASSED' if results['passed'] else 'FAILED'
+
+            self.logger.info(f"Pipeline completed: {results['status']}")
+
+        except Exception as e:
+            self.logger.error(f"Pipeline failed with error: {str(e)}")
+            results['passed'] = False
+            results['status'] = 'ERROR'
+            results['error_message'] = str(e)
+
+        return results
+
+    def get_pipeline_report(self, results: Dict) -> str:
+        """Generate human-readable pipeline report"""
+        report = f"""
+Data Quality Pipeline Report
+{'=' * 60}
+Batch ID: {results.get('batch_id', 'N/A')}
+Status: {results.get('status', 'UNKNOWN')}
+Rows: {results['row_count']}
+Columns: {results['column_count']}
+
+Summary:
+  Errors: {len(results.get('errors', []))}
+  Warnings: {len(results.get('warnings', []))}
+"""
+
+        if results.get('errors'):
+            report += "\nErrors:\n"
+            for error in results['errors']:
+                report += f"  [X] {error}\n"
+
+        if results.get('warnings'):
+            report += "\nWarnings:\n"
+            for warning in results['warnings']:
+                report += f"  [!] {warning}\n"
+
+        if results.get('anomalies'):
+            anom = results['anomalies']
+            report += f"\nAnomalies:\n"
+            report += f"  Total: {anom['anomaly_rows']} ({anom['anomaly_percentage']:.2%})\n"
+
+        if results.get('drift'):
+            report += f"\nDrift Detected:\n"
+            for change in results['drift'][:5]:  # Show first 5
+                report += f"  {change['message']}\n"
+
+        return report
+
+# Example: Complete pipeline integration
+def example_complete_pipeline():
+    """Example of complete data quality pipeline"""
+
+    # Configuration
+    config = PipelineConfig(
+        enable_profiling=True,
+        enable_validation=True,
+        enable_anomaly_detection=True,
+        enable_drift_detection=True,
+        fail_on_error=True,
+        fail_on_warning=False
+    )
+
+    # Initialize pipeline
+    pipeline = DataQualityPipeline(config, name="ml_data_pipeline")
+
+    # Create baseline data
+    np.random.seed(42)
+    baseline_df = pd.DataFrame({
+        'feature_1': np.random.normal(100, 15, 1000),
+        'feature_2': np.random.uniform(0, 1, 1000),
+        'target': np.random.choice([0, 1], 1000, p=[0.7, 0.3])
+    })
+
+    # Validation configuration
+    validation_config = {
+        'completeness': {'threshold': 0.95},
+        'uniqueness': {'id_columns': []},
+        'ranges': {
+            'specs': {
+                'feature_1': {'min': 0, 'max': 200},
+                'feature_2': {'min': 0, 'max': 1}
+            }
+        }
+    }
+
+    # Run pipeline on baseline
+    baseline_results = pipeline.run(
+        df=baseline_df,
+        validation_config=validation_config,
+        batch_id='baseline_001',
+        is_baseline=True
+    )
+
+    print("Baseline Pipeline Results:")
+    print(pipeline.get_pipeline_report(baseline_results))
+
+    # Create new batch with drift
+    new_df = pd.DataFrame({
+        'feature_1': np.random.normal(110, 15, 500),  # Drift in mean
+        'feature_2': np.random.uniform(0, 1, 500),
+        'target': np.random.choice([0, 1], 500, p=[0.6, 0.4])  # Drift in distribution
+    })
+
+    # Run pipeline on new batch
+    new_results = pipeline.run(
+        df=new_df,
+        validation_config=validation_config,
+        batch_id='batch_002'
+    )
+
+    print("\n" + "=" * 60)
+    print("New Batch Pipeline Results:")
+    print(pipeline.get_pipeline_report(new_results))
+
+    # Check if pipeline passed
+    if new_results['passed']:
+        print("\n[OK] Data quality checks passed - proceed with ML training")
+    else:
+        print("\n[X] Data quality checks failed - review issues before proceeding")
+\end{lstlisting}
+
 \section{Chapter Summary}
 
-% Placeholder summary
+This chapter covered comprehensive data quality and validation strategies for machine learning systems. Data quality is fundamental to ML success, and implementing robust validation frameworks prevents costly errors in production.
+
+\textbf{Key Takeaways:}
+
+\begin{itemize}
+    \item \textbf{Six Dimensions of Data Quality:} Accuracy, completeness, consistency, timeliness, validity, and uniqueness form the foundation of data quality assessment.
+
+    \item \textbf{ML-Specific Requirements:} Beyond traditional data quality, ML systems require monitoring feature distributions, label quality, data freshness, representation balance, and correlation stability.
+
+    \item \textbf{Comprehensive Frameworks:} Implementing structured validation frameworks with multiple severity levels enables systematic quality assessment and issue prioritization.
+
+    \item \textbf{Great Expectations:} This powerful library provides declarative validation rules, automated documentation, and integration with data pipelines for consistent quality checks.
+
+    \item \textbf{Data Profiling:} Automated profiling establishes baselines, tracks changes over time, and enables drift detection through statistical analysis.
+
+    \item \textbf{Anomaly Detection:} Multiple methods (Z-score, IQR, Isolation Forest) identify outliers and unusual patterns that may indicate data quality issues.
+
+    \item \textbf{Continuous Monitoring:} Automated monitoring pipelines with alerting ensure early detection of data quality degradation in production.
+
+    \item \textbf{Custom ML Validations:} ML-specific checks including distribution tests, class balance validation, correlation analysis, and leakage detection prevent common ML failures.
+
+    \item \textbf{Pipeline Integration:} Integrating data quality checks into orchestration platforms ensures systematic validation at every stage of the ML workflow.
+\end{itemize}
+
+Data quality is not a one-time check but an ongoing process requiring continuous monitoring, validation, and improvement. Investing in robust data quality infrastructure pays dividends through more reliable models, faster debugging, and greater trust in ML systems.
+
 \section{Exercises}
 
 \begin{exercise}
-Implement a comprehensive data validation suite for a customer dataset using Great Expectations.
+\textbf{Implement Comprehensive Data Validation Suite}
+
+You have been tasked with building a data quality validation suite for a customer churn prediction model. The dataset contains the following columns:
+
+\begin{itemize}
+    \item \texttt{customer\_id}: Unique identifier
+    \item \texttt{age}: Customer age (18-100)
+    \item \texttt{tenure\_months}: Months as customer (0-120)
+    \item \texttt{monthly\_charges}: Monthly bill amount (\$0-\$500)
+    \item \texttt{total\_charges}: Lifetime charges
+    \item \texttt{contract\_type}: Month-to-month, One year, Two year
+    \item \texttt{payment\_method}: Credit card, Bank transfer, Electronic check, Mailed check
+    \item \texttt{churn}: Target variable (0 or 1)
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Create a comprehensive validation configuration using \texttt{DataQualityValidator}
+    \item Define validity rules for all columns
+    \item Set up consistency checks (e.g., total\_charges should be approximately monthly\_charges * tenure\_months)
+    \item Implement range checks for numeric columns
+    \item Add uniqueness checks for customer\_id
+    \item Validate class balance for the target variable
+\end{enumerate}
+
+\textbf{Solution:}
+
+\begin{lstlisting}[language=Python]
+import pandas as pd
+import numpy as np
+
+# Create sample dataset with issues
+np.random.seed(42)
+n_samples = 1000
+
+df = pd.DataFrame({
+    'customer_id': list(range(n_samples)) + [5, 10],  # Duplicates
+    'age': np.random.randint(18, 100, n_samples + 2),
+    'tenure_months': np.random.randint(0, 121, n_samples + 2),
+    'monthly_charges': np.random.uniform(20, 500, n_samples + 2),
+    'total_charges': np.random.uniform(100, 10000, n_samples + 2),
+    'contract_type': np.random.choice(
+        ['Month-to-month', 'One year', 'Two year'],
+        n_samples + 2
+    ),
+    'payment_method': np.random.choice(
+        ['Credit card', 'Bank transfer', 'Electronic check', 'Mailed check'],
+        n_samples + 2
+    ),
+    'churn': np.random.choice([0, 1], n_samples + 2, p=[0.73, 0.27])
+})
+
+# Introduce data quality issues
+df.loc[10:20, 'age'] = -1  # Invalid ages
+df.loc[50:60, 'monthly_charges'] = None  # Missing values
+df.loc[100, 'contract_type'] = 'Invalid'  # Invalid category
+
+# Define validation configuration
+validation_config = {
+    'completeness': {
+        'critical_columns': ['customer_id', 'age', 'churn'],
+        'threshold': 0.95
+    },
+    'uniqueness': {
+        'id_columns': ['customer_id']
+    },
+    'validity': {
+        'rules': {
+            'age': lambda x: pd.notna(x) and 18 <= x <= 100,
+            'tenure_months': lambda x: pd.notna(x) and 0 <= x <= 120,
+            'monthly_charges': lambda x: pd.notna(x) and 0 <= x <= 500,
+            'contract_type': lambda x: x in ['Month-to-month', 'One year', 'Two year'],
+            'payment_method': lambda x: x in [
+                'Credit card', 'Bank transfer', 'Electronic check', 'Mailed check'
+            ],
+            'churn': lambda x: x in [0, 1]
+        },
+        'threshold': 0.98
+    },
+    'consistency': {
+        'rules': [
+            {
+                'name': 'charges_consistency',
+                'condition': lambda row: (
+                    pd.isna(row['total_charges']) or
+                    pd.isna(row['monthly_charges']) or
+                    pd.isna(row['tenure_months']) or
+                    row['tenure_months'] == 0 or
+                    abs(row['total_charges'] -
+                        row['monthly_charges'] * row['tenure_months']) /
+                    row['total_charges'] < 0.3  # Allow 30% variation
+                ),
+                'severity': Severity.WARNING
+            }
+        ]
+    },
+    'ranges': {
+        'specs': {
+            'age': {'min': 18, 'max': 100},
+            'tenure_months': {'min': 0, 'max': 120},
+            'monthly_charges': {'min': 0, 'max': 500},
+            'total_charges': {'min': 0, 'max': 60000}
+        }
+    }
+}
+
+# Run validation
+validator = DataQualityValidator(name="Churn Data Validator")
+results = validator.validate(df, validation_config)
+
+# Print report
+validator.print_report()
+
+# Additional ML-specific validations
+ml_validator = MLDataValidator()
+
+# Check class balance
+balance_results = ml_validator.validate_class_balance(
+    df=df,
+    target_column='churn',
+    min_class_frequency=0.05,
+    max_imbalance_ratio=20.0
+)
+
+print(f"\n\nClass Balance Validation:")
+print(f"  Status: {'[OK] Passed' if balance_results['passed'] else '[X] Failed'}")
+print(f"  Distribution: {balance_results['class_distribution']}")
+print(f"  Imbalance Ratio: {balance_results['imbalance_ratio']:.2f}")
+\end{lstlisting}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Build Anomaly Detection System}
+
+Implement a multi-method anomaly detection system for a fraud detection dataset with transaction features: amount, time, merchant\_category, and location\_distance.
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Apply three different anomaly detection methods
+    \item Compare results across methods
+    \item Implement ensemble voting (flag as anomaly if 2+ methods agree)
+    \item Analyze which features contribute most to anomalies
+    \item Create visualization of anomaly distribution
+\end{enumerate}
+
+\textbf{Solution:}
+
+\begin{lstlisting}[language=Python]
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Create sample transaction dataset
+np.random.seed(42)
+n_normal = 950
+n_fraud = 50
+
+# Normal transactions
+normal_data = {
+    'amount': np.random.lognormal(mean=3, sigma=1, size=n_normal),
+    'time_since_last': np.random.exponential(scale=24, size=n_normal),
+    'merchant_category': np.random.randint(1, 20, n_normal),
+    'location_distance': np.random.gamma(shape=2, scale=5, size=n_normal)
+}
+
+# Fraudulent transactions (anomalous patterns)
+fraud_data = {
+    'amount': np.random.lognormal(mean=5, sigma=2, size=n_fraud),  # Higher amounts
+    'time_since_last': np.random.exponential(scale=1, size=n_fraud),  # Rapid succession
+    'merchant_category': np.random.randint(1, 20, n_fraud),
+    'location_distance': np.random.gamma(shape=5, scale=20, size=n_fraud)  # Far distances
+}
+
+# Combine datasets
+df = pd.DataFrame({
+    col: np.concatenate([normal_data[col], fraud_data[col]])
+    for col in normal_data.keys()
+})
+df['is_fraud'] = [0] * n_normal + [1] * n_fraud
+df = df.sample(frac=1).reset_index(drop=True)  # Shuffle
+
+# Initialize detector
+detector = AnomalyDetector()
+
+# Method 1: Z-score
+result_zscore = detector.detect_anomalies(
+    df,
+    method='zscore',
+    columns=['amount', 'time_since_last', 'location_distance'],
+    threshold=3.0
+)
+
+# Method 2: IQR
+result_iqr = detector.detect_anomalies(
+    df,
+    method='iqr',
+    columns=['amount', 'time_since_last', 'location_distance'],
+    multiplier=1.5
+)
+
+# Method 3: Isolation Forest
+result_if = detector.detect_anomalies(
+    df,
+    method='isolation_forest',
+    columns=['amount', 'time_since_last', 'location_distance'],
+    contamination=0.05
+)
+
+# Ensemble voting
+df['zscore_anomaly'] = result_zscore['is_anomaly']
+df['iqr_anomaly'] = result_iqr['is_anomaly']
+df['if_anomaly'] = result_if['is_anomaly']
+
+df['ensemble_votes'] = (
+    df['zscore_anomaly'].astype(int) +
+    df['iqr_anomaly'].astype(int) +
+    df['if_anomaly'].astype(int)
+)
+
+df['ensemble_anomaly'] = df['ensemble_votes'] >= 2
+
+# Analyze results
+from sklearn.metrics import precision_score, recall_score, f1_score
+
+methods = {
+    'Z-Score': 'zscore_anomaly',
+    'IQR': 'iqr_anomaly',
+    'Isolation Forest': 'if_anomaly',
+    'Ensemble': 'ensemble_anomaly'
+}
+
+print("Anomaly Detection Performance:")
+print("=" * 60)
+for method_name, col in methods.items():
+    precision = precision_score(df['is_fraud'], df[col])
+    recall = recall_score(df['is_fraud'], df[col])
+    f1 = f1_score(df['is_fraud'], df[col])
+
+    print(f"\n{method_name}:")
+    print(f"  Precision: {precision:.3f}")
+    print(f"  Recall: {recall:.3f}")
+    print(f"  F1-Score: {f1:.3f}")
+    print(f"  Detected: {df[col].sum()} anomalies")
+
+# Feature contribution analysis
+print("\n\nFeature Contribution to Anomalies:")
+print("=" * 60)
+for feature in ['amount', 'time_since_last', 'location_distance']:
+    anomaly_col = f'{feature}_anomaly'
+    if anomaly_col in result_zscore.columns:
+        contribution = result_zscore[anomaly_col].sum()
+        print(f"{feature}: {contribution} anomalies ({contribution/len(df):.2%})")
+
+# Visualization
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+fig.suptitle('Anomaly Detection Comparison', fontsize=16)
+
+for idx, (method_name, col) in enumerate(methods.items()):
+    ax = axes[idx // 2, idx % 2]
+
+    # Scatter plot: amount vs time_since_last
+    normal_mask = ~df[col]
+    anomaly_mask = df[col]
+
+    ax.scatter(
+        df.loc[normal_mask, 'amount'],
+        df.loc[normal_mask, 'time_since_last'],
+        alpha=0.5, label='Normal', s=20
+    )
+    ax.scatter(
+        df.loc[anomaly_mask, 'amount'],
+        df.loc[anomaly_mask, 'time_since_last'],
+        color='red', alpha=0.7, label='Anomaly', s=50, marker='x'
+    )
+
+    ax.set_xlabel('Amount')
+    ax.set_ylabel('Time Since Last')
+    ax.set_title(method_name)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('anomaly_detection_comparison.png', dpi=300, bbox_inches='tight')
+print("\n\nVisualization saved to 'anomaly_detection_comparison.png'")
+\end{lstlisting}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Create Data Drift Monitoring System}
+
+Build a system to monitor data drift for a recommender system that tracks user behavior features over time.
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Generate baseline and drifted datasets
+    \item Implement statistical drift detection (KS test, PSI)
+    \item Calculate Population Stability Index (PSI) for features
+    \item Create drift alerting thresholds
+    \item Visualize drift over time
+\end{enumerate}
+
+\textbf{Solution:}
+
+\begin{lstlisting}[language=Python]
+import pandas as pd
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+
+def calculate_psi(baseline, current, bins=10):
+    """
+    Calculate Population Stability Index
+
+    PSI < 0.1: No significant change
+    0.1 <= PSI < 0.2: Moderate change
+    PSI >= 0.2: Significant change
+    """
+    # Create bins based on baseline
+    breakpoints = np.percentile(baseline, np.linspace(0, 100, bins + 1))
+    breakpoints[-1] += 0.0001  # Ensure last bin includes max value
+
+    # Calculate distribution for baseline
+    baseline_dist = np.histogram(baseline, bins=breakpoints)[0] / len(baseline)
+
+    # Calculate distribution for current
+    current_dist = np.histogram(current, bins=breakpoints)[0] / len(current)
+
+    # Avoid division by zero
+    baseline_dist = np.where(baseline_dist == 0, 0.0001, baseline_dist)
+    current_dist = np.where(current_dist == 0, 0.0001, current_dist)
+
+    # Calculate PSI
+    psi = np.sum((current_dist - baseline_dist) * np.log(current_dist / baseline_dist))
+
+    return psi
+
+# Generate baseline data (Week 1)
+np.random.seed(42)
+n_baseline = 10000
+
+baseline_df = pd.DataFrame({
+    'session_duration': np.random.lognormal(mean=4, sigma=1, size=n_baseline),
+    'items_viewed': np.random.poisson(lam=15, size=n_baseline),
+    'clicks_per_session': np.random.poisson(lam=5, size=n_baseline),
+    'time_on_page': np.random.gamma(shape=2, scale=30, size=n_baseline),
+    'week': 1
+})
+
+# Generate data with increasing drift over 8 weeks
+drift_data = []
+
+for week in range(2, 9):
+    drift_factor = (week - 1) * 0.05  # Increasing drift
+
+    week_df = pd.DataFrame({
+        'session_duration': np.random.lognormal(
+            mean=4 + drift_factor,  # Increasing mean
+            sigma=1 + drift_factor * 0.5,  # Increasing variance
+            size=n_baseline
+        ),
+        'items_viewed': np.random.poisson(
+            lam=15 - drift_factor * 3,  # Decreasing engagement
+            size=n_baseline
+        ),
+        'clicks_per_session': np.random.poisson(
+            lam=5 - drift_factor * 2,  # Decreasing clicks
+            size=n_baseline
+        ),
+        'time_on_page': np.random.gamma(
+            shape=2,
+            scale=30 * (1 + drift_factor),  # Increasing time
+            size=n_baseline
+        ),
+        'week': week
+    })
+
+    drift_data.append(week_df)
+
+all_data = pd.concat([baseline_df] + drift_data, ignore_index=True)
+
+# Monitor drift for each week
+features = ['session_duration', 'items_viewed', 'clicks_per_session', 'time_on_page']
+
+drift_results = []
+
+for week in range(2, 9):
+    week_data = all_data[all_data['week'] == week]
+
+    week_result = {'week': week}
+
+    for feature in features:
+        baseline_feature = baseline_df[feature]
+        current_feature = week_data[feature]
+
+        # KS test
+        ks_stat, ks_pvalue = stats.ks_2samp(baseline_feature, current_feature)
+
+        # PSI
+        psi = calculate_psi(baseline_feature, current_feature)
+
+        # Mean and std comparison
+        baseline_mean = baseline_feature.mean()
+        current_mean = current_feature.mean()
+        mean_diff_pct = abs(current_mean - baseline_mean) / baseline_mean
+
+        week_result[f'{feature}_ks_stat'] = ks_stat
+        week_result[f'{feature}_ks_pvalue'] = ks_pvalue
+        week_result[f'{feature}_psi'] = psi
+        week_result[f'{feature}_mean_diff'] = mean_diff_pct
+
+    drift_results.append(week_result)
+
+drift_df = pd.DataFrame(drift_results)
+
+# Define alert thresholds
+PSI_THRESHOLD_MODERATE = 0.1
+PSI_THRESHOLD_SIGNIFICANT = 0.2
+KS_PVALUE_THRESHOLD = 0.05
+
+# Generate drift alerts
+print("Data Drift Monitoring Report")
+print("=" * 80)
+
+for idx, row in drift_df.iterrows():
+    week = int(row['week'])
+    print(f"\nWeek {week}:")
+
+    has_drift = False
+
+    for feature in features:
+        psi = row[f'{feature}_psi']
+        ks_pvalue = row[f'{feature}_ks_pvalue']
+        mean_diff = row[f'{feature}_mean_diff']
+
+        if psi >= PSI_THRESHOLD_SIGNIFICANT:
+            print(f"  [!!] CRITICAL: {feature} - Significant drift (PSI={psi:.3f})")
+            has_drift = True
+        elif psi >= PSI_THRESHOLD_MODERATE:
+            print(f"  [!]  WARNING: {feature} - Moderate drift (PSI={psi:.3f})")
+            has_drift = True
+        elif ks_pvalue < KS_PVALUE_THRESHOLD:
+            print(f"  [!]  WARNING: {feature} - Distribution change (KS p={ks_pvalue:.4f})")
+            has_drift = True
+
+    if not has_drift:
+        print("  [OK] No significant drift detected")
+
+# Visualization
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+fig.suptitle('Feature Drift Over Time (PSI)', fontsize=16)
+
+for idx, feature in enumerate(features):
+    ax = axes[idx // 2, idx % 2]
+
+    psi_values = drift_df[f'{feature}_psi'].values
+    weeks = drift_df['week'].values
+
+    ax.plot(weeks, psi_values, marker='o', linewidth=2, markersize=8)
+    ax.axhline(y=PSI_THRESHOLD_MODERATE, color='orange',
+               linestyle='--', label='Moderate Threshold')
+    ax.axhline(y=PSI_THRESHOLD_SIGNIFICANT, color='red',
+               linestyle='--', label='Significant Threshold')
+
+    ax.set_xlabel('Week')
+    ax.set_ylabel('PSI')
+    ax.set_title(feature.replace('_', ' ').title())
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('drift_monitoring.png', dpi=300, bbox_inches='tight')
+print("\n\nVisualization saved to 'drift_monitoring.png'")
+
+# Summary statistics
+print("\n\nDrift Summary:")
+print("=" * 80)
+for feature in features:
+    max_psi = drift_df[f'{feature}_psi'].max()
+    max_week = drift_df.loc[drift_df[f'{feature}_psi'].idxmax(), 'week']
+    print(f"{feature}:")
+    print(f"  Maximum PSI: {max_psi:.3f} (Week {int(max_week)})")
+
+    if max_psi >= PSI_THRESHOLD_SIGNIFICANT:
+        print(f"  Status: [!!] CRITICAL - Requires immediate attention")
+    elif max_psi >= PSI_THRESHOLD_MODERATE:
+        print(f"  Status: [!]  WARNING - Monitor closely")
+    else:
+        print(f"  Status: [OK] STABLE")
+\end{lstlisting}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Implement End-to-End Data Quality Pipeline}
+
+Create a complete data quality pipeline for a house price prediction model that includes profiling, validation, anomaly detection, and generates actionable reports.
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Build integrated pipeline using \texttt{DataQualityPipeline}
+    \item Configure all quality checks
+    \item Implement automated reporting
+    \item Add failure handling and recovery
+    \item Create quality dashboard
+\end{enumerate}
+
+\textbf{Solution:}
+
+\begin{lstlisting}[language=Python]
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import json
+
+# Generate sample housing data
+np.random.seed(42)
+n_samples = 1000
+
+baseline_df = pd.DataFrame({
+    'property_id': range(n_samples),
+    'square_feet': np.random.normal(2000, 500, n_samples),
+    'bedrooms': np.random.choice([1, 2, 3, 4, 5], n_samples, p=[0.1, 0.2, 0.35, 0.25, 0.1]),
+    'bathrooms': np.random.choice([1, 1.5, 2, 2.5, 3], n_samples),
+    'age_years': np.random.randint(0, 100, n_samples),
+    'lot_size': np.random.lognormal(8.5, 0.5, n_samples),
+    'garage_spaces': np.random.choice([0, 1, 2, 3], n_samples, p=[0.1, 0.4, 0.4, 0.1]),
+    'neighborhood': np.random.choice(['A', 'B', 'C', 'D', 'E'], n_samples),
+    'price': np.random.lognormal(12.5, 0.4, n_samples)
+})
+
+# Configure pipeline
+config = PipelineConfig(
+    enable_profiling=True,
+    enable_validation=True,
+    enable_anomaly_detection=True,
+    enable_drift_detection=True,
+    fail_on_error=True,
+    fail_on_warning=False
+)
+
+# Initialize pipeline
+pipeline = DataQualityPipeline(config, name="HousePricePipeline")
+
+# Define validation rules
+validation_config = {
+    'completeness': {
+        'critical_columns': ['property_id', 'square_feet', 'price'],
+        'threshold': 0.98
+    },
+    'uniqueness': {
+        'id_columns': ['property_id']
+    },
+    'validity': {
+        'rules': {
+            'square_feet': lambda x: 500 <= x <= 10000,
+            'bedrooms': lambda x: x in [1, 2, 3, 4, 5],
+            'bathrooms': lambda x: x in [1, 1.5, 2, 2.5, 3, 3.5, 4],
+            'age_years': lambda x: 0 <= x <= 200,
+            'garage_spaces': lambda x: x in [0, 1, 2, 3, 4],
+            'neighborhood': lambda x: x in ['A', 'B', 'C', 'D', 'E'],
+            'price': lambda x: x > 0
+        },
+        'threshold': 0.95
+    },
+    'ranges': {
+        'specs': {
+            'square_feet': {'min': 500, 'max': 10000},
+            'age_years': {'min': 0, 'max': 200},
+            'price': {'min': 10000, 'max': 10000000}
+        }
+    },
+    'consistency': {
+        'rules': [
+            {
+                'name': 'bedrooms_bathrooms_ratio',
+                'condition': lambda row: row['bedrooms'] >= row['bathrooms'] - 1,
+                'severity': Severity.WARNING
+            }
+        ]
+    }
+}
+
+# Run baseline
+print("=" * 80)
+print("ESTABLISHING BASELINE")
+print("=" * 80)
+
+baseline_results = pipeline.run(
+    df=baseline_df,
+    validation_config=validation_config,
+    batch_id='baseline_001',
+    is_baseline=True
+)
+
+print(pipeline.get_pipeline_report(baseline_results))
+
+# Save baseline profile
+with open('baseline_profile.json', 'w') as f:
+    json.dump(baseline_results['profile'], f, indent=2)
+
+print("\n[OK] Baseline profile saved to 'baseline_profile.json'")
+
+# Generate new batch with various quality issues
+new_df = pd.DataFrame({
+    'property_id': range(500, 1500),
+    'square_feet': np.random.normal(2100, 550, 1000),  # Drift in mean/std
+    'bedrooms': np.random.choice([1, 2, 3, 4, 5], 1000, p=[0.15, 0.25, 0.3, 0.2, 0.1]),
+    'bathrooms': np.random.choice([1, 1.5, 2, 2.5, 3], 1000),
+    'age_years': np.random.randint(0, 100, 1000),
+    'lot_size': np.random.lognormal(8.6, 0.5, 1000),  # Slight drift
+    'garage_spaces': np.random.choice([0, 1, 2, 3], 1000, p=[0.1, 0.4, 0.4, 0.1]),
+    'neighborhood': np.random.choice(['A', 'B', 'C', 'D', 'E'], 1000),
+    'price': np.random.lognormal(12.6, 0.45, 1000)  # Drift in price
+})
+
+# Introduce quality issues
+new_df.loc[10:15, 'property_id'] = 500  # Duplicates
+new_df.loc[20:30, 'square_feet'] = None  # Missing values
+new_df.loc[40, 'square_feet'] = 50000  # Outlier
+new_df.loc[50, 'age_years'] = -10  # Invalid value
+new_df.loc[60, 'neighborhood'] = 'F'  # Invalid category
+
+# Run pipeline on new batch
+print("\n\n" + "=" * 80)
+print("VALIDATING NEW BATCH")
+print("=" * 80)
+
+new_results = pipeline.run(
+    df=new_df,
+    validation_config=validation_config,
+    batch_id='batch_002'
+)
+
+print(pipeline.get_pipeline_report(new_results))
+
+# Decision making based on results
+print("\n\n" + "=" * 80)
+print("PIPELINE DECISION")
+print("=" * 80)
+
+if new_results['passed']:
+    print("[OK] Data quality checks PASSED")
+    print("  Recommendation: Proceed with model training")
+else:
+    print("[X] Data quality checks FAILED")
+    print("  Recommendation: Review and fix issues before proceeding")
+
+    if new_results.get('errors'):
+        print(f"\n  Critical Issues ({len(new_results['errors'])}):")
+        for error in new_results['errors'][:5]:
+            print(f"    - {error}")
+
+    if new_results.get('warnings'):
+        print(f"\n  Warnings ({len(new_results['warnings'])}):")
+        for warning in new_results['warnings'][:5]:
+            print(f"    - {warning}")
+
+# Create quality scorecard
+dashboard = DataQualityDashboard(pipeline.monitor)
+scorecard = dashboard.create_quality_scorecard()
+
+print("\n\n" + "=" * 80)
+print("DATA QUALITY SCORECARD")
+print("=" * 80)
+print(f"Overall Score: {scorecard['data_quality_score']:.1f}/100")
+print(f"Status: {scorecard['status']}")
+
+print("\nMetrics:")
+for metric, value in scorecard['metrics'].items():
+    if isinstance(value, float):
+        print(f"  {metric}: {value:.4f}")
+    else:
+        print(f"  {metric}: {value}")
+
+print("\nRecommendations:")
+for i, rec in enumerate(scorecard['recommendations'], 1):
+    print(f"  {i}. {rec}")
+
+# Save results
+with open('validation_results.json', 'w') as f:
+    # Convert non-serializable objects
+    results_to_save = {
+        'batch_id': new_results['batch_id'],
+        'status': new_results['status'],
+        'passed': new_results['passed'],
+        'errors': new_results['errors'],
+        'warnings': new_results['warnings'],
+        'row_count': new_results['row_count'],
+        'column_count': new_results['column_count']
+    }
+    json.dump(results_to_save, f, indent=2)
+
+print("\n[OK] Results saved to 'validation_results.json'")
+\end{lstlisting}
 \end{exercise}

@@ -1,67 +1,288 @@
-\section{Python Installation}
+\section{Introduction}
+
+This appendix provides comprehensive installation and setup guides for all tools and frameworks mentioned throughout this book. Follow these guides to set up a complete ML engineering environment from scratch.
+
+\textbf{Prerequisites:}
+\begin{itemize}
+    \item Basic command-line proficiency
+    \item Administrator/root access to your system
+    \item Internet connection for downloads
+    \item Minimum 16GB RAM, 50GB free disk space
+\end{itemize}
+
+\section{Python Environment Setup}
 
 \subsection{Installing Python 3.9+}
 
+Python is the foundation of modern ML engineering. We recommend Python 3.9 or later.
+
 \textbf{Windows:}
 \begin{lstlisting}[style=shell]
+# Method 1: Official installer
 # Download from python.org and run installer
-# Or use winget
-winget install Python.Python.3.9
+# Make sure to check "Add Python to PATH"
+
+# Method 2: Using winget (Windows Package Manager)
+winget install Python.Python.3.11
+
+# Method 3: Using Chocolatey
+choco install python --version=3.11.0
+
+# Verify installation
+python --version
+pip --version
 \end{lstlisting}
 
 \textbf{macOS:}
 \begin{lstlisting}[style=shell]
-# Using Homebrew
-brew install python@3.9
+# Method 1: Using Homebrew (recommended)
+brew install python@3.11
+
+# Method 2: Using pyenv for version management
+brew install pyenv
+pyenv install 3.11.0
+pyenv global 3.11.0
+
+# Add to ~/.zshrc or ~/.bash_profile
+echo 'export PATH="$HOME/.pyenv/shims:$PATH"' >> ~/.zshrc
+
+# Verify installation
+python3 --version
+pip3 --version
 \end{lstlisting}
 
-\textbf{Linux:}
+\textbf{Linux (Ubuntu/Debian):}
 \begin{lstlisting}[style=shell]
-# Ubuntu/Debian
+# Update package lists
 sudo apt update
-sudo apt install python3.9 python3.9-venv python3-pip
 
-# CentOS/RHEL
-sudo yum install python39
+# Install Python 3.11
+sudo apt install software-properties-common
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.11 python3.11-venv python3.11-dev python3-pip
+
+# Set as default (optional)
+sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+
+# Verify installation
+python3 --version
+pip3 --version
 \end{lstlisting}
 
-\section{Docker Installation}
+\textbf{Linux (CentOS/RHEL 8+):}
+\begin{lstlisting}[style=shell]
+# Enable EPEL repository
+sudo dnf install epel-release
 
-\subsection{Docker Desktop}
+# Install Python 3.11
+sudo dnf install python3.11 python3.11-devel
 
-\textbf{Windows and macOS:}
+# Verify installation
+python3.11 --version
+pip3.11 --version
+\end{lstlisting}
+
+\subsection{Virtual Environment Setup}
+
+Virtual environments isolate project dependencies.
+
+\begin{lstlisting}[style=shell]
+# Create virtual environment
+python -m venv myproject_env
+
+# Activate virtual environment
+# Windows
+myproject_env\Scripts\activate
+
+# macOS/Linux
+source myproject_env/bin/activate
+
+# Install packages in virtual environment
+pip install --upgrade pip
+pip install wheel setuptools
+
+# Deactivate when done
+deactivate
+\end{lstlisting}
+
+\subsection{Conda Environment Setup}
+
+Conda is an alternative package manager with better environment management.
+
+\begin{lstlisting}[style=shell]
+# Install Miniconda
+# Download from https://docs.conda.io/en/latest/miniconda.html
+
+# Create conda environment
+conda create -n ml_env python=3.11
+
+# Activate environment
+conda activate ml_env
+
+# Install packages
+conda install numpy pandas scikit-learn matplotlib
+
+# List environments
+conda env list
+
+# Export environment
+conda env export > environment.yml
+
+# Create environment from file
+conda env create -f environment.yml
+
+# Deactivate
+conda deactivate
+\end{lstlisting}
+
+\section{Docker Installation and Configuration}
+
+Docker containers provide consistent environments across different systems.
+
+\subsection{Docker Desktop (Windows/macOS)}
+
+\textbf{Installation:}
 \begin{enumerate}
     \item Download Docker Desktop from \url{https://www.docker.com/products/docker-desktop}
     \item Run the installer
-    \item Start Docker Desktop
-    \item Verify installation:
+    \item Start Docker Desktop from Applications
+    \item Configure resources: Settings → Resources → Advanced
+    \begin{itemize}
+        \item CPUs: 4+
+        \item Memory: 8GB+
+        \item Disk: 100GB+
+    \end{itemize}
+    \item Enable Kubernetes (optional): Settings → Kubernetes → Enable
 \end{enumerate}
 
+\textbf{Verification:}
 \begin{lstlisting}[style=shell]
+# Check Docker version
 docker --version
+docker-compose --version
+
+# Test Docker installation
+docker run hello-world
+
+# Check running containers
+docker ps
+
+# Check Docker system info
+docker system info
+\end{lstlisting}
+
+\subsection{Docker Engine (Linux)}
+
+\textbf{Ubuntu/Debian:}
+\begin{lstlisting}[style=shell]
+# Remove old versions
+sudo apt remove docker docker-engine docker.io containerd runc
+
+# Install prerequisites
+sudo apt update
+sudo apt install ca-certificates curl gnupg lsb-release
+
+# Add Docker's official GPG key
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+    sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+# Set up repository
+echo \
+  "deb [arch=$(dpkg --print-architecture) \
+  signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker Engine
+sudo apt update
+sudo apt install docker-ce docker-ce-cli containerd.io \
+    docker-buildx-plugin docker-compose-plugin
+
+# Add user to docker group (avoid sudo)
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Enable Docker service
+sudo systemctl enable docker
+sudo systemctl start docker
+
+# Verify installation
 docker run hello-world
 \end{lstlisting}
 
-\textbf{Linux:}
+\textbf{CentOS/RHEL:}
 \begin{lstlisting}[style=shell]
-# Install Docker Engine
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
+# Remove old versions
+sudo yum remove docker docker-client docker-client-latest \
+    docker-common docker-latest docker-latest-logrotate \
+    docker-logrotate docker-engine
 
-# Add user to docker group
-sudo usermod -aG docker $USER
+# Install yum-utils
+sudo yum install -y yum-utils
+
+# Add Docker repository
+sudo yum-config-manager --add-repo \
+    https://download.docker.com/linux/centos/docker-ce.repo
+
+# Install Docker Engine
+sudo yum install docker-ce docker-ce-cli containerd.io \
+    docker-buildx-plugin docker-compose-plugin
 
 # Start Docker
 sudo systemctl start docker
 sudo systemctl enable docker
+
+# Add user to docker group
+sudo usermod -aG docker $USER
+
+# Verify
+docker run hello-world
+\end{lstlisting}
+
+\subsection{Docker Configuration for ML}
+
+Create a \texttt{daemon.json} file for optimized Docker settings:
+
+\begin{lstlisting}[style=shell]
+# Linux: /etc/docker/daemon.json
+# macOS/Windows: Docker Desktop Settings > Docker Engine
+
+{
+  "default-runtime": "nvidia",
+  "runtimes": {
+    "nvidia": {
+      "path": "nvidia-container-runtime",
+      "runtimeArgs": []
+    }
+  },
+  "storage-driver": "overlay2",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  },
+  "default-ulimits": {
+    "nofile": {
+      "Name": "nofile",
+      "Hard": 64000,
+      "Soft": 64000
+    }
+  }
+}
 \end{lstlisting}
 
 \section{Kubernetes Setup}
 
 \subsection{Minikube for Local Development}
 
+Minikube runs a single-node Kubernetes cluster locally.
+
+\textbf{Installation:}
+
 \begin{lstlisting}[style=shell]
-# Install minikube
 # macOS
 brew install minikube
 
@@ -69,52 +290,230 @@ brew install minikube
 curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
 sudo install minikube-linux-amd64 /usr/local/bin/minikube
 
-# Start minikube
-minikube start --cpus 4 --memory 8192
+# Windows (using Chocolatey)
+choco install minikube
+
+# Install kubectl
+# macOS
+brew install kubectl
+
+# Linux
+curl -LO "https://dl.k8s.io/release/$(curl -L -s \
+    https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install kubectl /usr/local/bin/
+
+# Windows
+choco install kubernetes-cli
+
+# Verify installation
+minikube version
+kubectl version --client
+\end{lstlisting}
+
+\textbf{Starting Minikube:}
+
+\begin{lstlisting}[style=shell]
+# Start with custom resources
+minikube start --cpus 4 --memory 8192 --disk-size 50g
+
+# Enable addons
+minikube addons enable metrics-server
+minikube addons enable dashboard
+minikube addons enable ingress
+
+# Check status
+minikube status
+
+# Access dashboard
+minikube dashboard
+
+# Stop minikube
+minikube stop
+
+# Delete cluster
+minikube delete
+\end{lstlisting}
+
+\subsection{Kind (Kubernetes in Docker)}
+
+Kind is another option for local Kubernetes development.
+
+\begin{lstlisting}[style=shell]
+# Install kind
+# macOS/Linux
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+# Create cluster
+kind create cluster --name ml-cluster
+
+# Create multi-node cluster
+cat <<EOF | kind create cluster --config=-
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+- role: worker
+EOF
+
+# List clusters
+kind get clusters
+
+# Delete cluster
+kind delete cluster --name ml-cluster
 \end{lstlisting}
 
 \section{Cloud Provider Setup}
 
-\subsection{AWS CLI}
+\subsection{AWS CLI and SDK}
 
 \begin{lstlisting}[style=shell]
-# Install AWS CLI
-pip install awscli
+# Install AWS CLI v2
+# Linux
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
 
-# Configure credentials
+# macOS
+brew install awscli
+
+# Windows
+msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi
+
+# Configure AWS CLI
 aws configure
+# AWS Access Key ID: YOUR_ACCESS_KEY
+# AWS Secret Access Key: YOUR_SECRET_KEY
+# Default region name: us-west-2
+# Default output format: json
+
+# Verify configuration
+aws sts get-caller-identity
+
+# Install boto3 (AWS SDK for Python)
+pip install boto3
+
+# Test boto3
+python -c "import boto3; print(boto3.__version__)"
+\end{lstlisting}
+
+\textbf{Configure AWS Credentials:}
+
+Create \texttt{\textasciitilde/.aws/credentials}:
+\begin{lstlisting}[style=shell]
+[default]
+aws_access_key_id = YOUR_ACCESS_KEY
+aws_secret_access_key = YOUR_SECRET_KEY
+
+[ml-project]
+aws_access_key_id = PROJECT_ACCESS_KEY
+aws_secret_access_key = PROJECT_SECRET_KEY
+\end{lstlisting}
+
+Create \texttt{\textasciitilde/.aws/config}:
+\begin{lstlisting}[style=shell]
+[default]
+region = us-west-2
+output = json
+
+[profile ml-project]
+region = us-east-1
+output = json
 \end{lstlisting}
 
 \subsection{Google Cloud SDK}
 
 \begin{lstlisting}[style=shell]
 # Install gcloud CLI
-# Follow instructions at cloud.google.com/sdk/docs/install
-
-# Initialize
+# Linux
+curl https://sdk.cloud.google.com | bash
+exec -l $SHELL
 gcloud init
+
+# macOS
+brew install --cask google-cloud-sdk
+
+# Windows
+# Download installer from cloud.google.com/sdk/docs/install
+
+# Initialize gcloud
+gcloud init
+
+# Login
+gcloud auth login
+
+# Set project
+gcloud config set project YOUR_PROJECT_ID
+
+# List configurations
+gcloud config list
+
+# Install additional components
+gcloud components install kubectl
+gcloud components install beta
+
+# Enable APIs
+gcloud services enable compute.googleapis.com
+gcloud services enable aiplatform.googleapis.com
+gcloud services enable storage.googleapis.com
+
+# Install Python client libraries
+pip install google-cloud-storage google-cloud-aiplatform
 \end{lstlisting}
 
 \subsection{Azure CLI}
 
 \begin{lstlisting}[style=shell]
 # Install Azure CLI
-pip install azure-cli
+# Linux (one-line install)
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+# macOS
+brew install azure-cli
+
+# Windows
+# Download MSI from https://aka.ms/installazurecliwindows
 
 # Login
 az login
+
+# Set subscription
+az account set --subscription "YOUR_SUBSCRIPTION_ID"
+
+# List subscriptions
+az account list --output table
+
+# Install Azure ML extension
+az extension add -n ml
+
+# Install Python SDK
+pip install azure-ai-ml azure-identity
 \end{lstlisting}
 
-\section{ML Frameworks Installation}
+\section{ML Framework Installation}
 
 \subsection{PyTorch}
 
 \begin{lstlisting}[style=shell]
-# CPU version
+# CPU-only version
 pip install torch torchvision torchaudio
 
-# GPU version (CUDA 11.8)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+# CUDA 11.8 (NVIDIA GPU)
+pip install torch torchvision torchaudio --index-url \
+    https://download.pytorch.org/whl/cu118
+
+# CUDA 12.1
+pip install torch torchvision torchaudio --index-url \
+    https://download.pytorch.org/whl/cu121
+
+# Verify installation
+python -c "import torch; print(torch.__version__); \
+    print(torch.cuda.is_available())"
+
+# Check CUDA version
+python -c "import torch; print(torch.version.cuda)"
 \end{lstlisting}
 
 \subsection{TensorFlow}
@@ -123,14 +522,57 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 # CPU version
 pip install tensorflow
 
-# GPU version
+# GPU version (CUDA 11.8+, cuDNN 8.6+)
 pip install tensorflow[and-cuda]
+
+# Specific version
+pip install tensorflow==2.15.0
+
+# Verify installation
+python -c "import tensorflow as tf; print(tf.__version__); \
+    print(tf.config.list_physical_devices('GPU'))"
+
+# Enable mixed precision training
+python -c "from tensorflow.keras import mixed_precision; \
+    mixed_precision.set_global_policy('mixed_float16')"
 \end{lstlisting}
 
-\subsection{Scikit-learn and Data Science Stack}
+\subsection{JAX}
 
 \begin{lstlisting}[style=shell]
-pip install numpy pandas scikit-learn matplotlib seaborn jupyter
+# CPU version
+pip install jax jaxlib
+
+# CUDA 11 version
+pip install jax[cuda11_pip] -f \
+    https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+
+# CUDA 12 version
+pip install jax[cuda12_pip] -f \
+    https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+
+# Verify
+python -c "import jax; print(jax.__version__); \
+    print(jax.devices())"
+\end{lstlisting}
+
+\subsection{Data Science Stack}
+
+\begin{lstlisting}[style=shell]
+# Core data science libraries
+pip install numpy pandas scikit-learn scipy
+
+# Visualization libraries
+pip install matplotlib seaborn plotly
+
+# Jupyter
+pip install jupyter jupyterlab ipywidgets
+
+# Additional ML libraries
+pip install xgboost lightgbm catboost
+
+# Start Jupyter Lab
+jupyter lab --port=8888 --no-browser
 \end{lstlisting}
 
 \section{MLOps Tools Installation}
@@ -138,117 +580,670 @@ pip install numpy pandas scikit-learn matplotlib seaborn jupyter
 \subsection{MLflow}
 
 \begin{lstlisting}[style=shell]
+# Install MLflow
 pip install mlflow
 
-# Start MLflow server
-mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlruns --host 0.0.0.0
+# Install with extras
+pip install mlflow[extras]  # Includes scikit-learn, etc.
+
+# Start MLflow tracking server
+mlflow server \
+    --backend-store-uri sqlite:///mlflow.db \
+    --default-artifact-root ./mlruns \
+    --host 0.0.0.0 \
+    --port 5000
+
+# Start with remote storage (S3)
+mlflow server \
+    --backend-store-uri postgresql://user:pass@host:5432/mlflow \
+    --default-artifact-root s3://my-bucket/mlflow \
+    --host 0.0.0.0
+
+# Set tracking URI
+export MLFLOW_TRACKING_URI=http://localhost:5000
 \end{lstlisting}
 
-\subsection{DVC}
+\subsection{DVC (Data Version Control)}
 
 \begin{lstlisting}[style=shell]
+# Install DVC
 pip install dvc
 
-# Initialize DVC
+# Install with remote storage support
+pip install dvc[s3]      # AWS S3
+pip install dvc[gs]      # Google Cloud Storage
+pip install dvc[azure]   # Azure Blob Storage
+pip install dvc[all]     # All remote storage options
+
+# Initialize DVC in project
+cd your_project
 dvc init
 
 # Configure remote storage
-dvc remote add -d myremote s3://mybucket/dvc-storage
+# S3
+dvc remote add -d myremote s3://mybucket/dvcstore
+dvc remote modify myremote region us-west-2
+
+# GCS
+dvc remote add -d myremote gs://mybucket/dvcstore
+
+# Track data file
+dvc add data/large_dataset.csv
+git add data/large_dataset.csv.dvc .gitignore
+
+# Push data to remote
+dvc push
+
+# Pull data from remote
+dvc pull
+
+# Create pipeline
+dvc run -n prepare \
+    -d data/raw/data.csv \
+    -o data/prepared/data.csv \
+    python src/prepare.py
+
+# Reproduce pipeline
+dvc repro
 \end{lstlisting}
 
 \subsection{Apache Airflow}
 
 \begin{lstlisting}[style=shell]
-pip install apache-airflow
+# Install Airflow
+AIRFLOW_VERSION=2.7.3
+PYTHON_VERSION="$(python --version | cut -d " " -f 2 | cut -d "." -f 1-2)"
+CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/\
+constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+
+pip install "apache-airflow==${AIRFLOW_VERSION}" \
+    --constraint "${CONSTRAINT_URL}"
+
+# Install with providers
+pip install "apache-airflow[aws,google,postgres,redis]"
+
+# Set Airflow home
+export AIRFLOW_HOME=~/airflow
 
 # Initialize database
 airflow db init
 
 # Create admin user
-airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com
+airflow users create \
+    --username admin \
+    --firstname Admin \
+    --lastname User \
+    --role Admin \
+    --email admin@example.com \
+    --password admin
 
-# Start webserver and scheduler
-airflow webserver -p 8080
+# Start web server
+airflow webserver --port 8080
+
+# Start scheduler (in separate terminal)
 airflow scheduler
+
+# Test DAG
+airflow dags test my_dag 2024-01-01
 \end{lstlisting}
 
-\section{GPU Drivers}
+\subsection{Kubeflow}
 
-\subsection{NVIDIA Drivers and CUDA}
+\begin{lstlisting}[style=shell]
+# Install Kubeflow Pipelines standalone
+export PIPELINE_VERSION=2.0.0
+kubectl apply -k "github.com/kubeflow/pipelines/manifests/\
+kustomize/cluster-scoped-resources?ref=$PIPELINE_VERSION"
+kubectl wait --for condition=established --timeout=60s \
+    crd/applications.app.k8s.io
+kubectl apply -k "github.com/kubeflow/pipelines/manifests/\
+kustomize/env/platform-agnostic?ref=$PIPELINE_VERSION"
+
+# Access Kubeflow Pipelines UI
+kubectl port-forward -n kubeflow svc/ml-pipeline-ui 8080:80
+
+# Install Kubeflow Pipelines SDK
+pip install kfp
+
+# Verify installation
+python -c "import kfp; print(kfp.__version__)"
+\end{lstlisting}
+
+\subsection{Weights \& Biases}
+
+\begin{lstlisting}[style=shell]
+# Install wandb
+pip install wandb
+
+# Login (requires account)
+wandb login
+
+# Or set API key
+export WANDB_API_KEY=your_api_key
+
+# Initialize in project
+wandb init
+
+# Test installation
+python -c "import wandb; wandb.init(project='test'); wandb.finish()"
+\end{lstlisting}
+
+\section{GPU Drivers and CUDA}
+
+\subsection{NVIDIA Drivers}
 
 \textbf{Ubuntu/Debian:}
 \begin{lstlisting}[style=shell]
-# Install NVIDIA drivers
-sudo apt install nvidia-driver-525
+# Check GPU
+lspci | grep -i nvidia
 
-# Install CUDA Toolkit
-wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
-sudo dpkg -i cuda-keyring_1.0-1_all.deb
+# Add NVIDIA repository
+sudo add-apt-repository ppa:graphics-drivers/ppa
 sudo apt update
-sudo apt install cuda
+
+# Install recommended driver
+ubuntu-drivers devices
+sudo ubuntu-drivers autoinstall
+
+# Or install specific version
+sudo apt install nvidia-driver-535
+
+# Reboot
+sudo reboot
 
 # Verify installation
 nvidia-smi
+\end{lstlisting}
+
+\subsection{CUDA Toolkit}
+
+\begin{lstlisting}[style=shell]
+# CUDA 11.8 (Ubuntu 22.04)
+wget https://developer.download.nvidia.com/compute/cuda/repos/\
+ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
+sudo dpkg -i cuda-keyring_1.0-1_all.deb
+sudo apt update
+sudo apt install cuda-11-8
+
+# CUDA 12.1
+sudo apt install cuda-12-1
+
+# Add to PATH
+echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
+source ~/.bashrc
+
+# Verify CUDA
 nvcc --version
+\end{lstlisting}
+
+\subsection{cuDNN}
+
+\begin{lstlisting}[style=shell]
+# Download cuDNN from NVIDIA (requires login)
+# https://developer.nvidia.com/cudnn
+
+# Install cuDNN (example for Ubuntu)
+sudo apt install ./cudnn-local-repo-ubuntu2204-8.9.5.29_1.0-1_amd64.deb
+sudo cp /var/cudnn-local-repo-ubuntu2204-8.9.5.29/cudnn-*-keyring.gpg \
+    /usr/share/keyrings/
+sudo apt update
+sudo apt install libcudnn8 libcudnn8-dev
+
+# Verify
+cat /usr/local/cuda/include/cudnn_version.h | grep CUDNN_MAJOR -A 2
+\end{lstlisting}
+
+\subsection{NVIDIA Container Toolkit}
+
+For running GPU workloads in Docker:
+
+\begin{lstlisting}[style=shell]
+# Add repository
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | \
+    sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/\
+nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+
+# Install
+sudo apt update
+sudo apt install -y nvidia-container-toolkit
+
+# Restart Docker
+sudo systemctl restart docker
+
+# Test GPU in Docker
+docker run --rm --gpus all nvidia/cuda:11.8.0-base-ubuntu22.04 nvidia-smi
 \end{lstlisting}
 
 \section{Development Tools}
 
-\subsection{VS Code Extensions for ML}
+\subsection{Git Configuration}
 
-Recommended VS Code extensions:
-\begin{itemize}
-    \item Python
-    \item Jupyter
-    \item Docker
-    \item Kubernetes
-    \item YAML
-    \item GitLens
-    \item Remote - SSH
-    \item Remote - Containers
-\end{itemize}
+\begin{lstlisting}[style=shell]
+# Configure Git
+git config --global user.name "Your Name"
+git config --global user.email "your.email@example.com"
+
+# Set default editor
+git config --global core.editor "vim"
+
+# Set default branch name
+git config --global init.defaultBranch main
+
+# Configure line endings
+git config --global core.autocrlf input  # Linux/macOS
+git config --global core.autocrlf true   # Windows
+
+# Configure aliases
+git config --global alias.st status
+git config --global alias.co checkout
+git config --global alias.br branch
+git config --global alias.ci commit
+git config --global alias.unstage 'reset HEAD --'
+
+# View configuration
+git config --list
+\end{lstlisting}
+
+\subsection{VS Code Setup for ML}
+
+\textbf{Install VS Code:}
+\begin{lstlisting}[style=shell]
+# macOS
+brew install --cask visual-studio-code
+
+# Ubuntu/Debian
+wget -qO- https://packages.microsoft.com/keys/microsoft.asc | \
+    gpg --dearmor > packages.microsoft.gpg
+sudo install -o root -g root -m 644 packages.microsoft.gpg \
+    /etc/apt/trusted.gpg.d/
+sudo sh -c 'echo "deb [arch=amd64] \
+    https://packages.microsoft.com/repos/vscode stable main" > \
+    /etc/apt/sources.list.d/vscode.list'
+sudo apt update
+sudo apt install code
+\end{lstlisting}
+
+\textbf{Essential Extensions:}
+\begin{lstlisting}[style=shell]
+# Python
+code --install-extension ms-python.python
+code --install-extension ms-python.vscode-pylance
+
+# Jupyter
+code --install-extension ms-toolsai.jupyter
+
+# Docker and Kubernetes
+code --install-extension ms-azuretools.vscode-docker
+code --install-extension ms-kubernetes-tools.vscode-kubernetes-tools
+
+# YAML
+code --install-extension redhat.vscode-yaml
+
+# Git
+code --install-extension eamodio.gitlens
+
+# Remote Development
+code --install-extension ms-vscode-remote.remote-ssh
+code --install-extension ms-vscode-remote.remote-containers
+
+# AI assistance
+code --install-extension GitHub.copilot
+\end{lstlisting}
 
 \section{Complete Environment Setup Script}
 
-\begin{lstlisting}[style=shell, caption=setup.sh]
+This script sets up a complete ML engineering environment:
+
+\begin{lstlisting}[style=shell, caption=setup\_ml\_environment.sh]
 #!/bin/bash
+set -e
+
+echo "Setting up ML Engineering Environment..."
+
+# Variables
+PROJECT_NAME=${1:-ml_project}
+PYTHON_VERSION=${2:-3.11}
+
+echo "Project name: $PROJECT_NAME"
+echo "Python version: $PYTHON_VERSION"
 
 # Create project directory
-mkdir -p ml_project
-cd ml_project
+mkdir -p $PROJECT_NAME
+cd $PROJECT_NAME
 
-# Create virtual environment
-python -m venv venv
+echo "Creating virtual environment..."
+python${PYTHON_VERSION} -m venv venv
 source venv/bin/activate
 
-# Install dependencies
-pip install --upgrade pip
+# Upgrade pip
+echo "Upgrading pip..."
+pip install --upgrade pip setuptools wheel
+
+# Install ML frameworks
+echo "Installing ML frameworks..."
 pip install torch torchvision torchaudio
 pip install tensorflow
-pip install scikit-learn pandas numpy matplotlib seaborn
-pip install mlflow dvc
-pip install jupyter jupyterlab
-pip install fastapi uvicorn
-pip install pytest pytest-cov
-pip install black flake8 mypy
+pip install scikit-learn xgboost lightgbm
+
+# Install data science stack
+echo "Installing data science libraries..."
+pip install numpy pandas scipy matplotlib seaborn plotly
+
+# Install Jupyter
+echo "Installing Jupyter..."
+pip install jupyter jupyterlab ipywidgets
+
+# Install MLOps tools
+echo "Installing MLOps tools..."
+pip install mlflow dvc wandb
+
+# Install serving frameworks
+echo "Installing serving frameworks..."
+pip install fastapi uvicorn pydantic
+
+# Install testing tools
+echo "Installing testing tools..."
+pip install pytest pytest-cov pytest-mock
+
+# Install code quality tools
+echo "Installing code quality tools..."
+pip install black flake8 mypy pylint isort
+
+# Install additional tools
+echo "Installing additional tools..."
+pip install python-dotenv pyyaml requests boto3
 
 # Initialize git
+echo "Initializing git repository..."
 git init
-curl https://raw.githubusercontent.com/github/gitignore/main/Python.gitignore -o .gitignore
+curl -sL https://raw.githubusercontent.com/github/gitignore/main/Python.gitignore \
+    -o .gitignore
 
 # Initialize DVC
+echo "Initializing DVC..."
 dvc init
 
 # Create project structure
-mkdir -p data/{raw,processed,features}
-mkdir -p models
-mkdir -p notebooks
-mkdir -p src/{data,features,models,utils}
-mkdir -p tests
+echo "Creating project structure..."
+mkdir -p data/{raw,processed,features,external}
+mkdir -p models/{trained,registry}
+mkdir -p notebooks/{exploratory,reporting}
+mkdir -p src/{data,features,models,utils,api}
+mkdir -p tests/{unit,integration}
 mkdir -p config
+mkdir -p logs
+mkdir -p docs
+mkdir -p scripts
+
+# Create __init__.py files
+touch src/__init__.py
+touch src/data/__init__.py
+touch src/features/__init__.py
+touch src/models/__init__.py
+touch src/utils/__init__.py
+touch src/api/__init__.py
+touch tests/__init__.py
+touch tests/unit/__init__.py
+touch tests/integration/__init__.py
 
 # Create requirements.txt
+echo "Creating requirements.txt..."
 pip freeze > requirements.txt
 
+# Create .env template
+echo "Creating .env template..."
+cat > .env.template << 'EOF'
+# Environment variables template
+MLFLOW_TRACKING_URI=http://localhost:5000
+AWS_PROFILE=default
+WANDB_API_KEY=your_key_here
+PYTHONPATH=./src
+EOF
+
+# Create README
+echo "Creating README.md..."
+cat > README.md << EOF
+# $PROJECT_NAME
+
+ML Engineering Project
+
+## Setup
+
+\`\`\`bash
+# Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # or venv\Scripts\activate on Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Copy environment variables
+cp .env.template .env
+# Edit .env with your values
+\`\`\`
+
+## Project Structure
+
+\`\`\`
+$PROJECT_NAME/
+├── data/               # Data files
+│   ├── raw/           # Original data
+│   ├── processed/     # Cleaned data
+│   └── features/      # Feature sets
+├── models/            # Trained models
+├── notebooks/         # Jupyter notebooks
+├── src/              # Source code
+│   ├── data/         # Data processing
+│   ├── features/     # Feature engineering
+│   ├── models/       # Model training
+│   └── api/          # API code
+├── tests/            # Tests
+└── config/           # Configuration files
+\`\`\`
+
+## Usage
+
+TODO: Add usage instructions
+EOF
+
+# Create pyproject.toml
+echo "Creating pyproject.toml..."
+cat > pyproject.toml << 'EOF'
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+EOF
+
+# Create pytest.ini
+echo "Creating pytest.ini..."
+cat > pytest.ini << 'EOF'
+[pytest]
+testpaths = tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+addopts = -v --cov=src --cov-report=html --cov-report=term
+EOF
+
+echo ""
 echo "Setup complete!"
+echo ""
+echo "To activate the environment:"
+echo "  source venv/bin/activate"
+echo ""
+echo "To start Jupyter Lab:"
+echo "  jupyter lab"
+echo ""
+echo "To start MLflow UI:"
+echo "  mlflow ui"
 \end{lstlisting}
+
+\textbf{Usage:}
+\begin{lstlisting}[style=shell]
+# Make script executable
+chmod +x setup_ml_environment.sh
+
+# Run with default settings
+./setup_ml_environment.sh
+
+# Run with custom project name and Python version
+./setup_ml_environment.sh my_ml_project 3.11
+\end{lstlisting}
+
+\section{Troubleshooting Common Issues}
+
+\subsection{Python Installation Issues}
+
+\textbf{Issue: pip not found after Python installation}
+\begin{lstlisting}[style=shell]
+# Solution: Reinstall pip
+python -m ensurepip --upgrade
+
+# Or download get-pip.py
+curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
+python get-pip.py
+\end{lstlisting}
+
+\textbf{Issue: Permission denied when installing packages}
+\begin{lstlisting}[style=shell]
+# Solution: Use --user flag
+pip install --user package_name
+
+# Or use virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate
+pip install package_name
+\end{lstlisting}
+
+\subsection{Docker Issues}
+
+\textbf{Issue: Cannot connect to Docker daemon}
+\begin{lstlisting}[style=shell]
+# Solution 1: Start Docker service
+sudo systemctl start docker
+
+# Solution 2: Add user to docker group
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Solution 3: Check Docker socket permissions
+sudo chmod 666 /var/run/docker.sock
+\end{lstlisting}
+
+\subsection{CUDA Issues}
+
+\textbf{Issue: CUDA out of memory}
+\begin{lstlisting}[style=python]
+# Solution 1: Clear cache
+import torch
+torch.cuda.empty_cache()
+
+# Solution 2: Use smaller batch size
+batch_size = 16  # Reduce from 32 or 64
+
+# Solution 3: Use gradient accumulation
+# See Chapter 9 for details
+\end{lstlisting}
+
+\textbf{Issue: CUDA version mismatch}
+\begin{lstlisting}[style=shell]
+# Check CUDA version
+nvcc --version
+nvidia-smi
+
+# Install matching PyTorch version
+# Visit: pytorch.org/get-started/locally/
+\end{lstlisting}
+
+\section{Verification Checklist}
+
+After completing the setup, verify your environment:
+
+\begin{enumerate}
+    \item \textbf{Python}: \texttt{python --version} shows Python 3.9+
+    \item \textbf{pip}: \texttt{pip --version} works
+    \item \textbf{Virtual environment}: Can create and activate venv
+    \item \textbf{Docker}: \texttt{docker run hello-world} succeeds
+    \item \textbf{PyTorch}: Can import and detect GPU if available
+    \item \textbf{TensorFlow}: Can import and list devices
+    \item \textbf{MLflow}: \texttt{mlflow --version} works
+    \item \textbf{DVC}: \texttt{dvc version} works
+    \item \textbf{Jupyter}: Can start and access Jupyter Lab
+    \item \textbf{Git}: \texttt{git --version} works
+\end{enumerate}
+
+Run this verification script:
+
+\begin{lstlisting}[style=python, caption=verify\_setup.py]
+#!/usr/bin/env python
+"""Verify ML environment setup"""
+
+import sys
+
+def check_import(module_name, package_name=None):
+    """Check if module can be imported"""
+    try:
+        __import__(module_name)
+        print(f"✓ {package_name or module_name}")
+        return True
+    except ImportError:
+        print(f"✗ {package_name or module_name} - Not installed")
+        return False
+
+def check_gpu():
+    """Check GPU availability"""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            print(f"✓ GPU available: {torch.cuda.get_device_name(0)}")
+            return True
+        else:
+            print("✗ GPU not available (CPU only)")
+            return False
+    except:
+        return False
+
+print("Python Environment Verification")
+print("=" * 50)
+print(f"Python version: {sys.version}")
+print()
+
+modules = [
+    ("torch", "PyTorch"),
+    ("tensorflow", "TensorFlow"),
+    ("sklearn", "scikit-learn"),
+    ("numpy", "NumPy"),
+    ("pandas", "pandas"),
+    ("matplotlib", "Matplotlib"),
+    ("mlflow", "MLflow"),
+    ("fastapi", "FastAPI"),
+    ("jupyter", "Jupyter"),
+]
+
+print("Checking installed packages:")
+all_ok = all(check_import(mod, name) for mod, name in modules)
+
+print("\nChecking GPU:")
+check_gpu()
+
+print("\n" + "=" * 50)
+if all_ok:
+    print("✓ All required packages installed!")
+else:
+    print("✗ Some packages missing. Run: pip install -r requirements.txt")
+\end{lstlisting}
+
+Run with: \texttt{python verify\_setup.py}

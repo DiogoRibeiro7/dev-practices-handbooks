@@ -39,13 +39,13 @@ The key differences extend beyond these definitions into daily work, deliverable
 \centering
 \caption{Data Science vs ML Engineering: Key Differences}
 \label{tab:ds_vs_mle}
-\begin{tabular}{@{}lll@{}}
+\begin{tabular}{@{}p{0.22\textwidth}p{0.36\textwidth}p{0.36\textwidth}@{}}
 \toprule
 \textbf{Aspect} & \textbf{Data Scientist} & \textbf{ML Engineer} \\
 \midrule
 Primary Focus & Model accuracy, insights & System reliability, scalability \\
 Main Deliverable & Analysis, prototypes & Production systems \\
-Success Metric & Model performance (AUC, R²) & Uptime, latency, cost \\
+Success Metric & Model performance (AUC, $R^2$) & Uptime, latency, cost \\
 Time Allocation & 70\% exploration, 30\% communication & 70\% engineering, 30\% optimization \\
 Tools & Jupyter, R, pandas, scikit-learn & Docker, Kubernetes, Airflow, MLflow \\
 Code Quality & Exploratory, experimental & Production-grade, tested \\
@@ -157,7 +157,7 @@ Common issues with research notebook code:
 
 Now consider a production-ready implementation of the same task:
 
-\begin{lstlisting}[style=python, caption=Production ML Pipeline - Configuration]
+\begin{lstlisting}[style=yaml, caption=Production ML Pipeline - Configuration]
 # config/model_config.yaml
 model:
   name: "churn_predictor"
@@ -377,7 +377,7 @@ class FeaturePreprocessor:
             )),
             ('encoder', OneHotEncoder(
                 handle_unknown='ignore',
-                sparse=False
+                sparse_output=False  # Updated for sklearn>=1.2 (2024)
             ))
         ])
 
@@ -446,6 +446,7 @@ import mlflow
 import mlflow.sklearn
 import logging
 from datetime import datetime
+import joblib
 
 logger = logging.getLogger(__name__)
 
@@ -1046,6 +1047,77 @@ The following chapters will explore each aspect of production ML systems in dept
     \item Huyen, C. (2022). \textit{Designing Machine Learning Systems}. O'Reilly Media.
     \item Kleppmann, M. (2017). \textit{Designing Data-Intensive Applications}. O'Reilly Media.
 \end{itemize}
+
+\section{Chapter Summary}
+
+This chapter established the foundations of ML engineering and distinguished it from data science:
+
+\subsection*{Key Takeaways}
+
+\begin{enumerate}
+    \item \textbf{ML Engineering vs. Data Science:}
+    \begin{itemize}
+        \item Data scientists focus on model accuracy and insights
+        \item ML engineers focus on system reliability, scalability, and operational excellence
+        \item Production ML requires both skillsets working together
+    \end{itemize}
+
+    \item \textbf{Why ML Projects Fail:}
+    \begin{itemize}
+        \item 87\% of ML projects never reach production \citep{venturebeat2019}
+        \item Root causes: lack of engineering rigor, not algorithmic insufficiency
+        \item Common failures: training-serving skew, data quality issues, technical debt
+    \end{itemize}
+
+    \item \textbf{Production vs. Research Code:}
+    \begin{itemize}
+        \item Research code: exploratory, iterative, accuracy-focused
+        \item Production code: modular, testable, maintainable, reliable
+        \item Transformation requires software engineering discipline
+    \end{itemize}
+
+    \item \textbf{ML System Architecture Principles:}
+    \begin{itemize}
+        \item Separation of concerns (data, training, serving, monitoring)
+        \item Reproducibility through versioning and configuration
+        \item Testability at every layer
+        \item Observability for debugging and optimization
+    \end{itemize}
+
+    \item \textbf{ML Maturity Levels:}
+    \begin{itemize}
+        \item Level 0: Manual processes, no automation
+        \item Level 1: Automated training pipeline
+        \item Level 2: Automated deployment pipeline
+        \item Level 3: Full MLOps with automated retraining
+    \end{itemize}
+\end{enumerate}
+
+\subsection*{Critical Success Factors}
+
+\begin{itemize}
+    \item \textbf{Start with strong fundamentals:} Invest in proper data infrastructure before complex models
+    \item \textbf{Measure business impact, not just model metrics:} Align ML work with business objectives
+    \item \textbf{Build for production from day one:} Production-grade code patterns save rework
+    \item \textbf{Embrace software engineering practices:} Testing, version control, CI/CD are non-negotiable
+    \item \textbf{Plan for failure:} Monitoring, alerting, and debugging must be first-class concerns
+\end{itemize}
+
+\subsection*{Connection to FraudGuard Case Study}
+
+In our FraudGuard fraud detection system (see Chapter~\ref{ch:case_study}), we'll apply these principles throughout the book:
+
+\begin{itemize}
+    \item Chapters~\ref{ch:data_pipelines}--\ref{ch:feature_stores}: Building robust data foundations
+    \item Chapters~\ref{ch:model_development}--\ref{ch:hyperparameter_optimization}: Production-grade model development
+    \item Chapters~\ref{ch:model_serving}--\ref{ch:model_versioning}: Reliable deployment and serving
+    \item Chapters~\ref{ch:monitoring}--\ref{ch:performance_optimization}: Operational excellence
+    \item Chapters~\ref{ch:cicd}--\ref{ch:mlops_platforms}: Automation and MLOps
+\end{itemize}
+
+\subsection*{Next Steps}
+
+Chapter~\ref{ch:ml_lifecycle} provides a detailed walkthrough of the complete ML lifecycle, from problem definition through production deployment and maintenance. This lifecycle framework guides all subsequent chapters.
 
 \section{Exercises}
 

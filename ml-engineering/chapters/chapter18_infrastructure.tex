@@ -2,31 +2,3841 @@
 
 After completing this chapter, readers will be able to:
 \begin{itemize}
-    \item Use Terraform for ML infrastructure
-    \item Implement infrastructure as code best practices
-    \item Deploy ML systems on Kubernetes
-    \item Manage cloud resources efficiently
-    \item Implement disaster recovery strategies
+    \item Design and implement Terraform modules for ML infrastructure
+    \item Deploy ML workloads on Kubernetes using Helm charts
+    \item Manage cloud resources across AWS, GCP, and Azure
+    \item Orchestrate containerized ML workloads at scale
+    \item Implement disaster recovery and backup strategies for ML systems
+    \item Optimize infrastructure costs through Infrastructure as Code
+    \item Automate infrastructure provisioning and management
+    \item Apply best practices for production ML infrastructure
 \end{itemize}
 
-\section{Infrastructure as Code Fundamentals}
+\section{Introduction}
 
-% Placeholder content
+Infrastructure as Code (IaC) is the practice of managing and provisioning infrastructure through machine-readable definition files rather than manual processes. For ML systems, IaC provides reproducibility, version control, and automation of complex infrastructure requirements.
 
-\section{Terraform for ML}
+\textbf{Why IaC for Machine Learning:}
 
-% Placeholder content
+\begin{itemize}
+    \item \textbf{Reproducibility:} Recreate exact infrastructure configurations across environments
+    \item \textbf{Version Control:} Track infrastructure changes alongside code changes
+    \item \textbf{Automation:} Eliminate manual provisioning and reduce human error
+    \item \textbf{Scalability:} Rapidly scale infrastructure up or down based on demand
+    \item \textbf{Cost Optimization:} Programmatically manage resources to minimize costs
+    \item \textbf{Disaster Recovery:} Quickly rebuild infrastructure from code
+    \item \textbf{Collaboration:} Share infrastructure definitions across teams
+    \item \textbf{Testing:} Test infrastructure changes before production deployment
+\end{itemize}
 
-\section{Kubernetes for ML}
+\textbf{ML Infrastructure Components:}
 
-% Placeholder content
+\begin{enumerate}
+    \item \textbf{Compute:} GPU/CPU instances for training and inference
+    \item \textbf{Storage:} Data lakes, model registries, artifact storage
+    \item \textbf{Networking:} VPCs, load balancers, API gateways
+    \item \textbf{Orchestration:} Kubernetes clusters, container registries
+    \item \textbf{Data:} Databases, data warehouses, streaming platforms
+    \item \textbf{Monitoring:} Logging, metrics, alerting infrastructure
+    \item \textbf{Security:} IAM, secrets management, encryption
+\end{enumerate}
 
-\section{Chapter Summary}
+\section{Terraform Modules for ML Infrastructure}
 
-% Placeholder summary
+Terraform is an open-source IaC tool that enables declarative infrastructure management across multiple cloud providers.
 
-\section{Exercises}
+\subsection{Core ML Infrastructure Module}
 
-\begin{exercise}
-Deploy an ML system on Kubernetes using Terraform and Helm charts.
-\end{exercise}
+\begin{lstlisting}[language=Python, caption=Terraform Module Structure for ML Platform]
+# modules/ml-platform/main.tf
+"""
+Root module for ML platform infrastructure
+Orchestrates compute, storage, networking, and monitoring
+"""
+
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.23"
+    }
+  }
+}
+
+# Local variables
+locals {
+  common_tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+    CostCenter  = var.cost_center
+    Owner       = var.owner_email
+  }
+
+  name_prefix = "${var.project_name}-${var.environment}"
+}
+
+# Data sources
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+# VPC Module
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "~> 5.0"
+
+  name = "${local.name_prefix}-vpc"
+  cidr = var.vpc_cidr
+
+  azs             = slice(data.aws_availability_zones.available.names, 0, 3)
+  private_subnets = [for i in range(3) : cidrsubnet(var.vpc_cidr, 8, i)]
+  public_subnets  = [for i in range(3) : cidrsubnet(var.vpc_cidr, 8, i + 100)]
+
+  enable_nat_gateway   = true
+  single_nat_gateway   = var.environment != "production"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  # Enable VPC Flow Logs
+  enable_flow_log                      = true
+  create_flow_log_cloudwatch_iam_role  = true
+  create_flow_log_cloudwatch_log_group = true
+
+  tags = local.common_tags
+}
+
+# EKS Cluster Module
+module "eks" {
+  source  = "terraform-aws-modules/eks/aws"
+  version = "~> 19.0"
+
+  cluster_name    = "${local.name_prefix}-eks"
+  cluster_version = var.kubernetes_version
+
+  vpc_id                   = module.vpc.vpc_id
+  subnet_ids               = module.vpc.private_subnets
+  control_plane_subnet_ids = module.vpc.private_subnets
+
+  # Cluster endpoint access
+  cluster_endpoint_public_access  = var.environment != "production"
+  cluster_endpoint_private_access = true
+
+  # Cluster add-ons
+  cluster_addons = {
+    coredns = {
+      most_recent = true
+    }
+    kube-proxy = {
+      most_recent = true
+    }
+    vpc-cni = {
+      most_recent = true
+    }
+    aws-ebs-csi-driver = {
+      most_recent = true
+    }
+  }
+
+  # Managed node groups
+  eks_managed_node_groups = {
+    # CPU workloads
+    general = {
+      name = "${local.name_prefix}-general"
+
+      instance_types = ["m5.xlarge"]
+      capacity_type  = "ON_DEMAND"
+
+      min_size     = var.environment == "production" ? 2 : 1
+      max_size     = 10
+      desired_size = var.environment == "production" ? 3 : 2
+
+      labels = {
+        workload = "general"
+      }
+
+      taints = []
+
+      tags = merge(local.common_tags, {
+        NodeGroup = "general"
+      })
+    }
+
+    # GPU workloads for training
+    gpu_training = {
+      name = "${local.name_prefix}-gpu-training"
+
+      instance_types = ["p3.2xlarge"]
+      capacity_type  = var.use_spot_instances ? "SPOT" : "ON_DEMAND"
+
+      min_size     = 0
+      max_size     = 20
+      desired_size = 0  # Scale from zero
+
+      labels = {
+        workload    = "training"
+        gpu         = "nvidia-v100"
+        accelerator = "true"
+      }
+
+      taints = [{
+        key    = "nvidia.com/gpu"
+        value  = "true"
+        effect = "NO_SCHEDULE"
+      }]
+
+      # Install NVIDIA device plugin
+      pre_bootstrap_user_data = <<-EOT
+        #!/bin/bash
+        /etc/eks/bootstrap.sh ${local.name_prefix}-eks \
+          --kubelet-extra-args '--node-labels=workload=training,gpu=nvidia-v100'
+      EOT
+
+      tags = merge(local.common_tags, {
+        NodeGroup = "gpu-training"
+      })
+    }
+
+    # Inference workloads
+    inference = {
+      name = "${local.name_prefix}-inference"
+
+      instance_types = ["c5.2xlarge"]
+      capacity_type  = "ON_DEMAND"
+
+      min_size     = var.environment == "production" ? 2 : 1
+      max_size     = 50
+      desired_size = var.environment == "production" ? 3 : 1
+
+      labels = {
+        workload = "inference"
+      }
+
+      tags = merge(local.common_tags, {
+        NodeGroup = "inference"
+      })
+    }
+  }
+
+  # Cluster security group rules
+  cluster_security_group_additional_rules = {
+    ingress_nodes_ephemeral_ports_tcp = {
+      description                = "Nodes on ephemeral ports"
+      protocol                   = "tcp"
+      from_port                  = 1025
+      to_port                    = 65535
+      type                       = "ingress"
+      source_node_security_group = true
+    }
+  }
+
+  # Node security group rules
+  node_security_group_additional_rules = {
+    ingress_self_all = {
+      description = "Node to node all ports/protocols"
+      protocol    = "-1"
+      from_port   = 0
+      to_port     = 0
+      type        = "ingress"
+      self        = true
+    }
+    egress_all = {
+      description      = "Node all egress"
+      protocol         = "-1"
+      from_port        = 0
+      to_port          = 0
+      type             = "egress"
+      cidr_blocks      = ["0.0.0.0/0"]
+      ipv6_cidr_blocks = ["::/0"]
+    }
+  }
+
+  tags = local.common_tags
+}
+
+# S3 Buckets for ML Assets
+module "s3_buckets" {
+  source = "./modules/s3-buckets"
+
+  project_name = var.project_name
+  environment  = var.environment
+
+  buckets = {
+    data = {
+      name        = "${local.name_prefix}-data"
+      versioning  = true
+      encryption  = true
+      lifecycle_rules = [
+        {
+          id      = "archive_old_data"
+          enabled = true
+          transitions = [
+            {
+              days          = 90
+              storage_class = "INTELLIGENT_TIERING"
+            },
+            {
+              days          = 180
+              storage_class = "GLACIER"
+            }
+          ]
+        }
+      ]
+    }
+
+    models = {
+      name        = "${local.name_prefix}-models"
+      versioning  = true
+      encryption  = true
+      lifecycle_rules = [
+        {
+          id      = "keep_versions"
+          enabled = true
+          noncurrent_version_expiration = {
+            days = 90
+          }
+        }
+      ]
+    }
+
+    artifacts = {
+      name        = "${local.name_prefix}-artifacts"
+      versioning  = false
+      encryption  = true
+      lifecycle_rules = [
+        {
+          id      = "expire_artifacts"
+          enabled = true
+          expiration = {
+            days = 30
+          }
+        }
+      ]
+    }
+
+    logs = {
+      name        = "${local.name_prefix}-logs"
+      versioning  = false
+      encryption  = true
+      lifecycle_rules = [
+        {
+          id      = "expire_logs"
+          enabled = true
+          expiration = {
+            days = 7
+          }
+        }
+      ]
+    }
+  }
+
+  tags = local.common_tags
+}
+
+# RDS for Metadata Storage
+module "rds" {
+  source = "./modules/rds"
+
+  identifier = "${local.name_prefix}-metadata"
+
+  engine               = "postgres"
+  engine_version       = "15.3"
+  instance_class       = var.db_instance_type
+  allocated_storage    = 100
+  max_allocated_storage = 1000
+  storage_encrypted    = true
+
+  db_name  = "mlmetadata"
+  username = var.db_master_username
+
+  vpc_id             = module.vpc.vpc_id
+  subnet_ids         = module.vpc.private_subnets
+
+  backup_retention_period = var.environment == "production" ? 30 : 7
+  backup_window          = "03:00-04:00"
+  maintenance_window     = "mon:04:00-mon:05:00"
+
+  deletion_protection = var.environment == "production"
+  skip_final_snapshot = var.environment != "production"
+
+  # Performance Insights
+  performance_insights_enabled    = true
+  performance_insights_retention_period = 7
+
+  # Enhanced monitoring
+  enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
+  monitoring_interval            = 60
+
+  tags = local.common_tags
+}
+
+# ElastiCache for Caching
+module "elasticache" {
+  source = "./modules/elasticache"
+
+  cluster_id = "${local.name_prefix}-redis"
+
+  engine         = "redis"
+  engine_version = "7.0"
+  node_type      = var.cache_node_type
+  num_cache_nodes = var.environment == "production" ? 2 : 1
+
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
+
+  automatic_failover_enabled = var.environment == "production"
+  multi_az_enabled          = var.environment == "production"
+
+  at_rest_encryption_enabled = true
+  transit_encryption_enabled = true
+
+  snapshot_retention_limit = var.environment == "production" ? 5 : 1
+  snapshot_window         = "03:00-05:00"
+
+  tags = local.common_tags
+}
+
+# ECR Repositories
+resource "aws_ecr_repository" "ml_images" {
+  for_each = toset([
+    "training",
+    "inference",
+    "preprocessing",
+    "monitoring"
+  ])
+
+  name                 = "${local.name_prefix}-${each.key}"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_ecr_lifecycle_policy" "ml_images" {
+  for_each = aws_ecr_repository.ml_images
+
+  repository = each.value.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep last 30 images"
+        selection = {
+          tagStatus     = "any"
+          countType     = "imageCountMoreThan"
+          countNumber   = 30
+        }
+        action = {
+          type = "expire"
+        }
+      },
+      {
+        rulePriority = 2
+        description  = "Remove untagged images after 7 days"
+        selection = {
+          tagStatus   = "untagged"
+          countType   = "sinceImagePushed"
+          countUnit   = "days"
+          countNumber = 7
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
+
+# SageMaker Domain for Notebooks
+resource "aws_sagemaker_domain" "ml_studio" {
+  domain_name = "${local.name_prefix}-studio"
+  auth_mode   = "IAM"
+  vpc_id      = module.vpc.vpc_id
+  subnet_ids  = module.vpc.private_subnets
+
+  default_user_settings {
+    execution_role = aws_iam_role.sagemaker_execution.arn
+
+    jupyter_server_app_settings {
+      default_resource_spec {
+        instance_type       = "ml.t3.medium"
+        sagemaker_image_arn = "arn:aws:sagemaker:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:image/jupyter-server-3"
+      }
+    }
+
+    kernel_gateway_app_settings {
+      default_resource_spec {
+        instance_type       = "ml.t3.medium"
+        sagemaker_image_arn = "arn:aws:sagemaker:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:image/datascience-1.0"
+      }
+    }
+  }
+
+  tags = local.common_tags
+}
+
+# IAM Role for SageMaker
+resource "aws_iam_role" "sagemaker_execution" {
+  name = "${local.name_prefix}-sagemaker-execution"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "sagemaker.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "sagemaker_full_access" {
+  role       = aws_iam_role.sagemaker_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess"
+}
+
+resource "aws_iam_role_policy" "sagemaker_s3_access" {
+  name = "${local.name_prefix}-sagemaker-s3"
+  role = aws_iam_role.sagemaker_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          for bucket in module.s3_buckets.bucket_arns : "${bucket}/*"
+        ]
+      }
+    ]
+  })
+}
+
+# CloudWatch Log Groups
+resource "aws_cloudwatch_log_group" "ml_logs" {
+  for_each = toset([
+    "training",
+    "inference",
+    "preprocessing",
+    "monitoring"
+  ])
+
+  name              = "/aws/ml/${local.name_prefix}/${each.key}"
+  retention_in_days = var.log_retention_days
+
+  tags = local.common_tags
+}
+
+# KMS Key for Encryption
+resource "aws_kms_key" "ml_data" {
+  description             = "KMS key for ML data encryption"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+
+  tags = merge(local.common_tags, {
+    Purpose = "ML Data Encryption"
+  })
+}
+
+resource "aws_kms_alias" "ml_data" {
+  name          = "alias/${local.name_prefix}-ml-data"
+  target_key_id = aws_kms_key.ml_data.key_id
+}
+\end{lstlisting}
+
+\subsection{Terraform Variables and Outputs}
+
+\begin{lstlisting}[language=Python, caption=Module Variables Definition]
+# modules/ml-platform/variables.tf
+"""
+Input variables for ML platform module
+"""
+
+variable "project_name" {
+  description = "Name of the ML project"
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9-]+$", var.project_name))
+    error_message = "Project name must contain only lowercase letters, numbers, and hyphens."
+  }
+}
+
+variable "environment" {
+  description = "Environment name (development, staging, production)"
+  type        = string
+
+  validation {
+    condition     = contains(["development", "staging", "production"], var.environment)
+    error_message = "Environment must be development, staging, or production."
+  }
+}
+
+variable "owner_email" {
+  description = "Email of the infrastructure owner"
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", var.owner_email))
+    error_message = "Must be a valid email address."
+  }
+}
+
+variable "cost_center" {
+  description = "Cost center for billing"
+  type        = string
+  default     = "ml-platform"
+}
+
+variable "vpc_cidr" {
+  description = "CIDR block for VPC"
+  type        = string
+  default     = "10.0.0.0/16"
+
+  validation {
+    condition     = can(cidrhost(var.vpc_cidr, 0))
+    error_message = "Must be a valid CIDR block."
+  }
+}
+
+variable "kubernetes_version" {
+  description = "Kubernetes version for EKS cluster"
+  type        = string
+  default     = "1.28"
+}
+
+variable "use_spot_instances" {
+  description = "Use spot instances for GPU nodes"
+  type        = bool
+  default     = false
+}
+
+variable "db_instance_type" {
+  description = "RDS instance type"
+  type        = string
+  default     = "db.t3.large"
+}
+
+variable "db_master_username" {
+  description = "Master username for RDS"
+  type        = string
+  default     = "admin"
+  sensitive   = true
+}
+
+variable "cache_node_type" {
+  description = "ElastiCache node type"
+  type        = string
+  default     = "cache.t3.medium"
+}
+
+variable "log_retention_days" {
+  description = "CloudWatch log retention in days"
+  type        = number
+  default     = 7
+
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653], var.log_retention_days)
+    error_message = "Must be a valid CloudWatch log retention period."
+  }
+}
+
+variable "enable_monitoring" {
+  description = "Enable enhanced monitoring"
+  type        = bool
+  default     = true
+}
+
+variable "enable_auto_scaling" {
+  description = "Enable cluster autoscaling"
+  type        = bool
+  default     = true
+}
+\end{lstlisting}
+
+\begin{lstlisting}[language=Python, caption=Module Outputs]
+# modules/ml-platform/outputs.tf
+"""
+Outputs from ML platform module
+"""
+
+output "vpc_id" {
+  description = "ID of the VPC"
+  value       = module.vpc.vpc_id
+}
+
+output "vpc_cidr" {
+  description = "CIDR block of the VPC"
+  value       = module.vpc.vpc_cidr_block
+}
+
+output "private_subnets" {
+  description = "IDs of private subnets"
+  value       = module.vpc.private_subnets
+}
+
+output "public_subnets" {
+  description = "IDs of public subnets"
+  value       = module.vpc.public_subnets
+}
+
+output "eks_cluster_id" {
+  description = "EKS cluster ID"
+  value       = module.eks.cluster_id
+}
+
+output "eks_cluster_endpoint" {
+  description = "Endpoint for EKS control plane"
+  value       = module.eks.cluster_endpoint
+}
+
+output "eks_cluster_security_group_id" {
+  description = "Security group ID attached to the EKS cluster"
+  value       = module.eks.cluster_security_group_id
+}
+
+output "eks_cluster_certificate_authority_data" {
+  description = "Base64 encoded certificate data required to communicate with the cluster"
+  value       = module.eks.cluster_certificate_authority_data
+  sensitive   = true
+}
+
+output "eks_oidc_provider_arn" {
+  description = "ARN of the OIDC Provider for EKS"
+  value       = module.eks.oidc_provider_arn
+}
+
+output "s3_bucket_names" {
+  description = "Names of S3 buckets"
+  value       = module.s3_buckets.bucket_names
+}
+
+output "s3_bucket_arns" {
+  description = "ARNs of S3 buckets"
+  value       = module.s3_buckets.bucket_arns
+}
+
+output "rds_endpoint" {
+  description = "RDS instance endpoint"
+  value       = module.rds.endpoint
+  sensitive   = true
+}
+
+output "rds_database_name" {
+  description = "Name of the RDS database"
+  value       = module.rds.database_name
+}
+
+output "redis_endpoint" {
+  description = "ElastiCache Redis endpoint"
+  value       = module.elasticache.endpoint
+  sensitive   = true
+}
+
+output "ecr_repository_urls" {
+  description = "URLs of ECR repositories"
+  value = {
+    for k, v in aws_ecr_repository.ml_images : k => v.repository_url
+  }
+}
+
+output "sagemaker_domain_id" {
+  description = "SageMaker domain ID"
+  value       = aws_sagemaker_domain.ml_studio.id
+}
+
+output "sagemaker_execution_role_arn" {
+  description = "ARN of SageMaker execution role"
+  value       = aws_iam_role.sagemaker_execution.arn
+}
+
+output "kms_key_id" {
+  description = "ID of KMS key for encryption"
+  value       = aws_kms_key.ml_data.key_id
+}
+
+output "kms_key_arn" {
+  description = "ARN of KMS key for encryption"
+  value       = aws_kms_key.ml_data.arn
+}
+\end{lstlisting}
+
+\subsection{Environment-Specific Configuration}
+
+\begin{lstlisting}[language=Python, caption=Production Environment Configuration]
+# environments/production/main.tf
+"""
+Production environment configuration
+"""
+
+terraform {
+  backend "s3" {
+    bucket         = "ml-platform-terraform-state"
+    key            = "production/terraform.tfstate"
+    region         = "us-west-2"
+    encrypt        = true
+    dynamodb_table = "terraform-state-lock"
+  }
+}
+
+provider "aws" {
+  region = "us-west-2"
+
+  default_tags {
+    tags = {
+      Environment = "production"
+      ManagedBy   = "Terraform"
+      Project     = "ml-platform"
+    }
+  }
+}
+
+module "ml_platform" {
+  source = "../../modules/ml-platform"
+
+  project_name = "ml-platform"
+  environment  = "production"
+  owner_email  = "ml-team@company.com"
+  cost_center  = "ml-engineering"
+
+  # Network configuration
+  vpc_cidr = "10.0.0.0/16"
+
+  # Kubernetes configuration
+  kubernetes_version  = "1.28"
+  use_spot_instances = false  # Use on-demand for production
+  enable_auto_scaling = true
+
+  # Database configuration
+  db_instance_type    = "db.r6g.xlarge"
+  db_master_username  = var.db_master_username
+
+  # Cache configuration
+  cache_node_type = "cache.r6g.large"
+
+  # Monitoring and logging
+  log_retention_days = 30
+  enable_monitoring  = true
+}
+
+# Outputs
+output "eks_cluster_endpoint" {
+  value       = module.ml_platform.eks_cluster_endpoint
+  description = "EKS cluster endpoint"
+}
+
+output "model_bucket" {
+  value       = module.ml_platform.s3_bucket_names["models"]
+  description = "S3 bucket for model storage"
+}
+\end{lstlisting}
+
+\section{Kubernetes Deployment with Helm Charts}
+
+Helm is the package manager for Kubernetes, enabling templated deployment of complex applications.
+
+\subsection{Helm Chart for ML Training Jobs}
+
+\begin{lstlisting}[style=yaml, caption=Helm Chart for ML Training]
+# charts/ml-training/Chart.yaml
+apiVersion: v2
+name: ml-training
+description: Helm chart for ML training jobs
+type: application
+version: 1.0.0
+appVersion: "1.0"
+
+maintainers:
+  - name: ML Platform Team
+    email: ml-team@company.com
+
+keywords:
+  - machine-learning
+  - training
+  - pytorch
+  - tensorflow
+\end{lstlisting}
+
+\begin{lstlisting}[style=yaml, caption=Training Job Values]
+# charts/ml-training/values.yaml
+# Default values for ml-training chart
+
+replicaCount: 1
+
+image:
+  repository: ${ECR_REPOSITORY}/training
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Training configuration
+training:
+  # Job type: single-node or distributed
+  jobType: single-node
+
+  # Training framework: pytorch, tensorflow, scikit-learn
+  framework: pytorch
+
+  # Training script and arguments
+  command:
+    - "python"
+    - "train.py"
+  args:
+    - "--epochs=100"
+    - "--batch-size=32"
+    - "--learning-rate=0.001"
+
+  # Data paths
+  dataPath: /data
+  modelOutputPath: /models
+
+  # Environment variables
+  env:
+    - name: MLFLOW_TRACKING_URI
+      value: "http://mlflow-server:5000"
+    - name: AWS_DEFAULT_REGION
+      value: "us-west-2"
+
+  # Secrets (for credentials)
+  envFrom:
+    - secretRef:
+        name: ml-credentials
+
+# Resource requirements
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: 32Gi
+    cpu: 8
+  requests:
+    nvidia.com/gpu: 1
+    memory: 16Gi
+    cpu: 4
+
+# Node selection
+nodeSelector:
+  workload: training
+  gpu: nvidia-v100
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+affinity: {}
+
+# Persistent volume claims
+persistence:
+  enabled: true
+  data:
+    storageClass: "gp3"
+    accessMode: ReadOnlyMany
+    size: 100Gi
+    mountPath: /data
+  models:
+    storageClass: "gp3"
+    accessMode: ReadWriteOnce
+    size: 50Gi
+    mountPath: /models
+
+# Service account
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/ml-training-role
+  name: ml-training
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+# Monitoring
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Logging
+logging:
+  level: INFO
+  format: json
+\end{lstlisting}
+
+\begin{lstlisting}[style=yaml, caption=Helm Template for Training Job]
+# charts/ml-training/templates/job.yaml
+{{- if eq .Values.training.jobType "single-node" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ml-training.fullname" . }}
+  labels:
+    {{- include "ml-training.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 3
+  completions: 1
+  parallelism: 1
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+      labels:
+        {{- include "ml-training.selectorLabels" . | nindent 8 }}
+        training-job: "true"
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "ml-training.serviceAccountName" . }}
+
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "ml-training.fullname" . }}-data
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ include "ml-training.fullname" . }}-models
+        {{- end }}
+        - name: shared-memory
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+
+      initContainers:
+        - name: data-validation
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          command:
+            - python
+            - -c
+            - |
+              import os
+              import sys
+              data_path = "{{ .Values.training.dataPath }}"
+              if not os.path.exists(data_path):
+                  print(f"Data path {data_path} does not exist")
+                  sys.exit(1)
+              if not os.listdir(data_path):
+                  print(f"Data path {data_path} is empty")
+                  sys.exit(1)
+              print(f"Data validation passed: {len(os.listdir(data_path))} files found")
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.training.dataPath }}
+
+      containers:
+        - name: training
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          command: {{ toYaml .Values.training.command | nindent 12 }}
+          {{- with .Values.training.args }}
+          args: {{ toYaml . | nindent 12 }}
+          {{- end }}
+
+          env:
+            {{- range .Values.training.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+          {{- with .Values.training.envFrom }}
+          envFrom: {{ toYaml . | nindent 12 }}
+          {{- end }}
+
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.training.dataPath }}
+              readOnly: true
+            - name: models
+              mountPath: {{ .Values.training.modelOutputPath }}
+            - name: shared-memory
+              mountPath: /dev/shm
+
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+
+          securityContext: {{ toYaml .Values.securityContext | nindent 12 }}
+
+      securityContext: {{ toYaml .Values.podSecurityContext | nindent 8 }}
+{{- end }}
+\end{lstlisting}
+
+\begin{lstlisting}[style=yaml, caption=Helm Chart for Model Serving]
+# charts/ml-serving/values.yaml
+replicaCount: 3
+
+image:
+  repository: ${ECR_REPOSITORY}/inference
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+  hosts:
+    - host: api.ml-platform.com
+      paths:
+        - path: /predict
+          pathType: Prefix
+  tls:
+    - secretName: ml-api-tls
+      hosts:
+        - api.ml-platform.com
+
+# Model configuration
+model:
+  name: my-model
+  version: production
+  registry: mlflow
+  registryUri: http://mlflow-server:5000
+
+# Autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 50
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+  # Custom metrics for ML workloads
+  metrics:
+    - type: Pods
+      pods:
+        metric:
+          name: inference_queue_depth
+        target:
+          type: AverageValue
+          averageValue: "10"
+    - type: Pods
+      pods:
+        metric:
+          name: inference_latency_p95
+        target:
+          type: AverageValue
+          averageValue: "100m"
+
+resources:
+  limits:
+    memory: 8Gi
+    cpu: 4
+  requests:
+    memory: 4Gi
+    cpu: 2
+
+# Health checks
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 15
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+\end{lstlisting}
+
+\subsection{Distributed Training with Kubernetes}
+
+\begin{lstlisting}[style=yaml, caption=PyTorch Distributed Training Job]
+# charts/ml-training/templates/pytorch-distributed.yaml
+{{- if eq .Values.training.jobType "distributed" }}
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: {{ include "ml-training.fullname" . }}
+  labels:
+    {{- include "ml-training.labels" . | nindent 4 }}
+spec:
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        metadata:
+          labels:
+            {{- include "ml-training.selectorLabels" . | nindent 12 }}
+            role: master
+        spec:
+          containers:
+            - name: pytorch
+              image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+              command: {{ toYaml .Values.training.command | nindent 16 }}
+              args:
+                {{- range .Values.training.args }}
+                - {{ . }}
+                {{- end }}
+                - "--distributed"
+                - "--backend=nccl"
+              resources:
+                limits:
+                  nvidia.com/gpu: {{ .Values.resources.limits."nvidia.com/gpu" }}
+                  memory: {{ .Values.resources.limits.memory }}
+                  cpu: {{ .Values.resources.limits.cpu }}
+                requests:
+                  nvidia.com/gpu: {{ .Values.resources.requests."nvidia.com/gpu" }}
+                  memory: {{ .Values.resources.requests.memory }}
+                  cpu: {{ .Values.resources.requests.cpu }}
+              volumeMounts:
+                - name: data
+                  mountPath: {{ .Values.training.dataPath }}
+                - name: models
+                  mountPath: {{ .Values.training.modelOutputPath }}
+                - name: shared-memory
+                  mountPath: /dev/shm
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: training-data
+            - name: models
+              persistentVolumeClaim:
+                claimName: training-models
+            - name: shared-memory
+              emptyDir:
+                medium: Memory
+                sizeLimit: 8Gi
+          nodeSelector: {{ toYaml .Values.nodeSelector | nindent 12 }}
+          tolerations: {{ toYaml .Values.tolerations | nindent 12 }}
+
+    Worker:
+      replicas: {{ .Values.training.workers | default 3 }}
+      restartPolicy: OnFailure
+      template:
+        metadata:
+          labels:
+            {{- include "ml-training.selectorLabels" . | nindent 12 }}
+            role: worker
+        spec:
+          containers:
+            - name: pytorch
+              image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+              command: {{ toYaml .Values.training.command | nindent 16 }}
+              args:
+                {{- range .Values.training.args }}
+                - {{ . }}
+                {{- end }}
+                - "--distributed"
+                - "--backend=nccl"
+              resources:
+                limits:
+                  nvidia.com/gpu: {{ .Values.resources.limits."nvidia.com/gpu" }}
+                  memory: {{ .Values.resources.limits.memory }}
+                  cpu: {{ .Values.resources.limits.cpu }}
+                requests:
+                  nvidia.com/gpu: {{ .Values.resources.requests."nvidia.com/gpu" }}
+                  memory: {{ .Values.resources.requests.memory }}
+                  cpu: {{ .Values.resources.requests.cpu }}
+              volumeMounts:
+                - name: data
+                  mountPath: {{ .Values.training.dataPath }}
+                  readOnly: true
+                - name: models
+                  mountPath: {{ .Values.training.modelOutputPath }}
+                - name: shared-memory
+                  mountPath: /dev/shm
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: training-data
+            - name: models
+              persistentVolumeClaim:
+                claimName: training-models
+            - name: shared-memory
+              emptyDir:
+                medium: Memory
+                sizeLimit: 8Gi
+          nodeSelector: {{ toYaml .Values.nodeSelector | nindent 12 }}
+          tolerations: {{ toYaml .Values.tolerations | nindent 12 }}
+{{- end }}
+\end{lstlisting}
+
+\section{Multi-Cloud Resource Management}
+
+Modern ML platforms often span multiple cloud providers for redundancy, cost optimization, and feature availability.
+
+\subsection{Google Cloud Platform (GCP) Infrastructure}
+
+\begin{lstlisting}[language=Python, caption=Terraform Configuration for GCP ML Platform]
+# modules/ml-platform-gcp/main.tf
+"""
+GCP ML Platform infrastructure module
+Provides GKE, Cloud Storage, Vertex AI integration
+"""
+
+terraform {
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "google" {
+  project = var.gcp_project_id
+  region  = var.gcp_region
+}
+
+provider "google-beta" {
+  project = var.gcp_project_id
+  region  = var.gcp_region
+}
+
+locals {
+  name_prefix = "${var.project_name}-${var.environment}"
+}
+
+# VPC Network
+resource "google_compute_network" "ml_vpc" {
+  name                    = "${local.name_prefix}-vpc"
+  auto_create_subnetworks = false
+  routing_mode            = "REGIONAL"
+}
+
+resource "google_compute_subnetwork" "ml_subnet" {
+  name          = "${local.name_prefix}-subnet"
+  ip_cidr_range = "10.0.0.0/20"
+  region        = var.gcp_region
+  network       = google_compute_network.ml_vpc.id
+
+  secondary_ip_range {
+    range_name    = "pods"
+    ip_cidr_range = "10.4.0.0/14"
+  }
+
+  secondary_ip_range {
+    range_name    = "services"
+    ip_cidr_range = "10.8.0.0/20"
+  }
+
+  private_ip_google_access = true
+}
+
+# Cloud NAT for private GKE nodes
+resource "google_compute_router" "ml_router" {
+  name    = "${local.name_prefix}-router"
+  network = google_compute_network.ml_vpc.id
+  region  = var.gcp_region
+}
+
+resource "google_compute_router_nat" "ml_nat" {
+  name                               = "${local.name_prefix}-nat"
+  router                             = google_compute_router.ml_router.name
+  region                             = var.gcp_region
+  nat_ip_allocate_option             = "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+}
+
+# GKE Cluster
+resource "google_container_cluster" "ml_cluster" {
+  name     = "${local.name_prefix}-gke"
+  location = var.gcp_region
+
+  network    = google_compute_network.ml_vpc.name
+  subnetwork = google_compute_subnetwork.ml_subnet.name
+
+  # Private cluster configuration
+  private_cluster_config {
+    enable_private_nodes    = true
+    enable_private_endpoint = false
+    master_ipv4_cidr_block  = "172.16.0.0/28"
+  }
+
+  ip_allocation_policy {
+    cluster_secondary_range_name  = "pods"
+    services_secondary_range_name = "services"
+  }
+
+  # Workload Identity
+  workload_identity_config {
+    workload_pool = "${var.gcp_project_id}.svc.id.goog"
+  }
+
+  # Addons
+  addons_config {
+    http_load_balancing {
+      disabled = false
+    }
+    horizontal_pod_autoscaling {
+      disabled = false
+    }
+    gce_persistent_disk_csi_driver_config {
+      enabled = true
+    }
+  }
+
+  # Maintenance window
+  maintenance_policy {
+    daily_maintenance_window {
+      start_time = "03:00"
+    }
+  }
+
+  # Remove default node pool
+  remove_default_node_pool = true
+  initial_node_count       = 1
+
+  deletion_protection = var.environment == "production"
+}
+
+# CPU Node Pool
+resource "google_container_node_pool" "cpu_nodes" {
+  name       = "${local.name_prefix}-cpu-pool"
+  location   = var.gcp_region
+  cluster    = google_container_cluster.ml_cluster.name
+  node_count = var.environment == "production" ? 3 : 2
+
+  autoscaling {
+    min_node_count = var.environment == "production" ? 2 : 1
+    max_node_count = 10
+  }
+
+  node_config {
+    machine_type = "n2-standard-8"
+    disk_size_gb = 100
+    disk_type    = "pd-standard"
+
+    oauth_scopes = [
+      "https://www.googleapis.com/auth/cloud-platform"
+    ]
+
+    labels = {
+      workload    = "general"
+      environment = var.environment
+    }
+
+    tags = ["ml-workload", var.environment]
+
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+
+    shielded_instance_config {
+      enable_secure_boot          = true
+      enable_integrity_monitoring = true
+    }
+  }
+
+  management {
+    auto_repair  = true
+    auto_upgrade = true
+  }
+}
+
+# GPU Node Pool for Training
+resource "google_container_node_pool" "gpu_nodes" {
+  name       = "${local.name_prefix}-gpu-pool"
+  location   = var.gcp_region
+  cluster    = google_container_cluster.ml_cluster.name
+  node_count = 0  # Scale from zero
+
+  autoscaling {
+    min_node_count = 0
+    max_node_count = 20
+  }
+
+  node_config {
+    machine_type = "n1-standard-8"
+    disk_size_gb = 100
+
+    guest_accelerator {
+      type  = "nvidia-tesla-t4"
+      count = 1
+
+      gpu_driver_installation_config {
+        gpu_driver_version = "DEFAULT"
+      }
+    }
+
+    oauth_scopes = [
+      "https://www.googleapis.com/auth/cloud-platform"
+    ]
+
+    labels = {
+      workload    = "training"
+      gpu         = "nvidia-t4"
+      environment = var.environment
+    }
+
+    taint {
+      key    = "nvidia.com/gpu"
+      value  = "true"
+      effect = "NO_SCHEDULE"
+    }
+
+    tags = ["ml-gpu", var.environment]
+
+    workload_metadata_config {
+      mode = "GKE_METADATA"
+    }
+  }
+
+  management {
+    auto_repair  = true
+    auto_upgrade = false  # Manual GPU node upgrades
+  }
+}
+
+# Cloud Storage Buckets
+resource "google_storage_bucket" "ml_data" {
+  name          = "${local.name_prefix}-data"
+  location      = var.gcp_region
+  force_destroy = var.environment != "production"
+
+  uniform_bucket_level_access = true
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      age = 90
+    }
+    action {
+      type          = "SetStorageClass"
+      storage_class = "NEARLINE"
+    }
+  }
+
+  lifecycle_rule {
+    condition {
+      age = 365
+    }
+    action {
+      type          = "SetStorageClass"
+      storage_class = "COLDLINE"
+    }
+  }
+}
+
+resource "google_storage_bucket" "ml_models" {
+  name          = "${local.name_prefix}-models"
+  location      = var.gcp_region
+  force_destroy = var.environment != "production"
+
+  uniform_bucket_level_access = true
+
+  versioning {
+    enabled = true
+  }
+
+  lifecycle_rule {
+    condition {
+      num_newer_versions = 5
+    }
+    action {
+      type = "Delete"
+    }
+  }
+}
+
+# Artifact Registry for Container Images
+resource "google_artifact_registry_repository" "ml_images" {
+  location      = var.gcp_region
+  repository_id = "${local.name_prefix}-images"
+  format        = "DOCKER"
+
+  cleanup_policies {
+    id     = "delete-old-images"
+    action = "DELETE"
+
+    condition {
+      tag_state  = "ANY"
+      older_than = "2592000s"  # 30 days
+    }
+  }
+}
+
+# Cloud SQL for Metadata
+resource "google_sql_database_instance" "ml_metadata" {
+  name             = "${local.name_prefix}-metadata"
+  database_version = "POSTGRES_15"
+  region           = var.gcp_region
+
+  deletion_protection = var.environment == "production"
+
+  settings {
+    tier              = var.environment == "production" ? "db-custom-4-16384" : "db-custom-2-7680"
+    availability_type = var.environment == "production" ? "REGIONAL" : "ZONAL"
+    disk_size         = 100
+    disk_type         = "PD_SSD"
+    disk_autoresize   = true
+
+    backup_configuration {
+      enabled                        = true
+      start_time                     = "03:00"
+      point_in_time_recovery_enabled = var.environment == "production"
+      backup_retention_settings {
+        retained_backups = var.environment == "production" ? 30 : 7
+      }
+    }
+
+    ip_configuration {
+      ipv4_enabled    = false
+      private_network = google_compute_network.ml_vpc.id
+    }
+
+    insights_config {
+      query_insights_enabled  = true
+      query_string_length     = 1024
+      record_application_tags = true
+      record_client_address   = true
+    }
+  }
+
+  depends_on = [google_service_networking_connection.private_vpc_connection]
+}
+
+# Private Service Connection
+resource "google_compute_global_address" "private_ip_address" {
+  name          = "${local.name_prefix}-private-ip"
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 16
+  network       = google_compute_network.ml_vpc.id
+}
+
+resource "google_service_networking_connection" "private_vpc_connection" {
+  network                 = google_compute_network.ml_vpc.id
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.private_ip_address.name]
+}
+
+# Memorystore Redis
+resource "google_redis_instance" "ml_cache" {
+  name           = "${local.name_prefix}-redis"
+  tier           = var.environment == "production" ? "STANDARD_HA" : "BASIC"
+  memory_size_gb = var.environment == "production" ? 5 : 1
+  region         = var.gcp_region
+
+  redis_version     = "REDIS_7_0"
+  display_name      = "${local.name_prefix} ML Cache"
+  authorized_network = google_compute_network.ml_vpc.id
+
+  transit_encryption_mode = "SERVER_AUTHENTICATION"
+  auth_enabled            = true
+
+  maintenance_policy {
+    weekly_maintenance_window {
+      day = "SUNDAY"
+      start_time {
+        hours   = 3
+        minutes = 0
+      }
+    }
+  }
+}
+
+# Vertex AI Workbench Instance
+resource "google_workbench_instance" "ml_notebook" {
+  name     = "${local.name_prefix}-notebook"
+  location = "${var.gcp_region}-a"
+
+  gce_setup {
+    machine_type = "n1-standard-4"
+
+    accelerator_configs {
+      type       = "NVIDIA_TESLA_T4"
+      core_count = 1
+    }
+
+    vm_image {
+      project = "deeplearning-platform-release"
+      family  = "common-cu113-notebooks"
+    }
+
+    network_interfaces {
+      network = google_compute_network.ml_vpc.id
+      subnet  = google_compute_subnetwork.ml_subnet.id
+    }
+
+    boot_disk {
+      disk_size_gb = 100
+      disk_type    = "PD_SSD"
+    }
+
+    data_disks {
+      disk_size_gb = 200
+      disk_type    = "PD_STANDARD"
+    }
+
+    metadata = {
+      terraform = "true"
+    }
+  }
+}
+
+# Outputs
+output "gke_cluster_name" {
+  value = google_container_cluster.ml_cluster.name
+}
+
+output "gke_cluster_endpoint" {
+  value     = google_container_cluster.ml_cluster.endpoint
+  sensitive = true
+}
+
+output "gcs_data_bucket" {
+  value = google_storage_bucket.ml_data.name
+}
+
+output "gcs_models_bucket" {
+  value = google_storage_bucket.ml_models.name
+}
+
+output "artifact_registry_url" {
+  value = "${var.gcp_region}-docker.pkg.dev/${var.gcp_project_id}/${google_artifact_registry_repository.ml_images.repository_id}"
+}
+\end{lstlisting}
+
+\subsection{Azure Machine Learning Infrastructure}
+
+\begin{lstlisting}[language=Python, caption=Terraform Configuration for Azure ML Platform]
+# modules/ml-platform-azure/main.tf
+"""
+Azure ML Platform infrastructure module
+Provides AKS, Azure ML, Blob Storage
+"""
+
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 3.0"
+    }
+  }
+}
+
+provider "azurerm" {
+  features {
+    key_vault {
+      purge_soft_delete_on_destroy = var.environment != "production"
+    }
+    resource_group {
+      prevent_deletion_if_contains_resources = var.environment == "production"
+    }
+  }
+}
+
+locals {
+  name_prefix = "${var.project_name}-${var.environment}"
+  location    = var.azure_location
+}
+
+# Resource Group
+resource "azurerm_resource_group" "ml_rg" {
+  name     = "${local.name_prefix}-rg"
+  location = local.location
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Virtual Network
+resource "azurerm_virtual_network" "ml_vnet" {
+  name                = "${local.name_prefix}-vnet"
+  location            = azurerm_resource_group.ml_rg.location
+  resource_group_name = azurerm_resource_group.ml_rg.name
+  address_space       = ["10.0.0.0/16"]
+
+  tags = azurerm_resource_group.ml_rg.tags
+}
+
+resource "azurerm_subnet" "aks_subnet" {
+  name                 = "${local.name_prefix}-aks-subnet"
+  resource_group_name  = azurerm_resource_group.ml_rg.name
+  virtual_network_name = azurerm_virtual_network.ml_vnet.name
+  address_prefixes     = ["10.0.1.0/24"]
+}
+
+resource "azurerm_subnet" "ml_subnet" {
+  name                 = "${local.name_prefix}-ml-subnet"
+  resource_group_name  = azurerm_resource_group.ml_rg.name
+  virtual_network_name = azurerm_virtual_network.ml_vnet.name
+  address_prefixes     = ["10.0.2.0/24"]
+
+  delegation {
+    name = "ml-delegation"
+
+    service_delegation {
+      name = "Microsoft.MachineLearningServices/workspaces"
+      actions = [
+        "Microsoft.Network/virtualNetworks/subnets/join/action",
+      ]
+    }
+  }
+}
+
+# AKS Cluster
+resource "azurerm_kubernetes_cluster" "ml_aks" {
+  name                = "${local.name_prefix}-aks"
+  location            = azurerm_resource_group.ml_rg.location
+  resource_group_name = azurerm_resource_group.ml_rg.name
+  dns_prefix          = "${local.name_prefix}-aks"
+
+  kubernetes_version        = var.kubernetes_version
+  automatic_channel_upgrade = "patch"
+  sku_tier                  = var.environment == "production" ? "Standard" : "Free"
+
+  default_node_pool {
+    name                = "default"
+    node_count          = var.environment == "production" ? 3 : 2
+    vm_size             = "Standard_D4s_v3"
+    vnet_subnet_id      = azurerm_subnet.aks_subnet.id
+    enable_auto_scaling = true
+    min_count           = var.environment == "production" ? 2 : 1
+    max_count           = 10
+
+    upgrade_settings {
+      max_surge = "10%"
+    }
+
+    tags = azurerm_resource_group.ml_rg.tags
+  }
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  network_profile {
+    network_plugin    = "azure"
+    network_policy    = "azure"
+    load_balancer_sku = "standard"
+    service_cidr      = "10.1.0.0/16"
+    dns_service_ip    = "10.1.0.10"
+  }
+
+  oms_agent {
+    log_analytics_workspace_id = azurerm_log_analytics_workspace.ml_logs.id
+  }
+
+  azure_active_directory_role_based_access_control {
+    managed                = true
+    azure_rbac_enabled     = true
+    admin_group_object_ids = var.admin_group_object_ids
+  }
+
+  tags = azurerm_resource_group.ml_rg.tags
+}
+
+# GPU Node Pool
+resource "azurerm_kubernetes_cluster_node_pool" "gpu_pool" {
+  name                  = "gpupool"
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.ml_aks.id
+  vm_size               = "Standard_NC6s_v3"
+  node_count            = 0
+  enable_auto_scaling   = true
+  min_count             = 0
+  max_count             = 10
+  vnet_subnet_id        = azurerm_subnet.aks_subnet.id
+
+  node_labels = {
+    workload = "training"
+    gpu      = "nvidia-v100"
+  }
+
+  node_taints = [
+    "nvidia.com/gpu=true:NoSchedule"
+  ]
+
+  tags = azurerm_resource_group.ml_rg.tags
+}
+
+# Storage Account
+resource "azurerm_storage_account" "ml_storage" {
+  name                     = replace("${local.name_prefix}storage", "-", "")
+  resource_group_name      = azurerm_resource_group.ml_rg.name
+  location                 = azurerm_resource_group.ml_rg.location
+  account_tier             = "Standard"
+  account_replication_type = var.environment == "production" ? "GRS" : "LRS"
+  account_kind             = "StorageV2"
+
+  is_hns_enabled = true  # Enable hierarchical namespace for Data Lake
+
+  network_rules {
+    default_action             = "Deny"
+    ip_rules                   = []
+    virtual_network_subnet_ids = [azurerm_subnet.ml_subnet.id]
+    bypass                     = ["AzureServices"]
+  }
+
+  blob_properties {
+    versioning_enabled = true
+
+    delete_retention_policy {
+      days = var.environment == "production" ? 30 : 7
+    }
+
+    container_delete_retention_policy {
+      days = var.environment == "production" ? 30 : 7
+    }
+  }
+
+  tags = azurerm_resource_group.ml_rg.tags
+}
+
+resource "azurerm_storage_container" "ml_data" {
+  name                  = "ml-data"
+  storage_account_name  = azurerm_storage_account.ml_storage.name
+  container_access_type = "private"
+}
+
+resource "azurerm_storage_container" "ml_models" {
+  name                  = "ml-models"
+  storage_account_name  = azurerm_storage_account.ml_storage.name
+  container_access_type = "private"
+}
+
+# Container Registry
+resource "azurerm_container_registry" "ml_acr" {
+  name                = replace("${local.name_prefix}acr", "-", "")
+  resource_group_name = azurerm_resource_group.ml_rg.name
+  location            = azurerm_resource_group.ml_rg.location
+  sku                 = var.environment == "production" ? "Premium" : "Standard"
+  admin_enabled       = false
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  georeplications = var.environment == "production" ? [
+    {
+      location = var.geo_replication_location
+      tags     = {}
+    }
+  ] : []
+
+  network_rule_set {
+    default_action = "Deny"
+
+    ip_rule {
+      action   = "Allow"
+      ip_range = azurerm_virtual_network.ml_vnet.address_space[0]
+    }
+  }
+
+  retention_policy {
+    days    = 7
+    enabled = true
+  }
+
+  trust_policy {
+    enabled = true
+  }
+
+  tags = azurerm_resource_group.ml_rg.tags
+}
+
+# Key Vault
+resource "azurerm_key_vault" "ml_kv" {
+  name                = "${local.name_prefix}-kv"
+  location            = azurerm_resource_group.ml_rg.location
+  resource_group_name = azurerm_resource_group.ml_rg.name
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+  sku_name            = var.environment == "production" ? "premium" : "standard"
+
+  purge_protection_enabled   = var.environment == "production"
+  soft_delete_retention_days = var.environment == "production" ? 90 : 7
+
+  network_acls {
+    default_action             = "Deny"
+    bypass                     = "AzureServices"
+    virtual_network_subnet_ids = [azurerm_subnet.ml_subnet.id]
+  }
+
+  tags = azurerm_resource_group.ml_rg.tags
+}
+
+# Azure ML Workspace
+resource "azurerm_machine_learning_workspace" "ml_workspace" {
+  name                    = "${local.name_prefix}-mlworkspace"
+  location                = azurerm_resource_group.ml_rg.location
+  resource_group_name     = azurerm_resource_group.ml_rg.name
+  application_insights_id = azurerm_application_insights.ml_insights.id
+  key_vault_id            = azurerm_key_vault.ml_kv.id
+  storage_account_id      = azurerm_storage_account.ml_storage.id
+  container_registry_id   = azurerm_container_registry.ml_acr.id
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  public_network_access_enabled = var.environment != "production"
+
+  tags = azurerm_resource_group.ml_rg.tags
+}
+
+# Log Analytics Workspace
+resource "azurerm_log_analytics_workspace" "ml_logs" {
+  name                = "${local.name_prefix}-logs"
+  location            = azurerm_resource_group.ml_rg.location
+  resource_group_name = azurerm_resource_group.ml_rg.name
+  sku                 = "PerGB2018"
+  retention_in_days   = var.environment == "production" ? 30 : 7
+
+  tags = azurerm_resource_group.ml_rg.tags
+}
+
+# Application Insights
+resource "azurerm_application_insights" "ml_insights" {
+  name                = "${local.name_prefix}-insights"
+  location            = azurerm_resource_group.ml_rg.location
+  resource_group_name = azurerm_resource_group.ml_rg.name
+  workspace_id        = azurerm_log_analytics_workspace.ml_logs.id
+  application_type    = "other"
+
+  tags = azurerm_resource_group.ml_rg.tags
+}
+
+# PostgreSQL Flexible Server
+resource "azurerm_postgresql_flexible_server" "ml_db" {
+  name                   = "${local.name_prefix}-psql"
+  resource_group_name    = azurerm_resource_group.ml_rg.name
+  location               = azurerm_resource_group.ml_rg.location
+  version                = "15"
+  administrator_login    = var.db_admin_username
+  administrator_password = var.db_admin_password
+  zone                   = "1"
+
+  storage_mb = 32768
+
+  sku_name = var.environment == "production" ? "GP_Standard_D4s_v3" : "GP_Standard_D2s_v3"
+
+  backup_retention_days        = var.environment == "production" ? 30 : 7
+  geo_redundant_backup_enabled = var.environment == "production"
+
+  high_availability {
+    mode                      = var.environment == "production" ? "ZoneRedundant" : "Disabled"
+    standby_availability_zone = var.environment == "production" ? "2" : null
+  }
+
+  tags = azurerm_resource_group.ml_rg.tags
+}
+
+data "azurerm_client_config" "current" {}
+
+# Outputs
+output "aks_cluster_name" {
+  value = azurerm_kubernetes_cluster.ml_aks.name
+}
+
+output "aks_cluster_id" {
+  value = azurerm_kubernetes_cluster.ml_aks.id
+}
+
+output "ml_workspace_id" {
+  value = azurerm_machine_learning_workspace.ml_workspace.id
+}
+
+output "storage_account_name" {
+  value = azurerm_storage_account.ml_storage.name
+}
+
+output "container_registry_login_server" {
+  value = azurerm_container_registry.ml_acr.login_server
+}
+\end{lstlisting}
+
+\section{Container Orchestration for ML Workloads}
+
+Container orchestration enables efficient management of ML workloads at scale, with dynamic resource allocation and fault tolerance.
+
+\subsection{Kubernetes Operators for ML}
+
+\begin{lstlisting}[language=Python, caption=Custom Resource Definition for ML Training]
+# k8s/crds/mltraining-crd.yaml
+"""
+Custom Resource Definition for ML Training Jobs
+Abstracts complexity and provides high-level ML workflow management
+"""
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: mltrainings.ml.platform.io
+spec:
+  group: ml.platform.io
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                framework:
+                  type: string
+                  enum: [pytorch, tensorflow, scikit-learn, xgboost]
+                  description: ML framework to use
+                modelName:
+                  type: string
+                  description: Name of the model to train
+                dataSource:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: [s3, gcs, azure-blob, pvc]
+                    path:
+                      type: string
+                    credentials:
+                      type: string
+                      description: Secret name for credentials
+                trainingScript:
+                  type: object
+                  properties:
+                    image:
+                      type: string
+                    command:
+                      type: array
+                      items:
+                        type: string
+                    args:
+                      type: array
+                      items:
+                        type: string
+                hyperparameters:
+                  type: object
+                  additionalProperties:
+                    type: string
+                resources:
+                  type: object
+                  properties:
+                    gpuType:
+                      type: string
+                      enum: [v100, a100, t4]
+                    gpuCount:
+                      type: integer
+                      minimum: 0
+                      maximum: 8
+                    memory:
+                      type: string
+                    cpu:
+                      type: string
+                distributed:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                    workers:
+                      type: integer
+                      minimum: 1
+                      maximum: 100
+                    backend:
+                      type: string
+                      enum: [nccl, gloo, mpi]
+                outputModel:
+                  type: object
+                  properties:
+                    registry:
+                      type: string
+                    registryUri:
+                      type: string
+                    version:
+                      type: string
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Running, Succeeded, Failed]
+                startTime:
+                  type: string
+                  format: date-time
+                completionTime:
+                  type: string
+                  format: date-time
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                metrics:
+                  type: object
+                  additionalProperties:
+                    type: number
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Framework
+          type: string
+          jsonPath: .spec.framework
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: mltrainings
+    singular: mltraining
+    kind: MLTraining
+    shortNames:
+      - mlt
+\end{lstlisting}
+
+\begin{lstlisting}[style=yaml, caption=Example ML Training Custom Resource]
+# examples/training-job.yaml
+apiVersion: ml.platform.io/v1alpha1
+kind: MLTraining
+metadata:
+  name: resnet50-imagenet
+  namespace: ml-workloads
+spec:
+  framework: pytorch
+  modelName: resnet50-imagenet
+
+  dataSource:
+    type: s3
+    path: s3://ml-data/imagenet
+    credentials: aws-credentials
+
+  trainingScript:
+    image: 123456789.dkr.ecr.us-west-2.amazonaws.com/training:latest
+    command: ["python"]
+    args:
+      - "train.py"
+      - "--model=resnet50"
+      - "--epochs=90"
+      - "--batch-size=256"
+
+  hyperparameters:
+    learning_rate: "0.1"
+    weight_decay: "0.0001"
+    momentum: "0.9"
+    lr_schedule: "cosine"
+
+  resources:
+    gpuType: v100
+    gpuCount: 4
+    memory: "128Gi"
+    cpu: "32"
+
+  distributed:
+    enabled: true
+    workers: 4
+    backend: nccl
+
+  outputModel:
+    registry: mlflow
+    registryUri: http://mlflow-server:5000
+    version: "1.0.0"
+\end{lstlisting}
+
+\subsection{Autoscaling ML Workloads}
+
+\begin{lstlisting}[style=yaml, caption=Kubernetes Cluster Autoscaler for ML]
+# k8s/autoscaling/cluster-autoscaler.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-autoscaler-priority-expander
+  namespace: kube-system
+data:
+  priorities: |
+    10:
+      - .*-gpu-training.*  # Highest priority for GPU training nodes
+    5:
+      - .*-inference.*     # Medium priority for inference nodes
+    1:
+      - .*-general.*       # Lowest priority for general workloads
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-autoscaler
+  namespace: kube-system
+  labels:
+    app: cluster-autoscaler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cluster-autoscaler
+  template:
+    metadata:
+      labels:
+        app: cluster-autoscaler
+    spec:
+      serviceAccountName: cluster-autoscaler
+      containers:
+        - name: cluster-autoscaler
+          image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.28.0
+          command:
+            - ./cluster-autoscaler
+            - --v=4
+            - --stderrthreshold=info
+            - --cloud-provider=aws
+            - --skip-nodes-with-local-storage=false
+            - --skip-nodes-with-system-pods=false
+            - --expander=priority
+            - --balance-similar-node-groups
+            - --scale-down-delay-after-add=5m
+            - --scale-down-unneeded-time=5m
+            - --scale-down-utilization-threshold=0.5
+            - --max-node-provision-time=15m
+            - --node-group-auto-discovery=asg:tag=k8s.io/cluster-autoscaler/enabled,k8s.io/cluster-autoscaler/${CLUSTER_NAME}
+          env:
+            - name: CLUSTER_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: cluster-info
+                  key: cluster-name
+            - name: AWS_REGION
+              value: us-west-2
+          resources:
+            limits:
+              cpu: 100m
+              memory: 600Mi
+            requests:
+              cpu: 100m
+              memory: 600Mi
+          volumeMounts:
+            - name: ssl-certs
+              mountPath: /etc/ssl/certs/ca-certificates.crt
+              readOnly: true
+      volumes:
+        - name: ssl-certs
+          hostPath:
+            path: /etc/ssl/certs/ca-bundle.crt
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-autoscaler
+rules:
+  - apiGroups: [""]
+    resources: ["events", "endpoints"]
+    verbs: ["create", "patch"]
+  - apiGroups: [""]
+    resources: ["pods/eviction"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["pods/status"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    resourceNames: ["cluster-autoscaler"]
+    verbs: ["get", "update"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["watch", "list", "get", "update"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "replicationcontrollers", "persistentvolumeclaims", "persistentvolumes"]
+    verbs: ["watch", "list", "get"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets", "replicasets", "daemonsets"]
+    verbs: ["watch", "list", "get"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["watch", "list"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "csinodes", "csidrivers", "csistoragecapacities"]
+    verbs: ["watch", "list", "get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["watch", "list", "get"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+  - apiGroups: ["coordination.k8s.io"]
+    resourceNames: ["cluster-autoscaler"]
+    resources: ["leases"]
+    verbs: ["get", "update"]
+\end{lstlisting}
+
+\subsection{Resource Quotas and Limits}
+
+\begin{lstlisting}[style=yaml, caption=Resource Quotas for ML Namespaces]
+# k8s/resource-management/quotas.yaml
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ml-training-quota
+  namespace: ml-training
+spec:
+  hard:
+    requests.cpu: "200"
+    requests.memory: 1Ti
+    requests.nvidia.com/gpu: "32"
+    limits.cpu: "400"
+    limits.memory: 2Ti
+    limits.nvidia.com/gpu: "64"
+    persistentvolumeclaims: "20"
+    requests.storage: 10Ti
+  scopeSelector:
+    matchExpressions:
+      - operator: In
+        scopeName: PriorityClass
+        values: ["high", "medium"]
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: ml-inference-quota
+  namespace: ml-inference
+spec:
+  hard:
+    requests.cpu: "100"
+    requests.memory: 512Gi
+    limits.cpu: "200"
+    limits.memory: 1Ti
+    services.loadbalancers: "5"
+    pods: "100"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: ml-training-limits
+  namespace: ml-training
+spec:
+  limits:
+    - type: Pod
+      max:
+        cpu: "64"
+        memory: "512Gi"
+        nvidia.com/gpu: "8"
+      min:
+        cpu: "1"
+        memory: "4Gi"
+    - type: Container
+      max:
+        cpu: "64"
+        memory: "512Gi"
+        nvidia.com/gpu: "8"
+      min:
+        cpu: "100m"
+        memory: "128Mi"
+      default:
+        cpu: "4"
+        memory: "16Gi"
+      defaultRequest:
+        cpu: "2"
+        memory: "8Gi"
+    - type: PersistentVolumeClaim
+      max:
+        storage: "10Ti"
+      min:
+        storage: "10Gi"
+\end{lstlisting}
+
+\section{Disaster Recovery and Backup Strategies}
+
+Robust backup and recovery strategies ensure ML system resilience against failures and data loss.
+
+\subsection{Backup Automation with Terraform}
+
+\begin{lstlisting}[language=Python, caption=Automated Backup Configuration]
+# modules/backup-recovery/main.tf
+"""
+Automated backup and disaster recovery infrastructure
+"""
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+locals {
+  backup_tags = {
+    Backup      = "true"
+    Environment = var.environment
+    RetentionDays = var.backup_retention_days
+  }
+}
+
+# AWS Backup Vault
+resource "aws_backup_vault" "ml_backup_vault" {
+  name        = "${var.project_name}-${var.environment}-vault"
+  kms_key_arn = var.kms_key_arn
+
+  tags = local.backup_tags
+}
+
+# Backup Plan
+resource "aws_backup_plan" "ml_backup_plan" {
+  name = "${var.project_name}-${var.environment}-backup-plan"
+
+  # Daily backups
+  rule {
+    rule_name         = "daily_backup"
+    target_vault_name = aws_backup_vault.ml_backup_vault.name
+    schedule          = "cron(0 3 * * ? *)"  # 3 AM daily
+
+    lifecycle {
+      cold_storage_after = var.environment == "production" ? 30 : null
+      delete_after       = var.environment == "production" ? 90 : 14
+    }
+
+    recovery_point_tags = local.backup_tags
+  }
+
+  # Weekly backups (longer retention)
+  rule {
+    rule_name         = "weekly_backup"
+    target_vault_name = aws_backup_vault.ml_backup_vault.name
+    schedule          = "cron(0 3 ? * 1 *)"  # Monday 3 AM
+
+    lifecycle {
+      cold_storage_after = var.environment == "production" ? 60 : null
+      delete_after       = var.environment == "production" ? 365 : 30
+    }
+
+    recovery_point_tags = merge(local.backup_tags, {
+      BackupType = "weekly"
+    })
+  }
+
+  # Monthly backups (longest retention)
+  rule {
+    rule_name         = "monthly_backup"
+    target_vault_name = aws_backup_vault.ml_backup_vault.name
+    schedule          = "cron(0 3 1 * ? *)"  # First day of month
+
+    lifecycle {
+      cold_storage_after = var.environment == "production" ? 90 : null
+      delete_after       = var.environment == "production" ? 2555 : 90  # ~7 years for production
+    }
+
+    recovery_point_tags = merge(local.backup_tags, {
+      BackupType = "monthly"
+    })
+  }
+
+  tags = local.backup_tags
+}
+
+# Backup Selection for RDS
+resource "aws_backup_selection" "rds_backup" {
+  name         = "rds-backup-selection"
+  iam_role_arn = aws_iam_role.backup_role.arn
+  plan_id      = aws_backup_plan.ml_backup_plan.id
+
+  selection_tag {
+    type  = "STRINGEQUALS"
+    key   = "Backup"
+    value = "true"
+  }
+
+  resources = var.rds_arns
+}
+
+# Backup Selection for EBS Volumes
+resource "aws_backup_selection" "ebs_backup" {
+  name         = "ebs-backup-selection"
+  iam_role_arn = aws_iam_role.backup_role.arn
+  plan_id      = aws_backup_plan.ml_backup_plan.id
+
+  selection_tag {
+    type  = "STRINGEQUALS"
+    key   = "Backup"
+    value = "true"
+  }
+
+  resources = var.ebs_volume_arns
+}
+
+# IAM Role for AWS Backup
+resource "aws_iam_role" "backup_role" {
+  name = "${var.project_name}-${var.environment}-backup-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "backup.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = local.backup_tags
+}
+
+resource "aws_iam_role_policy_attachment" "backup_policy" {
+  role       = aws_iam_role.backup_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
+}
+
+resource "aws_iam_role_policy_attachment" "restore_policy" {
+  role       = aws_iam_role.backup_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores"
+}
+
+# S3 Bucket Replication for Models
+resource "aws_s3_bucket_replication_configuration" "model_replication" {
+  count = var.environment == "production" ? 1 : 0
+
+  role   = aws_iam_role.replication_role[0].arn
+  bucket = var.source_bucket_id
+
+  rule {
+    id     = "replicate-models"
+    status = "Enabled"
+
+    filter {
+      prefix = "models/"
+    }
+
+    destination {
+      bucket        = var.destination_bucket_arn
+      storage_class = "STANDARD_IA"
+
+      replication_time {
+        status = "Enabled"
+        time {
+          minutes = 15
+        }
+      }
+
+      metrics {
+        status = "Enabled"
+        event_threshold {
+          minutes = 15
+        }
+      }
+    }
+
+    delete_marker_replication {
+      status = "Enabled"
+    }
+  }
+}
+
+# IAM Role for S3 Replication
+resource "aws_iam_role" "replication_role" {
+  count = var.environment == "production" ? 1 : 0
+
+  name = "${var.project_name}-${var.environment}-s3-replication-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "s3.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = local.backup_tags
+}
+
+resource "aws_iam_role_policy" "replication_policy" {
+  count = var.environment == "production" ? 1 : 0
+
+  name = "${var.project_name}-s3-replication-policy"
+  role = aws_iam_role.replication_role[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetReplicationConfiguration",
+          "s3:ListBucket"
+        ]
+        Resource = var.source_bucket_arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObjectVersionForReplication",
+          "s3:GetObjectVersionAcl",
+          "s3:GetObjectVersionTagging"
+        ]
+        Resource = "${var.source_bucket_arn}/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:ReplicateObject",
+          "s3:ReplicateDelete",
+          "s3:ReplicateTags"
+        ]
+        Resource = "${var.destination_bucket_arn}/*"
+      }
+    ]
+  })
+}
+
+# CloudWatch Alarms for Backup Failures
+resource "aws_cloudwatch_metric_alarm" "backup_failure" {
+  alarm_name          = "${var.project_name}-${var.environment}-backup-failure"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "NumberOfBackupJobsFailed"
+  namespace           = "AWS/Backup"
+  period              = 3600
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Alert when backup jobs fail"
+  alarm_actions       = [var.sns_topic_arn]
+
+  dimensions = {
+    BackupVaultName = aws_backup_vault.ml_backup_vault.name
+  }
+
+  tags = local.backup_tags
+}
+
+# Outputs
+output "backup_vault_arn" {
+  value = aws_backup_vault.ml_backup_vault.arn
+}
+
+output "backup_plan_id" {
+  value = aws_backup_plan.ml_backup_plan.id
+}
+\end{lstlisting}
+
+\subsection{Disaster Recovery Procedures}
+
+\begin{lstlisting}[language=Python, caption=Disaster Recovery Automation Script]
+#!/usr/bin/env python3
+"""
+Disaster Recovery automation for ML infrastructure
+Orchestrates recovery from backup vault
+"""
+
+import boto3
+import logging
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+import argparse
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class DisasterRecoveryOrchestrator:
+    """Orchestrates disaster recovery operations"""
+
+    def __init__(self, region: str, environment: str):
+        self.backup_client = boto3.client('backup', region_name=region)
+        self.rds_client = boto3.client('rds', region_name=region)
+        self.ec2_client = boto3.client('ec2', region_name=region)
+        self.s3_client = boto3.client('s3', region_name=region)
+        self.environment = environment
+        self.region = region
+
+    def list_recovery_points(
+        self,
+        backup_vault_name: str,
+        resource_type: Optional[str] = None,
+        created_after: Optional[datetime] = None
+    ) -> List[Dict]:
+        """List available recovery points"""
+
+        params = {
+            'BackupVaultName': backup_vault_name
+        }
+
+        if resource_type:
+            params['ByResourceType'] = resource_type
+
+        if created_after:
+            params['ByCreatedAfter'] = created_after
+
+        try:
+            response = self.backup_client.list_recovery_points_by_backup_vault(
+                **params
+            )
+
+            recovery_points = response.get('RecoveryPoints', [])
+            logger.info(
+                f"Found {len(recovery_points)} recovery points in {backup_vault_name}"
+            )
+
+            return recovery_points
+
+        except Exception as e:
+            logger.error(f"Failed to list recovery points: {e}")
+            return []
+
+    def select_latest_recovery_point(
+        self,
+        backup_vault_name: str,
+        resource_arn: str
+    ) -> Optional[str]:
+        """Select the most recent recovery point for a resource"""
+
+        try:
+            response = self.backup_client.list_recovery_points_by_resource(
+                ResourceArn=resource_arn
+            )
+
+            recovery_points = response.get('RecoveryPoints', [])
+
+            # Filter completed recovery points
+            completed = [
+                rp for rp in recovery_points
+                if rp['Status'] == 'COMPLETED'
+            ]
+
+            if not completed:
+                logger.warning(f"No completed recovery points for {resource_arn}")
+                return None
+
+            # Sort by creation time and get latest
+            latest = sorted(
+                completed,
+                key=lambda x: x['CreationDate'],
+                reverse=True
+            )[0]
+
+            logger.info(
+                f"Selected recovery point {latest['RecoveryPointArn']} "
+                f"from {latest['CreationDate']}"
+            )
+
+            return latest['RecoveryPointArn']
+
+        except Exception as e:
+            logger.error(f"Failed to select recovery point: {e}")
+            return None
+
+    def restore_rds_instance(
+        self,
+        recovery_point_arn: str,
+        target_identifier: str,
+        subnet_group_name: str,
+        security_group_ids: List[str]
+    ) -> Optional[str]:
+        """Restore RDS instance from backup"""
+
+        logger.info(f"Starting RDS restore to {target_identifier}")
+
+        try:
+            # Start restore job
+            response = self.backup_client.start_restore_job(
+                RecoveryPointArn=recovery_point_arn,
+                Metadata={
+                    'DBInstanceIdentifier': target_identifier,
+                    'DBSubnetGroupName': subnet_group_name,
+                    'VpcSecurityGroupIds': ','.join(security_group_ids),
+                    'PubliclyAccessible': 'false',
+                    'MultiAZ': 'true' if self.environment == 'production' else 'false',
+                    'StorageEncrypted': 'true'
+                },
+                IamRoleArn=self._get_restore_role_arn()
+            )
+
+            restore_job_id = response['RestoreJobId']
+            logger.info(f"RDS restore job started: {restore_job_id}")
+
+            return restore_job_id
+
+        except Exception as e:
+            logger.error(f"Failed to restore RDS instance: {e}")
+            return None
+
+    def restore_ebs_volume(
+        self,
+        recovery_point_arn: str,
+        availability_zone: str,
+        volume_type: str = 'gp3',
+        iops: int = 3000
+    ) -> Optional[str]:
+        """Restore EBS volume from backup"""
+
+        logger.info(f"Starting EBS volume restore in {availability_zone}")
+
+        try:
+            response = self.backup_client.start_restore_job(
+                RecoveryPointArn=recovery_point_arn,
+                Metadata={
+                    'AvailabilityZone': availability_zone,
+                    'VolumeType': volume_type,
+                    'Iops': str(iops),
+                    'Encrypted': 'true'
+                },
+                IamRoleArn=self._get_restore_role_arn()
+            )
+
+            restore_job_id = response['RestoreJobId']
+            logger.info(f"EBS restore job started: {restore_job_id}")
+
+            return restore_job_id
+
+        except Exception as e:
+            logger.error(f"Failed to restore EBS volume: {e}")
+            return None
+
+    def monitor_restore_job(self, restore_job_id: str) -> Dict:
+        """Monitor restore job progress"""
+
+        try:
+            response = self.backup_client.describe_restore_job(
+                RestoreJobId=restore_job_id
+            )
+
+            status = response['Status']
+            logger.info(f"Restore job {restore_job_id} status: {status}")
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Failed to monitor restore job: {e}")
+            return {}
+
+    def replicate_s3_data(
+        self,
+        source_bucket: str,
+        destination_bucket: str,
+        prefix: str = ""
+    ) -> bool:
+        """Manually replicate S3 data for disaster recovery"""
+
+        logger.info(
+            f"Replicating from {source_bucket}/{prefix} "
+            f"to {destination_bucket}/{prefix}"
+        )
+
+        try:
+            paginator = self.s3_client.get_paginator('list_objects_v2')
+            pages = paginator.paginate(Bucket=source_bucket, Prefix=prefix)
+
+            objects_replicated = 0
+
+            for page in pages:
+                if 'Contents' not in page:
+                    continue
+
+                for obj in page['Contents']:
+                    source_key = obj['Key']
+
+                    # Copy object to destination
+                    copy_source = {
+                        'Bucket': source_bucket,
+                        'Key': source_key
+                    }
+
+                    self.s3_client.copy_object(
+                        CopySource=copy_source,
+                        Bucket=destination_bucket,
+                        Key=source_key
+                    )
+
+                    objects_replicated += 1
+
+                    if objects_replicated % 100 == 0:
+                        logger.info(f"Replicated {objects_replicated} objects")
+
+            logger.info(
+                f"Successfully replicated {objects_replicated} objects"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to replicate S3 data: {e}")
+            return False
+
+    def _get_restore_role_arn(self) -> str:
+        """Get IAM role ARN for restore operations"""
+        # Construct ARN from account and environment
+        account_id = boto3.client('sts').get_caller_identity()['Account']
+        return (
+            f"arn:aws:iam::{account_id}:role/"
+            f"ml-platform-{self.environment}-backup-role"
+        )
+
+    def execute_full_recovery(
+        self,
+        backup_vault_name: str,
+        recovery_config: Dict
+    ) -> Dict:
+        """Execute full disaster recovery procedure"""
+
+        logger.info("Starting full disaster recovery procedure")
+
+        results = {
+            'rds_restores': [],
+            'ebs_restores': [],
+            's3_replications': [],
+            'status': 'in_progress'
+        }
+
+        try:
+            # Restore RDS instances
+            for rds_config in recovery_config.get('rds_instances', []):
+                recovery_point = self.select_latest_recovery_point(
+                    backup_vault_name,
+                    rds_config['source_arn']
+                )
+
+                if recovery_point:
+                    restore_job = self.restore_rds_instance(
+                        recovery_point,
+                        rds_config['target_identifier'],
+                        rds_config['subnet_group'],
+                        rds_config['security_groups']
+                    )
+
+                    if restore_job:
+                        results['rds_restores'].append({
+                            'target': rds_config['target_identifier'],
+                            'job_id': restore_job,
+                            'status': 'started'
+                        })
+
+            # Restore EBS volumes
+            for ebs_config in recovery_config.get('ebs_volumes', []):
+                recovery_point = self.select_latest_recovery_point(
+                    backup_vault_name,
+                    ebs_config['source_arn']
+                )
+
+                if recovery_point:
+                    restore_job = self.restore_ebs_volume(
+                        recovery_point,
+                        ebs_config['availability_zone'],
+                        ebs_config.get('volume_type', 'gp3')
+                    )
+
+                    if restore_job:
+                        results['ebs_restores'].append({
+                            'az': ebs_config['availability_zone'],
+                            'job_id': restore_job,
+                            'status': 'started'
+                        })
+
+            # Replicate S3 data
+            for s3_config in recovery_config.get('s3_replications', []):
+                success = self.replicate_s3_data(
+                    s3_config['source_bucket'],
+                    s3_config['destination_bucket'],
+                    s3_config.get('prefix', '')
+                )
+
+                results['s3_replications'].append({
+                    'source': s3_config['source_bucket'],
+                    'destination': s3_config['destination_bucket'],
+                    'status': 'completed' if success else 'failed'
+                })
+
+            results['status'] = 'completed'
+            logger.info("Disaster recovery procedure completed")
+
+        except Exception as e:
+            logger.error(f"Disaster recovery failed: {e}")
+            results['status'] = 'failed'
+            results['error'] = str(e)
+
+        return results
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='ML Infrastructure Disaster Recovery'
+    )
+    parser.add_argument('--region', required=True, help='AWS region')
+    parser.add_argument('--environment', required=True, help='Environment name')
+    parser.add_argument('--vault', required=True, help='Backup vault name')
+    parser.add_argument('--config', required=True, help='Recovery config file')
+
+    args = parser.parse_args()
+
+    # Load recovery configuration
+    import json
+    with open(args.config, 'r') as f:
+        recovery_config = json.load(f)
+
+    # Execute recovery
+    orchestrator = DisasterRecoveryOrchestrator(args.region, args.environment)
+    results = orchestrator.execute_full_recovery(args.vault, recovery_config)
+
+    # Print results
+    print(json.dumps(results, indent=2))
+
+    return 0 if results['status'] == 'completed' else 1
+
+if __name__ == '__main__':
+    exit(main())
+\end{lstlisting}
+
+\section{Cost Optimization Through IaC}
+
+Infrastructure as Code enables systematic cost optimization through automated resource management and intelligent provisioning strategies.
+
+\subsection{Cost-Aware Resource Provisioning}
+
+\begin{lstlisting}[language=Python, caption=Terraform Module for Cost-Optimized ML Infrastructure]
+# modules/cost-optimization/main.tf
+"""
+Cost-optimized infrastructure module
+Implements spot instances, auto-scaling, and resource lifecycle management
+"""
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+locals {
+  cost_allocation_tags = {
+    CostCenter  = var.cost_center
+    Team        = var.team_name
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# Spot Instance Fleet for Training
+resource "aws_autoscaling_group" "training_spot_fleet" {
+  name     = "${var.project_name}-training-spot"
+  min_size = 0
+  max_size = var.max_training_nodes
+  desired_capacity = 0  # Scale from zero
+
+  vpc_zone_identifier = var.subnet_ids
+
+  mixed_instances_policy {
+    instances_distribution {
+      on_demand_base_capacity                  = 0
+      on_demand_percentage_above_base_capacity = 20  # 80% spot
+      spot_allocation_strategy                 = "price-capacity-optimized"
+      spot_instance_pools                      = 4
+    }
+
+    launch_template {
+      launch_template_specification {
+        launch_template_id = aws_launch_template.training_spot.id
+        version            = "$Latest"
+      }
+
+      # Multiple instance types for better spot availability
+      override {
+        instance_type     = "p3.2xlarge"
+        weighted_capacity = 1
+      }
+
+      override {
+        instance_type     = "p3.8xlarge"
+        weighted_capacity = 4
+      }
+
+      override {
+        instance_type     = "p3.16xlarge"
+        weighted_capacity = 8
+      }
+
+      override {
+        instance_type     = "g4dn.12xlarge"
+        weighted_capacity = 4
+      }
+    }
+  }
+
+  # Scale based on training queue depth
+  enabled_metrics = [
+    "GroupDesiredCapacity",
+    "GroupInServiceInstances",
+    "GroupMinSize",
+    "GroupMaxSize"
+  ]
+
+  tag {
+    key                 = "Name"
+    value               = "${var.project_name}-training-spot"
+    propagate_at_launch = true
+  }
+
+  dynamic "tag" {
+    for_each = local.cost_allocation_tags
+
+    content {
+      key                 = tag.key
+      value               = tag.value
+      propagate_at_launch = true
+    }
+  }
+}
+
+# Launch Template for Spot Instances
+resource "aws_launch_template" "training_spot" {
+  name_prefix   = "${var.project_name}-training-"
+  image_id      = data.aws_ami.gpu_optimized.id
+  instance_type = "p3.2xlarge"  # Default, overridden by mixed policy
+
+  network_interfaces {
+    associate_public_ip_address = false
+    security_groups             = [var.training_security_group_id]
+    delete_on_termination       = true
+  }
+
+  iam_instance_profile {
+    arn = aws_iam_instance_profile.training_spot.arn
+  }
+
+  block_device_mappings {
+    device_name = "/dev/sda1"
+
+    ebs {
+      volume_size           = 100
+      volume_type           = "gp3"
+      iops                  = 3000
+      throughput            = 125
+      delete_on_termination = true
+      encrypted             = true
+    }
+  }
+
+  user_data = base64encode(templatefile("${path.module}/user_data.sh", {
+    cluster_name = var.eks_cluster_name
+    region       = data.aws_region.current.name
+  }))
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+
+    tags = merge(local.cost_allocation_tags, {
+      Name = "${var.project_name}-training-spot"
+    })
+  }
+
+  tag_specifications {
+    resource_type = "volume"
+
+    tags = merge(local.cost_allocation_tags, {
+      Name = "${var.project_name}-training-volume"
+    })
+  }
+}
+
+# Auto Scaling Policies
+resource "aws_autoscaling_policy" "scale_up" {
+  name                   = "${var.project_name}-scale-up"
+  scaling_adjustment     = 2
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 300
+  autoscaling_group_name = aws_autoscaling_group.training_spot_fleet.name
+}
+
+resource "aws_autoscaling_policy" "scale_down" {
+  name                   = "${var.project_name}-scale-down"
+  scaling_adjustment     = -1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 300
+  autoscaling_group_name = aws_autoscaling_group.training_spot_fleet.name
+}
+
+# CloudWatch Alarms for Auto Scaling
+resource "aws_cloudwatch_metric_alarm" "training_queue_high" {
+  alarm_name          = "${var.project_name}-training-queue-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 5
+
+  alarm_description = "Scale up when training queue is high"
+  alarm_actions     = [aws_autoscaling_policy.scale_up.arn]
+
+  dimensions = {
+    QueueName = var.training_queue_name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "training_queue_low" {
+  alarm_name          = "${var.project_name}-training-queue-low"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 5
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 2
+
+  alarm_description = "Scale down when training queue is low"
+  alarm_actions     = [aws_autoscaling_policy.scale_down.arn]
+
+  dimensions = {
+    QueueName = var.training_queue_name
+  }
+}
+
+# S3 Intelligent Tiering Lifecycle Policy
+resource "aws_s3_bucket_lifecycle_configuration" "intelligent_tiering" {
+  bucket = var.ml_data_bucket_id
+
+  rule {
+    id     = "intelligent-tiering"
+    status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
+
+    transition {
+      days          = 30
+      storage_class = "INTELLIGENT_TIERING"
+    }
+
+    noncurrent_version_transition {
+      noncurrent_days = 30
+      storage_class   = "GLACIER"
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 90
+    }
+  }
+
+  rule {
+    id     = "delete-old-logs"
+    status = "Enabled"
+
+    filter {
+      prefix = "logs/"
+    }
+
+    expiration {
+      days = 7
+    }
+  }
+
+  rule {
+    id     = "archive-training-data"
+    status = "Enabled"
+
+    filter {
+      and {
+        prefix = "training-data/"
+        tags = {
+          Archive = "true"
+        }
+      }
+    }
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+
+    transition {
+      days          = 180
+      storage_class = "DEEP_ARCHIVE"
+    }
+  }
+}
+
+# Cost Anomaly Detection
+resource "aws_ce_anomaly_monitor" "ml_infrastructure" {
+  name              = "${var.project_name}-cost-anomaly"
+  monitor_type      = "DIMENSIONAL"
+  monitor_dimension = "SERVICE"
+}
+
+resource "aws_ce_anomaly_subscription" "ml_infrastructure_alert" {
+  name      = "${var.project_name}-cost-anomaly-alert"
+  frequency = "DAILY"
+
+  monitor_arn_list = [
+    aws_ce_anomaly_monitor.ml_infrastructure.arn
+  ]
+
+  subscriber {
+    type    = "SNS"
+    address = var.cost_alert_sns_topic_arn
+  }
+
+  threshold_expression {
+    and {
+      dimension {
+        key           = "ANOMALY_TOTAL_IMPACT_ABSOLUTE"
+        match_options = ["GREATER_THAN_OR_EQUAL"]
+        values        = ["100"]  # Alert on $100+ anomalies
+      }
+    }
+  }
+}
+
+# Budget Alerts
+resource "aws_budgets_budget" "ml_monthly" {
+  name              = "${var.project_name}-monthly-budget"
+  budget_type       = "COST"
+  limit_amount      = var.monthly_budget_limit
+  limit_unit        = "USD"
+  time_period_start = "2024-01-01_00:00"
+  time_unit         = "MONTHLY"
+
+  cost_filter {
+    name = "TagKeyValue"
+    values = [
+      "Project$${var.project_name}"
+    ]
+  }
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 80
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = var.budget_alert_emails
+  }
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 100
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "ACTUAL"
+    subscriber_email_addresses = var.budget_alert_emails
+  }
+
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 90
+    threshold_type             = "PERCENTAGE"
+    notification_type          = "FORECASTED"
+    subscriber_email_addresses = var.budget_alert_emails
+  }
+}
+
+# Scheduled Instance Shutdown for Development
+resource "aws_lambda_function" "instance_scheduler" {
+  count = var.environment != "production" ? 1 : 0
+
+  filename      = data.archive_file.scheduler_lambda[0].output_path
+  function_name = "${var.project_name}-instance-scheduler"
+  role          = aws_iam_role.scheduler_lambda[0].arn
+  handler       = "index.handler"
+  runtime       = "python3.11"
+  timeout       = 60
+
+  environment {
+    variables = {
+      ENVIRONMENT  = var.environment
+      PROJECT_NAME = var.project_name
+    }
+  }
+
+  tags = local.cost_allocation_tags
+}
+
+# Schedule: Stop instances at night (development only)
+resource "aws_cloudwatch_event_rule" "stop_instances" {
+  count = var.environment != "production" ? 1 : 0
+
+  name                = "${var.project_name}-stop-instances"
+  description         = "Stop development instances at night"
+  schedule_expression = "cron(0 22 * * ? *)"  # 10 PM daily
+}
+
+resource "aws_cloudwatch_event_target" "stop_instances" {
+  count = var.environment != "production" ? 1 : 0
+
+  rule      = aws_cloudwatch_event_rule.stop_instances[0].name
+  target_id = "StopInstances"
+  arn       = aws_lambda_function.instance_scheduler[0].arn
+
+  input = jsonencode({
+    action = "stop"
+  })
+}
+
+# Schedule: Start instances in morning
+resource "aws_cloudwatch_event_rule" "start_instances" {
+  count = var.environment != "production" ? 1 : 0
+
+  name                = "${var.project_name}-start-instances"
+  description         = "Start development instances in morning"
+  schedule_expression = "cron(0 8 * * MON-FRI *)"  # 8 AM weekdays
+}
+
+resource "aws_cloudwatch_event_target" "start_instances" {
+  count = var.environment != "production" ? 1 : 0
+
+  rule      = aws_cloudwatch_event_rule.start_instances[0].name
+  target_id = "StartInstances"
+  arn       = aws_lambda_function.instance_scheduler[0].arn
+
+  input = jsonencode({
+    action = "start"
+  })
+}
+
+# Outputs
+output "spot_fleet_asg_name" {
+  value = aws_autoscaling_group.training_spot_fleet.name
+}
+
+output "cost_anomaly_monitor_arn" {
+  value = aws_ce_anomaly_monitor.ml_infrastructure.arn
+}
+
+output "budget_name" {
+  value = aws_budgets_budget.ml_monthly.name
+}
+\end{lstlisting}
+
+\textbf{Cost Optimization Best Practices:}
+
+\begin{itemize}
+    \item \textbf{Spot Instances:} Use spot instances for 60-80\% cost savings on training workloads
+    \item \textbf{Right-Sizing:} Continuously monitor and adjust instance types based on actual usage
+    \item \textbf{Auto-Scaling:} Scale resources dynamically based on demand
+    \item \textbf{Reserved Instances:} Purchase reserved capacity for predictable baseline workloads
+    \item \textbf{Storage Tiering:} Automatically move infrequently accessed data to cheaper storage
+    \item \textbf{Resource Scheduling:} Stop development resources outside business hours
+    \item \textbf{Budget Alerts:} Set up proactive cost monitoring and alerts
+    \item \textbf{Tagging Strategy:} Tag all resources for accurate cost allocation and tracking
+\end{itemize}
+
+\section{Practical Infrastructure Automation Exercises}
+
+\subsection{Exercise 1: Multi-Environment ML Infrastructure}
+
+Deploy complete ML infrastructure across development, staging, and production environments using Terraform modules. Implement:
+
+\begin{itemize}
+    \item Environment-specific resource sizing (development: minimal, production: HA)
+    \item VPC with public and private subnets in multiple availability zones
+    \item EKS cluster with separate node groups for training and inference
+    \item S3 buckets with lifecycle policies and versioning
+    \item RDS PostgreSQL with automated backups
+    \item ECR repositories for container images
+    \item Proper IAM roles and security groups
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Terraform module structure with separate environments
+    \item Variables file for each environment
+    \item State management with remote backend
+    \item Infrastructure documentation
+\end{itemize}
+
+\subsection{Exercise 2: Kubernetes ML Training Helm Chart}
+
+Create production-ready Helm chart for distributed ML training jobs. Include:
+
+\begin{itemize}
+    \item Support for PyTorch and TensorFlow distributed training
+    \item Configurable GPU resource allocation
+    \item Data loading from S3, GCS, and Azure Blob
+    \item MLflow experiment tracking integration
+    \item Health checks and pod disruption budgets
+    \item Resource quotas and limits
+    \item Secrets management for credentials
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Complete Helm chart with templates
+    \item Values files for different model types
+    \item Testing strategy for chart validation
+    \item Deployment documentation
+\end{itemize}
+
+\subsection{Exercise 3: Multi-Cloud Infrastructure Deployment}
+
+Deploy ML platform infrastructure across AWS, GCP, and Azure using Terraform. Implement:
+
+\begin{itemize}
+    \item Kubernetes clusters on EKS, GKE, and AKS
+    \item Object storage on S3, GCS, and Azure Blob
+    \item Managed databases for metadata storage
+    \item Container registries in each cloud
+    \item Cross-cloud networking for data replication
+    \item Unified monitoring and logging
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Cloud-agnostic Terraform modules
+    \item Provider-specific implementations
+    \item Cost comparison analysis
+    \item Failover and replication strategy
+\end{itemize}
+
+\subsection{Exercise 4: Automated Disaster Recovery System}
+
+Implement automated disaster recovery for ML infrastructure. Include:
+
+\begin{itemize}
+    \item AWS Backup configuration for RDS and EBS
+    \item S3 cross-region replication for models and data
+    \item Automated backup verification testing
+    \item Recovery time objective (RTO) and recovery point objective (RPO) monitoring
+    \item Automated failover procedures
+    \item Recovery testing schedule
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Terraform backup infrastructure code
+    \item Python disaster recovery automation script
+    \item Recovery runbook documentation
+    \item Disaster recovery testing report
+\end{itemize}
+
+\subsection{Exercise 5: Cost-Optimized Training Infrastructure}
+
+Build cost-optimized infrastructure for ML training. Implement:
+
+\begin{itemize}
+    \item Spot instance autoscaling groups with fallback to on-demand
+    \item Multiple instance type support for spot diversity
+    \item Training queue-based autoscaling
+    \item S3 intelligent tiering for training data
+    \item Scheduled shutdown of development resources
+    \item Cost anomaly detection and alerting
+    \item Monthly budget enforcement
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Terraform cost optimization module
+    \item Cost tracking dashboard
+    \item 30-day cost analysis report
+    \item Optimization recommendations
+\end{itemize}
+
+\subsection{Exercise 6: Kubernetes Operator for ML Workflows}
+
+Develop custom Kubernetes operator for ML training jobs. Create:
+
+\begin{itemize}
+    \item Custom Resource Definition (CRD) for ML training
+    \item Operator controller logic in Go or Python
+    \item Support for distributed training patterns
+    \item Integration with MLflow for experiment tracking
+    \item Automatic resource cleanup after job completion
+    \item Job scheduling and prioritization
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Custom operator implementation
+    \item CRD specification and examples
+    \item Operator deployment manifests
+    \item User guide and API documentation
+\end{itemize}
+
+\subsection{Exercise 7: Infrastructure Monitoring and Observability}
+
+Implement comprehensive monitoring for ML infrastructure. Deploy:
+
+\begin{itemize}
+    \item Prometheus for metrics collection
+    \item Grafana dashboards for infrastructure visualization
+    \item Loki for log aggregation
+    \item Jaeger for distributed tracing
+    \item AlertManager for alert routing
+    \item Infrastructure health scoring system
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Monitoring stack deployment code
+    \item Custom Grafana dashboards for ML workloads
+    \item Alert rules for infrastructure issues
+    \item Runbook for common incidents
+\end{itemize}
+
+\section{Summary}
+
+Infrastructure as Code is fundamental to building reliable, scalable, and cost-effective ML platforms. This chapter covered:
+
+\textbf{1. Terraform Modules:}
+\begin{itemize}
+    \item Modular ML infrastructure design with reusable components
+    \item EKS clusters with GPU and CPU node groups
+    \item S3, RDS, and caching infrastructure
+    \item Comprehensive networking and security
+    \item Environment-specific configurations
+\end{itemize}
+
+\textbf{2. Kubernetes and Helm:}
+\begin{itemize}
+    \item Production-ready Helm charts for training and inference
+    \item Distributed training with PyTorchJob
+    \item Autoscaling based on workload metrics
+    \item Resource quotas and pod disruption budgets
+    \item Custom operators for ML workflows
+\end{itemize}
+
+\textbf{3. Multi-Cloud Management:}
+\begin{itemize}
+    \item AWS (EKS, S3, RDS, SageMaker)
+    \item GCP (GKE, Cloud Storage, Vertex AI)
+    \item Azure (AKS, Blob Storage, Azure ML)
+    \item Cloud-agnostic module design
+    \item Cross-cloud data replication
+\end{itemize}
+
+\textbf{4. Container Orchestration:}
+\begin{itemize}
+    \item Kubernetes operators for ML workloads
+    \item Cluster autoscaling with priority-based expansion
+    \item Resource quotas and namespace isolation
+    \item GPU resource management
+    \item Job scheduling and prioritization
+\end{itemize}
+
+\textbf{5. Disaster Recovery:}
+\begin{itemize}
+    \item Automated backup with AWS Backup
+    \item Cross-region replication for critical data
+    \item Recovery automation with Python
+    \item RTO/RPO monitoring and enforcement
+    \item Regular disaster recovery testing
+\end{itemize}
+
+\textbf{6. Cost Optimization:}
+\begin{itemize}
+    \item Spot instances for 60-80\% cost savings
+    \item Auto-scaling based on demand
+    \item Storage lifecycle management
+    \item Cost anomaly detection
+    \item Budget alerts and enforcement
+    \item Scheduled resource management
+\end{itemize}
+
+\textbf{Key Takeaways:}
+
+\begin{enumerate}
+    \item \textbf{Automation:} Automate all infrastructure provisioning and management
+    \item \textbf{Modularity:} Design reusable, composable infrastructure modules
+    \item \textbf{Multi-Cloud:} Avoid vendor lock-in with cloud-agnostic designs
+    \item \textbf{Cost Awareness:} Continuously monitor and optimize infrastructure costs
+    \item \textbf{Resilience:} Build fault-tolerant systems with automated recovery
+    \item \textbf{Security:} Implement least privilege access and encryption by default
+    \item \textbf{Observability:} Monitor all infrastructure components comprehensively
+\end{enumerate}
+
+Infrastructure as Code transforms ML infrastructure from manual, error-prone processes to automated, reliable, and auditable deployments. The investment in proper IaC practices pays dividends through faster deployment cycles, reduced operational burden, and improved system reliability.

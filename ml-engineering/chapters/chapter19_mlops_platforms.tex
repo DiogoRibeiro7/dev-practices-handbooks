@@ -2,31 +2,3008 @@
 
 After completing this chapter, readers will be able to:
 \begin{itemize}
-    \item Compare MLOps platforms and tools
-    \item Use Kubeflow for end-to-end ML workflows
-    \item Leverage cloud ML platforms (SageMaker, Vertex AI)
-    \item Evaluate build vs buy decisions
-    \item Select appropriate tools for specific use cases
+    \item Build end-to-end ML pipelines with Kubeflow
+    \item Compare and evaluate SageMaker, Vertex AI, and Azure ML
+    \item Apply platform selection criteria for organizational needs
+    \item Implement migration strategies between MLOps platforms
+    \item Design and build custom MLOps platforms
+    \item Assess platform maturity and capabilities
+    \item Make informed build vs buy decisions
+    \item Integrate multiple MLOps tools effectively
 \end{itemize}
 
-\section{MLOps Platform Landscape}
+\section{Introduction}
 
-% Placeholder content
+MLOps platforms provide integrated environments for developing, deploying, and managing machine learning models at scale. The platform landscape ranges from open-source frameworks to fully managed cloud services, each with distinct capabilities, trade-offs, and use cases.
 
-\section{Kubeflow}
+\textbf{MLOps Platform Categories:}
 
-% Placeholder content
+\begin{itemize}
+    \item \textbf{Open-Source Frameworks:} Kubeflow, MLflow, Metaflow (flexibility, customization)
+    \item \textbf{Cloud-Native Platforms:} AWS SageMaker, Google Vertex AI, Azure ML (managed services)
+    \item \textbf{Specialized Tools:} DataRobot, Dataiku, Databricks (specific workflows)
+    \item \textbf{Custom Solutions:} In-house platforms built on orchestrators (full control)
+\end{itemize}
 
-\section{Cloud ML Platforms}
+\textbf{Platform Selection Factors:}
 
-% Placeholder content
+\begin{enumerate}
+    \item \textbf{Cloud Strategy:} Single-cloud, multi-cloud, or hybrid deployments
+    \item \textbf{Team Size:} Platform operations overhead vs team capacity
+    \item \textbf{Use Cases:} Batch inference, real-time serving, edge deployment
+    \item \textbf{Existing Infrastructure:} Kubernetes, cloud services, on-premises
+    \item \textbf{Compliance:} Data residency, security certifications, audit requirements
+    \item \textbf{Budget:} TCO including licensing, infrastructure, and operations
+    \item \textbf{Vendor Lock-in:} Portability and exit strategy considerations
+\end{enumerate}
 
-\section{Chapter Summary}
+\section{Kubeflow Pipelines: Comprehensive Tutorial}
 
-% Placeholder summary
+Kubeflow is an open-source ML platform for Kubernetes that provides components for building production ML systems.
 
-\section{Exercises}
+\subsection{Kubeflow Architecture and Components}
 
-\begin{exercise}
-Compare three MLOps platforms and recommend one for a specific use case.
-\end{exercise}
+\begin{lstlisting}[language=Python, caption=Kubeflow Platform Components Overview]
+"""
+Kubeflow Platform Components:
+
+1. Kubeflow Pipelines - Workflow orchestration for ML
+2. Jupyter Notebooks - Interactive development environment
+3. Katib - Hyperparameter tuning and AutoML
+4. KFServing (KServe) - Model serving and inference
+5. Training Operators - PyTorch, TensorFlow distributed training
+6. Metadata - ML metadata tracking and lineage
+7. Multi-Tenancy - Namespace isolation and resource management
+"""
+
+# Key Kubeflow Benefits:
+# - Cloud-agnostic: runs on any Kubernetes cluster
+# - Portable: pipelines can run across different environments
+# - Composable: mix and match components based on needs
+# - Scalable: leverage Kubernetes for resource management
+# - Open-source: no vendor lock-in, community-driven
+\end{lstlisting}
+
+\subsection{Building ML Pipelines with Kubeflow}
+
+\begin{lstlisting}[language=Python, caption=Complete Kubeflow Pipeline Example]
+# pipeline.py
+"""
+End-to-end ML pipeline with Kubeflow Pipelines SDK
+Covers data processing, training, evaluation, and deployment
+"""
+
+import kfp
+from kfp import dsl
+from kfp.components import create_component_from_func, InputPath, OutputPath
+from typing import NamedTuple
+
+# Component 1: Data Ingestion
+@create_component_from_func
+def ingest_data(
+    data_source: str,
+    output_dataset: OutputPath('Dataset')
+) -> NamedTuple('Outputs', [('num_samples', int), ('num_features', int)]):
+    """Ingest data from source and save as dataset"""
+
+    import pandas as pd
+    import os
+
+    # Load data
+    if data_source.startswith('s3://'):
+        import boto3
+        # Load from S3
+        df = pd.read_csv(data_source)
+    else:
+        df = pd.read_csv(data_source)
+
+    # Save dataset
+    os.makedirs(os.path.dirname(output_dataset), exist_ok=True)
+    df.to_csv(output_dataset, index=False)
+
+    return (len(df), len(df.columns))
+
+# Component 2: Data Validation
+@create_component_from_func
+def validate_data(
+    dataset: InputPath('Dataset'),
+    validation_report: OutputPath('ValidationReport')
+) -> NamedTuple('Outputs', [('is_valid', bool), ('quality_score', float)]):
+    """Validate data quality and schema"""
+
+    import pandas as pd
+    import json
+    import numpy as np
+
+    df = pd.read_csv(dataset)
+
+    # Validation checks
+    checks = {
+        'null_percentage': df.isnull().sum().sum() / (len(df) * len(df.columns)),
+        'duplicate_rows': len(df[df.duplicated()]),
+        'outliers_percentage': 0.0  # Simplified
+    }
+
+    # Calculate quality score
+    quality_score = 1.0 - checks['null_percentage']
+    is_valid = quality_score > 0.95
+
+    # Save validation report
+    with open(validation_report, 'w') as f:
+        json.dump(checks, f, indent=2)
+
+    return (is_valid, float(quality_score))
+
+# Component 3: Feature Engineering
+@create_component_from_func
+def engineer_features(
+    dataset: InputPath('Dataset'),
+    output_features: OutputPath('Features'),
+    target_column: str = 'target'
+):
+    """Engineer features from raw data"""
+
+    import pandas as pd
+    from sklearn.preprocessing import StandardScaler
+    import pickle
+
+    df = pd.read_csv(dataset)
+
+    # Separate features and target
+    X = df.drop(columns=[target_column])
+    y = df[target_column]
+
+    # Feature engineering
+    # 1. Handle missing values
+    X = X.fillna(X.median())
+
+    # 2. Scale features
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    # 3. Combine back
+    feature_df = pd.DataFrame(X_scaled, columns=X.columns)
+    feature_df[target_column] = y.values
+
+    # Save engineered features
+    feature_df.to_csv(output_features, index=False)
+
+    print(f"Engineered {len(feature_df.columns)-1} features")
+
+# Component 4: Train-Test Split
+@create_component_from_func
+def split_data(
+    features: InputPath('Features'),
+    train_data: OutputPath('TrainData'),
+    test_data: OutputPath('TestData'),
+    test_size: float = 0.2,
+    random_state: int = 42
+):
+    """Split data into train and test sets"""
+
+    import pandas as pd
+    from sklearn.model_selection import train_test_split
+
+    df = pd.read_csv(features)
+
+    train_df, test_df = train_test_split(
+        df,
+        test_size=test_size,
+        random_state=random_state
+    )
+
+    train_df.to_csv(train_data, index=False)
+    test_df.to_csv(test_data, index=False)
+
+    print(f"Train samples: {len(train_df)}, Test samples: {len(test_df)}")
+
+# Component 5: Model Training
+@create_component_from_func
+def train_model(
+    train_data: InputPath('TrainData'),
+    model_output: OutputPath('Model'),
+    model_type: str = 'random_forest',
+    n_estimators: int = 100,
+    max_depth: int = 10
+) -> NamedTuple('Outputs', [('train_accuracy', float), ('train_time', float)]):
+    """Train ML model"""
+
+    import pandas as pd
+    import pickle
+    import time
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import accuracy_score
+
+    # Load data
+    df = pd.read_csv(train_data)
+    X_train = df.drop(columns=['target'])
+    y_train = df['target']
+
+    # Select and train model
+    start_time = time.time()
+
+    if model_type == 'random_forest':
+        model = RandomForestClassifier(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            random_state=42
+        )
+    else:
+        model = LogisticRegression(max_iter=1000, random_state=42)
+
+    model.fit(X_train, y_train)
+    train_time = time.time() - start_time
+
+    # Calculate training accuracy
+    train_pred = model.predict(X_train)
+    train_acc = accuracy_score(y_train, train_pred)
+
+    # Save model
+    with open(model_output, 'wb') as f:
+        pickle.dump(model, f)
+
+    print(f"Model trained: {model_type}, Accuracy: {train_acc:.4f}")
+
+    return (float(train_acc), float(train_time))
+
+# Component 6: Model Evaluation
+@create_component_from_func
+def evaluate_model(
+    model: InputPath('Model'),
+    test_data: InputPath('TestData'),
+    metrics_output: OutputPath('Metrics')
+) -> NamedTuple('Outputs', [
+    ('test_accuracy', float),
+    ('test_f1', float),
+    ('test_auc', float)
+]):
+    """Evaluate model on test data"""
+
+    import pandas as pd
+    import pickle
+    import json
+    from sklearn.metrics import (
+        accuracy_score,
+        f1_score,
+        roc_auc_score,
+        classification_report,
+        confusion_matrix
+    )
+
+    # Load model and data
+    with open(model, 'rb') as f:
+        model = pickle.load(f)
+
+    df = pd.read_csv(test_data)
+    X_test = df.drop(columns=['target'])
+    y_test = df['target']
+
+    # Make predictions
+    y_pred = model.predict(X_test)
+    y_proba = model.predict_proba(X_test)[:, 1] if hasattr(model, 'predict_proba') else y_pred
+
+    # Calculate metrics
+    test_acc = accuracy_score(y_test, y_pred)
+    test_f1 = f1_score(y_test, y_pred, average='weighted')
+    test_auc = roc_auc_score(y_test, y_proba)
+
+    # Detailed metrics
+    metrics = {
+        'accuracy': float(test_acc),
+        'f1_score': float(test_f1),
+        'auc_roc': float(test_auc),
+        'classification_report': classification_report(y_test, y_pred, output_dict=True),
+        'confusion_matrix': confusion_matrix(y_test, y_pred).tolist()
+    }
+
+    # Save metrics
+    with open(metrics_output, 'w') as f:
+        json.dump(metrics, f, indent=2)
+
+    print(f"Test Accuracy: {test_acc:.4f}, F1: {test_f1:.4f}, AUC: {test_auc:.4f}")
+
+    return (float(test_acc), float(test_f1), float(test_auc))
+
+# Component 7: Model Deployment Decision
+@create_component_from_func
+def deployment_decision(
+    test_accuracy: float,
+    test_f1: float,
+    accuracy_threshold: float = 0.85,
+    f1_threshold: float = 0.80
+) -> NamedTuple('Outputs', [('should_deploy', bool), ('decision_reason', str)]):
+    """Decide whether to deploy model based on metrics"""
+
+    if test_accuracy >= accuracy_threshold and test_f1 >= f1_threshold:
+        return (True, f"Metrics above threshold: acc={test_accuracy:.4f}, f1={test_f1:.4f}")
+    else:
+        return (False, f"Metrics below threshold: acc={test_accuracy:.4f}, f1={test_f1:.4f}")
+
+# Component 8: Model Registration
+@create_component_from_func
+def register_model(
+    model: InputPath('Model'),
+    model_name: str,
+    model_version: str,
+    metrics: InputPath('Metrics')
+):
+    """Register model in model registry"""
+
+    import mlflow
+    import pickle
+    import json
+
+    # Load model and metrics
+    with open(model, 'rb') as f:
+        model_obj = pickle.load(f)
+
+    with open(metrics, 'r') as f:
+        metrics_dict = json.load(f)
+
+    # Register with MLflow
+    mlflow.set_tracking_uri("http://mlflow-server:5000")
+
+    with mlflow.start_run():
+        # Log metrics
+        mlflow.log_metrics({
+            'test_accuracy': metrics_dict['accuracy'],
+            'test_f1': metrics_dict['f1_score'],
+            'test_auc': metrics_dict['auc_roc']
+        })
+
+        # Log model
+        mlflow.sklearn.log_model(
+            model_obj,
+            "model",
+            registered_model_name=model_name
+        )
+
+        # Add version tag
+        mlflow.set_tag("version", model_version)
+
+    print(f"Model registered: {model_name} version {model_version}")
+
+# Define the Pipeline
+@dsl.pipeline(
+    name='ML Training Pipeline',
+    description='End-to-end ML pipeline with data processing, training, and deployment'
+)
+def ml_training_pipeline(
+    data_source: str = 's3://ml-data/dataset.csv',
+    model_type: str = 'random_forest',
+    n_estimators: int = 100,
+    max_depth: int = 10,
+    test_size: float = 0.2,
+    accuracy_threshold: float = 0.85,
+    model_name: str = 'classifier-model',
+    model_version: str = 'v1.0'
+):
+    """Complete ML training pipeline"""
+
+    # Step 1: Ingest data
+    ingest_task = ingest_data(data_source=data_source)
+
+    # Step 2: Validate data
+    validate_task = validate_data(dataset=ingest_task.outputs['output_dataset'])
+
+    # Step 3: Engineer features (only if validation passes)
+    with dsl.Condition(validate_task.outputs['is_valid'] == True):
+        engineer_task = engineer_features(
+            dataset=ingest_task.outputs['output_dataset']
+        )
+
+        # Step 4: Split data
+        split_task = split_data(
+            features=engineer_task.outputs['output_features'],
+            test_size=test_size
+        )
+
+        # Step 5: Train model
+        train_task = train_model(
+            train_data=split_task.outputs['train_data'],
+            model_type=model_type,
+            n_estimators=n_estimators,
+            max_depth=max_depth
+        )
+
+        # Step 6: Evaluate model
+        eval_task = evaluate_model(
+            model=train_task.outputs['model_output'],
+            test_data=split_task.outputs['test_data']
+        )
+
+        # Step 7: Deployment decision
+        decision_task = deployment_decision(
+            test_accuracy=eval_task.outputs['test_accuracy'],
+            test_f1=eval_task.outputs['test_f1'],
+            accuracy_threshold=accuracy_threshold
+        )
+
+        # Step 8: Register model (only if deployment approved)
+        with dsl.Condition(decision_task.outputs['should_deploy'] == True):
+            register_task = register_model(
+                model=train_task.outputs['model_output'],
+                model_name=model_name,
+                model_version=model_version,
+                metrics=eval_task.outputs['metrics_output']
+            )
+
+# Compile and run the pipeline
+if __name__ == '__main__':
+    import kfp.compiler as compiler
+
+    # Compile pipeline to YAML
+    compiler.Compiler().compile(
+        ml_training_pipeline,
+        'ml_training_pipeline.yaml'
+    )
+
+    # Create client and run
+    client = kfp.Client(host='http://localhost:8080')
+
+    # Submit pipeline run
+    run = client.create_run_from_pipeline_func(
+        ml_training_pipeline,
+        arguments={
+            'data_source': 's3://ml-data/classification_data.csv',
+            'model_type': 'random_forest',
+            'n_estimators': 100,
+            'max_depth': 10,
+            'accuracy_threshold': 0.85,
+            'model_name': 'production-classifier',
+            'model_version': 'v1.0'
+        }
+    )
+
+    print(f"Pipeline run created: {run.run_id}")
+\end{lstlisting}
+
+\subsection{Kubeflow Katib for Hyperparameter Tuning}
+
+\begin{lstlisting}[style=yaml, caption=Katib Experiment for Hyperparameter Optimization]
+# katib-experiment.yaml
+apiVersion: kubeflow.org/v1beta1
+kind: Experiment
+metadata:
+  name: random-forest-hpo
+  namespace: kubeflow
+spec:
+  objective:
+    type: maximize
+    goal: 0.95
+    objectiveMetricName: accuracy
+    additionalMetricNames:
+      - f1_score
+      - auc
+
+  algorithm:
+    algorithmName: bayesian
+    algorithmSettings:
+      - name: random_state
+        value: "42"
+
+  parallelTrialCount: 3
+  maxTrialCount: 20
+  maxFailedTrialCount: 3
+
+  parameters:
+    - name: n_estimators
+      parameterType: int
+      feasibleSpace:
+        min: "50"
+        max: "500"
+        step: "50"
+
+    - name: max_depth
+      parameterType: int
+      feasibleSpace:
+        min: "3"
+        max: "20"
+
+    - name: min_samples_split
+      parameterType: int
+      feasibleSpace:
+        min: "2"
+        max: "20"
+
+    - name: min_samples_leaf
+      parameterType: int
+      feasibleSpace:
+        min: "1"
+        max: "10"
+
+    - name: max_features
+      parameterType: categorical
+      feasibleSpace:
+        list:
+          - "auto"
+          - "sqrt"
+          - "log2"
+
+  trialTemplate:
+    primaryContainerName: training
+    trialParameters:
+      - name: n_estimators
+        description: Number of trees
+        reference: n_estimators
+      - name: max_depth
+        description: Maximum depth
+        reference: max_depth
+      - name: min_samples_split
+        description: Minimum samples to split
+        reference: min_samples_split
+      - name: min_samples_leaf
+        description: Minimum samples in leaf
+        reference: min_samples_leaf
+      - name: max_features
+        description: Maximum features
+        reference: max_features
+
+    trialSpec:
+      apiVersion: batch/v1
+      kind: Job
+      spec:
+        template:
+          spec:
+            containers:
+              - name: training
+                image: ml-training:latest
+                command:
+                  - python
+                  - train.py
+                  - --n-estimators=${trialParameters.n_estimators}
+                  - --max-depth=${trialParameters.max_depth}
+                  - --min-samples-split=${trialParameters.min_samples_split}
+                  - --min-samples-leaf=${trialParameters.min_samples_leaf}
+                  - --max-features=${trialParameters.max_features}
+                  - --output-file=/tmp/metrics.json
+
+                volumeMounts:
+                  - name: data
+                    mountPath: /data
+                  - name: models
+                    mountPath: /models
+
+            volumes:
+              - name: data
+                persistentVolumeClaim:
+                  claimName: training-data
+              - name: models
+                persistentVolumeClaim:
+                  claimName: model-storage
+
+            restartPolicy: Never
+\end{lstlisting}
+
+\subsection{KServe for Model Deployment}
+
+\begin{lstlisting}[style=yaml, caption=KServe InferenceService Configuration]
+# inference-service.yaml
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: sklearn-classifier
+  namespace: ml-serving
+spec:
+  predictor:
+    minReplicas: 2
+    maxReplicas: 10
+
+    sklearn:
+      storageUri: s3://ml-models/sklearn-classifier/v1
+      resources:
+        requests:
+          cpu: "1"
+          memory: 2Gi
+        limits:
+          cpu: "2"
+          memory: 4Gi
+
+    # Autoscaling configuration
+    scaleTarget: 75
+    scaleMetric: concurrency
+
+    # Canary rollout (optional)
+    canaryTrafficPercent: 20
+
+  # Transformer for preprocessing (optional)
+  transformer:
+    containers:
+      - name: preprocessor
+        image: ml-preprocessor:latest
+        env:
+          - name: STORAGE_URI
+            value: s3://ml-models/preprocessor/v1
+        resources:
+          requests:
+            cpu: "500m"
+            memory: 1Gi
+
+  # Explainer for model interpretability (optional)
+  explainer:
+    containers:
+      - name: explainer
+        image: kserve/alibi-explainer:latest
+        args:
+          - --model_name=sklearn-classifier
+          - --predictor_host=sklearn-classifier-predictor
+        resources:
+          requests:
+            cpu: "500m"
+            memory: 1Gi
+\end{lstlisting}
+
+\section{Cloud ML Platforms Comparison}
+
+Managed ML platforms provide end-to-end capabilities without infrastructure management overhead.
+
+\subsection{AWS SageMaker}
+
+\begin{lstlisting}[language=Python, caption=AWS SageMaker Training and Deployment]
+# sagemaker_pipeline.py
+"""
+Complete ML pipeline using AWS SageMaker
+"""
+
+import boto3
+import sagemaker
+from sagemaker.sklearn import SKLearn
+from sagemaker.processing import ScriptProcessor
+from sagemaker.workflow.pipeline import Pipeline
+from sagemaker.workflow.steps import ProcessingStep, TrainingStep
+from sagemaker.workflow.parameters import ParameterInteger, ParameterString
+from sagemaker.inputs import TrainingInput
+from sagemaker.model import Model
+from sagemaker.workflow.model_step import ModelStep
+
+# Initialize SageMaker session
+sess = sagemaker.Session()
+role = sagemaker.get_execution_role()
+bucket = sess.default_bucket()
+region = boto3.Session().region_name
+
+# Define pipeline parameters
+processing_instance_type = ParameterString(
+    name="ProcessingInstanceType",
+    default_value="ml.m5.xlarge"
+)
+
+training_instance_type = ParameterString(
+    name="TrainingInstanceType",
+    default_value="ml.m5.2xlarge"
+)
+
+model_approval_status = ParameterString(
+    name="ModelApprovalStatus",
+    default_value="PendingManualApproval"
+)
+
+# Step 1: Data Processing
+script_processor = ScriptProcessor(
+    image_uri=f"683313688378.dkr.ecr.{region}.amazonaws.com/sagemaker-scikit-learn:0.23-1-cpu-py3",
+    role=role,
+    instance_type=processing_instance_type,
+    instance_count=1,
+    command=["python3"]
+)
+
+processing_step = ProcessingStep(
+    name="DataProcessing",
+    processor=script_processor,
+    inputs=[
+        sagemaker.processing.ProcessingInput(
+            source=f"s3://{bucket}/input/data.csv",
+            destination="/opt/ml/processing/input"
+        )
+    ],
+    outputs=[
+        sagemaker.processing.ProcessingOutput(
+            source="/opt/ml/processing/train",
+            destination=f"s3://{bucket}/processed/train"
+        ),
+        sagemaker.processing.ProcessingOutput(
+            source="/opt/ml/processing/test",
+            destination=f"s3://{bucket}/processed/test"
+        )
+    ],
+    code="preprocessing.py"
+)
+
+# Step 2: Model Training
+sklearn_estimator = SKLearn(
+    entry_point="train.py",
+    role=role,
+    instance_type=training_instance_type,
+    instance_count=1,
+    framework_version="0.23-1",
+    hyperparameters={
+        "n_estimators": 100,
+        "max_depth": 10
+    }
+)
+
+training_step = TrainingStep(
+    name="ModelTraining",
+    estimator=sklearn_estimator,
+    inputs={
+        "train": TrainingInput(
+            s3_data=processing_step.properties.ProcessingOutputConfig.Outputs[
+                "train"
+            ].S3Output.S3Uri,
+            content_type="text/csv"
+        ),
+        "test": TrainingInput(
+            s3_data=processing_step.properties.ProcessingOutputConfig.Outputs[
+                "test"
+            ].S3Output.S3Uri,
+            content_type="text/csv"
+        )
+    }
+)
+
+# Step 3: Model Evaluation
+evaluation_processor = ScriptProcessor(
+    image_uri=f"683313688378.dkr.ecr.{region}.amazonaws.com/sagemaker-scikit-learn:0.23-1-cpu-py3",
+    role=role,
+    instance_type=processing_instance_type,
+    instance_count=1,
+    command=["python3"]
+)
+
+evaluation_step = ProcessingStep(
+    name="ModelEvaluation",
+    processor=evaluation_processor,
+    inputs=[
+        sagemaker.processing.ProcessingInput(
+            source=training_step.properties.ModelArtifacts.S3ModelArtifacts,
+            destination="/opt/ml/processing/model"
+        ),
+        sagemaker.processing.ProcessingInput(
+            source=processing_step.properties.ProcessingOutputConfig.Outputs[
+                "test"
+            ].S3Output.S3Uri,
+            destination="/opt/ml/processing/test"
+        )
+    ],
+    outputs=[
+        sagemaker.processing.ProcessingOutput(
+            source="/opt/ml/processing/evaluation",
+            destination=f"s3://{bucket}/evaluation"
+        )
+    ],
+    code="evaluate.py"
+)
+
+# Step 4: Model Registration
+model = Model(
+    image_uri=training_step.properties.AlgorithmSpecification.TrainingImage,
+    model_data=training_step.properties.ModelArtifacts.S3ModelArtifacts,
+    sagemaker_session=sess,
+    role=role
+)
+
+model_step = ModelStep(
+    name="RegisterModel",
+    step_args=model.register(
+        content_types=["text/csv"],
+        response_types=["text/csv"],
+        inference_instances=["ml.m5.xlarge"],
+        transform_instances=["ml.m5.xlarge"],
+        model_package_group_name="ml-model-package-group",
+        approval_status=model_approval_status
+    )
+)
+
+# Create Pipeline
+pipeline = Pipeline(
+    name="MLTrainingPipeline",
+    parameters=[
+        processing_instance_type,
+        training_instance_type,
+        model_approval_status
+    ],
+    steps=[
+        processing_step,
+        training_step,
+        evaluation_step,
+        model_step
+    ]
+)
+
+# Create/Update Pipeline
+pipeline.upsert(role_arn=role)
+
+# Start Pipeline Execution
+execution = pipeline.start()
+execution.wait()
+
+print(f"Pipeline execution completed: {execution.arn}")
+\end{lstlisting}
+
+\textbf{SageMaker Key Features:}
+
+\begin{itemize}
+    \item \textbf{SageMaker Studio:} Integrated development environment for ML
+    \item \textbf{Feature Store:} Centralized feature repository with online/offline access
+    \item \textbf{Autopilot:} Automated machine learning (AutoML)
+    \item \textbf{Pipelines:} Native workflow orchestration with step caching
+    \item \textbf{Model Monitor:} Automated drift detection and data quality monitoring
+    \item \textbf{Clarify:} Bias detection and model explainability
+    \item \textbf{Edge Manager:} Deploy and monitor models on edge devices
+    \item \textbf{Training Compiler:} Accelerate training with optimized kernels
+\end{itemize}
+
+\subsection{Google Cloud Vertex AI}
+
+\begin{lstlisting}[language=Python, caption=Vertex AI Training and Deployment Pipeline]
+# vertex_ai_pipeline.py
+"""
+ML pipeline using Google Cloud Vertex AI
+"""
+
+from google.cloud import aiplatform
+from google.cloud.aiplatform import pipeline_jobs
+from kfp.v2 import dsl
+from kfp.v2.dsl import component, Output, Input, Model, Dataset, Metrics
+
+# Initialize Vertex AI
+PROJECT_ID = "your-project-id"
+REGION = "us-central1"
+BUCKET = "gs://your-bucket"
+
+aiplatform.init(project=PROJECT_ID, location=REGION, staging_bucket=BUCKET)
+
+# Component 1: Data Preprocessing
+@component(
+    base_image="python:3.9",
+    packages_to_install=["pandas", "scikit-learn", "google-cloud-storage"]
+)
+def preprocess_data(
+    input_data_uri: str,
+    train_data: Output[Dataset],
+    test_data: Output[Dataset]
+):
+    import pandas as pd
+    from sklearn.model_selection import train_test_split
+
+    # Load data from GCS
+    df = pd.read_csv(input_data_uri)
+
+    # Preprocess
+    df = df.dropna()
+
+    # Split
+    train_df, test_df = train_test_split(df, test_size=0.2, random_state=42)
+
+    # Save
+    train_df.to_csv(train_data.path, index=False)
+    test_df.to_csv(test_data.path, index=False)
+
+# Component 2: Training
+@component(
+    base_image="python:3.9",
+    packages_to_install=["pandas", "scikit-learn", "joblib"]
+)
+def train_model(
+    train_data: Input[Dataset],
+    model: Output[Model],
+    n_estimators: int = 100,
+    max_depth: int = 10
+):
+    import pandas as pd
+    from sklearn.ensemble import RandomForestClassifier
+    import joblib
+
+    # Load training data
+    df = pd.read_csv(train_data.path)
+    X_train = df.drop(columns=['target'])
+    y_train = df['target']
+
+    # Train model
+    clf = RandomForestClassifier(
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+        random_state=42
+    )
+    clf.fit(X_train, y_train)
+
+    # Save model
+    joblib.dump(clf, model.path)
+
+# Component 3: Evaluation
+@component(
+    base_image="python:3.9",
+    packages_to_install=["pandas", "scikit-learn", "joblib"]
+)
+def evaluate_model(
+    model: Input[Model],
+    test_data: Input[Dataset],
+    metrics: Output[Metrics]
+):
+    import pandas as pd
+    from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+    import joblib
+
+    # Load model and test data
+    clf = joblib.load(model.path)
+    df = pd.read_csv(test_data.path)
+    X_test = df.drop(columns=['target'])
+    y_test = df['target']
+
+    # Evaluate
+    y_pred = clf.predict(X_test)
+    y_proba = clf.predict_proba(X_test)[:, 1]
+
+    accuracy = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred, average='weighted')
+    auc = roc_auc_score(y_test, y_proba)
+
+    # Log metrics
+    metrics.log_metric("accuracy", accuracy)
+    metrics.log_metric("f1_score", f1)
+    metrics.log_metric("auc", auc)
+
+# Define Pipeline
+@dsl.pipeline(
+    name="vertex-ai-training-pipeline",
+    description="Complete ML pipeline on Vertex AI"
+)
+def vertex_training_pipeline(
+    input_data_uri: str = f"{BUCKET}/data/dataset.csv",
+    n_estimators: int = 100,
+    max_depth: int = 10
+):
+    # Preprocess data
+    preprocess_task = preprocess_data(input_data_uri=input_data_uri)
+
+    # Train model
+    train_task = train_model(
+        train_data=preprocess_task.outputs["train_data"],
+        n_estimators=n_estimators,
+        max_depth=max_depth
+    )
+
+    # Evaluate model
+    evaluate_task = evaluate_model(
+        model=train_task.outputs["model"],
+        test_data=preprocess_task.outputs["test_data"]
+    )
+
+# Compile pipeline
+from kfp.v2 import compiler
+
+compiler.Compiler().compile(
+    pipeline_func=vertex_training_pipeline,
+    package_path="vertex_pipeline.json"
+)
+
+# Submit pipeline job
+job = pipeline_jobs.PipelineJob(
+    display_name="ml-training-pipeline",
+    template_path="vertex_pipeline.json",
+    parameter_values={
+        "input_data_uri": f"{BUCKET}/data/classification_data.csv",
+        "n_estimators": 100,
+        "max_depth": 10
+    },
+    enable_caching=True
+)
+
+job.submit()
+print(f"Pipeline job submitted: {job.resource_name}")
+
+# Deploy model to endpoint
+deployed_model = aiplatform.Model.upload(
+    display_name="classification-model",
+    artifact_uri=f"{BUCKET}/models/",
+    serving_container_image_uri="us-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.1-0:latest"
+)
+
+endpoint = deployed_model.deploy(
+    deployed_model_display_name="classification-endpoint",
+    machine_type="n1-standard-4",
+    min_replica_count=1,
+    max_replica_count=5,
+    traffic_percentage=100
+)
+
+print(f"Model deployed to endpoint: {endpoint.resource_name}")
+\end{lstlisting}
+
+\textbf{Vertex AI Key Features:}
+
+\begin{itemize}
+    \item \textbf{Workbench:} Managed Jupyter notebooks with pre-configured environments
+    \item \textbf{Pipelines:} KFP-compatible pipeline orchestration
+    \item \textbf{Feature Store:} Managed feature repository with serving infrastructure
+    \item \textbf{AutoML:} No-code ML for various data types (tabular, image, text, video)
+    \item \textbf{Matching Engine:} Vector similarity search for embeddings
+    \item \textbf{Explainable AI:} Built-in model interpretability
+    \item \textbf{Model Monitoring:} Automated skew and drift detection
+    \item \textbf{Vizier:} Hyperparameter tuning service
+\end{itemize}
+
+\subsection{Azure Machine Learning}
+
+\begin{lstlisting}[language=Python, caption=Azure ML Pipeline Implementation]
+# azure_ml_pipeline.py
+"""
+ML pipeline using Azure Machine Learning
+"""
+
+from azureml.core import Workspace, Experiment, Dataset, Environment
+from azureml.core.compute import ComputeTarget, AmlCompute
+from azureml.pipeline.core import Pipeline, PipelineData
+from azureml.pipeline.steps import PythonScriptStep
+from azureml.core.runconfig import RunConfiguration
+
+# Connect to workspace
+ws = Workspace.from_config()
+
+# Create or get compute cluster
+compute_name = "ml-cluster"
+if compute_name not in ws.compute_targets:
+    compute_config = AmlCompute.provisioning_configuration(
+        vm_size="STANDARD_D2_V2",
+        min_nodes=0,
+        max_nodes=4
+    )
+    compute_target = ComputeTarget.create(ws, compute_name, compute_config)
+    compute_target.wait_for_completion(show_output=True)
+else:
+    compute_target = ws.compute_targets[compute_name]
+
+# Create environment
+env = Environment.from_conda_specification(
+    name="ml-env",
+    file_path="conda_env.yml"
+)
+env.register(workspace=ws)
+
+# Create run configuration
+run_config = RunConfiguration()
+run_config.target = compute_target
+run_config.environment = env
+
+# Define pipeline data
+processed_data = PipelineData("processed_data", datastore=ws.get_default_datastore())
+model_data = PipelineData("model_data", datastore=ws.get_default_datastore())
+
+# Step 1: Data Preparation
+prep_step = PythonScriptStep(
+    name="Data Preparation",
+    script_name="prepare_data.py",
+    arguments=[
+        "--input-data", Dataset.get_by_name(ws, "raw_data").as_named_input("raw_data"),
+        "--output-data", processed_data
+    ],
+    outputs=[processed_data],
+    compute_target=compute_target,
+    runconfig=run_config,
+    allow_reuse=True
+)
+
+# Step 2: Training
+train_step = PythonScriptStep(
+    name="Model Training",
+    script_name="train.py",
+    arguments=[
+        "--input-data", processed_data,
+        "--output-model", model_data,
+        "--n-estimators", 100,
+        "--max-depth", 10
+    ],
+    inputs=[processed_data],
+    outputs=[model_data],
+    compute_target=compute_target,
+    runconfig=run_config,
+    allow_reuse=True
+)
+
+# Step 3: Evaluation
+eval_step = PythonScriptStep(
+    name="Model Evaluation",
+    script_name="evaluate.py",
+    arguments=[
+        "--model-path", model_data,
+        "--test-data", processed_data
+    ],
+    inputs=[model_data, processed_data],
+    compute_target=compute_target,
+    runconfig=run_config,
+    allow_reuse=True
+)
+
+# Step 4: Registration
+register_step = PythonScriptStep(
+    name="Model Registration",
+    script_name="register_model.py",
+    arguments=[
+        "--model-path", model_data
+    ],
+    inputs=[model_data],
+    compute_target=compute_target,
+    runconfig=run_config,
+    allow_reuse=False  # Always register
+)
+
+# Create and publish pipeline
+pipeline = Pipeline(
+    workspace=ws,
+    steps=[prep_step, train_step, eval_step, register_step]
+)
+
+pipeline.validate()
+published_pipeline = pipeline.publish(
+    name="ML Training Pipeline",
+    description="End-to-end ML pipeline",
+    version="1.0"
+)
+
+# Run pipeline
+experiment = Experiment(ws, "ml-pipeline-experiment")
+pipeline_run = experiment.submit(pipeline)
+pipeline_run.wait_for_completion(show_output=True)
+
+# Deploy model as web service
+from azureml.core.model import Model
+from azureml.core.webservice import AciWebservice, Webservice
+from azureml.core.model import InferenceConfig
+
+# Get registered model
+model = Model(ws, name="classification-model")
+
+# Create inference configuration
+inference_config = InferenceConfig(
+    entry_script="score.py",
+    environment=env
+)
+
+# Configure deployment
+deployment_config = AciWebservice.deploy_configuration(
+    cpu_cores=1,
+    memory_gb=1,
+    auth_enabled=True,
+    enable_app_insights=True
+)
+
+# Deploy
+service = Model.deploy(
+    workspace=ws,
+    name="classification-service",
+    models=[model],
+    inference_config=inference_config,
+    deployment_config=deployment_config,
+    overwrite=True
+)
+
+service.wait_for_deployment(show_output=True)
+print(f"Service deployed: {service.scoring_uri}")
+\end{lstlisting}
+
+\textbf{Azure ML Key Features:}
+
+\begin{itemize}
+    \item \textbf{Designer:} Drag-and-drop ML pipeline builder
+    \item \textbf{AutoML:} Automated model selection and hyperparameter tuning
+    \item \textbf{MLflow Integration:} Native support for MLflow tracking
+    \item \textbf{Responsible AI:} Fairness assessment and error analysis
+    \item \textbf{Model Catalog:} Pre-trained models and foundation models
+    \item \textbf{Managed Endpoints:} Online and batch inference endpoints
+    \item \textbf{Data Labeling:} Built-in annotation tools
+    \item \textbf{Compliance:} HIPAA, ISO, SOC certifications
+\end{itemize}
+
+\section{Platform Comparison Matrix}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{|p{3.2cm}|p{2.3cm}|p{2.3cm}|p{2.3cm}|p{2.3cm}|}
+\hline
+\textbf{Feature} & \textbf{Kubeflow} & \textbf{SageMaker} & \textbf{Vertex AI} & \textbf{Azure ML} \\
+\hline
+\textbf{Deployment} & Self-managed K8s & Fully managed & Fully managed & Fully managed \\
+\hline
+\textbf{Cloud Lock-in} & None & AWS only & GCP only & Azure only \\
+\hline
+\textbf{Cost Model} & Infra\-structure & Pay-per-use & Pay-per-use & Pay-per-use \\
+\hline
+\textbf{Learning Curve} & Steep & Moderate & Moderate & Moderate \\
+\hline
+\textbf{Customization} & Very high & High & Moderate & High \\
+\hline
+\textbf{AutoML} & Katib & Autopilot & AutoML & AutoML \\
+\hline
+\textbf{Feature Store} & Custom & Native & Native & Native \\
+\hline
+\textbf{Model Registry} & \shortstack{Custom\\MLflow} & Native & Native & Native \\
+\hline
+\textbf{Monitoring} & Prometheus & Native & Native & Native \\
+\hline
+\textbf{Edge Deployment} & Manual & Edge Manager & Edge TPU & IoT Edge \\
+\hline
+\textbf{Multi-cloud} & Yes & No & No & No \\
+\hline
+\textbf{On-premises} & Yes & Outposts & Anthos & Arc \\
+\hline
+\textbf{Python SDK} & KFP SDK & Boto3/SDK & Vertex SDK & Azure SDK \\
+\hline
+\textbf{Best For} & Flexibility, control & AWS ecosystem & GCP ecosystem & Azure ecosystem \\
+\hline
+\end{tabular}
+\caption{MLOps Platform Comparison Matrix}
+\end{table}
+
+\section{Platform Selection Criteria and Decision Framework}
+
+Selecting the right MLOps platform requires evaluating organizational needs, technical requirements, and strategic alignment.
+
+\subsection{Decision Framework Matrix}
+
+\begin{lstlisting}[language=Python, caption=Platform Selection Decision Framework]
+#!/usr/bin/env python3
+"""
+MLOps Platform Selection Framework
+Systematic evaluation of platform options based on weighted criteria
+"""
+
+from dataclasses import dataclass
+from typing import List, Dict
+from enum import Enum
+
+class PlatformType(Enum):
+    KUBEFLOW = "Kubeflow"
+    SAGEMAKER = "AWS SageMaker"
+    VERTEX_AI = "Google Vertex AI"
+    AZURE_ML = "Azure ML"
+    CUSTOM = "Custom Platform"
+
+@dataclass
+class EvaluationCriterion:
+    """Single evaluation criterion with weight"""
+    name: str
+    weight: float  # 0.0 to 1.0
+    description: str
+
+@dataclass
+class PlatformScore:
+    """Score for a platform on specific criterion"""
+    criterion: str
+    score: float  # 0 to 10
+    justification: str
+
+class PlatformEvaluator:
+    """Evaluate and compare MLOps platforms"""
+
+    def __init__(self):
+        self.criteria = self._define_criteria()
+        self.platforms = list(PlatformType)
+
+    def _define_criteria(self) -> List[EvaluationCriterion]:
+        """Define evaluation criteria with weights"""
+        return [
+            EvaluationCriterion(
+                name="ease_of_use",
+                weight=0.15,
+                description="Learning curve and operational complexity"
+            ),
+            EvaluationCriterion(
+                name="cost",
+                weight=0.20,
+                description="Total cost of ownership (infrastructure + operations)"
+            ),
+            EvaluationCriterion(
+                name="scalability",
+                weight=0.15,
+                description="Ability to scale compute and handle large workloads"
+            ),
+            EvaluationCriterion(
+                name="flexibility",
+                weight=0.10,
+                description="Customization and extensibility options"
+            ),
+            EvaluationCriterion(
+                name="cloud_strategy",
+                weight=0.15,
+                description="Alignment with multi-cloud vs single-cloud strategy"
+            ),
+            EvaluationCriterion(
+                name="feature_completeness",
+                weight=0.10,
+                description="Built-in capabilities (feature store, monitoring, etc.)"
+            ),
+            EvaluationCriterion(
+                name="integration",
+                weight=0.05,
+                description="Integration with existing tools and infrastructure"
+            ),
+            EvaluationCriterion(
+                name="compliance",
+                weight=0.05,
+                description="Security certifications and data governance"
+            ),
+            EvaluationCriterion(
+                name="vendor_lock_in",
+                weight=0.05,
+                description="Exit strategy and portability (higher score = less lock-in)"
+            )
+        ]
+
+    def evaluate_platform(
+        self,
+        platform: PlatformType,
+        scores: Dict[str, float],
+        justifications: Dict[str, str]
+    ) -> float:
+        """Calculate weighted score for a platform"""
+
+        total_score = 0.0
+        total_weight = sum(c.weight for c in self.criteria)
+
+        print(f"\nEvaluating {platform.value}:")
+        print("=" * 60)
+
+        for criterion in self.criteria:
+            if criterion.name not in scores:
+                print(f"Warning: Missing score for {criterion.name}")
+                continue
+
+            score = scores[criterion.name]
+            weighted_score = score * criterion.weight
+            total_score += weighted_score
+
+            justification = justifications.get(criterion.name, "No justification provided")
+
+            print(f"\n{criterion.name.replace('_', ' ').title()}: {score}/10")
+            print(f"  Weight: {criterion.weight:.2f}")
+            print(f"  Weighted Score: {weighted_score:.2f}")
+            print(f"  Justification: {justification}")
+
+        # Normalize to 0-10 scale
+        normalized_score = (total_score / total_weight) * 10 if total_weight > 0 else 0
+
+        print(f"\n{'='*60}")
+        print(f"Total Weighted Score: {normalized_score:.2f}/10")
+
+        return normalized_score
+
+# Example: Enterprise in AWS Ecosystem
+def evaluate_aws_enterprise():
+    """Evaluation for enterprise already using AWS"""
+
+    evaluator = PlatformEvaluator()
+
+    # SageMaker scores for AWS-native organization
+    sagemaker_scores = {
+        "ease_of_use": 8.0,  # Good documentation, managed service
+        "cost": 6.0,  # Pay-per-use can be expensive at scale
+        "scalability": 9.0,  # Excellent auto-scaling
+        "flexibility": 7.0,  # Good customization with containers
+        "cloud_strategy": 10.0,  # Perfect for AWS-first
+        "feature_completeness": 9.0,  # Comprehensive features
+        "integration": 9.0,  # Deep AWS integration
+        "compliance": 9.0,  # Strong certifications
+        "vendor_lock_in": 4.0  # High lock-in to AWS
+    }
+
+    sagemaker_justifications = {
+        "ease_of_use": "Well-documented with good examples and Studio IDE",
+        "cost": "Pay-per-use pricing can add up, but offers savings plans",
+        "scalability": "Auto-scaling for training and inference",
+        "flexibility": "Bring-your-own containers and algorithms supported",
+        "cloud_strategy": "Native AWS service, no multi-cloud support",
+        "feature_completeness": "Feature Store, Pipelines, Clarify, Model Monitor",
+        "integration": "Seamless integration with S3, ECR, IAM, CloudWatch",
+        "compliance": "HIPAA, PCI DSS, SOC, ISO certified",
+        "vendor_lock_in": "Significant AWS-specific APIs and services"
+    }
+
+    # Kubeflow scores for comparison
+    kubeflow_scores = {
+        "ease_of_use": 4.0,  # Steep learning curve
+        "cost": 8.0,  # Just infrastructure costs
+        "scalability": 8.0,  # Kubernetes scaling
+        "flexibility": 10.0,  # Highly customizable
+        "cloud_strategy": 10.0,  # Cloud-agnostic
+        "feature_completeness": 6.0,  # Need to integrate tools
+        "integration": 7.0,  # Requires configuration
+        "compliance": 7.0,  # Depends on setup
+        "vendor_lock_in": 10.0  # No lock-in
+    }
+
+    kubeflow_justifications = {
+        "ease_of_use": "Complex setup, requires Kubernetes expertise",
+        "cost": "Only pay for infrastructure, no platform fees",
+        "scalability": "Leverages Kubernetes horizontal pod autoscaling",
+        "flexibility": "Complete control over all components",
+        "cloud_strategy": "Runs on any Kubernetes cluster, any cloud",
+        "feature_completeness": "Need to integrate MLflow, Prometheus, etc.",
+        "integration": "Requires custom integration with existing systems",
+        "compliance": "Achievable but requires manual configuration",
+        "vendor_lock_in": "Portable across clouds and on-premises"
+    }
+
+    sagemaker_score = evaluator.evaluate_platform(
+        PlatformType.SAGEMAKER,
+        sagemaker_scores,
+        sagemaker_justifications
+    )
+
+    kubeflow_score = evaluator.evaluate_platform(
+        PlatformType.KUBEFLOW,
+        kubeflow_scores,
+        kubeflow_justifications
+    )
+
+    print("\n" + "="*60)
+    print("RECOMMENDATION")
+    print("="*60)
+
+    if sagemaker_score > kubeflow_score:
+        print(f"SageMaker ({sagemaker_score:.2f}) recommended over Kubeflow ({kubeflow_score:.2f})")
+        print("\nReasons:")
+        print("- Already invested in AWS ecosystem")
+        print("- Team prefers managed services over self-hosting")
+        print("- Compliance certifications important")
+        print("- Faster time-to-value with less operational overhead")
+    else:
+        print(f"Kubeflow ({kubeflow_score:.2f}) recommended over SageMaker ({sagemaker_score:.2f})")
+        print("\nReasons:")
+        print("- Need for multi-cloud portability")
+        print("- Cost optimization priority")
+        print("- Team has strong Kubernetes expertise")
+        print("- Customization requirements")
+
+if __name__ == "__main__":
+    evaluate_aws_enterprise()
+\end{lstlisting}
+
+\textbf{Key Selection Factors:}
+
+\begin{enumerate}
+    \item \textbf{Cloud Strategy:}
+    \begin{itemize}
+        \item Single cloud committed: Choose native platform (SageMaker/Vertex/Azure ML)
+        \item Multi-cloud: Kubeflow or abstraction layer (MLflow + custom)
+        \item Hybrid: Consider compatibility with on-premises Kubernetes
+    \end{itemize}
+
+    \item \textbf{Team Maturity:}
+    \begin{itemize}
+        \item Kubernetes experts: Kubeflow viable option
+        \item General software engineers: Managed platforms preferred
+        \item Small teams: Avoid operational overhead of self-hosting
+    \end{itemize}
+
+    \item \textbf{Budget Considerations:}
+    \begin{itemize}
+        \item High compute costs: Kubeflow with spot instances
+        \item Predictable workloads: Reserved instances on managed platforms
+        \item Variable workloads: Pay-per-use managed services
+    \end{itemize}
+
+    \item \textbf{Compliance Requirements:}
+    \begin{itemize}
+        \item HIPAA/PCI DSS: All major platforms support
+        \item Data residency: Check regional availability
+        \item Custom requirements: May require self-hosted solution
+    \end{itemize}
+
+    \item \textbf{Integration Needs:}
+    \begin{itemize}
+        \item Existing AWS infrastructure: SageMaker natural fit
+        \item Multi-cloud data lakes: Platform-agnostic tools
+        \item Legacy systems: Custom integration layer needed
+    \end{itemize}
+\end{enumerate}
+
+\section{Migration Strategies Between Platforms}
+
+Platform migration requires careful planning to minimize disruption and avoid data loss.
+
+\subsection{Migration Planning Framework}
+
+\begin{lstlisting}[language=Python, caption=Platform Migration Plan Template]
+#!/usr/bin/env python3
+"""
+MLOps Platform Migration Framework
+Systematic approach to migrating between platforms
+"""
+
+from enum import Enum
+from dataclasses import dataclass
+from typing import List, Optional
+import json
+
+class MigrationPhase(Enum):
+    ASSESSMENT = "assessment"
+    PLANNING = "planning"
+    PILOT = "pilot"
+    PARALLEL_RUN = "parallel_run"
+    CUTOVER = "cutover"
+    DECOMMISSION = "decommission"
+
+@dataclass
+class MigrationTask:
+    """Single migration task"""
+    name: str
+    phase: MigrationPhase
+    description: str
+    dependencies: List[str]
+    estimated_days: int
+    risk_level: str  # low, medium, high
+    mitigation: str
+
+class PlatformMigrationPlanner:
+    """Plan and track platform migration"""
+
+    def __init__(self, source_platform: str, target_platform: str):
+        self.source = source_platform
+        self.target = target_platform
+        self.tasks = self._generate_migration_tasks()
+
+    def _generate_migration_tasks(self) -> List[MigrationTask]:
+        """Generate comprehensive migration task list"""
+
+        return [
+            # Phase 1: Assessment
+            MigrationTask(
+                name="inventory_workloads",
+                phase=MigrationPhase.ASSESSMENT,
+                description="Catalog all ML workloads, pipelines, and models",
+                dependencies=[],
+                estimated_days=5,
+                risk_level="low",
+                mitigation="Use automated discovery tools"
+            ),
+            MigrationTask(
+                name="assess_dependencies",
+                phase=MigrationPhase.ASSESSMENT,
+                description="Map dependencies between models, data, and services",
+                dependencies=["inventory_workloads"],
+                estimated_days=3,
+                risk_level="medium",
+                mitigation="Document all integration points"
+            ),
+            MigrationTask(
+                name="cost_analysis",
+                phase=MigrationPhase.ASSESSMENT,
+                description="Compare costs between current and target platform",
+                dependencies=["inventory_workloads"],
+                estimated_days=3,
+                risk_level="low",
+                mitigation="Include hidden costs (training, operations)"
+            ),
+
+            # Phase 2: Planning
+            MigrationTask(
+                name="design_target_architecture",
+                phase=MigrationPhase.PLANNING,
+                description="Design architecture on target platform",
+                dependencies=["assess_dependencies"],
+                estimated_days=10,
+                risk_level="medium",
+                mitigation="Involve platform experts, peer review"
+            ),
+            MigrationTask(
+                name="create_migration_runbook",
+                phase=MigrationPhase.PLANNING,
+                description="Document detailed migration procedures",
+                dependencies=["design_target_architecture"],
+                estimated_days=5,
+                risk_level="medium",
+                mitigation="Include rollback procedures"
+            ),
+            MigrationTask(
+                name="setup_target_infrastructure",
+                phase=MigrationPhase.PLANNING,
+                description="Provision target platform infrastructure",
+                dependencies=["design_target_architecture"],
+                estimated_days=7,
+                risk_level="high",
+                mitigation="Use Infrastructure as Code for reproducibility"
+            ),
+
+            # Phase 3: Pilot
+            MigrationTask(
+                name="migrate_pilot_pipeline",
+                phase=MigrationPhase.PILOT,
+                description="Migrate non-critical pipeline to validate approach",
+                dependencies=["setup_target_infrastructure", "create_migration_runbook"],
+                estimated_days=10,
+                risk_level="medium",
+                mitigation="Choose simple pipeline for learning"
+            ),
+            MigrationTask(
+                name="validate_pilot_results",
+                phase=MigrationPhase.PILOT,
+                description="Verify pilot pipeline produces identical results",
+                dependencies=["migrate_pilot_pipeline"],
+                estimated_days=5,
+                risk_level="high",
+                mitigation="Automated comparison of outputs"
+            ),
+            MigrationTask(
+                name="refine_migration_process",
+                phase=MigrationPhase.PILOT,
+                description="Update procedures based on pilot learnings",
+                dependencies=["validate_pilot_results"],
+                estimated_days=3,
+                risk_level="low",
+                mitigation="Document all issues and resolutions"
+            ),
+
+            # Phase 4: Parallel Run
+            MigrationTask(
+                name="migrate_all_pipelines",
+                phase=MigrationPhase.PARALLEL_RUN,
+                description="Migrate remaining pipelines to target platform",
+                dependencies=["refine_migration_process"],
+                estimated_days=20,
+                risk_level="high",
+                mitigation="Stagger migrations, maintain source pipelines"
+            ),
+            MigrationTask(
+                name="sync_data_stores",
+                phase=MigrationPhase.PARALLEL_RUN,
+                description="Replicate data between platforms",
+                dependencies=["migrate_all_pipelines"],
+                estimated_days=7,
+                risk_level="high",
+                mitigation="Use data versioning, validate checksums"
+            ),
+            MigrationTask(
+                name="parallel_validation",
+                phase=MigrationPhase.PARALLEL_RUN,
+                description="Run both platforms in parallel, compare results",
+                dependencies=["sync_data_stores"],
+                estimated_days=14,
+                risk_level="high",
+                mitigation="Automated result comparison dashboard"
+            ),
+
+            # Phase 5: Cutover
+            MigrationTask(
+                name="switch_production_traffic",
+                phase=MigrationPhase.CUTOVER,
+                description="Route production traffic to new platform",
+                dependencies=["parallel_validation"],
+                estimated_days=1,
+                risk_level="critical",
+                mitigation="Canary rollout, immediate rollback capability"
+            ),
+            MigrationTask(
+                name="monitor_performance",
+                phase=MigrationPhase.CUTOVER,
+                description="Intensive monitoring of new platform",
+                dependencies=["switch_production_traffic"],
+                estimated_days=7,
+                risk_level="high",
+                mitigation="24/7 on-call, automated alerts"
+            ),
+
+            # Phase 6: Decommission
+            MigrationTask(
+                name="archive_source_artifacts",
+                phase=MigrationPhase.DECOMMISSION,
+                description="Archive models, data, and configurations",
+                dependencies=["monitor_performance"],
+                estimated_days=5,
+                risk_level="medium",
+                mitigation="Verify archives are complete and accessible"
+            ),
+            MigrationTask(
+                name="decommission_source_platform",
+                phase=MigrationPhase.DECOMMISSION,
+                description="Shut down source platform infrastructure",
+                dependencies=["archive_source_artifacts"],
+                estimated_days=3,
+                risk_level="low",
+                mitigation="Staged shutdown with verification steps"
+            )
+        ]
+
+    def generate_timeline(self) -> dict:
+        """Generate project timeline"""
+
+        timeline = {}
+        for phase in MigrationPhase:
+            phase_tasks = [t for t in self.tasks if t.phase == phase]
+            total_days = sum(t.estimated_days for t in phase_tasks)
+            timeline[phase.value] = {
+                "tasks": len(phase_tasks),
+                "estimated_days": total_days,
+                "tasks_list": [t.name for t in phase_tasks]
+            }
+
+        return timeline
+
+    def identify_critical_path(self) -> List[str]:
+        """Identify tasks on critical path"""
+
+        # Simplified: tasks with dependencies form critical path
+        critical_tasks = []
+
+        for task in self.tasks:
+            if task.risk_level in ["high", "critical"]:
+                critical_tasks.append(task.name)
+
+        return critical_tasks
+
+    def export_plan(self, filename: str):
+        """Export migration plan to JSON"""
+
+        plan = {
+            "migration": {
+                "source": self.source,
+                "target": self.target
+            },
+            "timeline": self.generate_timeline(),
+            "critical_path": self.identify_critical_path(),
+            "all_tasks": [
+                {
+                    "name": t.name,
+                    "phase": t.phase.value,
+                    "description": t.description,
+                    "dependencies": t.dependencies,
+                    "estimated_days": t.estimated_days,
+                    "risk_level": t.risk_level,
+                    "mitigation": t.mitigation
+                }
+                for t in self.tasks
+            ]
+        }
+
+        with open(filename, 'w') as f:
+            json.dump(plan, f, indent=2)
+
+        print(f"Migration plan exported to {filename}")
+
+# Example usage
+if __name__ == "__main__":
+    planner = PlatformMigrationPlanner(
+        source_platform="SageMaker",
+        target_platform="Kubeflow"
+    )
+
+    timeline = planner.generate_timeline()
+    print("\nMigration Timeline:")
+    print("="*60)
+
+    total_days = 0
+    for phase, info in timeline.items():
+        print(f"\n{phase.replace('_', ' ').title()}:")
+        print(f"  Tasks: {info['tasks']}")
+        print(f"  Estimated Days: {info['estimated_days']}")
+        total_days += info['estimated_days']
+
+    print(f"\nTotal Estimated Duration: {total_days} days (~{total_days/20:.1f} months)")
+
+    critical_path = planner.identify_critical_path()
+    print(f"\nCritical Path Tasks: {len(critical_path)}")
+    for task in critical_path:
+        print(f"  - {task}")
+
+    planner.export_plan("migration_plan.json")
+\end{lstlisting}
+
+\subsection{Code Portability Strategies}
+
+\begin{lstlisting}[language=Python, caption=Platform-Agnostic Pipeline Abstraction]
+#!/usr/bin/env python3
+"""
+Platform-agnostic ML pipeline abstraction
+Enables easy migration between platforms
+"""
+
+from abc import ABC, abstractmethod
+from typing import Dict, Any, List
+from enum import Enum
+
+class PlatformBackend(Enum):
+    KUBEFLOW = "kubeflow"
+    SAGEMAKER = "sagemaker"
+    VERTEX_AI = "vertex_ai"
+    AZURE_ML = "azure_ml"
+
+class MLPipelineStep(ABC):
+    """Abstract base class for pipeline steps"""
+
+    def __init__(self, name: str, inputs: Dict[str, str], outputs: Dict[str, str]):
+        self.name = name
+        self.inputs = inputs
+        self.outputs = outputs
+
+    @abstractmethod
+    def execute(self, **kwargs) -> Dict[str, Any]:
+        """Execute the step"""
+        pass
+
+    @abstractmethod
+    def to_kubeflow(self) -> dict:
+        """Convert to Kubeflow component"""
+        pass
+
+    @abstractmethod
+    def to_sagemaker(self) -> dict:
+        """Convert to SageMaker step"""
+        pass
+
+    @abstractmethod
+    def to_vertex_ai(self) -> dict:
+        """Convert to Vertex AI component"""
+        pass
+
+class DataPreprocessingStep(MLPipelineStep):
+    """Data preprocessing step with multi-platform support"""
+
+    def __init__(self, script_path: str):
+        super().__init__(
+            name="data_preprocessing",
+            inputs={"raw_data": "s3://bucket/raw"},
+            outputs={"processed_data": "s3://bucket/processed"}
+        )
+        self.script_path = script_path
+
+    def execute(self, **kwargs) -> Dict[str, Any]:
+        """Platform-agnostic execution logic"""
+        # Actual preprocessing code
+        return {"status": "success", "output_path": self.outputs["processed_data"]}
+
+    def to_kubeflow(self) -> dict:
+        """Convert to Kubeflow component"""
+        return {
+            "name": self.name,
+            "container": {
+                "image": "ml-preprocessing:latest",
+                "command": ["python", self.script_path],
+                "args": [
+                    "--input", self.inputs["raw_data"],
+                    "--output", self.outputs["processed_data"]
+                ]
+            }
+        }
+
+    def to_sagemaker(self) -> dict:
+        """Convert to SageMaker ProcessingStep"""
+        return {
+            "processor": {
+                "image_uri": "ml-preprocessing:latest",
+                "instance_type": "ml.m5.xlarge",
+                "instance_count": 1
+            },
+            "inputs": [
+                {
+                    "source": self.inputs["raw_data"],
+                    "destination": "/opt/ml/processing/input"
+                }
+            ],
+            "outputs": [
+                {
+                    "source": "/opt/ml/processing/output",
+                    "destination": self.outputs["processed_data"]
+                }
+            ],
+            "code": self.script_path
+        }
+
+    def to_vertex_ai(self) -> dict:
+        """Convert to Vertex AI component"""
+        return {
+            "name": self.name,
+            "base_image": "python:3.9",
+            "packages_to_install": ["pandas", "scikit-learn"],
+            "inputs": {"raw_data": self.inputs["raw_data"]},
+            "outputs": {"processed_data": self.outputs["processed_data"]}
+        }
+
+class MLPipeline:
+    """Platform-agnostic ML pipeline"""
+
+    def __init__(self, name: str, steps: List[MLPipelineStep]):
+        self.name = name
+        self.steps = steps
+
+    def compile_for_platform(self, platform: PlatformBackend) -> dict:
+        """Compile pipeline for specific platform"""
+
+        if platform == PlatformBackend.KUBEFLOW:
+            return self._compile_kubeflow()
+        elif platform == PlatformBackend.SAGEMAKER:
+            return self._compile_sagemaker()
+        elif platform == PlatformBackend.VERTEX_AI:
+            return self._compile_vertex_ai()
+        else:
+            raise ValueError(f"Unsupported platform: {platform}")
+
+    def _compile_kubeflow(self) -> dict:
+        """Compile to Kubeflow pipeline"""
+        return {
+            "apiVersion": "argoproj.io/v1alpha1",
+            "kind": "Workflow",
+            "metadata": {"name": self.name},
+            "spec": {
+                "entrypoint": "pipeline",
+                "templates": [step.to_kubeflow() for step in self.steps]
+            }
+        }
+
+    def _compile_sagemaker(self) -> dict:
+        """Compile to SageMaker pipeline"""
+        return {
+            "PipelineName": self.name,
+            "Steps": [step.to_sagemaker() for step in self.steps]
+        }
+
+    def _compile_vertex_ai(self) -> dict:
+        """Compile to Vertex AI pipeline"""
+        return {
+            "name": self.name,
+            "components": [step.to_vertex_ai() for step in self.steps]
+        }
+
+# Example usage
+if __name__ == "__main__":
+    # Define pipeline once
+    preprocessing_step = DataPreprocessingStep(script_path="preprocess.py")
+
+    pipeline = MLPipeline(
+        name="ml-training-pipeline",
+        steps=[preprocessing_step]
+    )
+
+    # Compile for different platforms
+    kubeflow_pipeline = pipeline.compile_for_platform(PlatformBackend.KUBEFLOW)
+    sagemaker_pipeline = pipeline.compile_for_platform(PlatformBackend.SAGEMAKER)
+
+    print("Pipeline compiled for both Kubeflow and SageMaker!")
+\end{lstlisting}
+
+\section{Custom MLOps Platform Development}
+
+Building a custom MLOps platform provides maximum flexibility but requires significant investment in development and operations.
+
+\subsection{Custom Platform Architecture}
+
+\begin{lstlisting}[language=Python, caption=Minimal Custom MLOps Platform Design]
+#!/usr/bin/env python3
+"""
+Minimal Custom MLOps Platform
+Combines best-of-breed open-source tools
+"""
+
+from dataclasses import dataclass
+from typing import List, Dict
+import yaml
+
+@dataclass
+class PlatformComponent:
+    """Single platform component"""
+    name: str
+    purpose: str
+    technology: str
+    deployment: str
+    alternatives: List[str]
+
+class CustomMLOpsPlatform:
+    """Custom MLOps platform architecture"""
+
+    def __init__(self):
+        self.components = self._define_components()
+
+    def _define_components(self) -> List[PlatformComponent]:
+        """Define platform components"""
+
+        return [
+            PlatformComponent(
+                name="Orchestration",
+                purpose="Workflow scheduling and execution",
+                technology="Apache Airflow",
+                deployment="Kubernetes Helm chart",
+                alternatives=["Prefect", "Dagster", "Argo Workflows"]
+            ),
+            PlatformComponent(
+                name="Experiment Tracking",
+                purpose="Log metrics, parameters, artifacts",
+                technology="MLflow Tracking",
+                deployment="Docker Compose + PostgreSQL",
+                alternatives=["Weights & Biases", "Neptune.ai", "Comet.ml"]
+            ),
+            PlatformComponent(
+                name="Model Registry",
+                purpose="Centralized model versioning",
+                technology="MLflow Model Registry",
+                deployment="Integrated with MLflow Tracking",
+                alternatives=["Custom S3 + metadata DB", "ModelDB"]
+            ),
+            PlatformComponent(
+                name="Feature Store",
+                purpose="Feature engineering and serving",
+                technology="Feast",
+                deployment="Kubernetes + Redis + PostgreSQL",
+                alternatives=["Tecton", "Hopsworks", "Custom solution"]
+            ),
+            PlatformComponent(
+                name="Model Serving",
+                purpose="Real-time inference APIs",
+                technology="BentoML",
+                deployment="Kubernetes deployments",
+                alternatives=["TorchServe", "TFServing", "FastAPI custom"]
+            ),
+            PlatformComponent(
+                name="Monitoring",
+                purpose="Model and infrastructure metrics",
+                technology="Prometheus + Grafana",
+                deployment="Kubernetes operators",
+                alternatives=["Datadog", "New Relic", "CloudWatch"]
+            ),
+            PlatformComponent(
+                name="Data Versioning",
+                purpose="Track data lineage and versions",
+                technology="DVC (Data Version Control)",
+                deployment="CLI tool + remote storage",
+                alternatives=["Pachyderm", "lakeFS", "Delta Lake"]
+            ),
+            PlatformComponent(
+                name="Metadata Store",
+                purpose="ML metadata and lineage tracking",
+                technology="ML Metadata (MLMD)",
+                deployment="PostgreSQL backend",
+                alternatives=["Custom graph database", "DataHub"]
+            ),
+            PlatformComponent(
+                name="Compute Management",
+                purpose="Dynamic resource provisioning",
+                technology="Kubernetes",
+                deployment="Self-managed or managed (EKS/GKE/AKS)",
+                alternatives=["Nomad", "Docker Swarm", "Cloud-native"]
+            ),
+            PlatformComponent(
+                name="Secret Management",
+                purpose="Secure credential storage",
+                technology="HashiCorp Vault",
+                deployment="Kubernetes Helm chart",
+                alternatives=["AWS Secrets Manager", "Azure Key Vault", "GCP Secret Manager"]
+            )
+        ]
+
+    def generate_deployment_manifest(self) -> dict:
+        """Generate Kubernetes deployment manifest"""
+
+        manifests = {}
+
+        for component in self.components:
+            # Example: MLflow deployment
+            if component.name == "Experiment Tracking":
+                manifests["mlflow"] = {
+                    "apiVersion": "apps/v1",
+                    "kind": "Deployment",
+                    "metadata": {"name": "mlflow-server"},
+                    "spec": {
+                        "replicas": 2,
+                        "selector": {
+                            "matchLabels": {"app": "mlflow"}
+                        },
+                        "template": {
+                            "metadata": {
+                                "labels": {"app": "mlflow"}
+                            },
+                            "spec": {
+                                "containers": [{
+                                    "name": "mlflow",
+                                    "image": "ghcr.io/mlflow/mlflow:latest",
+                                    "ports": [{"containerPort": 5000}],
+                                    "env": [
+                                        {
+                                            "name": "BACKEND_STORE_URI",
+                                            "value": "postgresql://mlflow:password@postgres:5432/mlflow"
+                                        },
+                                        {
+                                            "name": "DEFAULT_ARTIFACT_ROOT",
+                                            "value": "s3://mlflow-artifacts"
+                                        }
+                                    ]
+                                }]
+                            }
+                        }
+                    }
+                }
+
+        return manifests
+
+    def export_architecture(self, filename: str):
+        """Export platform architecture to YAML"""
+
+        architecture = {
+            "platform": "Custom MLOps Platform",
+            "version": "1.0",
+            "components": [
+                {
+                    "name": c.name,
+                    "purpose": c.purpose,
+                    "technology": c.technology,
+                    "deployment": c.deployment,
+                    "alternatives": c.alternatives
+                }
+                for c in self.components
+            ]
+        }
+
+        with open(filename, 'w') as f:
+            yaml.dump(architecture, f, default_flow_style=False)
+
+        print(f"Platform architecture exported to {filename}")
+
+# Example usage
+if __name__ == "__main__":
+    platform = CustomMLOpsPlatform()
+
+    print("Custom MLOps Platform Components:")
+    print("="*70)
+
+    for component in platform.components:
+        print(f"\n{component.name}:")
+        print(f"  Purpose: {component.purpose}")
+        print(f"  Technology: {component.technology}")
+        print(f"  Deployment: {component.deployment}")
+        print(f"  Alternatives: {', '.join(component.alternatives)}")
+
+    platform.export_architecture("mlops_platform.yaml")
+\end{lstlisting}
+
+\textbf{Custom Platform Benefits:}
+
+\begin{itemize}
+    \item \textbf{No Vendor Lock-in:} Use open-source tools, migrate as needed
+    \item \textbf{Cost Control:} Pay only for infrastructure, no platform fees
+    \item \textbf{Customization:} Tailor every component to specific needs
+    \item \textbf{Multi-Cloud:} Run consistently across clouds and on-premises
+    \item \textbf{Skill Development:} Team gains deep platform expertise
+\end{itemize}
+
+\textbf{Custom Platform Challenges:}
+
+\begin{itemize}
+    \item \textbf{Development Effort:} Significant time to build and integrate
+    \item \textbf{Operational Burden:} Platform team needed for maintenance
+    \item \textbf{Security:} Responsibility for patching and compliance
+    \item \textbf{Feature Gap:} May lack advanced features of managed platforms
+    \item \textbf{Opportunity Cost:} Resources diverted from ML development
+\end{itemize}
+
+\section{Platform Governance and Best Practices}
+
+MLOps platform governance ensures consistent usage, cost control, and security across the organization.
+
+\subsection{Multi-Tenancy and Access Control}
+
+\begin{lstlisting}[language=Python, caption=Platform Governance Framework]
+#!/usr/bin/env python3
+"""
+MLOps Platform Governance Framework
+Implements multi-tenancy, resource quotas, and access controls
+"""
+
+from dataclasses import dataclass
+from typing import List, Dict, Optional
+from enum import Enum
+import yaml
+
+class UserRole(Enum):
+    """User roles in MLOps platform"""
+    DATA_SCIENTIST = "data_scientist"
+    ML_ENGINEER = "ml_engineer"
+    PLATFORM_ADMIN = "platform_admin"
+    VIEWER = "viewer"
+
+@dataclass
+class ResourceQuota:
+    """Resource quotas per team/project"""
+    cpu_cores: int
+    memory_gb: int
+    gpu_count: int
+    storage_gb: int
+    max_pipelines: int
+    max_endpoints: int
+
+@dataclass
+class Team:
+    """Team configuration"""
+    name: str
+    namespace: str
+    members: List[str]
+    quotas: ResourceQuota
+    cost_center: str
+    tags: Dict[str, str]
+
+class PlatformGovernance:
+    """Platform governance manager"""
+
+    def __init__(self):
+        self.teams: List[Team] = []
+        self.access_policies: Dict[str, List[str]] = {}
+
+    def create_team_namespace(self, team: Team) -> dict:
+        """Create isolated namespace for team"""
+
+        # Kubernetes namespace manifest
+        namespace_manifest = {
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "metadata": {
+                "name": team.namespace,
+                "labels": {
+                    "team": team.name,
+                    "cost-center": team.cost_center,
+                    **team.tags
+                }
+            }
+        }
+
+        # Resource quota manifest
+        quota_manifest = {
+            "apiVersion": "v1",
+            "kind": "ResourceQuota",
+            "metadata": {
+                "name": f"{team.namespace}-quota",
+                "namespace": team.namespace
+            },
+            "spec": {
+                "hard": {
+                    "requests.cpu": f"{team.quotas.cpu_cores}",
+                    "requests.memory": f"{team.quotas.memory_gb}Gi",
+                    "nvidia.com/gpu": f"{team.quotas.gpu_count}",
+                    "persistentvolumeclaims": "10",
+                    "requests.storage": f"{team.quotas.storage_gb}Gi"
+                }
+            }
+        }
+
+        # Network policy (isolation)
+        network_policy = {
+            "apiVersion": "networking.k8s.io/v1",
+            "kind": "NetworkPolicy",
+            "metadata": {
+                "name": f"{team.namespace}-isolation",
+                "namespace": team.namespace
+            },
+            "spec": {
+                "podSelector": {},
+                "policyTypes": ["Ingress", "Egress"],
+                "ingress": [
+                    {
+                        "from": [
+                            {"namespaceSelector": {
+                                "matchLabels": {"team": team.name}
+                            }}
+                        ]
+                    }
+                ],
+                "egress": [
+                    {"to": [{"namespaceSelector": {}}]},
+                    {"to": [{"podSelector": {}}]}
+                ]
+            }
+        }
+
+        return {
+            "namespace": namespace_manifest,
+            "quota": quota_manifest,
+            "network_policy": network_policy
+        }
+
+    def define_rbac_policies(self, team: Team) -> dict:
+        """Define role-based access control"""
+
+        # Data scientist role
+        data_scientist_role = {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "Role",
+            "metadata": {
+                "name": "data-scientist",
+                "namespace": team.namespace
+            },
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["pods", "pods/log"],
+                    "verbs": ["get", "list", "watch"]
+                },
+                {
+                    "apiGroups": ["batch"],
+                    "resources": ["jobs"],
+                    "verbs": ["get", "list", "create", "delete"]
+                },
+                {
+                    "apiGroups": ["kubeflow.org"],
+                    "resources": ["notebooks"],
+                    "verbs": ["get", "list", "create", "delete"]
+                }
+            ]
+        }
+
+        # ML engineer role
+        ml_engineer_role = {
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "Role",
+            "metadata": {
+                "name": "ml-engineer",
+                "namespace": team.namespace
+            },
+            "rules": [
+                {
+                    "apiGroups": [""],
+                    "resources": ["*"],
+                    "verbs": ["*"]
+                },
+                {
+                    "apiGroups": ["apps"],
+                    "resources": ["deployments", "statefulsets"],
+                    "verbs": ["*"]
+                },
+                {
+                    "apiGroups": ["serving.kserve.io"],
+                    "resources": ["inferenceservices"],
+                    "verbs": ["*"]
+                }
+            ]
+        }
+
+        return {
+            "data_scientist_role": data_scientist_role,
+            "ml_engineer_role": ml_engineer_role
+        }
+
+    def generate_cost_allocation_tags(self, team: Team) -> Dict[str, str]:
+        """Generate cost allocation tags"""
+
+        return {
+            "Team": team.name,
+            "CostCenter": team.cost_center,
+            "ManagedBy": "mlops-platform",
+            "Environment": team.tags.get("environment", "production"),
+            "Project": team.tags.get("project", "default")
+        }
+
+    def export_governance_config(self, filename: str):
+        """Export governance configuration"""
+
+        config = {
+            "teams": [
+                {
+                    "name": t.name,
+                    "namespace": t.namespace,
+                    "members": t.members,
+                    "quotas": {
+                        "cpu_cores": t.quotas.cpu_cores,
+                        "memory_gb": t.quotas.memory_gb,
+                        "gpu_count": t.quotas.gpu_count,
+                        "storage_gb": t.quotas.storage_gb
+                    },
+                    "cost_center": t.cost_center
+                }
+                for t in self.teams
+            ]
+        }
+
+        with open(filename, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False)
+
+        print(f"Governance config exported to {filename}")
+
+# Example usage
+if __name__ == "__main__":
+    # Define teams
+    cv_team = Team(
+        name="computer-vision",
+        namespace="ml-cv",
+        members=["alice@company.com", "bob@company.com"],
+        quotas=ResourceQuota(
+            cpu_cores=64,
+            memory_gb=256,
+            gpu_count=8,
+            storage_gb=2000,
+            max_pipelines=20,
+            max_endpoints=10
+        ),
+        cost_center="R&D-CV",
+        tags={"environment": "production", "project": "image-recognition"}
+    )
+
+    nlp_team = Team(
+        name="natural-language",
+        namespace="ml-nlp",
+        members=["charlie@company.com", "diana@company.com"],
+        quotas=ResourceQuota(
+            cpu_cores=32,
+            memory_gb=128,
+            gpu_count=4,
+            storage_gb=1000,
+            max_pipelines=15,
+            max_endpoints=5
+        ),
+        cost_center="R&D-NLP",
+        tags={"environment": "production", "project": "chatbot"}
+    )
+
+    # Create governance framework
+    governance = PlatformGovernance()
+    governance.teams = [cv_team, nlp_team]
+
+    # Generate configurations
+    print("Computer Vision Team Setup:")
+    print("="*60)
+    cv_config = governance.create_team_namespace(cv_team)
+    cv_rbac = governance.define_rbac_policies(cv_team)
+    cv_tags = governance.generate_cost_allocation_tags(cv_team)
+
+    print(f"Namespace: {cv_config['namespace']['metadata']['name']}")
+    print(f"CPU Quota: {cv_team.quotas.cpu_cores} cores")
+    print(f"GPU Quota: {cv_team.quotas.gpu_count} GPUs")
+    print(f"Cost Center: {cv_team.cost_center}")
+
+    governance.export_governance_config("platform_governance.yaml")
+\end{lstlisting}
+
+\subsection{Platform Standardization}
+
+\textbf{Pipeline Templates:}
+\begin{itemize}
+    \item \textbf{Standard Templates:} Pre-built pipeline templates for common use cases
+    \item \textbf{Best Practices:} Embedded logging, monitoring, error handling
+    \item \textbf{Compliance:} Built-in data governance and audit trails
+    \item \textbf{Versioning:} Template versioning with migration guides
+\end{itemize}
+
+\textbf{Container Image Standards:}
+\begin{itemize}
+    \item \textbf{Base Images:} Organization-approved base images with security patches
+    \item \textbf{Vulnerability Scanning:} Automated scanning in CI/CD pipeline
+    \item \textbf{Image Registry:} Private registry with access controls
+    \item \textbf{Versioning Strategy:} Semantic versioning for reproducibility
+\end{itemize}
+
+\textbf{Code Quality Standards:}
+\begin{itemize}
+    \item \textbf{Linting:} Automated code style enforcement (black, flake8)
+    \item \textbf{Type Checking:} Static type checking with mypy
+    \item \textbf{Testing Requirements:} Minimum code coverage thresholds
+    \item \textbf{Documentation:} Mandatory docstrings and README files
+\end{itemize}
+
+\subsection{Cost Management and Optimization}
+
+\begin{lstlisting}[language=Python, caption=Platform Cost Monitoring and Optimization]
+#!/usr/bin/env python3
+"""
+MLOps Platform Cost Management
+Track, analyze, and optimize platform costs
+"""
+
+import boto3
+from datetime import datetime, timedelta
+from typing import Dict, List
+import pandas as pd
+
+class PlatformCostManager:
+    """Manage and optimize platform costs"""
+
+    def __init__(self, platform_type: str = "sagemaker"):
+        self.platform = platform_type
+        self.ce_client = boto3.client('ce')  # Cost Explorer
+
+    def get_cost_by_service(self, days: int = 30) -> pd.DataFrame:
+        """Get cost breakdown by service"""
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        response = self.ce_client.get_cost_and_usage(
+            TimePeriod={
+                'Start': start_date.strftime('%Y-%m-%d'),
+                'End': end_date.strftime('%Y-%m-%d')
+            },
+            Granularity='DAILY',
+            Metrics=['UnblendedCost'],
+            GroupBy=[
+                {'Type': 'SERVICE', 'Key': 'SERVICE'},
+                {'Type': 'TAG', 'Key': 'Team'}
+            ],
+            Filter={
+                'Tags': {
+                    'Key': 'ManagedBy',
+                    'Values': ['mlops-platform']
+                }
+            }
+        )
+
+        # Process results
+        cost_data = []
+        for result in response['ResultsByTime']:
+            date = result['TimePeriod']['Start']
+            for group in result['Groups']:
+                service = group['Keys'][0]
+                team = group['Keys'][1] if len(group['Keys']) > 1 else 'untagged'
+                cost = float(group['Metrics']['UnblendedCost']['Amount'])
+
+                cost_data.append({
+                    'date': date,
+                    'service': service,
+                    'team': team,
+                    'cost': cost
+                })
+
+        return pd.DataFrame(cost_data)
+
+    def identify_cost_anomalies(self, threshold: float = 1.5) -> List[Dict]:
+        """Identify unusual cost spikes"""
+
+        df = self.get_cost_by_service(days=30)
+
+        # Calculate daily cost by team
+        daily_costs = df.groupby(['date', 'team'])['cost'].sum().reset_index()
+
+        anomalies = []
+        for team in daily_costs['team'].unique():
+            team_costs = daily_costs[daily_costs['team'] == team]['cost']
+            mean_cost = team_costs.mean()
+            std_cost = team_costs.std()
+
+            for idx, row in daily_costs[daily_costs['team'] == team].iterrows():
+                if row['cost'] > mean_cost + (threshold * std_cost):
+                    anomalies.append({
+                        'date': row['date'],
+                        'team': team,
+                        'cost': row['cost'],
+                        'expected_cost': mean_cost,
+                        'deviation': (row['cost'] - mean_cost) / mean_cost * 100
+                    })
+
+        return anomalies
+
+    def recommend_optimizations(self) -> List[Dict]:
+        """Generate cost optimization recommendations"""
+
+        recommendations = []
+
+        # Check for idle training instances
+        sagemaker = boto3.client('sagemaker')
+
+        # Get training jobs
+        training_jobs = sagemaker.list_training_jobs(
+            StatusEquals='InProgress',
+            MaxResults=100
+        )
+
+        for job in training_jobs['TrainingJobSummaries']:
+            job_details = sagemaker.describe_training_job(
+                TrainingJobName=job['TrainingJobName']
+            )
+
+            # Check if using on-demand instances
+            instance_type = job_details['ResourceConfig']['InstanceType']
+            if not instance_type.startswith('ml.'):
+                continue
+
+            # Recommend spot instances for long-running jobs
+            duration = datetime.now() - job['CreationTime'].replace(tzinfo=None)
+            if duration.total_seconds() > 3600:  # > 1 hour
+                recommendations.append({
+                    'type': 'spot_instances',
+                    'resource': job['TrainingJobName'],
+                    'current_instance': instance_type,
+                    'estimated_savings': '70%',
+                    'description': 'Switch to spot instances for long training jobs'
+                })
+
+        # Check for over-provisioned endpoints
+        endpoints = sagemaker.list_endpoints(MaxResults=100)
+
+        for endpoint in endpoints['Endpoints']:
+            endpoint_details = sagemaker.describe_endpoint(
+                EndpointName=endpoint['EndpointName']
+            )
+
+            # Get metrics
+            cloudwatch = boto3.client('cloudwatch')
+            metrics = cloudwatch.get_metric_statistics(
+                Namespace='AWS/SageMaker',
+                MetricName='ModelLatency',
+                Dimensions=[
+                    {'Name': 'EndpointName', 'Value': endpoint['EndpointName']},
+                    {'Name': 'VariantName', 'Value': 'AllTraffic'}
+                ],
+                StartTime=datetime.now() - timedelta(days=7),
+                EndTime=datetime.now(),
+                Period=86400,
+                Statistics=['Average', 'Maximum']
+            )
+
+            # Check if consistently low latency (potential right-sizing opportunity)
+            if metrics['Datapoints']:
+                avg_latency = sum(d['Average'] for d in metrics['Datapoints']) / len(metrics['Datapoints'])
+                if avg_latency < 50:  # < 50ms
+                    recommendations.append({
+                        'type': 'right_sizing',
+                        'resource': endpoint['EndpointName'],
+                        'current_config': endpoint_details['ProductionVariants'][0]['InstanceType'],
+                        'estimated_savings': '30%',
+                        'description': 'Consider smaller instance type for low-latency workload'
+                    })
+
+        return recommendations
+
+    def generate_cost_report(self, output_file: str):
+        """Generate comprehensive cost report"""
+
+        df = self.get_cost_by_service(days=30)
+        anomalies = self.identify_cost_anomalies()
+        optimizations = self.recommend_optimizations()
+
+        # Summary statistics
+        total_cost = df['cost'].sum()
+        daily_avg = df.groupby('date')['cost'].sum().mean()
+
+        report = f"""
+MLOps Platform Cost Report
+===========================
+
+Period: Last 30 days
+Total Cost: ${total_cost:.2f}
+Daily Average: ${daily_avg:.2f}
+
+Cost by Team:
+{df.groupby('team')['cost'].sum().to_string()}
+
+Cost by Service:
+{df.groupby('service')['cost'].sum().sort_values(ascending=False).head(10).to_string()}
+
+Anomalies Detected: {len(anomalies)}
+{chr(10).join([f"- {a['team']} on {a['date']}: ${a['cost']:.2f} ({a['deviation']:.1f}% above normal)" for a in anomalies[:5]])}
+
+Optimization Opportunities: {len(optimizations)}
+{chr(10).join([f"- {o['type']}: {o['description']} (Est. savings: {o['estimated_savings']})" for o in optimizations[:5]])}
+
+Total Potential Savings: ${sum([total_cost * 0.3 for _ in optimizations]):.2f}
+"""
+
+        with open(output_file, 'w') as f:
+            f.write(report)
+
+        print(f"Cost report generated: {output_file}")
+        return report
+
+# Example usage
+if __name__ == "__main__":
+    cost_manager = PlatformCostManager(platform_type="sagemaker")
+
+    # Get cost breakdown
+    costs = cost_manager.get_cost_by_service(days=30)
+    print(f"Total cost last 30 days: ${costs['cost'].sum():.2f}")
+
+    # Find anomalies
+    anomalies = cost_manager.identify_cost_anomalies()
+    print(f"\nCost anomalies found: {len(anomalies)}")
+
+    # Get recommendations
+    recommendations = cost_manager.recommend_optimizations()
+    print(f"Optimization opportunities: {len(recommendations)}")
+
+    # Generate report
+    cost_manager.generate_cost_report("platform_cost_report.txt")
+\end{lstlisting}
+
+\subsection{Security and Compliance}
+
+\textbf{Data Security:}
+\begin{itemize}
+    \item \textbf{Encryption at Rest:} All data encrypted using KMS/Cloud KMS
+    \item \textbf{Encryption in Transit:} TLS 1.3 for all network communication
+    \item \textbf{Access Logging:} Comprehensive audit logs for data access
+    \item \textbf{Data Classification:} Automatic tagging of sensitive data
+\end{itemize}
+
+\textbf{Model Security:}
+\begin{itemize}
+    \item \textbf{Model Signing:} Cryptographic signatures for model artifacts
+    \item \textbf{Vulnerability Scanning:} Dependencies scanned for known CVEs
+    \item \textbf{Adversarial Testing:} Regular testing for model robustness
+    \item \textbf{Model Watermarking:} Identify model theft or unauthorized use
+\end{itemize}
+
+\textbf{Compliance Requirements:}
+\begin{itemize}
+    \item \textbf{GDPR:} Right to deletion, data minimization, consent management
+    \item \textbf{HIPAA:} PHI handling, BAA agreements, access controls
+    \item \textbf{SOC 2:} Security controls, incident response, vendor management
+    \item \textbf{Audit Trails:} Immutable logs for compliance verification
+\end{itemize}
+
+\subsection{Platform Monitoring and Observability}
+
+\textbf{Platform Metrics:}
+\begin{itemize}
+    \item \textbf{Pipeline Success Rate:} Percentage of successful pipeline runs
+    \item \textbf{Average Pipeline Duration:} Time from start to completion
+    \item \textbf{Resource Utilization:} CPU, GPU, memory usage across platform
+    \item \textbf{Queue Depth:} Number of pending jobs/pipelines
+    \item \textbf{Error Rates:} Errors by type and component
+\end{itemize}
+
+\textbf{User Metrics:}
+\begin{itemize}
+    \item \textbf{Active Users:} Daily/weekly active users by role
+    \item \textbf{Feature Adoption:} Usage of different platform capabilities
+    \item \textbf{User Satisfaction:} NPS scores, support tickets
+    \item \textbf{Time to First Model:} Onboarding effectiveness metric
+\end{itemize}
+
+\textbf{Cost Metrics:}
+\begin{itemize}
+    \item \textbf{Cost per Model:} Training and deployment costs per model
+    \item \textbf{Cost per Team:} Chargeback for multi-tenant environments
+    \item \textbf{Waste Metrics:} Idle resources, unused provisioned capacity
+    \item \textbf{Cost Trends:} Month-over-month cost growth
+\end{itemize}
+
+\section{Platform Evaluation Exercises}
+
+\subsection{Exercise 1: Platform Selection for Startup}
+
+\textbf{Scenario:} Early-stage startup with 5-person ML team, limited budget, AWS-based infrastructure, building computer vision models for edge devices.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Evaluate Kubeflow, SageMaker, and custom solution
+    \item Consider 12-month total cost of ownership
+    \item Factor in team's limited Kubernetes experience
+    \item Need for edge deployment capabilities
+    \item Rapid iteration and experimentation priority
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Score each platform on 9 evaluation criteria (use framework from section 19.5.1)
+    \item Calculate weighted scores and recommend platform
+    \item Estimate TCO including infrastructure, licensing, and team time
+    \item Identify top 3 risks for each option
+    \item Create 6-month rollout plan for selected platform
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Completed evaluation matrix with justifications
+    \item TCO spreadsheet with assumptions documented
+    \item Risk mitigation strategy document
+    \item Platform rollout timeline with milestones
+\end{itemize}
+
+\subsection{Exercise 2: Multi-Cloud Platform Migration}
+
+\textbf{Scenario:} Enterprise with 50 models in production on SageMaker, expanding to GCP for new product line, considering multi-cloud MLOps strategy.
+
+\textbf{Current State:}
+\begin{itemize}
+    \item 50 SageMaker pipelines (various complexities)
+    \item 20 real-time inference endpoints
+    \item Custom feature store on S3 + DynamoDB
+    \item MLflow for experiment tracking
+    \item 15-person ML engineering team
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Design platform-agnostic abstraction layer
+    \item Create migration plan using framework from section 19.6
+    \item Implement pipeline portability for one sample workflow
+    \item Estimate migration effort and timeline
+    \item Identify tooling gaps and integration points
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Architecture diagram for multi-cloud platform
+    \item Complete migration plan JSON (all phases)
+    \item Working code for portable pipeline (Python)
+    \item Risk assessment with mitigation strategies
+    \item Team training plan for new skills needed
+\end{itemize}
+
+\subsection{Exercise 3: Build vs Buy Decision}
+
+\textbf{Scenario:} Financial services company evaluating whether to build custom MLOps platform or adopt managed service. Strict compliance requirements, 100+ models planned, 30-person ML team.
+
+\textbf{Decision Factors:}
+\begin{itemize}
+    \item Data residency requirements (cannot leave specific regions)
+    \item Need for audit trails and model explainability
+    \item Integration with existing on-premises systems
+    \item Budget: \$500K annually for platform
+    \item 5-year time horizon
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Compare build vs buy across 10 dimensions
+    \item Calculate 5-year TCO for each option
+    \item Assess compliance alignment (GDPR, SOC 2, PCI DSS)
+    \item Evaluate team capability and hiring needs
+    \item Recommend approach with detailed justification
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Build vs buy comparison matrix
+    \item 5-year financial model (capex vs opex)
+    \item Compliance gap analysis for each option
+    \item Org chart and headcount plan
+    \item Executive summary with recommendation
+\end{itemize}
+
+\subsection{Exercise 4: Kubeflow Pipeline Implementation}
+
+\textbf{Scenario:} Implement end-to-end ML pipeline on Kubeflow for recommendation system.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Data ingestion from multiple sources (S3, PostgreSQL)
+    \item Feature engineering with Feast feature store
+    \item Hyperparameter tuning with Katib
+    \item Model evaluation with custom metrics
+    \item Conditional deployment based on performance
+    \item Integration with MLflow model registry
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Set up local Kubeflow environment (Minikube or Kind)
+    \item Implement 8+ pipeline components as Python functions
+    \item Configure Katib experiment for HPO
+    \item Deploy model with KServe
+    \item Add monitoring with Prometheus metrics
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Complete pipeline code (Python with KFP SDK)
+    \item Katib experiment YAML configuration
+    \item KServe InferenceService manifest
+    \item Documentation for running pipeline end-to-end
+    \item Prometheus dashboard for model metrics
+\end{itemize}
+
+\subsection{Exercise 5: Platform Cost Optimization}
+
+\textbf{Scenario:} SageMaker monthly costs exceeding budget by 40\%. Optimize without sacrificing capabilities.
+
+\textbf{Current Spending:}
+\begin{itemize}
+    \item Training: \$15K/month (10 jobs/day, ml.p3.8xlarge)
+    \item Inference: \$25K/month (20 endpoints, ml.m5.xlarge)
+    \item Feature Store: \$5K/month (online + offline)
+    \item Data Processing: \$8K/month (SageMaker Processing)
+    \item Model Monitor: \$2K/month
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Analyze current resource utilization
+    \item Identify optimization opportunities (spot instances, right-sizing, etc.)
+    \item Evaluate alternative platforms for specific workloads
+    \item Implement cost allocation tags
+    \item Set up budget alerts and automation
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Cost analysis report with breakdown
+    \item Optimization recommendations (prioritized by impact)
+    \item Implementation plan for top 5 optimizations
+    \item Projected savings calculation
+    \item Cost monitoring dashboard design
+\end{itemize}
+
+\subsection{Exercise 6: Platform Comparison Benchmark}
+
+\textbf{Scenario:} Benchmark Kubeflow, SageMaker, and Vertex AI for your organization's specific workload.
+
+\textbf{Benchmark Criteria:}
+\begin{itemize}
+    \item Pipeline execution time (same workflow)
+    \item Cost per training run
+    \item Ease of deployment (time to first model)
+    \item Monitoring and observability capabilities
+    \item Developer experience and productivity
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Implement identical pipeline on all three platforms
+    \item Measure execution time and resource usage
+    \item Calculate actual costs (including hidden costs)
+    \item Survey team on developer experience (1-10 scale)
+    \item Document integration complexity
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Benchmark results table (quantitative metrics)
+    \item Developer experience survey results
+    \item Cost comparison spreadsheet
+    \item Platform recommendation with trade-offs
+    \item Lessons learned document
+\end{itemize}
+
+\section{Summary}
+
+MLOps platforms provide the foundation for production ML systems. This chapter covered:
+
+\textbf{1. Kubeflow Pipelines:}
+\begin{itemize}
+    \item Complete end-to-end pipeline with 8 components
+    \item Hyperparameter tuning with Katib
+    \item Model serving with KServe
+    \item Multi-framework support (PyTorch, TensorFlow, scikit-learn)
+    \item Cloud-agnostic deployment on Kubernetes
+\end{itemize}
+
+\textbf{2. Cloud ML Platforms:}
+\begin{itemize}
+    \item AWS SageMaker: Native AWS integration, comprehensive features
+    \item Google Vertex AI: KFP-compatible, strong AutoML capabilities
+    \item Azure ML: MLflow integration, enterprise focus
+    \item Platform comparison across 13 dimensions
+\end{itemize}
+
+\textbf{3. Platform Selection:}
+\begin{itemize}
+    \item Decision framework with 9 weighted criteria
+    \item Cloud strategy alignment (single vs multi-cloud)
+    \item Team capability and operational overhead assessment
+    \item Compliance and security considerations
+    \item Total cost of ownership analysis
+\end{itemize}
+
+\textbf{4. Migration Strategies:}
+\begin{itemize}
+    \item 6-phase migration framework (assessment to decommission)
+    \item 16 detailed migration tasks with dependencies
+    \item Platform-agnostic pipeline abstractions
+    \item Risk mitigation and rollback planning
+    \item Parallel run validation approach
+\end{itemize}
+
+\textbf{5. Custom Platform Development:}
+\begin{itemize}
+    \item 10-component architecture (Airflow, MLflow, Feast, etc.)
+    \item Benefits: flexibility, no lock-in, cost control
+    \item Challenges: development effort, operational burden
+    \item Best-of-breed tool integration
+    \item Deployment on Kubernetes
+\end{itemize}
+
+\textbf{6. Evaluation Exercises:}
+\begin{itemize}
+    \item Startup platform selection
+    \item Multi-cloud migration planning
+    \item Build vs buy decision framework
+    \item Kubeflow implementation
+    \item Cost optimization
+    \item Platform benchmarking
+\end{itemize}
+
+\textbf{Key Takeaways:}
+
+\begin{enumerate}
+    \item \textbf{No Universal Best:} Platform choice depends on organizational context
+    \item \textbf{Cloud Strategy Matters:} Single-cloud enables native platforms, multi-cloud requires abstraction
+    \item \textbf{Team Capability:} Managed platforms reduce operational burden for small teams
+    \item \textbf{Start Simple:} Begin with managed services, add complexity as needed
+    \item \textbf{Plan for Portability:} Abstract platform-specific APIs where possible
+    \item \textbf{Monitor Costs:} Platform costs can exceed compute costs at scale
+    \item \textbf{Invest in Migration:} Platform migration is complex, plan for 3-6 months
+\end{enumerate}
+
+The right MLOps platform accelerates ML development, reduces operational burden, and enables production deployment at scale. Whether choosing managed services or building custom solutions, the key is aligning platform capabilities with organizational needs, team skills, and strategic objectives.

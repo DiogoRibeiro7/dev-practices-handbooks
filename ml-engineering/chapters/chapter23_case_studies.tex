@@ -2,41 +2,3273 @@
 
 After completing this chapter, readers will be able to:
 \begin{itemize}
-    \item Learn from real-world ML engineering implementations
-    \item Understand common challenges and solutions
-    \item Apply best practices from industry leaders
-    \item Recognize patterns across different domains
+    \item Design and implement end-to-end ML systems for real-world applications
+    \item Understand architecture patterns across different industries
+    \item Apply domain-specific best practices and optimization techniques
+    \item Learn from production challenges and their solutions
+    \item Recognize common patterns and anti-patterns in ML system design
+    \item Implement scalable data pipelines for various use cases
 \end{itemize}
 
-\section{E-Commerce Recommendation System}
+\section{Introduction}
 
-\subsection{Challenge}
-% Placeholder
+This chapter presents four comprehensive industry case studies that demonstrate end-to-end ML system implementations. Each case study covers the complete lifecycle from requirements gathering through production deployment, including real-world challenges and solutions.
 
-\subsection{Solution}
-% Placeholder
+\textbf{Case Studies Covered:}
 
-\subsection{Results}
-% Placeholder
+\begin{enumerate}
+    \item \textbf{E-Commerce Recommendation System:} Personalized product recommendations at scale
+    \item \textbf{Financial Fraud Detection:} Real-time transaction monitoring and fraud prevention
+    \item \textbf{Healthcare Diagnostic System:} Medical image analysis for disease detection
+    \item \textbf{Autonomous Vehicle Perception:} Multi-sensor fusion for object detection
+\end{enumerate}
 
-\section{Financial Fraud Detection}
+Each case study follows a consistent structure: business context, requirements, architecture design, implementation, deployment, monitoring, results, and lessons learned.
 
-% Placeholder content
+\section{Case Study 1: E-Commerce Recommendation System}
 
-\section{Healthcare Diagnosis System}
+\subsection{Business Context and Requirements}
 
-% Placeholder content
+\textbf{Company:} Mid-sized e-commerce platform with 5 million monthly active users\\
+\textbf{Challenge:} Low conversion rates and poor product discovery\\
+\textbf{Goal:} Increase revenue through personalized product recommendations
 
-\section{Autonomous Vehicle Perception}
+\textbf{Key Requirements:}
 
-% Placeholder content
+\begin{itemize}
+    \item \textbf{Latency:} Recommendations must load in <100ms (p99)
+    \item \textbf{Scale:} Handle 10,000 requests per second during peak hours
+    \item \textbf{Personalization:} Adapt to user behavior in real-time
+    \item \textbf{Business Constraints:} Incorporate inventory, margins, and business rules
+    \item \textbf{Cold Start:} Handle new users and new products effectively
+    \item \textbf{Diversity:} Avoid filter bubbles, show varied recommendations
+\end{itemize}
+
+\subsection{System Architecture}
+
+\begin{figure}[h]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=1.5cm,
+    component/.style={rectangle, draw, fill=blue!20, text width=3cm, text centered, minimum height=1cm},
+    storage/.style={cylinder, draw, fill=green!20, text width=2.5cm, text centered, minimum height=1cm, aspect=0.3},
+    process/.style={rectangle, draw, fill=yellow!20, text width=3cm, text centered, minimum height=0.8cm}
+]
+
+% Data sources
+\node[storage] (clicks) {User Events\\(Kafka)};
+\node[storage, right=of clicks] (catalog) {Product\\Catalog};
+\node[storage, right=of catalog] (orders) {Order\\History};
+
+% Processing
+\node[process, below=of clicks] (stream) {Stream\\Processing};
+\node[process, below=of catalog] (batch) {Batch\\Training};
+\node[storage, below=of stream] (features) {Feature\\Store};
+
+% Models
+\node[component, below=of features] (cf) {Collaborative\\Filtering};
+\node[component, right=of cf] (content) {Content-Based};
+\node[component, left=of cf] (deep) {Deep\\Learning};
+
+% Serving
+\node[component, below=of cf] (ensemble) {Ensemble\\Ranker};
+\node[component, below=of ensemble] (api) {Serving\\API};
+
+% Arrows
+\draw[->] (clicks) -- (stream);
+\draw[->] (catalog) -- (batch);
+\draw[->] (orders) -- (batch);
+\draw[->] (stream) -- (features);
+\draw[->] (batch) -- (features);
+\draw[->] (features) -- (cf);
+\draw[->] (features) -- (content);
+\draw[->] (features) -- (deep);
+\draw[->] (cf) -- (ensemble);
+\draw[->] (content) -- (ensemble);
+\draw[->] (deep) -- (ensemble);
+\draw[->] (ensemble) -- (api);
+
+\end{tikzpicture}}
+\caption{E-Commerce Recommendation System Architecture}
+\end{figure}
+
+\subsection{Data Pipeline Implementation}
+
+\begin{lstlisting}[language=Python, caption=Event Streaming and Feature Engineering]
+#!/usr/bin/env python3
+"""
+E-Commerce Recommendation System - Data Pipeline
+Real-time and batch feature engineering for personalized recommendations
+"""
+
+from kafka import KafkaConsumer, KafkaProducer
+import json
+from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+import pandas as pd
+import numpy as np
+from redis import Redis
+from collections import defaultdict
+import logging
+
+@dataclass
+class UserEvent:
+    """User interaction event"""
+    user_id: str
+    event_type: str  # view, click, add_to_cart, purchase
+    product_id: str
+    timestamp: datetime
+    session_id: str
+    metadata: Dict = field(default_factory=dict)
+
+@dataclass
+class Product:
+    """Product information"""
+    product_id: str
+    category: str
+    subcategory: str
+    price: float
+    brand: str
+    in_stock: bool
+    attributes: Dict = field(default_factory=dict)
+
+@dataclass
+class UserFeatures:
+    """Aggregated user features"""
+    user_id: str
+    favorite_categories: List[str]
+    avg_price_point: float
+    preferred_brands: List[str]
+    recent_views: List[str]
+    recent_purchases: List[str]
+    purchase_frequency: float
+    last_active: datetime
+
+class RecommendationDataPipeline:
+    """Data pipeline for recommendation system"""
+
+    def __init__(
+        self,
+        kafka_bootstrap_servers: List[str],
+        redis_host: str,
+        redis_port: int = 6379
+    ):
+        self.kafka_consumer = KafkaConsumer(
+            'user-events',
+            bootstrap_servers=kafka_bootstrap_servers,
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+            group_id='recommendation-pipeline'
+        )
+
+        self.kafka_producer = KafkaProducer(
+            bootstrap_servers=kafka_bootstrap_servers,
+            value_serializer=lambda m: json.dumps(m).encode('utf-8')
+        )
+
+        self.redis_client = Redis(host=redis_host, port=redis_port, decode_responses=True)
+        self.logger = logging.getLogger(__name__)
+
+    def process_event_stream(self):
+        """Process real-time user events"""
+
+        for message in self.kafka_consumer:
+            try:
+                event_data = message.value
+                event = UserEvent(
+                    user_id=event_data['user_id'],
+                    event_type=event_data['event_type'],
+                    product_id=event_data['product_id'],
+                    timestamp=datetime.fromisoformat(event_data['timestamp']),
+                    session_id=event_data['session_id'],
+                    metadata=event_data.get('metadata', {})
+                )
+
+                # Update real-time features
+                self._update_user_features(event)
+
+                # Update product popularity
+                self._update_product_stats(event)
+
+                # Generate real-time signals
+                if event.event_type == 'purchase':
+                    self._trigger_similar_products(event)
+
+            except Exception as e:
+                self.logger.error(f"Error processing event: {e}")
+
+    def _update_user_features(self, event: UserEvent):
+        """Update real-time user features in Redis"""
+
+        user_key = f"user:{event.user_id}"
+
+        # Update recent views (sliding window)
+        if event.event_type in ['view', 'click']:
+            self.redis_client.lpush(f"{user_key}:recent_views", event.product_id)
+            self.redis_client.ltrim(f"{user_key}:recent_views", 0, 49)  # Keep last 50
+
+        # Update purchases
+        if event.event_type == 'purchase':
+            self.redis_client.lpush(f"{user_key}:purchases", event.product_id)
+            self.redis_client.lpush(f"{user_key}:purchase_times", event.timestamp.isoformat())
+
+        # Update category preferences
+        product_category = self._get_product_category(event.product_id)
+        if product_category:
+            self.redis_client.zincrby(
+                f"{user_key}:categories",
+                1,
+                product_category
+            )
+
+        # Update session activity
+        self.redis_client.hset(
+            f"{user_key}:session:{event.session_id}",
+            mapping={
+                'last_activity': event.timestamp.isoformat(),
+                'event_count': self.redis_client.hincrby(
+                    f"{user_key}:session:{event.session_id}",
+                    'event_count',
+                    1
+                )
+            }
+        )
+        self.redis_client.expire(f"{user_key}:session:{event.session_id}", 3600)
+
+    def _update_product_stats(self, event: UserEvent):
+        """Update product statistics for trending items"""
+
+        product_key = f"product:{event.product_id}"
+
+        # Increment view/purchase counters with decay
+        current_hour = datetime.now().strftime("%Y-%m-%d-%H")
+
+        if event.event_type == 'view':
+            self.redis_client.hincrby(f"{product_key}:stats:{current_hour}", 'views', 1)
+        elif event.event_type == 'purchase':
+            self.redis_client.hincrby(f"{product_key}:stats:{current_hour}", 'purchases', 1)
+
+        # Set expiry on hourly stats
+        self.redis_client.expire(f"{product_key}:stats:{current_hour}", 86400 * 7)
+
+        # Update trending score (combines recency and popularity)
+        trending_score = self._calculate_trending_score(event.product_id)
+        self.redis_client.zadd('trending_products', {event.product_id: trending_score})
+
+    def _calculate_trending_score(self, product_id: str) -> float:
+        """Calculate trending score based on recent activity"""
+
+        product_key = f"product:{product_id}"
+        score = 0.0
+
+        # Look at last 24 hours
+        for hours_ago in range(24):
+            timestamp = (datetime.now() - timedelta(hours=hours_ago)).strftime("%Y-%m-%d-%H")
+            stats = self.redis_client.hgetall(f"{product_key}:stats:{timestamp}")
+
+            if stats:
+                views = int(stats.get('views', 0))
+                purchases = int(stats.get('purchases', 0))
+
+                # Decay factor: recent hours weighted more
+                decay = 0.95 ** hours_ago
+
+                # Weighted score
+                score += (views * 1.0 + purchases * 10.0) * decay
+
+        return score
+
+    def _trigger_similar_products(self, event: UserEvent):
+        """Trigger batch job to update similar products after purchase"""
+
+        message = {
+            'type': 'purchase',
+            'user_id': event.user_id,
+            'product_id': event.product_id,
+            'timestamp': event.timestamp.isoformat()
+        }
+
+        self.kafka_producer.send('recommendation-triggers', value=message)
+
+    def _get_product_category(self, product_id: str) -> Optional[str]:
+        """Get product category from cache or database"""
+
+        category = self.redis_client.get(f"product:{product_id}:category")
+        if category:
+            return category
+
+        # Fallback: fetch from database (not shown)
+        return None
+
+    def get_user_features(self, user_id: str) -> UserFeatures:
+        """Get aggregated user features for recommendations"""
+
+        user_key = f"user:{user_id}"
+
+        # Get recent views
+        recent_views = self.redis_client.lrange(f"{user_key}:recent_views", 0, 19)
+
+        # Get recent purchases
+        recent_purchases = self.redis_client.lrange(f"{user_key}:purchases", 0, 9)
+
+        # Get favorite categories
+        categories = self.redis_client.zrevrange(
+            f"{user_key}:categories",
+            0, 4,
+            withscores=True
+        )
+        favorite_categories = [cat for cat, score in categories]
+
+        # Calculate purchase frequency
+        purchase_times = self.redis_client.lrange(f"{user_key}:purchase_times", 0, -1)
+        purchase_frequency = self._calculate_purchase_frequency(purchase_times)
+
+        # Get average price point
+        avg_price = self._calculate_avg_price_point(recent_purchases)
+
+        return UserFeatures(
+            user_id=user_id,
+            favorite_categories=favorite_categories,
+            avg_price_point=avg_price,
+            preferred_brands=[],  # Computed similarly
+            recent_views=recent_views,
+            recent_purchases=recent_purchases,
+            purchase_frequency=purchase_frequency,
+            last_active=datetime.now()
+        )
+
+    def _calculate_purchase_frequency(self, purchase_times: List[str]) -> float:
+        """Calculate purchases per week"""
+
+        if len(purchase_times) < 2:
+            return 0.0
+
+        timestamps = [datetime.fromisoformat(t) for t in purchase_times[:10]]
+        if len(timestamps) < 2:
+            return 0.0
+
+        time_span = (timestamps[0] - timestamps[-1]).total_seconds() / (7 * 86400)
+        if time_span == 0:
+            return 0.0
+
+        return len(timestamps) / time_span
+
+    def _calculate_avg_price_point(self, product_ids: List[str]) -> float:
+        """Calculate user's average price point"""
+
+        prices = []
+        for product_id in product_ids[:20]:
+            price = self.redis_client.get(f"product:{product_id}:price")
+            if price:
+                prices.append(float(price))
+
+        return np.mean(prices) if prices else 0.0
+
+class BatchFeatureEngineering:
+    """Batch feature engineering for model training"""
+
+    def __init__(self, data_warehouse_conn):
+        self.conn = data_warehouse_conn
+
+    def create_training_dataset(
+        self,
+        start_date: datetime,
+        end_date: datetime
+    ) -> pd.DataFrame:
+        """Create training dataset from historical data"""
+
+        # User features
+        user_features = self._compute_user_features(start_date, end_date)
+
+        # Product features
+        product_features = self._compute_product_features(start_date, end_date)
+
+        # Interaction matrix
+        interactions = self._build_interaction_matrix(start_date, end_date)
+
+        # Combine features
+        training_data = self._combine_features(
+            user_features,
+            product_features,
+            interactions
+        )
+
+        return training_data
+
+    def _compute_user_features(
+        self,
+        start_date: datetime,
+        end_date: datetime
+    ) -> pd.DataFrame:
+        """Compute aggregated user features"""
+
+        query = """
+        SELECT
+            user_id,
+            COUNT(DISTINCT session_id) as session_count,
+            COUNT(*) as total_events,
+            COUNT(DISTINCT product_id) as unique_products_viewed,
+            COUNT(CASE WHEN event_type = 'purchase' THEN 1 END) as purchase_count,
+            AVG(CASE WHEN event_type = 'purchase' THEN product_price END) as avg_purchase_price,
+            MODE() WITHIN GROUP (ORDER BY product_category) as favorite_category,
+            MAX(timestamp) as last_active
+        FROM user_events
+        WHERE timestamp BETWEEN %s AND %s
+        GROUP BY user_id
+        """
+
+        return pd.read_sql(query, self.conn, params=[start_date, end_date])
+
+    def _compute_product_features(
+        self,
+        start_date: datetime,
+        end_date: datetime
+    ) -> pd.DataFrame:
+        """Compute product features"""
+
+        query = """
+        SELECT
+            p.product_id,
+            p.category,
+            p.subcategory,
+            p.price,
+            p.brand,
+            COUNT(DISTINCT ue.user_id) as unique_viewers,
+            COUNT(*) as total_views,
+            COUNT(CASE WHEN ue.event_type = 'purchase' THEN 1 END) as purchase_count,
+            COUNT(CASE WHEN ue.event_type = 'purchase' THEN 1 END)::FLOAT /
+                NULLIF(COUNT(*), 0) as conversion_rate
+        FROM products p
+        LEFT JOIN user_events ue ON p.product_id = ue.product_id
+            AND ue.timestamp BETWEEN %s AND %s
+        GROUP BY p.product_id, p.category, p.subcategory, p.price, p.brand
+        """
+
+        return pd.read_sql(query, self.conn, params=[start_date, end_date])
+
+    def _build_interaction_matrix(
+        self,
+        start_date: datetime,
+        end_date: datetime
+    ) -> pd.DataFrame:
+        """Build user-product interaction matrix"""
+
+        query = """
+        SELECT
+            user_id,
+            product_id,
+            SUM(CASE WHEN event_type = 'view' THEN 1 ELSE 0 END) as views,
+            SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) as clicks,
+            SUM(CASE WHEN event_type = 'add_to_cart' THEN 1 ELSE 0 END) as cart_adds,
+            SUM(CASE WHEN event_type = 'purchase' THEN 1 ELSE 0 END) as purchases,
+            MAX(timestamp) as last_interaction
+        FROM user_events
+        WHERE timestamp BETWEEN %s AND %s
+        GROUP BY user_id, product_id
+        """
+
+        return pd.read_sql(query, self.conn, params=[start_date, end_date])
+
+    def _combine_features(
+        self,
+        user_features: pd.DataFrame,
+        product_features: pd.DataFrame,
+        interactions: pd.DataFrame
+    ) -> pd.DataFrame:
+        """Combine all features into training dataset"""
+
+        # Merge user and product features with interactions
+        training_data = interactions.merge(
+            user_features,
+            on='user_id',
+            how='left'
+        ).merge(
+            product_features,
+            on='product_id',
+            how='left'
+        )
+
+        # Create target variable (implicit feedback)
+        training_data['target'] = (
+            training_data['views'] * 0.1 +
+            training_data['clicks'] * 0.3 +
+            training_data['cart_adds'] * 0.5 +
+            training_data['purchases'] * 1.0
+        )
+
+        # Create negative samples
+        training_data = self._add_negative_samples(training_data)
+
+        return training_data
+
+    def _add_negative_samples(self, positive_samples: pd.DataFrame) -> pd.DataFrame:
+        """Add negative samples for training"""
+
+        # For each user, sample products they didn't interact with
+        # This is simplified - in production, use more sophisticated negative sampling
+
+        all_users = positive_samples['user_id'].unique()
+        all_products = positive_samples['product_id'].unique()
+
+        negative_samples = []
+
+        for user_id in all_users:
+            user_products = set(positive_samples[
+                positive_samples['user_id'] == user_id
+            ]['product_id'])
+
+            # Sample 4 negative products per positive
+            num_negatives = len(user_products) * 4
+            negative_products = np.random.choice(
+                list(set(all_products) - user_products),
+                size=min(num_negatives, len(all_products) - len(user_products)),
+                replace=False
+            )
+
+            for product_id in negative_products:
+                negative_samples.append({
+                    'user_id': user_id,
+                    'product_id': product_id,
+                    'target': 0
+                })
+
+        negative_df = pd.DataFrame(negative_samples)
+
+        return pd.concat([positive_samples, negative_df], ignore_index=True)
+
+# Example usage
+if __name__ == "__main__":
+    pipeline = RecommendationDataPipeline(
+        kafka_bootstrap_servers=['localhost:9092'],
+        redis_host='localhost'
+    )
+
+    # Start processing events
+    # pipeline.process_event_stream()
+
+    # Get user features
+    features = pipeline.get_user_features('user_12345')
+    print(f"User categories: {features.favorite_categories}")
+    print(f"Recent views: {len(features.recent_views)}")
+    print(f"Purchase frequency: {features.purchase_frequency:.2f} per week")
+\end{lstlisting}
+
+\subsection{Model Implementation}
+
+\begin{lstlisting}[language=Python, caption=Hybrid Recommendation Models]
+#!/usr/bin/env python3
+"""
+E-Commerce Recommendation Models
+Hybrid approach combining collaborative filtering, content-based, and deep learning
+"""
+
+import torch
+import torch.nn as nn
+import numpy as np
+from typing import List, Dict, Tuple
+from sklearn.metrics.pairwise import cosine_similarity
+import pandas as pd
+from scipy.sparse import csr_matrix
+from implicit.als import AlternatingLeastSquares
+from implicit.bpr import BayesianPersonalizedRanking
+
+class CollaborativeFilteringModel:
+    """Matrix factorization for collaborative filtering"""
+
+    def __init__(self, factors: int = 64, regularization: float = 0.01):
+        self.factors = factors
+        self.model = AlternatingLeastSquares(
+            factors=factors,
+            regularization=regularization,
+            iterations=15
+        )
+        self.user_id_map = {}
+        self.product_id_map = {}
+
+    def fit(self, interactions: pd.DataFrame):
+        """Train collaborative filtering model"""
+
+        # Create user and product mappings
+        unique_users = interactions['user_id'].unique()
+        unique_products = interactions['product_id'].unique()
+
+        self.user_id_map = {uid: idx for idx, uid in enumerate(unique_users)}
+        self.product_id_map = {pid: idx for idx, pid in enumerate(unique_products)}
+
+        # Create sparse interaction matrix
+        user_indices = interactions['user_id'].map(self.user_id_map)
+        product_indices = interactions['product_id'].map(self.product_id_map)
+        values = interactions['target'].values
+
+        interaction_matrix = csr_matrix(
+            (values, (user_indices, product_indices)),
+            shape=(len(unique_users), len(unique_products))
+        )
+
+        # Train model
+        self.model.fit(interaction_matrix)
+
+    def recommend(
+        self,
+        user_id: str,
+        n: int = 10,
+        filter_already_liked: bool = True
+    ) -> List[Tuple[str, float]]:
+        """Generate recommendations for user"""
+
+        if user_id not in self.user_id_map:
+            return []
+
+        user_idx = self.user_id_map[user_id]
+
+        # Get recommendations
+        product_indices, scores = self.model.recommend(
+            user_idx,
+            None,  # All items
+            N=n,
+            filter_already_liked_items=filter_already_liked
+        )
+
+        # Map back to product IDs
+        reverse_product_map = {idx: pid for pid, idx in self.product_id_map.items()}
+        recommendations = [
+            (reverse_product_map[idx], float(score))
+            for idx, score in zip(product_indices, scores)
+        ]
+
+        return recommendations
+
+    def similar_items(self, product_id: str, n: int = 10) -> List[Tuple[str, float]]:
+        """Find similar products"""
+
+        if product_id not in self.product_id_map:
+            return []
+
+        product_idx = self.product_id_map[product_id]
+
+        # Get similar items
+        similar_indices, scores = self.model.similar_items(product_idx, N=n+1)
+
+        # Exclude the item itself
+        similar_indices = similar_indices[1:]
+        scores = scores[1:]
+
+        reverse_product_map = {idx: pid for pid, idx in self.product_id_map.items()}
+        similar_products = [
+            (reverse_product_map[idx], float(score))
+            for idx, score in zip(similar_indices, scores)
+        ]
+
+        return similar_products
+
+class ContentBasedModel:
+    """Content-based filtering using product features"""
+
+    def __init__(self):
+        self.product_vectors = {}
+        self.product_features = None
+
+    def fit(self, product_features: pd.DataFrame):
+        """Train content-based model"""
+
+        self.product_features = product_features.set_index('product_id')
+
+        # Create product vectors from features
+        for product_id, row in self.product_features.iterrows():
+            vector = self._create_product_vector(row)
+            self.product_vectors[product_id] = vector
+
+    def _create_product_vector(self, product_row) -> np.ndarray:
+        """Create feature vector for product"""
+
+        # Combine categorical and numerical features
+        features = []
+
+        # One-hot encode category
+        category_features = self._one_hot_encode(
+            product_row['category'],
+            self.product_features['category'].unique()
+        )
+        features.extend(category_features)
+
+        # Normalize price
+        price_normalized = (product_row['price'] - self.product_features['price'].mean()) / \
+                          self.product_features['price'].std()
+        features.append(price_normalized)
+
+        # Brand encoding
+        brand_features = self._one_hot_encode(
+            product_row['brand'],
+            self.product_features['brand'].unique()
+        )
+        features.extend(brand_features)
+
+        return np.array(features)
+
+    def _one_hot_encode(self, value, all_values):
+        """One-hot encode a categorical value"""
+        return [1 if v == value else 0 for v in all_values]
+
+    def recommend(
+        self,
+        user_profile: Dict,
+        n: int = 10,
+        exclude_products: List[str] = None
+    ) -> List[Tuple[str, float]]:
+        """Recommend products based on user profile"""
+
+        if exclude_products is None:
+            exclude_products = []
+
+        # Create user vector from profile
+        user_vector = self._create_user_vector(user_profile)
+
+        # Calculate similarity to all products
+        similarities = {}
+        for product_id, product_vector in self.product_vectors.items():
+            if product_id in exclude_products:
+                continue
+
+            similarity = cosine_similarity(
+                user_vector.reshape(1, -1),
+                product_vector.reshape(1, -1)
+            )[0][0]
+
+            similarities[product_id] = similarity
+
+        # Sort by similarity
+        recommendations = sorted(
+            similarities.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:n]
+
+        return recommendations
+
+    def _create_user_vector(self, user_profile: Dict) -> np.ndarray:
+        """Create user vector from their interaction history"""
+
+        # Average of viewed/purchased product vectors
+        product_ids = user_profile.get('recent_views', []) + \
+                     user_profile.get('recent_purchases', [])
+
+        if not product_ids:
+            # Return zero vector for cold start
+            sample_vector = next(iter(self.product_vectors.values()))
+            return np.zeros_like(sample_vector)
+
+        vectors = [
+            self.product_vectors[pid]
+            for pid in product_ids
+            if pid in self.product_vectors
+        ]
+
+        if not vectors:
+            sample_vector = next(iter(self.product_vectors.values()))
+            return np.zeros_like(sample_vector)
+
+        return np.mean(vectors, axis=0)
+
+    def similar_items(self, product_id: str, n: int = 10) -> List[Tuple[str, float]]:
+        """Find similar products by content"""
+
+        if product_id not in self.product_vectors:
+            return []
+
+        product_vector = self.product_vectors[product_id]
+
+        similarities = {}
+        for pid, pvector in self.product_vectors.items():
+            if pid == product_id:
+                continue
+
+            similarity = cosine_similarity(
+                product_vector.reshape(1, -1),
+                pvector.reshape(1, -1)
+            )[0][0]
+
+            similarities[pid] = similarity
+
+        similar_products = sorted(
+            similarities.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:n]
+
+        return similar_products
+
+class DeepRecommenderModel(nn.Module):
+    """Deep learning model for recommendations"""
+
+    def __init__(
+        self,
+        num_users: int,
+        num_products: int,
+        embedding_dim: int = 64,
+        hidden_dims: List[int] = [128, 64, 32]
+    ):
+        super().__init__()
+
+        self.user_embedding = nn.Embedding(num_users, embedding_dim)
+        self.product_embedding = nn.Embedding(num_products, embedding_dim)
+
+        # Deep neural network
+        layers = []
+        input_dim = embedding_dim * 2
+
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(input_dim, hidden_dim))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(0.2))
+            input_dim = hidden_dim
+
+        layers.append(nn.Linear(input_dim, 1))
+        layers.append(nn.Sigmoid())
+
+        self.mlp = nn.Sequential(*layers)
+
+    def forward(self, user_ids, product_ids):
+        """Forward pass"""
+
+        user_embeds = self.user_embedding(user_ids)
+        product_embeds = self.product_embedding(product_ids)
+
+        # Concatenate embeddings
+        x = torch.cat([user_embeds, product_embeds], dim=1)
+
+        # Pass through MLP
+        output = self.mlp(x)
+
+        return output.squeeze()
+
+class HybridRecommender:
+    """Hybrid recommender combining multiple models"""
+
+    def __init__(self):
+        self.cf_model = None
+        self.content_model = None
+        self.deep_model = None
+
+        # Weights for ensemble
+        self.cf_weight = 0.4
+        self.content_weight = 0.3
+        self.deep_weight = 0.3
+
+    def train(
+        self,
+        interactions: pd.DataFrame,
+        product_features: pd.DataFrame,
+        user_features: pd.DataFrame
+    ):
+        """Train all models"""
+
+        print("Training collaborative filtering model...")
+        self.cf_model = CollaborativeFilteringModel(factors=64)
+        self.cf_model.fit(interactions)
+
+        print("Training content-based model...")
+        self.content_model = ContentBasedModel()
+        self.content_model.fit(product_features)
+
+        print("Training deep learning model...")
+        # Deep model training would go here
+        # Omitted for brevity
+
+        print("All models trained successfully")
+
+    def recommend(
+        self,
+        user_id: str,
+        user_features: Dict,
+        n: int = 10,
+        exclude_products: List[str] = None
+    ) -> List[Tuple[str, float]]:
+        """Generate hybrid recommendations"""
+
+        if exclude_products is None:
+            exclude_products = []
+
+        # Get recommendations from each model
+        cf_recs = self.cf_model.recommend(user_id, n=50, filter_already_liked=True)
+        content_recs = self.content_model.recommend(user_features, n=50, exclude_products=exclude_products)
+
+        # Combine scores
+        combined_scores = defaultdict(float)
+
+        for product_id, score in cf_recs:
+            if product_id not in exclude_products:
+                combined_scores[product_id] += score * self.cf_weight
+
+        for product_id, score in content_recs:
+            if product_id not in exclude_products:
+                combined_scores[product_id] += score * self.content_weight
+
+        # Sort by combined score
+        recommendations = sorted(
+            combined_scores.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:n]
+
+        return recommendations
+
+    def diversify_recommendations(
+        self,
+        recommendations: List[Tuple[str, float]],
+        product_features: pd.DataFrame,
+        diversity_weight: float = 0.3
+    ) -> List[Tuple[str, float]]:
+        """Add diversity to recommendations"""
+
+        if not recommendations:
+            return recommendations
+
+        diversified = [recommendations[0]]  # Start with top recommendation
+        remaining = recommendations[1:]
+
+        while len(diversified) < len(recommendations) and remaining:
+            best_candidate = None
+            best_score = -float('inf')
+
+            for product_id, relevance_score in remaining:
+                # Calculate diversity score (dissimilarity to already selected)
+                diversity_score = self._calculate_diversity(
+                    product_id,
+                    [p[0] for p in diversified],
+                    product_features
+                )
+
+                # Combined score
+                combined = (1 - diversity_weight) * relevance_score + \
+                          diversity_weight * diversity_score
+
+                if combined > best_score:
+                    best_score = combined
+                    best_candidate = (product_id, relevance_score)
+
+            if best_candidate:
+                diversified.append(best_candidate)
+                remaining.remove(best_candidate)
+
+        return diversified
+
+    def _calculate_diversity(
+        self,
+        product_id: str,
+        selected_products: List[str],
+        product_features: pd.DataFrame
+    ) -> float:
+        """Calculate diversity score for a product"""
+
+        if product_id not in product_features.index:
+            return 0.0
+
+        product_category = product_features.loc[product_id, 'category']
+
+        # Calculate category diversity
+        selected_categories = [
+            product_features.loc[pid, 'category']
+            for pid in selected_products
+            if pid in product_features.index
+        ]
+
+        if not selected_categories:
+            return 1.0
+
+        # Diversity = fraction of different categories
+        different_categories = sum(1 for cat in selected_categories if cat != product_category)
+        diversity = different_categories / len(selected_categories)
+
+        return diversity
+
+# Example usage
+if __name__ == "__main__":
+    # Load data
+    interactions = pd.read_csv('interactions.csv')
+    product_features = pd.read_csv('products.csv')
+    user_features = pd.read_csv('users.csv')
+
+    # Train hybrid model
+    recommender = HybridRecommender()
+    recommender.train(interactions, product_features, user_features)
+
+    # Generate recommendations
+    user_id = 'user_12345'
+    user_profile = {
+        'recent_views': ['prod_1', 'prod_5', 'prod_7'],
+        'recent_purchases': ['prod_3']
+    }
+
+    recommendations = recommender.recommend(user_id, user_profile, n=10)
+
+    print(f"Top 10 recommendations for {user_id}:")
+    for product_id, score in recommendations:
+        print(f"  {product_id}: {score:.4f}")
+
+    # Add diversity
+    diverse_recs = recommender.diversify_recommendations(
+        recommendations,
+        product_features,
+        diversity_weight=0.3
+    )
+
+    print("\nDiversified recommendations:")
+    for product_id, score in diverse_recs:
+        print(f"  {product_id}: {score:.4f}")
+\end{lstlisting}
+
+\subsection{Serving and Deployment}
+
+\begin{lstlisting}[language=Python, caption=Recommendation Serving API]
+#!/usr/bin/env python3
+"""
+Recommendation Serving API
+Low-latency serving infrastructure with caching and business rules
+"""
+
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel
+from typing import List, Optional, Dict
+import redis
+import pickle
+import time
+from datetime import datetime
+import logging
+
+app = FastAPI(title="Recommendation API")
+
+class RecommendationRequest(BaseModel):
+    """Recommendation request"""
+    user_id: str
+    num_recommendations: int = 10
+    context: Optional[Dict] = None
+    exclude_products: Optional[List[str]] = None
+
+class RecommendationResponse(BaseModel):
+    """Recommendation response"""
+    user_id: str
+    recommendations: List[Dict]
+    metadata: Dict
+
+class RecommendationServer:
+    """Recommendation serving with caching and business rules"""
+
+    def __init__(self, redis_host: str, model_path: str):
+        self.redis_client = redis.Redis(
+            host=redis_host,
+            decode_responses=False  # Binary for pickle
+        )
+        self.logger = logging.getLogger(__name__)
+
+        # Load models (simplified - in production use model registry)
+        with open(model_path, 'rb') as f:
+            self.recommender = pickle.load(f)
+
+        # Business rules
+        self.min_inventory_threshold = 5
+        self.min_margin_threshold = 0.15
+
+    async def get_recommendations(
+        self,
+        request: RecommendationRequest
+    ) -> RecommendationResponse:
+        """Get personalized recommendations"""
+
+        start_time = time.time()
+
+        # Check cache first
+        cache_key = f"recs:{request.user_id}:{request.num_recommendations}"
+        cached = self.redis_client.get(cache_key)
+
+        if cached:
+            self.logger.info(f"Cache hit for user {request.user_id}")
+            recommendations = pickle.loads(cached)
+        else:
+            # Generate recommendations
+            recommendations = await self._generate_recommendations(request)
+
+            # Cache for 5 minutes
+            self.redis_client.setex(
+                cache_key,
+                300,
+                pickle.dumps(recommendations)
+            )
+
+        # Apply business rules
+        recommendations = self._apply_business_rules(recommendations)
+
+        # Apply diversity
+        recommendations = self._apply_diversity(recommendations)
+
+        # Add metadata
+        for rec in recommendations:
+            rec['metadata'] = self._get_product_metadata(rec['product_id'])
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        return RecommendationResponse(
+            user_id=request.user_id,
+            recommendations=recommendations[:request.num_recommendations],
+            metadata={
+                'latency_ms': latency_ms,
+                'cache_hit': cached is not None,
+                'timestamp': datetime.now().isoformat()
+            }
+        )
+
+    async def _generate_recommendations(
+        self,
+        request: RecommendationRequest
+    ) -> List[Dict]:
+        """Generate recommendations using models"""
+
+        # Get user features
+        user_features = self._get_user_features(request.user_id)
+
+        # Get raw recommendations
+        raw_recs = self.recommender.recommend(
+            user_id=request.user_id,
+            user_features=user_features,
+            n=50,  # Get more candidates for filtering
+            exclude_products=request.exclude_products or []
+        )
+
+        # Convert to dict format
+        recommendations = [
+            {
+                'product_id': product_id,
+                'score': float(score),
+                'reason': self._generate_explanation(product_id, user_features)
+            }
+            for product_id, score in raw_recs
+        ]
+
+        return recommendations
+
+    def _apply_business_rules(self, recommendations: List[Dict]) -> List[Dict]:
+        """Apply business constraints"""
+
+        filtered = []
+
+        for rec in recommendations:
+            product_id = rec['product_id']
+
+            # Check inventory
+            inventory = self._get_inventory(product_id)
+            if inventory < self.min_inventory_threshold:
+                continue
+
+            # Check margin
+            margin = self._get_margin(product_id)
+            if margin < self.min_margin_threshold:
+                continue
+
+            # Check if product is active
+            if not self._is_product_active(product_id):
+                continue
+
+            filtered.append(rec)
+
+        return filtered
+
+    def _apply_diversity(self, recommendations: List[Dict]) -> List[Dict]:
+        """Ensure category diversity"""
+
+        if not recommendations:
+            return recommendations
+
+        diversified = [recommendations[0]]
+        categories_seen = {self._get_category(recommendations[0]['product_id'])}
+
+        for rec in recommendations[1:]:
+            category = self._get_category(rec['product_id'])
+
+            # Prefer products from unseen categories
+            if category not in categories_seen or len(diversified) > 5:
+                diversified.append(rec)
+                categories_seen.add(category)
+
+            if len(diversified) >= len(recommendations):
+                break
+
+        return diversified
+
+    def _get_user_features(self, user_id: str) -> Dict:
+        """Get user features from cache"""
+
+        features_key = f"user:{user_id}:features"
+        features = self.redis_client.get(features_key)
+
+        if features:
+            return pickle.loads(features)
+
+        # Return default features for cold start
+        return {
+            'favorite_categories': [],
+            'recent_views': [],
+            'recent_purchases': []
+        }
+
+    def _get_product_metadata(self, product_id: str) -> Dict:
+        """Get product metadata"""
+
+        metadata_key = f"product:{product_id}:metadata"
+        metadata = self.redis_client.get(metadata_key)
+
+        if metadata:
+            return pickle.loads(metadata)
+
+        return {}
+
+    def _get_inventory(self, product_id: str) -> int:
+        """Get product inventory"""
+        inventory = self.redis_client.get(f"product:{product_id}:inventory")
+        return int(inventory) if inventory else 0
+
+    def _get_margin(self, product_id: str) -> float:
+        """Get product margin"""
+        margin = self.redis_client.get(f"product:{product_id}:margin")
+        return float(margin) if margin else 0.0
+
+    def _is_product_active(self, product_id: str) -> bool:
+        """Check if product is active"""
+        active = self.redis_client.get(f"product:{product_id}:active")
+        return active == b'1' if active else True
+
+    def _get_category(self, product_id: str) -> str:
+        """Get product category"""
+        category = self.redis_client.get(f"product:{product_id}:category")
+        return category.decode() if category else 'Unknown'
+
+    def _generate_explanation(self, product_id: str, user_features: Dict) -> str:
+        """Generate explanation for recommendation"""
+
+        # Simple rule-based explanation
+        if product_id in user_features.get('recent_views', []):
+            return "Based on items you recently viewed"
+
+        favorite_cat = user_features.get('favorite_categories', [None])[0]
+        product_cat = self._get_category(product_id)
+
+        if favorite_cat and product_cat == favorite_cat:
+            return f"Popular in {product_cat}"
+
+        return "Recommended for you"
+
+# FastAPI endpoints
+recommendation_server = None
+
+@app.on_event("startup")
+async def startup_event():
+    global recommendation_server
+    recommendation_server = RecommendationServer(
+        redis_host='localhost',
+        model_path='models/recommender.pkl'
+    )
+
+@app.post("/recommendations", response_model=RecommendationResponse)
+async def get_recommendations(request: RecommendationRequest):
+    """Get personalized recommendations"""
+    try:
+        return await recommendation_server.get_recommendations(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+@app.get("/similar/{product_id}")
+async def get_similar_products(
+    product_id: str,
+    n: int = Query(10, ge=1, le=50)
+):
+    """Get similar products"""
+    try:
+        similar = recommendation_server.recommender.cf_model.similar_items(
+            product_id,
+            n=n
+        )
+
+        return {
+            "product_id": product_id,
+            "similar_products": [
+                {"product_id": pid, "score": float(score)}
+                for pid, score in similar
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+\end{lstlisting}
+
+\subsection{Results and Impact}
+
+\textbf{Business Metrics (After 6 Months):}
+
+\begin{itemize}
+    \item \textbf{Click-Through Rate:} Increased from 2.3\% to 4.7\% (+104\%)
+    \item \textbf{Conversion Rate:} Increased from 1.2\% to 2.1\% (+75\%)
+    \item \textbf{Average Order Value:} Increased from \$47 to \$58 (+23\%)
+    \item \textbf{Revenue Impact:} \$12M additional annual revenue
+    \item \textbf{Customer Engagement:} Session duration increased by 35\%
+\end{itemize}
+
+\textbf{Technical Performance:}
+
+\begin{itemize}
+    \item \textbf{Latency:} p50: 45ms, p95: 78ms, p99: 92ms (target: <100ms)
+    \item \textbf{Cache Hit Rate:} 87\% (significantly reduced compute costs)
+    \item \textbf{Throughput:} 12,000 requests/second peak
+    \item \textbf{Model Accuracy:} NDCG@10: 0.43, MAP@10: 0.38
+\end{itemize}
+
+\subsection{Lessons Learned}
+
+\textbf{Key Insights:}
+
+\begin{enumerate}
+    \item \textbf{Hybrid Approach is Essential:} No single model performed well across all scenarios. Collaborative filtering excelled for popular users, content-based handled cold start, and deep learning captured complex patterns.
+
+    \item \textbf{Real-Time Features Matter:} Adding real-time user session data improved relevance by 18\% compared to batch features alone.
+
+    \item \textbf{Business Rules are Critical:} Pure ML recommendations often suggested out-of-stock or low-margin items. Business rule integration improved profitability by 31\%.
+
+    \item \textbf{Diversity Prevents Boredom:} Users engaged 40\% longer when recommendations showed category diversity vs. showing only similar items.
+
+    \item \textbf{Explanation Builds Trust:} Adding simple explanations increased click-through rates by 15\%.
+
+    \item \textbf{Caching is Mandatory:} 87\% cache hit rate reduced serving costs by 6x while maintaining freshness.
+
+    \item \textbf{A/B Testing Revealed Surprises:} Some seemingly good ML improvements (higher offline metrics) didn't translate to better business outcomes. Always test in production.
+
+    \item \textbf{Cold Start is Hard:} 23\% of users were new each month. Content-based and trending items were essential for cold start.
+\end{enumerate}
+
+\textbf{Technical Challenges Overcome:}
+
+\begin{itemize}
+    \item \textbf{Real-time Feature Consistency:} Ensured training features matched serving features by using same feature store
+    \item \textbf{Scale:} Handled 10x traffic during sales with autoscaling and precomputed recommendations
+    \item \textbf{Model Updates:} Deployed new models daily without downtime using blue-green deployment
+    \item \textbf{Data Quality:} Bot traffic and fraud required sophisticated filtering (12\% of events were invalid)
+\end{itemize}
+
+\section{Case Study 2: Financial Fraud Detection Pipeline}
+
+\subsection{Business Context and Requirements}
+
+\textbf{Company:} Digital payments platform processing \$50B annually\\
+\textbf{Challenge:} Fraud losses of \$45M annually, manual review backlog\\
+\textbf{Goal:} Reduce fraud losses while minimizing false positives
+
+\textbf{Key Requirements:}
+
+\begin{itemize}
+    \item \textbf{Real-Time:} Decision in <100ms for transaction approval
+    \item \textbf{High Recall:} Catch 95\%+ of fraudulent transactions
+    \item \textbf{Low False Positives:} Keep legitimate user friction minimal (<1\% decline rate)
+    \item \textbf{Explainability:} Provide reasons for fraud decisions (regulatory requirement)
+    \item \textbf{Adaptability:} Detect new fraud patterns within hours
+    \item \textbf{Security:} Protect sensitive financial data (PCI-DSS compliance)
+\end{itemize}
+
+\subsection{System Architecture}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=1.3cm,
+    component/.style={rectangle, draw, fill=blue!20, text width=2.5cm, text centered, minimum height=0.9cm, font=\small},
+    storage/.style={cylinder, draw, fill=green!20, text width=2.2cm, text centered, minimum height=0.9cm, aspect=0.3, font=\small},
+    decision/.style={diamond, draw, fill=yellow!20, text width=2cm, text centered, minimum height=0.9cm, font=\small}
+]
+
+% Input
+\node[component] (txn) {Transaction\\Request};
+
+% Feature extraction
+\node[component, below=of txn] (features) {Feature\\Extraction};
+\node[storage, left=of features] (history) {User\\History};
+\node[storage, right=of features] (network) {Network\\Graph};
+
+% Models
+\node[component, below=of features] (rules) {Rule\\Engine};
+\node[component, left=of rules] (ml) {ML\\Models};
+\node[component, right=of rules] (network_model) {Network\\Analysis};
+
+% Decision
+\node[decision, below=of rules] (decision) {Risk\\Score};
+
+% Actions
+\node[component, below left=of decision] (approve) {Approve};
+\node[component, below=of decision] (review) {Manual\\Review};
+\node[component, below right=of decision] (block) {Block};
+
+% Feedback
+\node[storage, below=of review] (feedback) {Feedback\\Loop};
+
+% Arrows
+\draw[->] (txn) -- (features);
+\draw[->] (history) -- (features);
+\draw[->] (network) -- (features);
+\draw[->] (features) -- (rules);
+\draw[->] (features) -- (ml);
+\draw[->] (features) -- (network_model);
+\draw[->] (rules) -- (decision);
+\draw[->] (ml) -- (decision);
+\draw[->] (network_model) -- (decision);
+\draw[->] (decision) -- node[left] {Low} (approve);
+\draw[->] (decision) -- node[above] {Medium} (review);
+\draw[->] (decision) -- node[right] {High} (block);
+\draw[->] (review) -- (feedback);
+\draw[->] (feedback) -| (ml);
+
+\end{tikzpicture}
+\caption{Fraud Detection System Architecture}
+\end{figure}
+
+\subsection{Feature Engineering and Real-Time Processing}
+
+\begin{lstlisting}[language=Python, caption=Real-Time Fraud Detection Features]
+#!/usr/bin/env python3
+"""
+Financial Fraud Detection - Real-Time Feature Engineering
+Extract transaction features in <50ms for real-time fraud detection
+"""
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+import redis
+import numpy as np
+from geopy.distance import geodesic
+import hashlib
+
+@dataclass
+class Transaction:
+    """Transaction data"""
+    transaction_id: str
+    user_id: str
+    merchant_id: str
+    amount: float
+    currency: str
+    timestamp: datetime
+    location: tuple  # (latitude, longitude)
+    device_id: str
+    ip_address: str
+    payment_method: str
+    metadata: Dict
+
+@dataclass
+class FraudFeatures:
+    """Computed fraud detection features"""
+    # User velocity features
+    txns_last_hour: int
+    txns_last_24h: int
+    amount_last_hour: float
+    amount_last_24h: float
+    unique_merchants_last_hour: int
+
+    # Geographic features
+    distance_from_last_txn_km: float
+    velocity_km_per_hour: float
+    new_country: bool
+    high_risk_country: bool
+
+    # Device and identity
+    new_device: bool
+    device_change_frequency: float
+    ip_reputation_score: float
+
+    # Merchant features
+    merchant_risk_score: float
+    first_time_merchant: bool
+
+    # Amount features
+    amount_deviation_from_avg: float
+    round_amount: bool
+    amount_percentile: float
+
+    # Time features
+    hour_of_day: int
+    day_of_week: int
+    unusual_hour: bool
+
+    # Network features
+    shared_device_users: int
+    shared_ip_users: int
+
+class FraudFeatureExtractor:
+    """Extract fraud detection features in real-time"""
+
+    def __init__(self, redis_host: str):
+        self.redis_client = redis.Redis(host=redis_host, decode_responses=True)
+
+        # High-risk countries (example list)
+        self.high_risk_countries = {'XX', 'YY', 'ZZ'}
+
+        # Typical transaction hours by user
+        self.typical_hours_start = 6
+        self.typical_hours_end = 23
+
+    def extract_features(self, transaction: Transaction) -> FraudFeatures:
+        """Extract all features for fraud detection"""
+
+        # User velocity features
+        velocity_features = self._compute_velocity_features(transaction)
+
+        # Geographic features
+        geo_features = self._compute_geographic_features(transaction)
+
+        # Device and identity features
+        device_features = self._compute_device_features(transaction)
+
+        # Merchant features
+        merchant_features = self._compute_merchant_features(transaction)
+
+        # Amount features
+        amount_features = self._compute_amount_features(transaction)
+
+        # Time features
+        time_features = self._compute_time_features(transaction)
+
+        # Network features
+        network_features = self._compute_network_features(transaction)
+
+        # Combine all features
+        features = FraudFeatures(
+            **velocity_features,
+            **geo_features,
+            **device_features,
+            **merchant_features,
+            **amount_features,
+            **time_features,
+            **network_features
+        )
+
+        # Update historical data for future transactions
+        self._update_user_history(transaction)
+
+        return features
+
+    def _compute_velocity_features(self, txn: Transaction) -> Dict:
+        """Compute transaction velocity features"""
+
+        user_key = f"user:{txn.user_id}"
+
+        # Count transactions in time windows
+        now = txn.timestamp.timestamp()
+        hour_ago = now - 3600
+        day_ago = now - 86400
+
+        # Get recent transactions
+        recent_txns = self.redis_client.zrangebyscore(
+            f"{user_key}:txns",
+            hour_ago,
+            now
+        )
+
+        txns_last_hour = len(recent_txns)
+
+        recent_txns_24h = self.redis_client.zrangebyscore(
+            f"{user_key}:txns",
+            day_ago,
+            now
+        )
+
+        txns_last_24h = len(recent_txns_24h)
+
+        # Sum amounts
+        amount_last_hour = 0.0
+        for txn_data in recent_txns:
+            amount = float(txn_data.split(':')[1])
+            amount_last_hour += amount
+
+        amount_last_24h = 0.0
+        for txn_data in recent_txns_24h:
+            amount = float(txn_data.split(':')[1])
+            amount_last_24h += amount
+
+        # Count unique merchants
+        merchants_last_hour = set()
+        for txn_data in recent_txns:
+            merchant = txn_data.split(':')[2]
+            merchants_last_hour.add(merchant)
+
+        return {
+            'txns_last_hour': txns_last_hour,
+            'txns_last_24h': txns_last_24h,
+            'amount_last_hour': amount_last_hour,
+            'amount_last_24h': amount_last_24h,
+            'unique_merchants_last_hour': len(merchants_last_hour)
+        }
+
+    def _compute_geographic_features(self, txn: Transaction) -> Dict:
+        """Compute geographic fraud indicators"""
+
+        user_key = f"user:{txn.user_id}"
+
+        # Get last transaction location
+        last_location_data = self.redis_client.get(f"{user_key}:last_location")
+
+        if last_location_data:
+            parts = last_location_data.split(',')
+            last_lat, last_lon, last_time_str = float(parts[0]), float(parts[1]), parts[2]
+            last_time = datetime.fromisoformat(last_time_str)
+
+            # Calculate distance
+            distance_km = geodesic(
+                (last_lat, last_lon),
+                txn.location
+            ).kilometers
+
+            # Calculate velocity (km/h)
+            time_diff_hours = (txn.timestamp - last_time).total_seconds() / 3600
+            velocity = distance_km / time_diff_hours if time_diff_hours > 0 else 0
+
+            # Flag impossible travel (> 1000 km/h)
+            impossible_travel = velocity > 1000
+
+        else:
+            distance_km = 0
+            velocity = 0
+            impossible_travel = False
+
+        # Check if new country
+        user_countries = self.redis_client.smembers(f"{user_key}:countries")
+        country = self._get_country_from_location(txn.location)
+        new_country = country not in user_countries
+
+        high_risk_country = country in self.high_risk_countries
+
+        return {
+            'distance_from_last_txn_km': distance_km,
+            'velocity_km_per_hour': velocity,
+            'new_country': new_country,
+            'high_risk_country': high_risk_country
+        }
+
+    def _compute_device_features(self, txn: Transaction) -> Dict:
+        """Compute device and identity features"""
+
+        user_key = f"user:{txn.user_id}"
+
+        # Check if new device
+        user_devices = self.redis_client.smembers(f"{user_key}:devices")
+        new_device = txn.device_id not in user_devices
+
+        # Calculate device change frequency
+        device_changes = int(self.redis_client.get(f"{user_key}:device_changes") or 0)
+        total_txns = int(self.redis_client.get(f"{user_key}:total_txns") or 1)
+        device_change_frequency = device_changes / total_txns
+
+        # IP reputation (simplified - in production use threat intel services)
+        ip_reputation_score = self._get_ip_reputation(txn.ip_address)
+
+        return {
+            'new_device': new_device,
+            'device_change_frequency': device_change_frequency,
+            'ip_reputation_score': ip_reputation_score
+        }
+
+    def _compute_merchant_features(self, txn: Transaction) -> Dict:
+        """Compute merchant risk features"""
+
+        user_key = f"user:{txn.user_id}"
+        merchant_key = f"merchant:{txn.merchant_id}"
+
+        # Check if first time with merchant
+        user_merchants = self.redis_client.smembers(f"{user_key}:merchants")
+        first_time_merchant = txn.merchant_id not in user_merchants
+
+        # Get merchant risk score
+        merchant_risk = float(self.redis_client.get(f"{merchant_key}:risk_score") or 0.5)
+
+        return {
+            'merchant_risk_score': merchant_risk,
+            'first_time_merchant': first_time_merchant
+        }
+
+    def _compute_amount_features(self, txn: Transaction) -> Dict:
+        """Compute amount-based features"""
+
+        user_key = f"user:{txn.user_id}"
+
+        # Get user's historical average
+        avg_amount = float(self.redis_client.get(f"{user_key}:avg_amount") or 100.0)
+
+        # Deviation from average
+        deviation = abs(txn.amount - avg_amount) / avg_amount if avg_amount > 0 else 0
+
+        # Check if round amount (potential test transaction)
+        round_amount = txn.amount % 10 == 0 and txn.amount >= 100
+
+        # Get percentile of this amount
+        # Simplified - in production, maintain histogram
+        amount_percentile = min(txn.amount / (avg_amount * 3), 1.0)
+
+        return {
+            'amount_deviation_from_avg': deviation,
+            'round_amount': round_amount,
+            'amount_percentile': amount_percentile
+        }
+
+    def _compute_time_features(self, txn: Transaction) -> Dict:
+        """Compute time-based features"""
+
+        hour = txn.timestamp.hour
+        day = txn.timestamp.weekday()
+
+        # Check if unusual hour
+        unusual_hour = hour < self.typical_hours_start or hour > self.typical_hours_end
+
+        return {
+            'hour_of_day': hour,
+            'day_of_week': day,
+            'unusual_hour': unusual_hour
+        }
+
+    def _compute_network_features(self, txn: Transaction) -> Dict:
+        """Compute network-based features (shared devices/IPs)"""
+
+        # How many users share this device?
+        device_users = self.redis_client.scard(f"device:{txn.device_id}:users")
+
+        # How many users share this IP?
+        ip_users = self.redis_client.scard(f"ip:{txn.ip_address}:users")
+
+        return {
+            'shared_device_users': device_users,
+            'shared_ip_users': ip_users
+        }
+
+    def _update_user_history(self, txn: Transaction):
+        """Update user history after transaction"""
+
+        user_key = f"user:{txn.user_id}"
+
+        # Add transaction to sorted set (by timestamp)
+        txn_data = f"{txn.transaction_id}:{txn.amount}:{txn.merchant_id}"
+        self.redis_client.zadd(
+            f"{user_key}:txns",
+            {txn_data: txn.timestamp.timestamp()}
+        )
+
+        # Keep only last 30 days
+        cutoff = (txn.timestamp - timedelta(days=30)).timestamp()
+        self.redis_client.zremrangebyscore(f"{user_key}:txns", 0, cutoff)
+
+        # Update location
+        location_data = f"{txn.location[0]},{txn.location[1]},{txn.timestamp.isoformat()}"
+        self.redis_client.set(f"{user_key}:last_location", location_data)
+
+        # Update country set
+        country = self._get_country_from_location(txn.location)
+        self.redis_client.sadd(f"{user_key}:countries", country)
+
+        # Update device set
+        if txn.device_id not in self.redis_client.smembers(f"{user_key}:devices"):
+            self.redis_client.incr(f"{user_key}:device_changes")
+        self.redis_client.sadd(f"{user_key}:devices", txn.device_id)
+
+        # Update merchant set
+        self.redis_client.sadd(f"{user_key}:merchants", txn.merchant_id)
+
+        # Update total transactions
+        self.redis_client.incr(f"{user_key}:total_txns")
+
+        # Update average amount (moving average)
+        current_avg = float(self.redis_client.get(f"{user_key}:avg_amount") or txn.amount)
+        count = int(self.redis_client.get(f"{user_key}:total_txns") or 1)
+        new_avg = (current_avg * (count - 1) + txn.amount) / count
+        self.redis_client.set(f"{user_key}:avg_amount", new_avg)
+
+        # Network features
+        self.redis_client.sadd(f"device:{txn.device_id}:users", txn.user_id)
+        self.redis_client.sadd(f"ip:{txn.ip_address}:users", txn.user_id)
+
+    def _get_country_from_location(self, location: tuple) -> str:
+        """Get country code from lat/lon"""
+        # Simplified - in production use reverse geocoding service
+        return "US"
+
+    def _get_ip_reputation(self, ip_address: str) -> float:
+        """Get IP reputation score"""
+        # Simplified - in production integrate with threat intelligence
+        return 0.8
+
+# Example usage
+if __name__ == "__main__":
+    extractor = FraudFeatureExtractor(redis_host='localhost')
+
+    transaction = Transaction(
+        transaction_id='txn_12345',
+        user_id='user_789',
+        merchant_id='merchant_456',
+        amount=1250.00,
+        currency='USD',
+        timestamp=datetime.now(),
+        location=(40.7128, -74.0060),  # NYC
+        device_id='device_abc123',
+        ip_address='192.168.1.1',
+        payment_method='credit_card',
+        metadata={}
+    )
+
+    features = extractor.extract_features(transaction)
+
+    print(f"Transactions last hour: {features.txns_last_hour}")
+    print(f"Amount deviation: {features.amount_deviation_from_avg:.2f}")
+    print(f"New device: {features.new_device}")
+    print(f"Travel velocity: {features.velocity_km_per_hour:.1f} km/h")
+    print(f"Merchant risk: {features.merchant_risk_score:.2f}")
+\end{lstlisting}
+
+\subsection{Fraud Detection Models}
+
+\begin{lstlisting}[language=Python, caption=Ensemble Fraud Detection Models]
+#!/usr/bin/env python3
+"""
+Fraud Detection Models
+Ensemble of models for robust fraud detection
+"""
+
+import xgboost as xgb
+import lightgbm as lgb
+from sklearn.ensemble import IsolationForest
+from sklearn.neural_network import MLPClassifier
+import numpy as np
+import pandas as pd
+from typing import List, Dict, Tuple
+import shap
+
+class RuleEngine:
+    """Hard rules for known fraud patterns"""
+
+    def __init__(self):
+        self.rules = []
+        self._define_rules()
+
+    def _define_rules(self):
+        """Define fraud detection rules"""
+
+        # Rule 1: Impossible travel
+        self.rules.append({
+            'name': 'impossible_travel',
+            'condition': lambda f: f.velocity_km_per_hour > 1000,
+            'risk_score': 0.95,
+            'reason': 'Impossible travel speed detected'
+        })
+
+        # Rule 2: High velocity in short time
+        self.rules.append({
+            'name': 'high_velocity',
+            'condition': lambda f: f.txns_last_hour > 10,
+            'risk_score': 0.85,
+            'reason': 'Unusually high transaction velocity'
+        })
+
+        # Rule 3: Large amount on new device
+        self.rules.append({
+            'name': 'new_device_large_amount',
+            'condition': lambda f: f.new_device and f.amount_percentile > 0.95,
+            'risk_score': 0.75,
+            'reason': 'Large transaction from new device'
+        })
+
+        # Rule 4: High-risk merchant and country
+        self.rules.append({
+            'name': 'high_risk_combination',
+            'condition': lambda f: f.high_risk_country and f.merchant_risk_score > 0.7,
+            'risk_score': 0.80,
+            'reason': 'High-risk country and merchant combination'
+        })
+
+        # Rule 5: Round amount test transaction
+        self.rules.append({
+            'name': 'test_transaction',
+            'condition': lambda f: f.round_amount and f.first_time_merchant,
+            'risk_score': 0.65,
+            'reason': 'Potential test transaction pattern'
+        })
+
+    def evaluate(self, features: FraudFeatures) -> Tuple[float, List[str]]:
+        """Evaluate rules and return risk score"""
+
+        max_risk = 0.0
+        triggered_rules = []
+
+        for rule in self.rules:
+            if rule['condition'](features):
+                max_risk = max(max_risk, rule['risk_score'])
+                triggered_rules.append(rule['reason'])
+
+        return max_risk, triggered_rules
+
+class FraudDetectionModel:
+    """ML model for fraud detection"""
+
+    def __init__(self):
+        # Primary model: XGBoost
+        self.xgb_model = xgb.XGBClassifier(
+            max_depth=6,
+            learning_rate=0.1,
+            n_estimators=200,
+            objective='binary:logistic',
+            scale_pos_weight=50,  # Handle class imbalance
+            random_state=42
+        )
+
+        # Secondary model: LightGBM
+        self.lgb_model = lgb.LGBMClassifier(
+            num_leaves=31,
+            learning_rate=0.05,
+            n_estimators=200,
+            class_weight='balanced',
+            random_state=42
+        )
+
+        # Anomaly detection: Isolation Forest
+        self.anomaly_model = IsolationForest(
+            contamination=0.01,
+            random_state=42
+        )
+
+        # Feature names
+        self.feature_names = None
+
+        # SHAP explainer
+        self.explainer = None
+
+    def train(self, X: pd.DataFrame, y: np.ndarray):
+        """Train all models"""
+
+        self.feature_names = X.columns.tolist()
+
+        print("Training XGBoost...")
+        self.xgb_model.fit(X, y)
+
+        print("Training LightGBM...")
+        self.lgb_model.fit(X, y)
+
+        print("Training Isolation Forest...")
+        self.anomaly_model.fit(X)
+
+        # Initialize SHAP explainer
+        print("Creating SHAP explainer...")
+        self.explainer = shap.TreeExplainer(self.xgb_model)
+
+        print("Training complete")
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Predict fraud probability (ensemble)"""
+
+        # XGBoost predictions
+        xgb_proba = self.xgb_model.predict_proba(X)[:, 1]
+
+        # LightGBM predictions
+        lgb_proba = self.lgb_model.predict_proba(X)[:, 1]
+
+        # Isolation Forest anomaly scores (convert to probability)
+        anomaly_scores = self.anomaly_model.score_samples(X)
+        anomaly_proba = 1 / (1 + np.exp(anomaly_scores))  # Sigmoid transformation
+
+        # Ensemble: weighted average
+        ensemble_proba = (
+            0.5 * xgb_proba +
+            0.4 * lgb_proba +
+            0.1 * anomaly_proba
+        )
+
+        return ensemble_proba
+
+    def explain(self, X: pd.DataFrame) -> Dict:
+        """Generate SHAP explanations"""
+
+        shap_values = self.explainer.shap_values(X)
+
+        # Get top contributing features
+        feature_importance = {}
+        for i, feature_name in enumerate(self.feature_names):
+            feature_importance[feature_name] = float(np.abs(shap_values[0][i]))
+
+        # Sort by importance
+        sorted_features = sorted(
+            feature_importance.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        return {
+            'top_features': sorted_features[:5],
+            'shap_values': shap_values[0].tolist()
+        }
+
+class FraudDetectionEnsemble:
+    """Complete fraud detection system"""
+
+    def __init__(self):
+        self.rule_engine = RuleEngine()
+        self.ml_model = FraudDetectionModel()
+
+        # Thresholds
+        self.block_threshold = 0.90
+        self.review_threshold = 0.50
+
+    def predict(
+        self,
+        features: FraudFeatures
+    ) -> Dict:
+        """Predict fraud risk"""
+
+        # Convert features to DataFrame
+        feature_dict = vars(features)
+        X = pd.DataFrame([feature_dict])
+
+        # Rule-based score
+        rule_score, triggered_rules = self.rule_engine.evaluate(features)
+
+        # ML model score
+        ml_score = self.ml_model.predict_proba(X)[0]
+
+        # Combined score (max of rule and ML)
+        final_score = max(rule_score, ml_score * 0.9)  # Slight discount on ML
+
+        # Decision
+        if final_score >= self.block_threshold:
+            decision = 'BLOCK'
+        elif final_score >= self.review_threshold:
+            decision = 'REVIEW'
+        else:
+            decision = 'APPROVE'
+
+        # Generate explanation
+        if triggered_rules:
+            explanation = triggered_rules
+        else:
+            # Use SHAP for ML explanation
+            shap_explanation = self.ml_model.explain(X)
+            explanation = [
+                f"{feature}: {importance:.3f}"
+                for feature, importance in shap_explanation['top_features']
+            ]
+
+        return {
+            'decision': decision,
+            'risk_score': float(final_score),
+            'rule_score': float(rule_score),
+            'ml_score': float(ml_score),
+            'explanation': explanation,
+            'triggered_rules': triggered_rules
+        }
+
+    def update_with_feedback(
+        self,
+        transaction_id: str,
+        features: pd.DataFrame,
+        label: int
+    ):
+        """Update model with feedback (online learning)"""
+
+        # In production, this would trigger retraining pipeline
+        # For now, just log for batch retraining
+
+        print(f"Feedback received for {transaction_id}: {'Fraud' if label == 1 else 'Legitimate'}")
+
+# Example usage
+if __name__ == "__main__":
+    # Load training data
+    train_data = pd.read_csv('fraud_training_data.csv')
+    X_train = train_data.drop('is_fraud', axis=1)
+    y_train = train_data['is_fraud']
+
+    # Train ensemble
+    ensemble = FraudDetectionEnsemble()
+    ensemble.ml_model.train(X_train, y_train)
+
+    # Predict on new transaction
+    features = FraudFeatures(
+        txns_last_hour=15,
+        txns_last_24h=45,
+        amount_last_hour=5000,
+        amount_last_24h=12000,
+        unique_merchants_last_hour=8,
+        distance_from_last_txn_km=2500,
+        velocity_km_per_hour=1200,  # Suspicious
+        new_country=True,
+        high_risk_country=False,
+        new_device=True,
+        device_change_frequency=0.3,
+        ip_reputation_score=0.6,
+        merchant_risk_score=0.4,
+        first_time_merchant=True,
+        amount_deviation_from_avg=4.5,
+        round_amount=True,
+        amount_percentile=0.95,
+        hour_of_day=3,
+        day_of_week=2,
+        unusual_hour=True,
+        shared_device_users=1,
+        shared_ip_users=2
+    )
+
+    prediction = ensemble.predict(features)
+
+    print(f"Decision: {prediction['decision']}")
+    print(f"Risk Score: {prediction['risk_score']:.3f}")
+    print(f"Explanation: {prediction['explanation']}")
+\end{lstlisting}
+
+\subsection{Results and Impact}
+
+\textbf{Fraud Prevention Metrics:}
+
+\begin{itemize}
+    \item \textbf{Fraud Detection Rate:} 96.5\% (up from 87\%)
+    \item \textbf{False Positive Rate:} 0.8\% (down from 2.3\%)
+    \item \textbf{Fraud Losses:} Reduced from \$45M to \$8M annually (82\% reduction)
+    \item \textbf{Manual Review Queue:} Reduced by 60\%
+    \item \textbf{Genuine User Friction:} Decreased by 65\%
+\end{itemize}
+
+\textbf{Operational Efficiency:}
+
+\begin{itemize}
+    \item \textbf{Decision Latency:} p50: 42ms, p99: 87ms
+    \item \textbf{Throughput:} 50,000 transactions/second
+    \item \textbf{Model Update Frequency:} Retrained daily, deployed hourly
+    \item \textbf{Investigation Time:} Reduced from 15 minutes to 3 minutes per case
+\end{itemize}
+
+\subsection{Lessons Learned}
+
+\textbf{Key Insights:}
+
+\begin{enumerate}
+    \item \textbf{Rules + ML Better Than Either Alone:} Known fraud patterns caught by rules, novel patterns by ML. Hybrid approach reduced fraud by 82\% vs. 61\% for ML-only.
+
+    \item \textbf{Real-Time Features Critical:} Transaction velocity and impossible travel features had highest predictive power. Batch features alone missed 23\% of fraud.
+
+    \item \textbf{Explainability is Non-Negotiable:} Regulatory requirements demanded explanations. SHAP values satisfied auditors and helped fraud analysts.
+
+    \item \textbf{Class Imbalance is Severe:} Only 0.1\% of transactions were fraud. Required aggressive class weighting and careful metric selection (precision-recall over accuracy).
+
+    \item \textbf{Fraud Evolves Rapidly:} New patterns emerged within days. Daily retraining and hourly deployment were essential.
+
+    \item \textbf{False Positives Cost Real Money:} Each false decline cost \$50 in lost revenue and customer friction. Optimizing precision was as important as recall.
+
+    \item \textbf{Network Features Surprised Us:} Shared device/IP features caught 15\% of fraud that other features missed. Fraudsters often share infrastructure.
+
+    \item \textbf{A/B Testing Required Care:} Couldn't A/B test fraud models directly (ethical issues). Used historical replay and shadow mode instead.
+\end{enumerate}
+
+\section{Case Study 3: Healthcare Diagnostic System}
+
+\subsection{Business Context and Requirements}
+
+\textbf{Organization:} Healthcare network with 50 hospitals\\
+\textbf{Challenge:} Radiologist shortage, diagnostic delays, missed findings\\
+\textbf{Goal:} AI-assisted diagnosis to improve accuracy and speed
+
+\textbf{Key Requirements:}
+
+\begin{itemize}
+    \item \textbf{Safety:} FDA clearance, >95\% sensitivity for critical findings
+    \item \textbf{Interpretability:} Visual explanations for radiologists
+    \item \textbf{Integration:} Seamless PACS/EMR integration
+    \item \textbf{Performance:} Process images in <30 seconds
+    \item \textbf{Privacy:} HIPAA compliance, de-identification
+    \item \textbf{Reliability:} 99.9\% uptime for clinical operations
+\end{itemize}
+
+\subsection{System Architecture}
+
+\begin{lstlisting}[language=Python, caption=Medical Image Analysis Pipeline]
+#!/usr/bin/env python3
+"""
+Healthcare Diagnostic System - Medical Image Analysis
+AI-assisted diagnosis for chest X-rays with FDA compliance
+"""
+
+import torch
+import torch.nn as nn
+import torchvision.transforms as transforms
+from torchvision.models import densenet121
+import cv2
+import numpy as np
+from typing import List, Dict, Tuple, Optional
+from dataclasses import dataclass
+import pydicom
+from PIL import Image
+import gradcam
+from datetime import datetime
+
+@dataclass
+class Finding:
+    """Medical finding"""
+    condition: str
+    probability: float
+    confidence_interval: Tuple[float, float]
+    severity: str  # normal, mild, moderate, severe
+    location: Optional[Dict] = None  # Bounding box if available
+
+@dataclass
+class DiagnosticReport:
+    """Complete diagnostic report"""
+    study_id: str
+    patient_id_hash: str
+    image_type: str
+    findings: List[Finding]
+    overall_assessment: str
+    urgent_findings: List[str]
+    attention_map: np.ndarray
+    processing_time_ms: float
+    model_version: str
+    timestamp: datetime
+
+class MedicalImagePreprocessor:
+    """Preprocess medical images for analysis"""
+
+    def __init__(self):
+        self.target_size = (224, 224)
+
+        self.transform = transforms.Compose([
+            transforms.Resize(self.target_size),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+
+    def load_dicom(self, dicom_path: str) -> Tuple[np.ndarray, Dict]:
+        """Load and parse DICOM file"""
+
+        # Read DICOM
+        dicom = pydicom.dcmread(dicom_path)
+
+        # Extract pixel data
+        image = dicom.pixel_array
+
+        # Apply DICOM windowing
+        image = self._apply_window(image, dicom)
+
+        # Extract metadata
+        metadata = {
+            'study_id': str(dicom.StudyInstanceUID),
+            'series_id': str(dicom.SeriesInstanceUID),
+            'patient_age': dicom.get('PatientAge', 'Unknown'),
+            'patient_sex': dicom.get('PatientSex', 'Unknown'),
+            'study_date': str(dicom.StudyDate),
+            'modality': dicom.Modality,
+            'view_position': dicom.get('ViewPosition', 'Unknown')
+        }
+
+        return image, metadata
+
+    def _apply_window(self, image: np.ndarray, dicom) -> np.ndarray:
+        """Apply DICOM windowing"""
+
+        window_center = dicom.get('WindowCenter', 40)
+        window_width = dicom.get('WindowWidth', 400)
+
+        if isinstance(window_center, pydicom.multival.MultiValue):
+            window_center = window_center[0]
+        if isinstance(window_width, pydicom.multival.MultiValue):
+            window_width = window_width[0]
+
+        min_value = window_center - window_width / 2
+        max_value = window_center + window_width / 2
+
+        # Apply window
+        image = np.clip(image, min_value, max_value)
+
+        # Normalize to 0-255
+        image = ((image - min_value) / (max_value - min_value) * 255).astype(np.uint8)
+
+        return image
+
+    def preprocess(self, image: np.ndarray) -> torch.Tensor:
+        """Preprocess image for model"""
+
+        # Convert to 3-channel if grayscale
+        if len(image.shape) == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+
+        # Convert to PIL Image
+        image = Image.fromarray(image)
+
+        # Apply transforms
+        tensor = self.transform(image)
+
+        return tensor.unsqueeze(0)  # Add batch dimension
+
+class ChestXRayModel(nn.Module):
+    """Multi-label classification model for chest X-rays"""
+
+    def __init__(self, num_classes: int = 14):
+        super().__init__()
+
+        # Base model: DenseNet121 pretrained on ImageNet
+        self.densenet = densenet121(pretrained=True)
+
+        # Replace classifier
+        num_features = self.densenet.classifier.in_features
+        self.densenet.classifier = nn.Sequential(
+            nn.Linear(num_features, 512),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(512, num_classes)
+        )
+
+        # Condition names (ChestX-ray14 dataset)
+        self.conditions = [
+            'Atelectasis',
+            'Cardiomegaly',
+            'Effusion',
+            'Infiltration',
+            'Mass',
+            'Nodule',
+            'Pneumonia',
+            'Pneumothorax',
+            'Consolidation',
+            'Edema',
+            'Emphysema',
+            'Fibrosis',
+            'Pleural_Thickening',
+            'Hernia'
+        ]
+
+        # Critical findings requiring urgent attention
+        self.critical_findings = {
+            'Pneumothorax',
+            'Mass',
+            'Pneumonia'
+        }
+
+    def forward(self, x):
+        """Forward pass"""
+        return self.densenet(x)
+
+    def predict_with_uncertainty(
+        self,
+        x: torch.Tensor,
+        num_samples: int = 20
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Predict with uncertainty estimation using MC Dropout"""
+
+        self.train()  # Enable dropout
+
+        predictions = []
+        for _ in range(num_samples):
+            with torch.no_grad():
+                logits = self.forward(x)
+                probs = torch.sigmoid(logits)
+                predictions.append(probs)
+
+        predictions = torch.stack(predictions)
+
+        # Mean and standard deviation
+        mean_pred = predictions.mean(dim=0)
+        std_pred = predictions.std(dim=0)
+
+        self.eval()
+
+        return mean_pred, std_pred
+
+class DiagnosticSystem:
+    """Complete diagnostic system"""
+
+    def __init__(self, model_path: str, device: str = 'cuda'):
+        self.device = device
+        self.preprocessor = MedicalImagePreprocessor()
+
+        # Load model
+        self.model = ChestXRayModel()
+        self.model.load_state_dict(torch.load(model_path))
+        self.model.to(device)
+        self.model.eval()
+
+        # GradCAM for visualization
+        self.gradcam = gradcam.GradCAM(self.model, self.model.densenet.features)
+
+        # Calibration (for better probability estimates)
+        self.calibration_parameters = self._load_calibration()
+
+    def analyze_image(
+        self,
+        dicom_path: str,
+        generate_attention_map: bool = True
+    ) -> DiagnosticReport:
+        """Analyze medical image and generate report"""
+
+        start_time = datetime.now()
+
+        # Load and preprocess image
+        image, metadata = self.preprocessor.load_dicom(dicom_path)
+        tensor = self.preprocessor.preprocess(image).to(self.device)
+
+        # Predict with uncertainty
+        probabilities, uncertainties = self.model.predict_with_uncertainty(tensor)
+        probabilities = probabilities.cpu().numpy()[0]
+        uncertainties = uncertainties.cpu().numpy()[0]
+
+        # Apply calibration
+        probabilities = self._calibrate_probabilities(probabilities)
+
+        # Generate findings
+        findings = []
+        urgent_findings = []
+
+        for i, condition in enumerate(self.model.conditions):
+            prob = float(probabilities[i])
+            unc = float(uncertainties[i])
+
+            # Only report significant findings (>10% probability)
+            if prob > 0.10:
+                # Confidence interval (95%)
+                ci_lower = max(0, prob - 1.96 * unc)
+                ci_upper = min(1, prob + 1.96 * unc)
+
+                # Determine severity
+                if prob < 0.3:
+                    severity = 'mild'
+                elif prob < 0.6:
+                    severity = 'moderate'
+                else:
+                    severity = 'severe'
+
+                finding = Finding(
+                    condition=condition,
+                    probability=prob,
+                    confidence_interval=(ci_lower, ci_upper),
+                    severity=severity
+                )
+
+                findings.append(finding)
+
+                # Check if urgent
+                if condition in self.model.critical_findings and prob > 0.5:
+                    urgent_findings.append(condition)
+
+        # Sort findings by probability
+        findings.sort(key=lambda f: f.probability, reverse=True)
+
+        # Generate attention map
+        attention_map = None
+        if generate_attention_map and findings:
+            attention_map = self._generate_attention_map(tensor, image)
+
+        # Overall assessment
+        if urgent_findings:
+            assessment = f"URGENT: Possible {', '.join(urgent_findings)} detected"
+        elif findings:
+            assessment = f"Findings detected: {', '.join([f.condition for f in findings[:3]])}"
+        else:
+            assessment = "No significant findings"
+
+        processing_time = (datetime.now() - start_time).total_seconds() * 1000
+
+        return DiagnosticReport(
+            study_id=metadata['study_id'],
+            patient_id_hash=self._hash_patient_id(metadata.get('patient_id', '')),
+            image_type=f"{metadata['modality']} {metadata['view_position']}",
+            findings=findings,
+            overall_assessment=assessment,
+            urgent_findings=urgent_findings,
+            attention_map=attention_map,
+            processing_time_ms=processing_time,
+            model_version='v2.1.0',
+            timestamp=datetime.now()
+        )
+
+    def _generate_attention_map(
+        self,
+        tensor: torch.Tensor,
+        original_image: np.ndarray
+    ) -> np.ndarray:
+        """Generate GradCAM attention map"""
+
+        # Generate GradCAM
+        cam = self.gradcam.generate(tensor)
+
+        # Resize to original image size
+        cam = cv2.resize(cam, (original_image.shape[1], original_image.shape[0]))
+
+        # Create heatmap overlay
+        heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+
+        # Convert original image to 3-channel
+        if len(original_image.shape) == 2:
+            original_image = cv2.cvtColor(original_image, cv2.COLOR_GRAY2RGB)
+
+        # Overlay
+        overlay = cv2.addWeighted(original_image, 0.6, heatmap, 0.4, 0)
+
+        return overlay
+
+    def _calibrate_probabilities(self, probabilities: np.ndarray) -> np.ndarray:
+        """Apply temperature scaling for calibration"""
+
+        # Temperature parameter (learned from validation set)
+        temperature = self.calibration_parameters.get('temperature', 1.5)
+
+        # Apply temperature scaling
+        logits = np.log(probabilities / (1 - probabilities + 1e-10))
+        calibrated_logits = logits / temperature
+        calibrated_probs = 1 / (1 + np.exp(-calibrated_logits))
+
+        return calibrated_probs
+
+    def _load_calibration(self) -> Dict:
+        """Load calibration parameters"""
+        # In production, load from file
+        return {'temperature': 1.5}
+
+    def _hash_patient_id(self, patient_id: str) -> str:
+        """Hash patient ID for privacy"""
+        import hashlib
+        return hashlib.sha256(patient_id.encode()).hexdigest()[:16]
+
+    def generate_clinical_report(self, report: DiagnosticReport) -> str:
+        """Generate clinical report text"""
+
+        lines = []
+        lines.append("=" * 60)
+        lines.append("AI-ASSISTED DIAGNOSTIC REPORT")
+        lines.append("=" * 60)
+        lines.append(f"Study ID: {report.study_id}")
+        lines.append(f"Image Type: {report.image_type}")
+        lines.append(f"Analysis Date: {report.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append(f"Model Version: {report.model_version}")
+        lines.append("")
+
+        if report.urgent_findings:
+            lines.append("*** URGENT FINDINGS ***")
+            for finding in report.urgent_findings:
+                lines.append(f"  - {finding}")
+            lines.append("")
+
+        lines.append("FINDINGS:")
+        if report.findings:
+            for finding in report.findings:
+                lines.append(f"\n  {finding.condition}:")
+                lines.append(f"    Probability: {finding.probability:.1%}")
+                lines.append(f"    Confidence Interval: [{finding.confidence_interval[0]:.1%}, {finding.confidence_interval[1]:.1%}]")
+                lines.append(f"    Severity: {finding.severity.upper()}")
+        else:
+            lines.append("  No significant findings detected")
+
+        lines.append(f"\nOVERALL ASSESSMENT:")
+        lines.append(f"  {report.overall_assessment}")
+
+        lines.append(f"\nProcessing Time: {report.processing_time_ms:.1f}ms")
+
+        lines.append("\n" + "=" * 60)
+        lines.append("DISCLAIMER: This is an AI-assisted analysis tool.")
+        lines.append("Final diagnosis must be confirmed by a qualified radiologist.")
+        lines.append("=" * 60)
+
+        return "\n".join(lines)
+
+# Example usage
+if __name__ == "__main__":
+    system = DiagnosticSystem(
+        model_path='models/chestxray_densenet121.pth',
+        device='cuda' if torch.cuda.is_available() else 'cpu'
+    )
+
+    # Analyze chest X-ray
+    report = system.analyze_image('patient_xray.dcm')
+
+    # Print clinical report
+    print(system.generate_clinical_report(report))
+
+    # Save attention map
+    if report.attention_map is not None:
+        cv2.imwrite('attention_map.png', report.attention_map)
+\end{lstlisting}
+
+\subsection{Results and Impact}
+
+\textbf{Clinical Outcomes:}
+
+\begin{itemize}
+    \item \textbf{Diagnostic Accuracy:} 94.2\% sensitivity, 89.7\% specificity
+    \item \textbf{Radiologist Efficiency:} Reading time reduced from 6 min to 3.5 min per study
+    \item \textbf{Critical Finding Detection:} Pneumothorax detection improved from 92\% to 97\%
+    \item \textbf{Missed Findings:} Reduced by 31\% through AI second-read
+    \item \textbf{Throughput:} Enabled 40\% increase in studies read per day
+\end{itemize}
+
+\textbf{Operational Benefits:}
+
+\begin{itemize}
+    \item \textbf{Wait Time:} Reduced from 48 hours to 12 hours average
+    \item \textbf{After-Hours Coverage:} AI triage enabled remote radiologist efficiency
+    \item \textbf{Teaching Tool:} Used for resident training with attention maps
+\end{itemize}
+
+\subsection{Lessons Learned}
+
+\begin{enumerate}
+    \item \textbf{FDA Clearance Required Partnership:} Clinical validation and regulatory submission took 18 months. Started early with FDA pre-submission meeting.
+
+    \item \textbf{Calibration is Critical:} Raw model probabilities were overconfident. Temperature scaling improved reliability and radiologist trust.
+
+    \item \textbf{Attention Maps Changed Everything:} GradCAM visualizations built trust with radiologists. Without interpretability, adoption would have failed.
+
+    \item \textbf{Integration Matters Most:} PACS integration was harder than model development. Seamless workflow integration drove adoption.
+
+    \item \textbf{Start as Assistant, Not Replacement:} Positioned as "AI-assisted" rather than "AI diagnosis". Radiologists remained in control, reducing resistance.
+
+    \item \textbf{Uncertainty Quantification Essential:} Radiologists valued confidence intervals. High uncertainty prompted careful manual review.
+
+    \item \textbf{Privacy Cannot Be Afterthought:} HIPAA compliance, de-identification, and audit logs required from day one. Added 40\% to development time but non-negotiable.
+
+    \item \textbf{Multi-Site Validation Crucial:} Performance varied across hospitals due to equipment differences. Required site-specific calibration.
+\end{enumerate}
+
+\section{Case Study 4: Autonomous Vehicle Perception Stack}
+
+\subsection{Business Context and Requirements}
+
+\textbf{Company:} Autonomous delivery vehicle startup\\
+\textbf{Challenge:} Safe navigation in complex urban environments\\
+\textbf{Goal:} Level 4 autonomy for last-mile delivery
+
+\textbf{Key Requirements:}
+
+\begin{itemize}
+    \item \textbf{Safety:} Zero critical failures, 99.999\% reliability
+    \item \textbf{Real-Time:} 100ms perception-to-action latency
+    \item \textbf{All-Weather:} Function in rain, fog, night conditions
+    \item \textbf{Edge Deployment:} Run on vehicle hardware (limited compute)
+    \item \textbf{Continuous Learning:} Improve from fleet data
+    \item \textbf{Verification:} Provable safety guarantees
+\end{itemize}
+
+\subsection{Perception Pipeline}
+
+\begin{lstlisting}[language=Python, caption=Multi-Sensor Perception System]
+#!/usr/bin/env python3
+"""
+Autonomous Vehicle Perception Stack
+Multi-sensor fusion for object detection and tracking
+"""
+
+import torch
+import torch.nn as nn
+import numpy as np
+from dataclasses import dataclass
+from typing import List, Dict, Tuple, Optional
+from enum import Enum
+import cv2
+
+class ObjectClass(Enum):
+    """Detected object classes"""
+    CAR = 0
+    PEDESTRIAN = 1
+    CYCLIST = 2
+    TRUCK = 3
+    MOTORCYCLE = 4
+    BUS = 5
+    TRAFFIC_LIGHT = 6
+    STOP_SIGN = 7
+    UNKNOWN = 9
+
+@dataclass
+class Detection3D:
+    """3D object detection"""
+    class_id: ObjectClass
+    confidence: float
+    bbox_3d: np.ndarray  # [x, y, z, length, width, height, yaw]
+    velocity: np.ndarray  # [vx, vy, vz]
+    tracking_id: Optional[int] = None
+
+@dataclass
+class SensorData:
+    """Multi-sensor input"""
+    camera_images: List[np.ndarray]  # Multiple cameras
+    lidar_point_cloud: np.ndarray
+    radar_detections: List[Dict]
+    imu_data: Dict
+    gps_data: Dict
+    timestamp: float
+
+class MultiSensorFusionNetwork(nn.Module):
+    """Neural network for sensor fusion"""
+
+    def __init__(self):
+        super().__init__()
+
+        # Camera branch (per camera)
+        self.camera_encoder = self._build_camera_encoder()
+
+        # LiDAR branch
+        self.lidar_encoder = self._build_lidar_encoder()
+
+        # Fusion layers
+        self.fusion_network = nn.Sequential(
+            nn.Linear(512 + 256, 512),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(512, 256)
+        )
+
+        # Detection head
+        self.detection_head = nn.Sequential(
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 7 + 10)  # 7 bbox params + 10 classes
+        )
+
+    def _build_camera_encoder(self) -> nn.Module:
+        """Build camera feature encoder"""
+        return nn.Sequential(
+            # Simplified - in production use ResNet/EfficientNet
+            nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(3, stride=2, padding=1),
+
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(256, 512)
+        )
+
+    def _build_lidar_encoder(self) -> nn.Module:
+        """Build LiDAR point cloud encoder"""
+        return nn.Sequential(
+            # PointNet-style architecture
+            nn.Linear(4, 64),  # xyz + intensity
+            nn.ReLU(),
+            nn.Linear(64, 128),
+            nn.ReLU(),
+            nn.Linear(128, 256),
+            nn.ReLU(),
+            # Global max pooling handled separately
+        )
+
+    def forward(
+        self,
+        camera_images: torch.Tensor,
+        lidar_points: torch.Tensor
+    ) -> torch.Tensor:
+        """Forward pass"""
+
+        # Process camera images
+        camera_features = []
+        for i in range(camera_images.shape[1]):  # Multiple cameras
+            img = camera_images[:, i]
+            feat = self.camera_encoder(img)
+            camera_features.append(feat)
+
+        camera_features = torch.stack(camera_features, dim=1).mean(dim=1)
+
+        # Process LiDAR point cloud
+        lidar_features = self.lidar_encoder(lidar_points)
+        lidar_features = lidar_features.max(dim=1)[0]  # Global max pool
+
+        # Fuse features
+        fused = torch.cat([camera_features, lidar_features], dim=1)
+        fused_features = self.fusion_network(fused)
+
+        # Detect objects
+        detections = self.detection_head(fused_features)
+
+        return detections
+
+class PerceptionSystem:
+    """Complete perception system"""
+
+    def __init__(self, model_path: str, device: str = 'cuda'):
+        self.device = device
+
+        # Load detection model
+        self.model = MultiSensorFusionNetwork()
+        self.model.load_state_dict(torch.load(model_path))
+        self.model.to(device)
+        self.model.eval()
+
+        # Object tracker
+        self.tracker = MultiObjectTracker()
+
+        # Safety validator
+        self.safety_validator = SafetyValidator()
+
+    def process_sensor_data(
+        self,
+        sensor_data: SensorData
+    ) -> List[Detection3D]:
+        """Process multi-sensor data and detect objects"""
+
+        # Preprocess camera images
+        camera_tensors = self._preprocess_cameras(sensor_data.camera_images)
+
+        # Preprocess LiDAR
+        lidar_tensor = self._preprocess_lidar(sensor_data.lidar_point_cloud)
+
+        # Run detection network
+        with torch.no_grad():
+            detections = self.model(camera_tensors, lidar_tensor)
+
+        # Parse detections
+        detection_list = self._parse_detections(detections)
+
+        # Fuse with radar
+        detection_list = self._fuse_radar(detection_list, sensor_data.radar_detections)
+
+        # Track objects
+        tracked_detections = self.tracker.update(detection_list, sensor_data.timestamp)
+
+        # Validate safety
+        validated_detections = self.safety_validator.validate(tracked_detections)
+
+        return validated_detections
+
+    def _preprocess_cameras(self, images: List[np.ndarray]) -> torch.Tensor:
+        """Preprocess camera images"""
+
+        processed = []
+        for img in images:
+            # Resize and normalize
+            img = cv2.resize(img, (640, 480))
+            img = torch.FloatTensor(img).permute(2, 0, 1) / 255.0
+            processed.append(img)
+
+        return torch.stack(processed).unsqueeze(0).to(self.device)
+
+    def _preprocess_lidar(self, point_cloud: np.ndarray) -> torch.Tensor:
+        """Preprocess LiDAR point cloud"""
+
+        # Filter points (remove ground plane, distant points)
+        mask = (point_cloud[:, 2] > -1.5) & (np.linalg.norm(point_cloud[:, :3], axis=1) < 70)
+        filtered_points = point_cloud[mask]
+
+        # Subsample to fixed size
+        if len(filtered_points) > 16384:
+            indices = np.random.choice(len(filtered_points), 16384, replace=False)
+            filtered_points = filtered_points[indices]
+
+        # Convert to tensor
+        points_tensor = torch.FloatTensor(filtered_points).unsqueeze(0).to(self.device)
+
+        return points_tensor
+
+    def _parse_detections(self, detections: torch.Tensor) -> List[Detection3D]:
+        """Parse network output into detections"""
+
+        detections_list = []
+
+        # Simplified - in production, use NMS and proper post-processing
+        for i in range(detections.shape[0]):
+            det = detections[i].cpu().numpy()
+
+            # Parse bbox and class
+            bbox_3d = det[:7]
+            class_probs = det[7:]
+
+            class_id = class_probs.argmax()
+            confidence = class_probs[class_id]
+
+            if confidence > 0.5:  # Confidence threshold
+                detection = Detection3D(
+                    class_id=ObjectClass(class_id),
+                    confidence=float(confidence),
+                    bbox_3d=bbox_3d,
+                    velocity=np.zeros(3)  # Will be estimated by tracker
+                )
+                detections_list.append(detection)
+
+        return detections_list
+
+    def _fuse_radar(
+        self,
+        vision_detections: List[Detection3D],
+        radar_detections: List[Dict]
+    ) -> List[Detection3D]:
+        """Fuse radar velocity measurements"""
+
+        # Associate radar with vision detections
+        for radar_det in radar_detections:
+            radar_pos = np.array([radar_det['x'], radar_det['y'], 0])
+
+            # Find closest vision detection
+            min_dist = float('inf')
+            closest_det = None
+
+            for det in vision_detections:
+                vision_pos = det.bbox_3d[:3]
+                dist = np.linalg.norm(vision_pos - radar_pos)
+
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_det = det
+
+            # If close enough, update velocity
+            if closest_det and min_dist < 2.0:
+                closest_det.velocity[:2] = [radar_det['vx'], radar_det['vy']]
+
+        return vision_detections
+
+class MultiObjectTracker:
+    """Track objects across frames"""
+
+    def __init__(self):
+        self.tracks: Dict[int, Track] = {}
+        self.next_id = 0
+
+    def update(
+        self,
+        detections: List[Detection3D],
+        timestamp: float
+    ) -> List[Detection3D]:
+        """Update tracks with new detections"""
+
+        # Associate detections with existing tracks
+        assignments, unassigned_detections = self._associate(detections)
+
+        # Update existing tracks
+        for track_id, detection in assignments.items():
+            self.tracks[track_id].update(detection, timestamp)
+            detection.tracking_id = track_id
+
+        # Create new tracks
+        for det_idx in unassigned_detections:
+            new_track = Track(self.next_id, detections[det_idx], timestamp)
+            self.tracks[self.next_id] = new_track
+            detections[det_idx].tracking_id = self.next_id
+            self.next_id += 1
+
+        # Remove stale tracks
+        self._remove_stale_tracks(timestamp)
+
+        return detections
+
+    def _associate(
+        self,
+        detections: List[Detection3D]
+    ) -> Tuple[Dict[int, Detection3D], List[int]]:
+        """Associate detections with tracks using Hungarian algorithm"""
+
+        # Simplified - use IoU matching
+        # In production, use Kalman filter predictions and Hungarian algorithm
+
+        assignments = {}
+        unassigned = list(range(len(detections)))
+
+        for track_id, track in self.tracks.items():
+            best_iou = 0
+            best_det_idx = None
+
+            for det_idx, detection in enumerate(detections):
+                iou = self._calculate_iou_3d(track.bbox_3d, detection.bbox_3d)
+
+                if iou > best_iou and iou > 0.3:
+                    best_iou = iou
+                    best_det_idx = det_idx
+
+            if best_det_idx is not None:
+                assignments[track_id] = detections[best_det_idx]
+                if best_det_idx in unassigned:
+                    unassigned.remove(best_det_idx)
+
+        return assignments, unassigned
+
+    def _calculate_iou_3d(self, bbox1: np.ndarray, bbox2: np.ndarray) -> float:
+        """Calculate 3D IoU (simplified bird's eye view)"""
+
+        # Extract x, y, length, width
+        x1, y1, l1, w1 = bbox1[0], bbox1[1], bbox1[3], bbox1[4]
+        x2, y2, l2, w2 = bbox2[0], bbox2[1], bbox2[3], bbox2[4]
+
+        # Calculate intersection
+        x_overlap = max(0, min(x1 + l1/2, x2 + l2/2) - max(x1 - l1/2, x2 - l2/2))
+        y_overlap = max(0, min(y1 + w1/2, y2 + w2/2) - max(y1 - w1/2, y2 - w2/2))
+
+        intersection = x_overlap * y_overlap
+
+        # Calculate union
+        area1 = l1 * w1
+        area2 = l2 * w2
+        union = area1 + area2 - intersection
+
+        return intersection / union if union > 0 else 0
+
+    def _remove_stale_tracks(self, current_time: float):
+        """Remove tracks not updated recently"""
+
+        stale_tracks = []
+        for track_id, track in self.tracks.items():
+            if current_time - track.last_update_time > 1.0:  # 1 second
+                stale_tracks.append(track_id)
+
+        for track_id in stale_tracks:
+            del self.tracks[track_id]
+
+@dataclass
+class Track:
+    """Individual object track"""
+    track_id: int
+    bbox_3d: np.ndarray
+    velocity: np.ndarray
+    last_update_time: float
+    detection_count: int = 1
+
+    def __init__(self, track_id: int, detection: Detection3D, timestamp: float):
+        self.track_id = track_id
+        self.bbox_3d = detection.bbox_3d
+        self.velocity = detection.velocity
+        self.last_update_time = timestamp
+        self.detection_count = 1
+
+    def update(self, detection: Detection3D, timestamp: float):
+        """Update track with new detection"""
+
+        # Smooth bbox (exponential moving average)
+        alpha = 0.7
+        self.bbox_3d = alpha * detection.bbox_3d + (1 - alpha) * self.bbox_3d
+
+        # Update velocity
+        dt = timestamp - self.last_update_time
+        if dt > 0:
+            velocity_estimate = (detection.bbox_3d[:3] - self.bbox_3d[:3]) / dt
+            self.velocity = alpha * velocity_estimate + (1 - alpha) * self.velocity
+
+        self.last_update_time = timestamp
+        self.detection_count += 1
+
+class SafetyValidator:
+    """Validate detections for safety-critical applications"""
+
+    def __init__(self):
+        self.min_confidence = 0.7
+        self.max_reasonable_velocity = 50.0  # m/s
+
+    def validate(self, detections: List[Detection3D]) -> List[Detection3D]:
+        """Validate and filter detections"""
+
+        validated = []
+
+        for detection in detections:
+            # Check confidence
+            if detection.confidence < self.min_confidence:
+                continue
+
+            # Check velocity is reasonable
+            velocity_magnitude = np.linalg.norm(detection.velocity)
+            if velocity_magnitude > self.max_reasonable_velocity:
+                continue
+
+            # Check bbox is within sensor range
+            distance = np.linalg.norm(detection.bbox_3d[:3])
+            if distance > 100:  # 100 meters
+                continue
+
+            validated.append(detection)
+
+        return validated
+
+# Example usage
+if __name__ == "__main__":
+    perception = PerceptionSystem(
+        model_path='models/perception_fusion.pth',
+        device='cuda'
+    )
+
+    # Simulate sensor data
+    sensor_data = SensorData(
+        camera_images=[np.zeros((480, 640, 3)) for _ in range(4)],
+        lidar_point_cloud=np.random.randn(50000, 4),
+        radar_detections=[],
+        imu_data={},
+        gps_data={},
+        timestamp=0.0
+    )
+
+    # Process
+    detections = perception.process_sensor_data(sensor_data)
+
+    print(f"Detected {len(detections)} objects")
+    for det in detections:
+        print(f"  {det.class_id.name}: confidence={det.confidence:.2f}, "
+              f"position=({det.bbox_3d[0]:.1f}, {det.bbox_3d[1]:.1f})")
+\end{lstlisting}
+
+\subsection{Results and Impact}
+
+\textbf{Performance Metrics:}
+
+\begin{itemize}
+    \item \textbf{Detection Accuracy:} 98.2\% recall, 96.8\% precision
+    \item \textbf{Latency:} 78ms end-to-end (perception to planning)
+    \item \textbf{Safety:} Zero critical failures in 2M test miles
+    \item \textbf{All-Weather:} 94\% performance maintained in adverse conditions
+    \item \textbf{Intervention Rate:} 0.12 per 1000 miles (industry-leading)
+\end{itemize}
+
+\textbf{Business Impact:}
+
+\begin{itemize}
+    \item \textbf{Deployment:} 500 vehicles operational in 5 cities
+    \item \textbf{Deliveries:} 50,000 autonomous deliveries per week
+    \item \textbf{Cost Savings:} 60\% reduction vs. human drivers
+    \item \textbf{Efficiency:} 24/7 operation, 40\% more deliveries per vehicle
+\end{itemize}
+
+\subsection{Lessons Learned}
+
+\begin{enumerate}
+    \item \textbf{Sensor Fusion is Non-Negotiable:} No single sensor modality is sufficient. Camera-LiDAR-radar fusion caught 18\% more edge cases than camera-only.
+
+    \item \textbf{Edge Cases Dominate Development:} 90\% of engineering time on <1\% of scenarios. Construction zones, emergency vehicles, and edge weather conditions required specific handling.
+
+    \item \textbf{Simulation Accelerated Development:} Synthetic data and simulation generated 10M training examples. Real-world data collection alone would take years.
+
+    \item \textbf{Continuous Learning Essential:} Fleet learning improved performance 15\% over 6 months. Automated pipeline to retrain from fleet data weekly.
+
+    \item \textbf{Safety Requires Redundancy:} Dual perception systems with different architectures. Discrepancies trigger safe stop.
+
+    \item \textbf{Latency Matters More Than Accuracy:} 98\% accurate in 100ms better than 99\% in 200ms for real-time control.
+
+    \item \textbf{Hardware-Software Co-Design:} Custom accelerators reduced latency 3x and power consumption 5x vs. off-the-shelf GPUs.
+
+    \item \textbf{Verification is Harder Than Development:} Proving safety to regulators required formal verification methods and extensive testing.
+\end{enumerate}
+
+\section{Cross-Cutting Themes and Best Practices}
+
+Across all four case studies, several common patterns emerged:
+
+\textbf{Universal Best Practices:}
+
+\begin{enumerate}
+    \item \textbf{Start Simple, Then Optimize:} All systems began with simple baselines before adding complexity
+
+    \item \textbf{Measure What Matters:} Offline metrics often misaligned with business objectives. Online A/B testing essential.
+
+    \item \textbf{Monitoring is Not Optional:} Production issues were caught by monitoring, not caught in testing
+
+    \item \textbf{Data Quality Trumps Algorithm Choice:} Better data improved results more than better models
+
+    \item \textbf{Incremental Deployment Reduces Risk:} Gradual rollouts caught issues before full deployment
+
+    \item \textbf{Team Diversity Matters:} Cross-functional teams (ML, engineering, domain experts) built better systems
+
+    \item \textbf{Documentation Pays Off:} Well-documented systems were easier to maintain and debug
+
+    \item \textbf{Plan for Failure:} Systems with graceful degradation and fallbacks were more reliable
+\end{enumerate}
 
 \section{Chapter Summary}
 
-% Placeholder summary
+This chapter presented four comprehensive industry case studies demonstrating end-to-end ML system implementations across diverse domains. Key takeaways:
+
+\begin{itemize}
+    \item \textbf{Domain Adaptation:} ML patterns adapt to specific industry requirements
+    \item \textbf{Real-World Complexity:} Production systems face challenges beyond model accuracy
+    \item \textbf{Hybrid Approaches:} Combining multiple techniques often outperforms single solutions
+    \item \textbf{Continuous Improvement:} All successful systems evolved through iteration
+    \item \textbf{Cross-Functional Success:} Technical excellence alone is insufficient without domain expertise and business alignment
+\end{itemize}
 
 \section{Exercises}
 
 \begin{exercise}
-Analyze a case study and propose improvements to the ML system design.
+\textbf{E-Commerce Recommendation System Analysis}
+
+Analyze the recommendation system case study and:
+
+\begin{enumerate}
+    \item Calculate the expected ROI if deployed at a company with 2M monthly active users and \$35 average order value
+    \item Design an A/B test to measure the impact of adding diversity to recommendations
+    \item Propose a solution for the cold start problem for new users with zero history
+    \item Design a feature for handling seasonal trends (holidays, sales events)
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item ROI calculation with assumptions documented
+    \item A/B test design including sample size, duration, and metrics
+    \item Cold start strategy with pseudocode
+    \item Seasonal adaptation architecture diagram
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Fraud Detection System Design}
+
+Design fraud detection improvements:
+
+\begin{enumerate}
+    \item Identify three new features not mentioned in the case study that could improve fraud detection
+    \item Design a strategy to handle concept drift (fraud patterns changing over time)
+    \item Propose a method to reduce false positives for high-value customers
+    \item Design an active learning system to efficiently label uncertain transactions
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Feature specifications with rationale
+    \item Concept drift detection and adaptation strategy
+    \item VIP customer handling workflow
+    \item Active learning pipeline design
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Healthcare System Compliance Analysis}
+
+Evaluate the healthcare diagnostic system:
+
+\begin{enumerate}
+    \item Research FDA 510(k) clearance requirements and outline steps for submission
+    \item Design a clinical validation study to demonstrate safety and efficacy
+    \item Propose metrics beyond accuracy that matter for radiologist adoption
+    \item Design a monitoring system to detect model degradation in production
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item FDA submission outline with timeline
+    \item Clinical validation protocol
+    \item User experience metrics framework
+    \item Model monitoring dashboard specification
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Autonomous Vehicle Safety Analysis}
+
+Analyze the perception system safety:
+
+\begin{enumerate}
+    \item Identify potential failure modes and their consequences
+    \item Design a safety validation test suite with coverage goals
+    \item Propose a simulation strategy to test edge cases
+    \item Design redundancy mechanisms for critical components
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item FMEA (Failure Mode and Effects Analysis) table
+    \item Test suite specification with success criteria
+    \item Simulation architecture and scenario generation strategy
+    \item System redundancy design document
+\end{itemize}
 \end{exercise}

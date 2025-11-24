@@ -45,6 +45,7 @@ Batch processing handles data in discrete chunks on a scheduled basis. This patt
 
 \begin{figure}[h]
 \centering
+\resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[node distance=2.5cm, auto]
     \tikzstyle{source} = [rectangle, rounded corners, draw, fill=blue!20, text width=2.5cm, text centered, minimum height=1cm]
     \tikzstyle{process} = [rectangle, draw, fill=green!20, text width=2.5cm, text centered, minimum height=1cm]
@@ -64,7 +65,7 @@ Batch processing handles data in discrete chunks on a scheduled basis. This patt
 
     \node [below of=extract, node distance=1.5cm] {Schedule: Daily/Hourly};
     \node [below of=transform, node distance=1.5cm] {Distributed Processing};
-\end{tikzpicture}
+\end{tikzpicture}}
 \caption{Batch processing pipeline architecture}
 \label{fig:batch_pipeline}
 \end{figure}
@@ -199,9 +200,9 @@ Streaming pipelines process data continuously as it arrives, enabling low-latenc
 \begin{figure}[h]
 \centering
 \begin{tikzpicture}[node distance=2.5cm, auto]
-    \tikzstyle{source} = [rectangle, rounded corners, draw, fill=blue!20, text width=2cm, text centered, minimum height=1cm]
-    \tikzstyle{stream} = [rectangle, draw, fill=purple!20, text width=2cm, text centered, minimum height=1cm]
-    \tikzstyle{process} = [rectangle, draw, fill=green!20, text width=2cm, text centered, minimum height=1cm]
+    \tikzstyle{source} = [rectangle, rounded corners, draw, fill=blue!20, text width=2.6cm, text centered, minimum height=1cm]
+    \tikzstyle{stream} = [rectangle, draw, fill=purple!20, text width=2.4cm, text centered, minimum height=1cm]
+    \tikzstyle{process} = [rectangle, draw, fill=green!20, text width=2.4cm, text centered, minimum height=1cm]
     \tikzstyle{store} = [cylinder, draw, fill=orange!20, text width=1.8cm, text centered, minimum height=1cm, shape aspect=0.3]
     \tikzstyle{arrow} = [thick,->,>=stealth]
 
@@ -582,7 +583,7 @@ ELT loads raw data first, then transforms it using the warehouse's compute power
 \begin{tikzpicture}[node distance=2.5cm]
     % ETL Path
     \node[draw, rectangle, fill=blue!20, text width=2cm, text centered] (source1) {Data Source};
-    \node[draw, rectangle, fill=green!20, text width=2cm, text centered, right of=source1, node distance=3.5cm] (transform1) {Transform\\(ETL Job)};
+    \node[draw, rectangle, fill=green!20, text width=2.6cm, text centered, right of=source1, node distance=3.5cm] (transform1) {Transform\\(ETL Job)};
     \node[draw, cylinder, fill=orange!20, text width=2cm, text centered, right of=transform1, node distance=3.5cm, minimum height=1.2cm, shape aspect=0.3] (warehouse1) {Warehouse\\(Clean Data)};
 
     \draw[->, thick] (source1) -- (transform1) node[midway, above] {Extract};
@@ -593,7 +594,7 @@ ELT loads raw data first, then transforms it using the warehouse's compute power
     % ELT Path
     \node[draw, rectangle, fill=blue!20, text width=2cm, text centered, below of=source1, node distance=3.5cm] (source2) {Data Source};
     \node[draw, cylinder, fill=orange!20, text width=2cm, text centered, right of=source2, node distance=3.5cm, minimum height=1.2cm, shape aspect=0.3] (warehouse2) {Warehouse\\(Raw Data)};
-    \node[draw, rectangle, fill=green!20, text width=2cm, text centered, right of=warehouse2, node distance=3.5cm] (transform2) {Transform\\(SQL/DBT)};
+    \node[draw, rectangle, fill=green!20, text width=2.6cm, text centered, right of=warehouse2, node distance=3.5cm] (transform2) {Transform\\(SQL/DBT)};
 
     \draw[->, thick] (source2) -- (warehouse2) node[midway, above] {Extract \& Load};
     \draw[->, thick] (warehouse2) -- (transform2);
@@ -1258,7 +1259,7 @@ git checkout feature-branch
 dvc pull
 \end{lstlisting}
 
-\begin{lstlisting}[style=python, caption=DVC pipeline configuration (dvc.yaml)]
+\begin{lstlisting}[style=yaml, caption=DVC pipeline configuration (dvc.yaml)]
 # dvc.yaml - Define data pipeline stages
 stages:
   extract:

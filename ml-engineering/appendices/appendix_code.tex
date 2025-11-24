@@ -285,7 +285,7 @@ if __name__ == "__main__":
     # Print results
     for column, result in drift_results.items():
         if result['drift']:
-            print(f"⚠ Drift detected in {column}: p-value={result['pvalue']:.4f}")
+            print(f"WARNING: Drift detected in {column}: p-value={result['pvalue']:.4f}")
 
     # Generate detailed report
     report = generate_monitoring_report(reference, current)

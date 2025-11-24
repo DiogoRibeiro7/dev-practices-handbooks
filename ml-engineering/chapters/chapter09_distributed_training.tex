@@ -760,7 +760,7 @@ Central servers store model parameters; workers fetch parameters, compute gradie
     \node [worker, right of=w3, node distance=2.5cm] (w4) {Worker 4};
 
     % Connections
-    \draw [darrow] (w1) -- (ps1) node[midway, left, text width=1.5cm, align=center] {\small Pull/Push};
+    \draw [darrow] (w1) -- (ps1) node[midway, left, text width=2cm, align=center] {\small Pull/Push};
     \draw [darrow] (w2) -- (ps1);
     \draw [darrow] (w3) -- (ps2);
     \draw [darrow] (w4) -- (ps2);
@@ -1830,6 +1830,891 @@ spec:
               claimName: checkpoint-pvc
 \end{lstlisting}
 
+\section{Memory Management in Distributed Settings}
+
+Efficient memory management is critical for distributed training, especially for large models. This section covers techniques for optimizing memory usage across GPUs.
+
+\subsection{Gradient Checkpointing}
+
+Gradient checkpointing trades computation for memory by recomputing activations during backward pass instead of storing them.
+
+\begin{lstlisting}[style=python, caption=Gradient checkpointing implementation]
+import torch
+import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
+
+class CheckpointedResidualBlock(nn.Module):
+    """Residual block with gradient checkpointing"""
+    def __init__(self, channels):
+        super().__init__()
+        self.conv1 = nn.Conv2d(channels, channels, 3, padding=1)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.conv2 = nn.Conv2d(channels, channels, 3, padding=1)
+        self.bn2 = nn.BatchNorm2d(channels)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        # Checkpoint this block to save memory
+        return checkpoint(self._forward, x, use_reentrant=False)
+
+    def _forward(self, x):
+        identity = x
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out += identity
+        out = self.relu(out)
+        return out
+
+# Transformer with selective checkpointing
+class CheckpointedTransformerLayer(nn.Module):
+    """Transformer layer with gradient checkpointing"""
+    def __init__(self, d_model, nhead, dim_feedforward):
+        super().__init__()
+        self.self_attn = nn.MultiheadAttention(d_model, nhead)
+        self.linear1 = nn.Linear(d_model, dim_feedforward)
+        self.linear2 = nn.Linear(dim_feedforward, d_model)
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, src):
+        # Checkpoint attention and feedforward
+        src2 = checkpoint(self._attention_block, src, use_reentrant=False)
+        src = src + self.dropout(src2)
+        src = self.norm1(src)
+
+        src2 = checkpoint(self._feedforward_block, src, use_reentrant=False)
+        src = src + self.dropout(src2)
+        src = self.norm2(src)
+
+        return src
+
+    def _attention_block(self, src):
+        return self.self_attn(src, src, src)[0]
+
+    def _feedforward_block(self, src):
+        src2 = self.linear2(torch.relu(self.linear1(src)))
+        return src2
+
+# Memory usage comparison
+def measure_memory_usage():
+    """Compare memory usage with and without checkpointing"""
+    import torch.cuda as cuda
+
+    # Without checkpointing
+    model_no_cp = nn.Sequential(*[
+        ResidualBlock(256) for _ in range(50)
+    ]).cuda()
+
+    cuda.reset_peak_memory_stats()
+    x = torch.randn(32, 256, 56, 56).cuda()
+    y = model_no_cp(x)
+    y.sum().backward()
+    memory_no_cp = cuda.max_memory_allocated() / 1e9  # GB
+
+    # With checkpointing
+    model_cp = nn.Sequential(*[
+        CheckpointedResidualBlock(256) for _ in range(50)
+    ]).cuda()
+
+    cuda.reset_peak_memory_stats()
+    x = torch.randn(32, 256, 56, 56).cuda()
+    y = model_cp(x)
+    y.sum().backward()
+    memory_cp = cuda.max_memory_allocated() / 1e9  # GB
+
+    print(f"Memory without checkpointing: {memory_no_cp:.2f} GB")
+    print(f"Memory with checkpointing: {memory_cp:.2f} GB")
+    print(f"Memory saved: {(1 - memory_cp/memory_no_cp)*100:.1f}%")
+\end{lstlisting}
+
+\subsection{ZeRO: Zero Redundancy Optimizer}
+
+ZeRO (from Microsoft DeepSpeed) partitions optimizer states, gradients, and parameters across devices to reduce memory redundancy.
+
+\begin{lstlisting}[style=python, caption=DeepSpeed ZeRO optimization]
+import torch
+import deepspeed
+from deepspeed.ops.adam import DeepSpeedCPUAdam
+
+# DeepSpeed configuration
+ds_config = {
+    "train_batch_size": 64,
+    "train_micro_batch_size_per_gpu": 8,
+    "gradient_accumulation_steps": 8,
+
+    # ZeRO optimization
+    "zero_optimization": {
+        "stage": 3,  # Stage 0, 1, 2, or 3
+        # Stage 1: Partition optimizer states
+        # Stage 2: Partition optimizer states + gradients
+        # Stage 3: Partition optimizer states + gradients + parameters
+
+        "offload_optimizer": {
+            "device": "cpu",  # Offload to CPU
+            "pin_memory": True
+        },
+        "offload_param": {
+            "device": "cpu",
+            "pin_memory": True
+        },
+
+        "overlap_comm": True,  # Overlap communication with computation
+        "contiguous_gradients": True,
+        "reduce_bucket_size": 5e7,
+        "stage3_prefetch_bucket_size": 5e7,
+        "stage3_param_persistence_threshold": 1e5,
+    },
+
+    # Mixed precision training
+    "fp16": {
+        "enabled": True,
+        "loss_scale": 0,
+        "initial_scale_power": 16,
+        "loss_scale_window": 1000,
+        "hysteresis": 2,
+        "min_loss_scale": 1
+    },
+
+    # Gradient clipping
+    "gradient_clipping": 1.0,
+
+    # Logging
+    "steps_per_print": 100,
+    "wall_clock_breakdown": False
+}
+
+# Initialize model
+model = TransformerModel(
+    vocab_size=50000,
+    d_model=1024,
+    nhead=16,
+    num_layers=24
+)
+
+# Initialize DeepSpeed
+model_engine, optimizer, train_loader, _ = deepspeed.initialize(
+    model=model,
+    model_parameters=model.parameters(),
+    config=ds_config,
+    training_data=train_dataset
+)
+
+# Training loop
+for epoch in range(num_epochs):
+    for batch in train_loader:
+        inputs, labels = batch
+
+        # Forward pass
+        outputs = model_engine(inputs)
+        loss = criterion(outputs, labels)
+
+        # Backward pass (DeepSpeed handles ZeRO partitioning)
+        model_engine.backward(loss)
+
+        # Optimizer step
+        model_engine.step()
+
+# Save checkpoint
+model_engine.save_checkpoint('checkpoints/')
+
+# Memory comparison:
+# - Without ZeRO Stage 3: ~32 GB per GPU for 1B parameter model
+# - With ZeRO Stage 3: ~8 GB per GPU for same model
+# - Can train 4x larger models on same hardware
+\end{lstlisting}
+
+\subsection{Activation Memory Optimization}
+
+\begin{lstlisting}[style=python, caption=Techniques for reducing activation memory]
+import torch
+import torch.nn as nn
+
+class MemoryEfficientAttention(nn.Module):
+    """
+    Memory-efficient attention using Flash Attention.
+    Reduces memory from O(N^2) to O(N) for sequence length N.
+    """
+    def __init__(self, d_model, nhead):
+        super().__init__()
+        self.d_model = d_model
+        self.nhead = nhead
+        self.head_dim = d_model // nhead
+
+        self.q_proj = nn.Linear(d_model, d_model)
+        self.k_proj = nn.Linear(d_model, d_model)
+        self.v_proj = nn.Linear(d_model, d_model)
+        self.out_proj = nn.Linear(d_model, d_model)
+
+    def forward(self, x):
+        batch_size, seq_len, _ = x.shape
+
+        # Project Q, K, V
+        q = self.q_proj(x).view(batch_size, seq_len, self.nhead, self.head_dim)
+        k = self.k_proj(x).view(batch_size, seq_len, self.nhead, self.head_dim)
+        v = self.v_proj(x).view(batch_size, seq_len, self.nhead, self.head_dim)
+
+        # Use Flash Attention (if available)
+        try:
+            from flash_attn import flash_attn_func
+            # Flash attention computes in blocks, reducing memory
+            out = flash_attn_func(q, k, v, dropout_p=0.0, causal=False)
+        except ImportError:
+            # Fallback to memory-efficient attention
+            out = self._efficient_attention(q, k, v)
+
+        out = out.reshape(batch_size, seq_len, self.d_model)
+        return self.out_proj(out)
+
+    def _efficient_attention(self, q, k, v):
+        """Memory-efficient attention using chunking"""
+        batch_size, seq_len, nhead, head_dim = q.shape
+        chunk_size = 512  # Process in chunks
+
+        outputs = []
+        for i in range(0, seq_len, chunk_size):
+            q_chunk = q[:, i:i+chunk_size]
+
+            # Compute attention for this chunk
+            scores = torch.matmul(
+                q_chunk.transpose(1, 2),  # (batch, nhead, chunk, head_dim)
+                k.transpose(1, 2).transpose(-2, -1)  # (batch, nhead, head_dim, seq_len)
+            ) / (head_dim ** 0.5)
+
+            attn = torch.softmax(scores, dim=-1)
+            out = torch.matmul(attn, v.transpose(1, 2))  # (batch, nhead, chunk, head_dim)
+            outputs.append(out)
+
+        return torch.cat(outputs, dim=2).transpose(1, 2)
+
+# Inplace operations to save memory
+class InplaceOptimizedModel(nn.Module):
+    """Use inplace operations where possible"""
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 64, 3, padding=1)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU(inplace=True)  # Inplace ReLU
+        self.conv2 = nn.Conv2d(64, 128, 3, padding=1)
+        self.bn2 = nn.BatchNorm2d(128)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)  # Modifies x in-place
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = self.relu(x)
+        return x
+
+# Mixed precision training for memory savings
+from torch.cuda.amp import autocast, GradScaler
+
+def train_with_mixed_precision(model, train_loader):
+    """
+    Mixed precision training:
+    - FP16 for forward/backward (2x less memory)
+    - FP32 for optimizer states and critical operations
+    """
+    scaler = GradScaler()
+    optimizer = torch.optim.Adam(model.parameters())
+
+    for data, target in train_loader:
+        optimizer.zero_grad()
+
+        # Forward in FP16
+        with autocast():
+            output = model(data)
+            loss = criterion(output, target)
+
+        # Backward with scaled gradients
+        scaler.scale(loss).backward()
+
+        # Unscale before clipping
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+        # Step with scaled gradients
+        scaler.step(optimizer)
+        scaler.update()
+\end{lstlisting}
+
+\section{Communication Optimization}
+
+Communication overhead is often the bottleneck in distributed training. This section covers advanced optimization techniques.
+
+\subsection{Gradient Compression}
+
+\begin{lstlisting}[style=python, caption=Gradient compression techniques]
+import torch
+import torch.distributed as dist
+
+class GradientCompressor:
+    """Compress gradients before communication"""
+
+    @staticmethod
+    def topk_compression(tensor, compression_ratio=0.01):
+        """
+        Top-K sparsification: Only communicate largest K% of gradients.
+        Reduces communication by 100x with minimal accuracy loss.
+        """
+        numel = tensor.numel()
+        k = max(1, int(numel * compression_ratio))
+
+        # Find top-k absolute values
+        _, indices = torch.topk(tensor.abs().flatten(), k)
+        values = tensor.flatten()[indices]
+
+        # Create sparse tensor
+        compressed = torch.zeros_like(tensor.flatten())
+        compressed[indices] = values
+
+        return compressed.view_as(tensor), indices
+
+    @staticmethod
+    def quantization_compression(tensor, num_bits=8):
+        """
+        Quantize gradients to reduce precision.
+        8-bit: 4x compression, 4-bit: 8x compression
+        """
+        # Find min/max
+        min_val = tensor.min()
+        max_val = tensor.max()
+
+        # Quantize to num_bits
+        num_levels = 2 ** num_bits - 1
+        scale = (max_val - min_val) / num_levels
+
+        quantized = ((tensor - min_val) / scale).round().to(torch.int16)
+
+        # Dequantize
+        dequantized = quantized.to(tensor.dtype) * scale + min_val
+
+        return dequantized, (min_val, max_val, scale)
+
+    @staticmethod
+    def powerSGD_compression(tensor, rank=4):
+        """
+        PowerSGD: Low-rank approximation of gradient matrix.
+        Particularly effective for large weight matrices.
+        """
+        if tensor.dim() < 2:
+            return tensor
+
+        # Reshape to 2D if needed
+        original_shape = tensor.shape
+        if tensor.dim() > 2:
+            tensor = tensor.flatten(1)
+
+        m, n = tensor.shape
+
+        # Low-rank approximation: G ≈ P @ Q^T
+        # where P is m x rank and Q is n x rank
+        U, S, Vh = torch.linalg.svd(tensor, full_matrices=False)
+
+        # Keep only top 'rank' components
+        P = U[:, :rank] @ torch.diag(S[:rank].sqrt())
+        Q = (Vh[:rank, :].T @ torch.diag(S[:rank].sqrt()))
+
+        # Reconstruct
+        compressed = P @ Q.T
+
+        return compressed.reshape(original_shape)
+
+# Use compression in distributed training
+class CompressedDDP(nn.Module):
+    """DDP with gradient compression"""
+    def __init__(self, model, compression_ratio=0.01):
+        super().__init__()
+        self.model = model
+        self.compression_ratio = compression_ratio
+        self.compressor = GradientCompressor()
+
+    def forward(self, *args, **kwargs):
+        return self.model(*args, **kwargs)
+
+    def backward_with_compression(self, loss):
+        """Backward with compressed gradient communication"""
+        loss.backward()
+
+        # Compress and communicate gradients
+        for param in self.model.parameters():
+            if param.grad is not None:
+                # Compress
+                compressed_grad, _ = self.compressor.topk_compression(
+                    param.grad,
+                    self.compression_ratio
+                )
+
+                # Communicate compressed gradients
+                dist.all_reduce(compressed_grad)
+
+                # Average
+                compressed_grad /= dist.get_world_size()
+
+                # Update grad
+                param.grad.copy_(compressed_grad)
+
+# Hierarchical All-Reduce for multi-node training
+def hierarchical_all_reduce(tensor, local_group, global_group):
+    """
+    Two-level all-reduce:
+    1. All-reduce within node (fast NVLink)
+    2. All-reduce across nodes (slower network)
+
+    Reduces inter-node communication.
+    """
+    # Local all-reduce (within node, fast)
+    dist.all_reduce(tensor, group=local_group)
+    tensor /= dist.get_world_size(local_group)
+
+    # Select one GPU per node for global communication
+    if dist.get_rank(local_group) == 0:
+        # Global all-reduce (across nodes)
+        dist.all_reduce(tensor, group=global_group)
+        tensor /= dist.get_world_size(global_group)
+
+    # Broadcast result within node
+    dist.broadcast(tensor, src=0, group=local_group)
+\end{lstlisting}
+
+\subsection{Overlapping Computation and Communication}
+
+\begin{lstlisting}[style=python, caption=Overlap communication with computation]
+import torch
+import torch.distributed as dist
+from typing import List
+
+class OverlappedGradientCommunication:
+    """
+    Overlap gradient communication with backward pass.
+    Start communicating gradients for earlier layers while
+    still computing gradients for later layers.
+    """
+
+    def __init__(self, model, bucket_size_mb=25):
+        self.model = model
+        self.bucket_size_mb = bucket_size_mb
+        self.gradient_buckets: List[List[torch.Tensor]] = []
+        self.communication_handles = []
+
+        self._register_hooks()
+
+    def _register_hooks(self):
+        """Register backward hooks to trigger async communication"""
+        def hook_fn(grad):
+            # Trigger async all-reduce when gradient is ready
+            handle = dist.all_reduce(grad, async_op=True)
+            self.communication_handles.append(handle)
+            return grad
+
+        for param in self.model.parameters():
+            if param.requires_grad:
+                param.register_hook(hook_fn)
+
+    def synchronize(self):
+        """Wait for all async communications to complete"""
+        for handle in self.communication_handles:
+            handle.wait()
+        self.communication_handles.clear()
+
+# PyTorch DDP automatically does this with gradient bucketing
+model = DDP(
+    model,
+    device_ids=[rank],
+    bucket_cap_mb=25,  # Bucket size for overlapping
+    broadcast_buffers=False,  # Don't sync buffers every iteration
+    find_unused_parameters=False,  # Faster if all params used
+    gradient_as_bucket_view=True  # Save memory
+)
+
+# Manual implementation for custom control
+class CustomOverlappedDDP:
+    """Custom DDP with fine-grained overlap control"""
+
+    def __init__(self, model, overlap_ratio=0.5):
+        self.model = model
+        self.overlap_ratio = overlap_ratio
+        self.param_groups = self._create_param_groups()
+
+    def _create_param_groups(self):
+        """Group parameters for staged communication"""
+        groups = []
+        current_group = []
+        current_size = 0
+        target_size = 25 * 1024 * 1024  # 25 MB
+
+        for param in self.model.parameters():
+            param_size = param.numel() * param.element_size()
+
+            if current_size + param_size > target_size and current_group:
+                groups.append(current_group)
+                current_group = []
+                current_size = 0
+
+            current_group.append(param)
+            current_size += param_size
+
+        if current_group:
+            groups.append(current_group)
+
+        return groups
+
+    def backward_with_overlap(self, loss):
+        """Backward with overlapped communication"""
+        loss.backward()
+
+        handles = []
+
+        # Communicate groups in reverse order (backward pass order)
+        for group in reversed(self.param_groups):
+            # Create bucket tensor
+            bucket = torch.cat([p.grad.flatten() for p in group if p.grad is not None])
+
+            # Async all-reduce
+            handle = dist.all_reduce(bucket, async_op=True)
+            handles.append((handle, group, bucket))
+
+        # Wait and unpack
+        offset = 0
+        for handle, group, bucket in handles:
+            handle.wait()
+            bucket /= dist.get_world_size()
+
+            for param in group:
+                if param.grad is not None:
+                    numel = param.grad.numel()
+                    param.grad.copy_(bucket[offset:offset+numel].view_as(param.grad))
+                    offset += numel
+\end{lstlisting}
+
+\subsection{Communication-Efficient Architectures}
+
+\begin{lstlisting}[style=python, caption=Optimizing model architecture for distributed training]
+import torch.nn as nn
+
+# Local vs Global layers
+class HybridParallelTransformer(nn.Module):
+    """
+    Transformer with hybrid parallelism strategy:
+    - Lower layers: Data parallel (communication-heavy)
+    - Middle layers: Tensor parallel (balanced)
+    - Upper layers: Pipeline parallel (memory-efficient)
+    """
+
+    def __init__(self, config, strategy='hybrid'):
+        super().__init__()
+        self.strategy = strategy
+
+        # Lower layers (data parallel)
+        self.embedding = nn.Embedding(config.vocab_size, config.hidden_size)
+        self.lower_layers = nn.ModuleList([
+            TransformerLayer(config) for _ in range(config.num_layers // 3)
+        ])
+
+        # Middle layers (tensor parallel)
+        self.middle_layers = nn.ModuleList([
+            TensorParallelTransformerLayer(config)
+            for _ in range(config.num_layers // 3)
+        ])
+
+        # Upper layers (pipeline parallel)
+        self.upper_layers = nn.ModuleList([
+            TransformerLayer(config) for _ in range(config.num_layers // 3)
+        ])
+
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size)
+
+    def forward(self, input_ids):
+        # Embedding (replicated)
+        x = self.embedding(input_ids)
+
+        # Lower layers (data parallel)
+        for layer in self.lower_layers:
+            x = layer(x)
+
+        # Middle layers (tensor parallel)
+        for layer in self.middle_layers:
+            x = layer(x)
+
+        # Upper layers (pipeline parallel)
+        for layer in self.upper_layers:
+            x = layer(x)
+
+        # Output head
+        logits = self.lm_head(x)
+
+        return logits
+
+# Reduce communication with local layers
+class LocalAttentionLayer(nn.Module):
+    """
+    Local attention that doesn't require cross-GPU communication.
+    Reduces communication overhead for long sequences.
+    """
+
+    def __init__(self, hidden_size, num_heads, window_size=512):
+        super().__init__()
+        self.window_size = window_size
+        self.attention = nn.MultiheadAttention(hidden_size, num_heads)
+
+    def forward(self, x):
+        # Only attend to local window
+        # No cross-GPU communication needed
+        batch_size, seq_len, hidden_size = x.shape
+
+        outputs = []
+        for i in range(0, seq_len, self.window_size):
+            window = x[:, i:i+self.window_size]
+            out, _ = self.attention(window, window, window)
+            outputs.append(out)
+
+        return torch.cat(outputs, dim=1)
+\end{lstlisting}
+
+\section{Debugging Distributed Training}
+
+Debugging distributed systems is challenging due to multiple processes and asynchronous communication. This section provides practical debugging strategies.
+
+\subsection{Common Issues and Solutions}
+
+\begin{lstlisting}[style=python, caption=Debugging utilities for distributed training]
+import torch
+import torch.distributed as dist
+import os
+import logging
+
+class DistributedDebugger:
+    """Utilities for debugging distributed training"""
+
+    @staticmethod
+    def check_distributed_setup():
+        """Verify distributed training is configured correctly"""
+        print("=== Distributed Training Setup ===")
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        print(f"CUDA device count: {torch.cuda.device_count()}")
+
+        if dist.is_initialized():
+            print(f"Distributed initialized: True")
+            print(f"World size: {dist.get_world_size()}")
+            print(f"Rank: {dist.get_rank()}")
+            print(f"Backend: {dist.get_backend()}")
+        else:
+            print("Distributed NOT initialized")
+
+        # Check environment variables
+        print("\n=== Environment Variables ===")
+        env_vars = ['MASTER_ADDR', 'MASTER_PORT', 'WORLD_SIZE', 'RANK', 'LOCAL_RANK']
+        for var in env_vars:
+            print(f"{var}: {os.environ.get(var, 'NOT SET')}")
+
+    @staticmethod
+    def verify_model_consistency():
+        """Check if all ranks have same model parameters"""
+        if not dist.is_initialized():
+            return True
+
+        model = get_model()  # Your model
+        rank = dist.get_rank()
+
+        # Compute hash of all parameters
+        param_hash = 0
+        for param in model.parameters():
+            param_hash += param.data.sum().item()
+
+        # Gather hashes from all ranks
+        all_hashes = [torch.tensor(0.0).cuda() for _ in range(dist.get_world_size())]
+        dist.all_gather(all_hashes, torch.tensor(param_hash).cuda())
+
+        # Check if all hashes are same
+        hashes = [h.item() for h in all_hashes]
+        if len(set(hashes)) > 1:
+            print(f"WARNING: Model parameters not synchronized!")
+            print(f"Hashes by rank: {hashes}")
+            return False
+
+        if rank == 0:
+            print("Model parameters are synchronized across all ranks")
+        return True
+
+    @staticmethod
+    def check_gradient_synchronization(model):
+        """Verify gradients are synchronized correctly"""
+        if not dist.is_initialized():
+            return
+
+        rank = dist.get_rank()
+
+        # After backward pass, check if gradients match
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                grad_sum = param.grad.sum().item()
+
+                # Gather from all ranks
+                grad_tensor = torch.tensor(grad_sum).cuda()
+                all_grads = [torch.zeros_like(grad_tensor) for _ in range(dist.get_world_size())]
+                dist.all_gather(all_grads, grad_tensor)
+
+                # Check consistency
+                grad_values = [g.item() for g in all_grads]
+                if len(set(grad_values)) > 1:
+                    print(f"Rank {rank}: Gradient mismatch for {name}")
+                    print(f"  Gradients: {grad_values}")
+
+    @staticmethod
+    def synchronize_and_print(message, rank=None):
+        """Print message from specific rank after synchronization"""
+        if dist.is_initialized():
+            dist.barrier()  # Synchronize all processes
+
+        current_rank = dist.get_rank() if dist.is_initialized() else 0
+
+        if rank is None or current_rank == rank:
+            print(f"[Rank {current_rank}] {message}")
+
+        if dist.is_initialized():
+            dist.barrier()
+
+# Debugging hang issues
+def debug_hang_with_watchdog():
+    """Detect and report hanging processes"""
+    import threading
+    import time
+
+    class Watchdog:
+        def __init__(self, timeout=300):  # 5 minutes
+            self.timeout = timeout
+            self.last_update = time.time()
+            self.running = True
+
+        def update(self):
+            self.last_update = time.time()
+
+        def watch(self):
+            while self.running:
+                time.sleep(10)
+                elapsed = time.time() - self.last_update
+                if elapsed > self.timeout:
+                    rank = dist.get_rank() if dist.is_initialized() else 0
+                    print(f"WATCHDOG: Rank {rank} appears to be hanging!")
+                    print(f"No progress for {elapsed:.1f} seconds")
+
+                    # Print stack trace
+                    import traceback
+                    import sys
+                    traceback.print_stack(file=sys.stdout)
+
+        def stop(self):
+            self.running = False
+
+    watchdog = Watchdog(timeout=300)
+    thread = threading.Thread(target=watchdog.watch, daemon=True)
+    thread.start()
+
+    # Training loop
+    for epoch in range(num_epochs):
+        for batch in dataloader:
+            watchdog.update()  # Signal progress
+
+            # Training code...
+            pass
+
+    watchdog.stop()
+
+# Logging setup for distributed training
+def setup_distributed_logging(log_dir="./logs"):
+    """Configure logging for distributed training"""
+    os.makedirs(log_dir, exist_ok=True)
+
+    rank = dist.get_rank() if dist.is_initialized() else 0
+
+    # Each rank logs to separate file
+    log_file = os.path.join(log_dir, f"rank_{rank}.log")
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format=f'[Rank {rank}] %(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()  # Also print to console
+        ]
+    )
+
+    return logging.getLogger(__name__)
+\end{lstlisting}
+
+\subsection{Profiling Distributed Communication}
+
+\begin{lstlisting}[style=python, caption=Profile distributed communication patterns]
+import torch
+import torch.distributed as dist
+import time
+from collections import defaultdict
+
+class CommunicationProfiler:
+    """Profile communication operations in distributed training"""
+
+    def __init__(self):
+        self.stats = defaultdict(lambda: {
+            'count': 0,
+            'total_time': 0.0,
+            'total_bytes': 0
+        })
+
+    def profile_all_reduce(self, tensor, op=dist.ReduceOp.SUM):
+        """Profile all-reduce operation"""
+        bytes_transferred = tensor.element_size() * tensor.numel()
+
+        start = time.perf_counter()
+        dist.all_reduce(tensor, op=op)
+        torch.cuda.synchronize()
+        elapsed = time.perf_counter() - start
+
+        self.stats['all_reduce']['count'] += 1
+        self.stats['all_reduce']['total_time'] += elapsed
+        self.stats['all_reduce']['total_bytes'] += bytes_transferred
+
+        return tensor
+
+    def profile_broadcast(self, tensor, src=0):
+        """Profile broadcast operation"""
+        bytes_transferred = tensor.element_size() * tensor.numel()
+
+        start = time.perf_counter()
+        dist.broadcast(tensor, src=src)
+        torch.cuda.synchronize()
+        elapsed = time.perf_counter() - start
+
+        self.stats['broadcast']['count'] += 1
+        self.stats['broadcast']['total_time'] += elapsed
+        self.stats['broadcast']['total_bytes'] += bytes_transferred
+
+        return tensor
+
+    def print_report(self):
+        """Print profiling report"""
+        if dist.get_rank() == 0:
+            print("\n=== Communication Profiling Report ===")
+
+            for op_name, stats in self.stats.items():
+                count = stats['count']
+                total_time = stats['total_time']
+                total_bytes = stats['total_bytes']
+
+                avg_time = total_time / count if count > 0 else 0
+                bandwidth = total_bytes / total_time / 1e9 if total_time > 0 else 0
+
+                print(f"\n{op_name}:")
+                print(f"  Count: {count}")
+                print(f"  Total time: {total_time:.3f} s")
+                print(f"  Avg time: {avg_time*1000:.2f} ms")
+                print(f"  Total data: {total_bytes/1e9:.2f} GB")
+                print(f"  Bandwidth: {bandwidth:.2f} GB/s")
+\end{lstlisting}
+
 \section{Chapter Summary}
 
 This chapter covered distributed training strategies for scaling deep learning:
@@ -1844,6 +2729,8 @@ This chapter covered distributed training strategies for scaling deep learning:
     \item \textbf{Horovod}: Framework-agnostic distributed training
     \item \textbf{Ray}: Flexible distributed computing platform
     \item \textbf{Fault Tolerance}: Checkpointing and automatic restart
+    \item \textbf{Memory Management}: Gradient checkpointing, ZeRO optimization, activation memory reduction
+    \item \textbf{Communication Optimization}: Gradient compression, overlapping computation/communication
     \item \textbf{Performance Optimization}: Profiling, benchmarking, bottleneck resolution
     \item \textbf{Resource Management}: SLURM and Kubernetes scheduling
 \end{itemize}
@@ -1851,11 +2738,25 @@ This chapter covered distributed training strategies for scaling deep learning:
 Key takeaways:
 \begin{enumerate}
     \item Choose parallelism strategy based on model and hardware constraints
-    \item Communication overhead limits scaling efficiency
-    \item Fault tolerance is essential for multi-day training runs
-    \item Profile to identify bottlenecks before optimizing
-    \item Mixed precision training significantly improves throughput
+    \item Communication overhead limits scaling efficiency - use compression and overlapping
+    \item Memory management is critical for training large models - leverage ZeRO, checkpointing, and mixed precision
+    \item Fault tolerance is essential for multi-day training runs - implement robust checkpointing
+    \item Profile to identify bottlenecks before optimizing - measure both computation and communication
+    \item Mixed precision training significantly improves throughput and reduces memory usage
+    \item Gradient compression can reduce communication volume by 10-100x with minimal accuracy loss
+    \item Hierarchical all-reduce is more efficient for multi-node training than flat topologies
 \end{enumerate}
+
+\textbf{Practical Recommendations:}
+
+\begin{itemize}
+    \item \textbf{Small models (<1B params):} Use data parallelism with PyTorch DDP
+    \item \textbf{Medium models (1-10B params):} Combine data parallelism with ZeRO Stage 2-3
+    \item \textbf{Large models (>10B params):} Use full 3D parallelism (data + tensor + pipeline)
+    \item \textbf{Limited bandwidth:} Enable gradient compression and increase batch size
+    \item \textbf{Limited memory:} Use gradient checkpointing and ZeRO offloading
+    \item \textbf{Multi-node training:} Profile communication and use hierarchical all-reduce
+\end{itemize}
 
 \section{Exercises}
 

@@ -1151,7 +1151,7 @@ Hyperparameter optimization systematically searches for the best model configura
 
 \begin{table}[h]
 \centering
-\begin{tabular}{|l|p{3.5cm}|p{3.5cm}|p{3cm}|}
+\begin{tabular}{|l|p{3.3cm}|p{3.3cm}|p{3.3cm}|}
 \hline
 \textbf{Strategy} & \textbf{How It Works} & \textbf{Best For} & \textbf{Limitations} \\
 \hline
@@ -1689,8 +1689,8 @@ if __name__ == '__main__':
     print("Cross-Validation Results:")
     for metric, values in results['metrics'].items():
         print(f"  {metric}:")
-        print(f"    Test: {values['test_mean']:.4f} ± {values['test_std']:.4f}")
-        print(f"    Train: {values['train_mean']:.4f} ± {values['train_std']:.4f}")
+        print(f"    Test: {values['test_mean']:.4f} +/- {values['test_std']:.4f}")
+        print(f"    Train: {values['train_mean']:.4f} +/- {values['train_std']:.4f}")
         print(f"    Overfitting: {values['overfitting']:.4f}")
 
     # Learning curves
@@ -1721,11 +1721,11 @@ A/B testing validates model improvements in production by comparing challenger m
 
 \begin{figure}[h]
 \centering
-\begin{tikzpicture}[node distance=2.5cm, auto]
-    \tikzstyle{component} = [rectangle, draw, fill=blue!20, text width=2.5cm, text centered, minimum height=1cm]
-    \tikzstyle{decision} = [diamond, draw, fill=yellow!20, text width=2cm, text centered, minimum height=1.5cm]
-    \tikzstyle{data} = [cylinder, draw, fill=green!20, text width=2cm, text centered, minimum height=1cm, shape aspect=0.3]
-    \tikzstyle{arrow} = [thick,->,>=stealth]
+\begin{tikzpicture}[node distance=2.5cm, auto,
+    component/.style={rectangle, draw, fill=blue!20, text width=2.5cm, text centered, minimum height=1cm},
+    decision/.style={diamond, draw, fill=yellow!20, text width=2cm, text centered, minimum height=1.5cm},
+    data/.style={cylinder, draw, fill=green!20, text width=2cm, text centered, minimum height=1cm, aspect=0.3},
+    arrow/.style={thick,->,>=stealth}]
 
     \node [component] (traffic) {Incoming Traffic};
     \node [decision, below of=traffic, node distance=2.5cm] (split) {Traffic Splitter};
@@ -2056,8 +2056,8 @@ if __name__ == '__main__':
     print(f"\nResults:")
     for metric, analysis in results.get('metrics', {}).items():
         print(f"\n{metric}:")
-        print(f"  Control: {analysis['control_mean']:.4f} ± {analysis['control_std']:.4f}")
-        print(f"  Treatment: {analysis['treatment_mean']:.4f} ± {analysis['treatment_std']:.4f}")
+        print(f"  Control: {analysis['control_mean']:.4f} +- {analysis['control_std']:.4f}")
+        print(f"  Treatment: {analysis['treatment_mean']:.4f} +- {analysis['treatment_std']:.4f}")
         print(f"  Lift: {analysis['lift_percent']:.2f}%")
         print(f"  p-value: {analysis['p_value']:.4f}")
         print(f"  Significant: {analysis['significant']}")
@@ -2599,7 +2599,7 @@ This chapter covered comprehensive training pipeline design patterns:
     \item \textbf{Hyperparameter Optimization}: Optuna-based Bayesian optimization at scale
     \item \textbf{Model Validation}: Statistical validation frameworks with bias/variance analysis
     \item \textbf{A/B Testing}: Production A/B testing framework with statistical rigor
-    \item \textbf{BigQuery ML Case Study}: End-to-end ARIMA_PLUS forecasting pipeline
+    \item \textbf{BigQuery ML Case Study}: End-to-end ARIMA\_PLUS forecasting pipeline
     \item \textbf{Failure Handling}: Retry mechanisms, circuit breakers, and error recovery
 \end{itemize}
 
@@ -2697,7 +2697,7 @@ Simulate an A/B test and demonstrate when to promote treatment vs keep control.
 
 Create a production forecasting pipeline using BigQuery ML:
 \begin{itemize}
-    \item Train ARIMA_PLUS models on time series data
+    \item Train ARIMA\_PLUS models on time series data
     \item Evaluate model performance automatically
     \item Generate forecasts with confidence intervals
     \item Detect anomalies in recent data

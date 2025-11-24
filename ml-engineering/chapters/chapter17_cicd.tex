@@ -2,31 +2,3532 @@
 
 After completing this chapter, readers will be able to:
 \begin{itemize}
-    \item Design CI/CD pipelines for ML projects
-    \item Implement automated testing for ML code
-    \item Use GitHub Actions, GitLab CI for ML workflows
-    \item Automate model deployment
-    \item Implement continuous training pipelines
+    \item Design and implement CI/CD pipelines specifically for ML projects
+    \item Create GitHub Actions workflows for automated ML testing and deployment
+    \item Implement comprehensive testing strategies for ML code and models
+    \item Build continuous training pipelines with automated model validation
+    \item Automate model deployment with safety checks and rollback mechanisms
+    \item Integrate model registries and monitoring systems into CI/CD workflows
+    \item Implement security scanning and compliance checks for ML systems
+    \item Handle ML-specific challenges in CI/CD (data versioning, model artifacts, compute requirements)
 \end{itemize}
 
-\section{CI/CD for Machine Learning}
+\section{Introduction}
 
-% Placeholder content
+CI/CD for machine learning presents unique challenges beyond traditional software development. ML systems involve code, data, models, hyperparameters, and infrastructure that all need versioning, testing, and deployment automation. This chapter covers end-to-end CI/CD pipelines designed specifically for ML workflows.
 
-\section{Automated Testing}
+\textbf{ML-Specific CI/CD Challenges:}
 
-% Placeholder content
+\begin{itemize}
+    \item \textbf{Large Artifacts:} Models can be gigabytes in size, requiring special handling
+    \item \textbf{Data Dependencies:} Tests need access to datasets, which may be large or sensitive
+    \item \textbf{Compute Requirements:} Training requires GPUs, complicating CI infrastructure
+    \item \textbf{Non-Determinism:} ML models may have slight variations between runs
+    \item \textbf{Multiple Stakeholders:} Data scientists, ML engineers, and DevOps teams
+    \item \textbf{Regulatory Compliance:} Model governance and audit trails
+\end{itemize}
 
-\section{Continuous Training}
+\textbf{Components of ML CI/CD:}
 
-% Placeholder content
+\begin{enumerate}
+    \item \textbf{Code Testing:} Unit tests, integration tests for ML code
+    \item \textbf{Data Validation:} Schema validation, data quality checks
+    \item \textbf{Model Training:} Automated training on new data or code changes
+    \item \textbf{Model Validation:} Performance testing, bias detection, safety checks
+    \item \textbf{Model Deployment:} Automated deployment with canary releases
+    \item \textbf{Monitoring Integration:} Connect deployed models to monitoring systems
+    \item \textbf{Rollback Mechanisms:} Automatic rollback on performance degradation
+\end{enumerate}
 
-\section{Chapter Summary}
+\section{GitHub Actions Workflows for ML Projects}
 
-% Placeholder summary
+\subsection{Basic ML Pipeline Structure}
 
-\section{Exercises}
+GitHub Actions provides a powerful platform for ML CI/CD with support for custom runners, caching, and matrix builds.
 
-\begin{exercise}
-Implement a complete CI/CD pipeline for an ML project using GitHub Actions.
-\end{exercise}
+\begin{lstlisting}[style=yaml, caption=Complete ML CI/CD Workflow]
+# .github/workflows/ml-cicd.yml
+name: ML CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly training runs
+    - cron: '0 2 * * *'
+
+env:
+  PYTHON_VERSION: '3.9'
+  MODEL_REGISTRY: 'mlflow'
+  DVC_REMOTE: 's3://ml-data-bucket'
+
+jobs:
+  # Job 1: Code Quality and Unit Tests
+  code-quality:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Full history for versioning
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Lint with flake8
+      run: |
+        flake8 src/ tests/ --count --select=E9,F63,F7,F82 \
+          --show-source --statistics
+        flake8 src/ tests/ --count --exit-zero \
+          --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Format check with black
+      run: |
+        black --check src/ tests/
+
+    - name: Type checking with mypy
+      run: |
+        mypy src/ --ignore-missing-imports
+
+    - name: Security check with bandit
+      run: |
+        bandit -r src/ -ll
+
+    - name: Run unit tests
+      run: |
+        pytest tests/unit/ -v --cov=src --cov-report=xml \
+          --cov-report=term-missing
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  # Job 2: Data Validation
+  data-validation:
+    runs-on: ubuntu-latest
+    needs: code-quality
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install dvc[s3] great_expectations
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Pull latest data with DVC
+      run: |
+        dvc remote modify origin --local \
+          access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+        dvc remote modify origin --local \
+          secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        dvc pull
+
+    - name: Validate data schema
+      run: |
+        python scripts/validate_data_schema.py \
+          --data-path data/processed/ \
+          --schema-path schemas/data_schema.json
+
+    - name: Run Great Expectations validation
+      run: |
+        great_expectations checkpoint run training_data_checkpoint
+
+    - name: Check data quality metrics
+      run: |
+        python scripts/check_data_quality.py \
+          --data-path data/processed/train.csv \
+          --thresholds-path config/data_quality_thresholds.json
+
+  # Job 3: Model Training
+  train-model:
+    runs-on: ubuntu-latest
+    needs: [code-quality, data-validation]
+    # Use self-hosted runner with GPU for actual training
+    # runs-on: [self-hosted, gpu]
+
+    strategy:
+      matrix:
+        model: [lightgbm, xgboost, random_forest]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install mlflow dvc[s3]
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Pull training data
+      run: |
+        dvc remote modify origin --local \
+          access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+        dvc remote modify origin --local \
+          secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        dvc pull data/processed/train.csv.dvc
+
+    - name: Train model
+      env:
+        MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+        MLFLOW_EXPERIMENT_NAME: ${{ github.repository }}
+      run: |
+        python src/train.py \
+          --model-type ${{ matrix.model }} \
+          --data-path data/processed/train.csv \
+          --config config/training/${{ matrix.model }}.yaml \
+          --run-name "GHA-${{ github.run_number }}-${{ matrix.model }}"
+
+    - name: Upload model artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: model-${{ matrix.model }}-${{ github.run_number }}
+        path: |
+          models/${{ matrix.model }}/
+          metrics/${{ matrix.model }}.json
+        retention-days: 30
+
+  # Job 4: Model Validation
+  validate-model:
+    runs-on: ubuntu-latest
+    needs: train-model
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install mlflow
+
+    - name: Download model artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts/
+
+    - name: Run model validation tests
+      run: |
+        python tests/model/test_model_performance.py \
+          --models-dir artifacts/ \
+          --test-data data/processed/test.csv \
+          --baseline-metrics config/baseline_metrics.json
+
+    - name: Test model inference
+      run: |
+        pytest tests/model/test_inference.py -v \
+          --models-dir artifacts/
+
+    - name: Check model bias
+      run: |
+        python tests/model/test_fairness.py \
+          --models-dir artifacts/ \
+          --test-data data/processed/test.csv \
+          --sensitive-features config/sensitive_features.json
+
+    - name: Performance regression test
+      run: |
+        python scripts/compare_model_performance.py \
+          --new-model artifacts/model-lightgbm-${{ github.run_number }}/ \
+          --baseline-run-id ${{ secrets.BASELINE_MODEL_RUN_ID }} \
+          --min-improvement 0.01
+
+  # Job 5: Model Deployment (Production)
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: validate-model
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    environment:
+      name: production
+      url: https://api.example.com/v1/predict
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Download best model
+      uses: actions/download-artifact@v3
+      with:
+        name: model-lightgbm-${{ github.run_number }}
+        path: model/
+
+    - name: Build Docker image
+      run: |
+        docker build -t ml-model:${{ github.sha }} \
+          -f deployment/Dockerfile .
+        docker tag ml-model:${{ github.sha }} \
+          ml-model:latest
+
+    - name: Push to container registry
+      env:
+        REGISTRY: ${{ secrets.CONTAINER_REGISTRY }}
+        REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+        REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+      run: |
+        echo $REGISTRY_PASSWORD | docker login $REGISTRY \
+          -u $REGISTRY_USERNAME --password-stdin
+        docker tag ml-model:${{ github.sha }} \
+          $REGISTRY/ml-model:${{ github.sha }}
+        docker push $REGISTRY/ml-model:${{ github.sha }}
+
+    - name: Deploy to Kubernetes
+      run: |
+        kubectl set image deployment/ml-model \
+          ml-model=${{ secrets.CONTAINER_REGISTRY }}/ml-model:${{ github.sha }} \
+          --namespace=production \
+          --record
+
+    - name: Wait for rollout
+      run: |
+        kubectl rollout status deployment/ml-model \
+          --namespace=production \
+          --timeout=5m
+
+    - name: Run smoke tests
+      run: |
+        python tests/integration/test_deployed_model.py \
+          --endpoint ${{ secrets.PRODUCTION_ENDPOINT }} \
+          --api-key ${{ secrets.PRODUCTION_API_KEY }}
+
+    - name: Notify deployment
+      if: always()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        text: |
+          Deployment ${{ job.status }}
+          Model: lightgbm-${{ github.run_number }}
+          SHA: ${{ github.sha }}
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+\end{lstlisting}
+
+\subsection{Advanced Workflow Patterns}
+
+\begin{lstlisting}[style=yaml, caption=Continuous Training Workflow with Scheduling]
+# .github/workflows/continuous-training.yml
+name: Continuous Training Pipeline
+
+on:
+  workflow_dispatch:  # Manual trigger
+    inputs:
+      data_version:
+        description: 'DVC data version to use'
+        required: false
+        default: 'latest'
+      force_retrain:
+        description: 'Force retraining even if not needed'
+        required: false
+        default: 'false'
+
+  schedule:
+    # Weekly training on Sundays at 2 AM
+    - cron: '0 2 * * 0'
+
+  push:
+    paths:
+      - 'data/**.dvc'  # Trigger on data changes
+      - 'config/training/**.yaml'
+
+env:
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+  EXPERIMENT_NAME: continuous-training
+
+jobs:
+  check-retraining-needed:
+    runs-on: ubuntu-latest
+    outputs:
+      should_train: ${{ steps.check.outputs.should_train }}
+      drift_detected: ${{ steps.drift.outputs.drift_detected }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        pip install mlflow pandas scikit-learn
+
+    - name: Check data drift
+      id: drift
+      run: |
+        python scripts/check_data_drift.py \
+          --current-data data/processed/latest.csv \
+          --reference-data data/processed/reference.csv \
+          --threshold 0.1
+        echo "drift_detected=$(cat drift_result.txt)" >> $GITHUB_OUTPUT
+
+    - name: Check performance degradation
+      id: performance
+      run: |
+        python scripts/check_model_performance.py \
+          --model-id ${{ secrets.CURRENT_MODEL_ID }} \
+          --test-data data/processed/test.csv \
+          --threshold 0.02
+
+    - name: Determine if retraining needed
+      id: check
+      run: |
+        FORCE=${{ github.event.inputs.force_retrain }}
+        DRIFT=${{ steps.drift.outputs.drift_detected }}
+
+        if [ "$FORCE" = "true" ] || [ "$DRIFT" = "true" ]; then
+          echo "should_train=true" >> $GITHUB_OUTPUT
+        else
+          echo "should_train=false" >> $GITHUB_OUTPUT
+        fi
+
+  train-and-deploy:
+    needs: check-retraining-needed
+    if: needs.check-retraining-needed.outputs.should_train == 'true'
+    runs-on: [self-hosted, gpu]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python with GPU support
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install torch torchvision --index-url \
+          https://download.pytorch.org/whl/cu118
+
+    - name: Pull training data
+      run: |
+        dvc pull data/processed/train.csv.dvc
+
+    - name: Train model with hyperparameter tuning
+      run: |
+        python src/train_with_tuning.py \
+          --data-path data/processed/train.csv \
+          --n-trials 100 \
+          --timeout 3600 \
+          --experiment-name ${{ env.EXPERIMENT_NAME }}
+
+    - name: Evaluate on test set
+      run: |
+        python src/evaluate.py \
+          --model-uri runs:/<RUN_ID>/model \
+          --test-data data/processed/test.csv \
+          --output metrics/test_results.json
+
+    - name: Register model if improved
+      run: |
+        python scripts/register_model_if_better.py \
+          --run-id $MLFLOW_RUN_ID \
+          --model-name production_model \
+          --baseline-version latest \
+          --min-improvement 0.01
+
+    - name: Deploy new model version
+      if: success()
+      run: |
+        python scripts/deploy_model.py \
+          --model-name production_model \
+          --version latest \
+          --environment production \
+          --deployment-strategy canary \
+          --canary-percentage 10
+
+    - name: Monitor canary deployment
+      run: |
+        python scripts/monitor_canary.py \
+          --duration 3600 \
+          --metric-threshold 0.95 \
+          --error-rate-threshold 0.01
+
+    - name: Promote or rollback
+      run: |
+        python scripts/promote_or_rollback.py \
+          --model-name production_model \
+          --canary-metrics canary_metrics.json \
+          --auto-rollback true
+\end{lstlisting}
+
+\section{Automated Testing Strategies for ML Code}
+
+\subsection{ML-Specific Testing Framework}
+
+\begin{lstlisting}[language=Python, caption=Comprehensive ML Testing Suite]
+# tests/conftest.py
+"""Pytest configuration and fixtures for ML testing"""
+
+import pytest
+import pandas as pd
+import numpy as np
+from pathlib import Path
+import mlflow
+from sklearn.datasets import make_classification, make_regression
+
+@pytest.fixture(scope="session")
+def test_data_dir(tmp_path_factory):
+    """Create temporary directory for test data"""
+    return tmp_path_factory.mktemp("test_data")
+
+@pytest.fixture
+def sample_classification_data():
+    """Generate sample classification dataset"""
+    X, y = make_classification(
+        n_samples=1000,
+        n_features=20,
+        n_informative=15,
+        n_redundant=5,
+        n_classes=2,
+        random_state=42
+    )
+
+    feature_names = [f"feature_{i}" for i in range(X.shape[1])]
+    df = pd.DataFrame(X, columns=feature_names)
+    df['target'] = y
+
+    return df
+
+@pytest.fixture
+def sample_regression_data():
+    """Generate sample regression dataset"""
+    X, y = make_regression(
+        n_samples=1000,
+        n_features=10,
+        n_informative=8,
+        noise=0.1,
+        random_state=42
+    )
+
+    feature_names = [f"feature_{i}" for i in range(X.shape[1])]
+    df = pd.DataFrame(X, columns=feature_names)
+    df['target'] = y
+
+    return df
+
+@pytest.fixture
+def trained_model(sample_classification_data):
+    """Provide a pre-trained model for testing"""
+    from sklearn.ensemble import RandomForestClassifier
+
+    X = sample_classification_data.drop('target', axis=1)
+    y = sample_classification_data['target']
+
+    model = RandomForestClassifier(n_estimators=10, random_state=42)
+    model.fit(X, y)
+
+    return model
+
+@pytest.fixture(scope="session")
+def mlflow_tracking():
+    """Set up MLflow tracking for tests"""
+    mlflow.set_tracking_uri("sqlite:///test_mlflow.db")
+    mlflow.set_experiment("test_experiment")
+
+    yield
+
+    # Cleanup
+    import os
+    if os.path.exists("test_mlflow.db"):
+        os.remove("test_mlflow.db")
+
+# tests/unit/test_data_processing.py
+"""Unit tests for data processing functions"""
+
+import pytest
+import pandas as pd
+import numpy as np
+from src.data.preprocessing import (
+    remove_outliers,
+    encode_categorical,
+    scale_features,
+    handle_missing_values,
+    validate_data_schema
+)
+
+class TestDataPreprocessing:
+    """Test suite for data preprocessing"""
+
+    def test_remove_outliers_iqr(self, sample_regression_data):
+        """Test outlier removal using IQR method"""
+        df = sample_regression_data.copy()
+        original_len = len(df)
+
+        # Add some outliers
+        df.loc[0, 'feature_0'] = 1000
+        df.loc[1, 'feature_1'] = -1000
+
+        cleaned = remove_outliers(df, method='iqr', threshold=1.5)
+
+        assert len(cleaned) < len(df)
+        assert len(cleaned) >= original_len - 10  # Not too aggressive
+        assert not cleaned.isnull().any().any()
+
+    def test_encode_categorical_one_hot(self):
+        """Test one-hot encoding of categorical variables"""
+        df = pd.DataFrame({
+            'color': ['red', 'blue', 'green', 'red'],
+            'size': ['S', 'M', 'L', 'M'],
+            'value': [1, 2, 3, 4]
+        })
+
+        encoded = encode_categorical(
+            df,
+            columns=['color', 'size'],
+            method='onehot'
+        )
+
+        # Check new columns created
+        assert 'color_red' in encoded.columns
+        assert 'color_blue' in encoded.columns
+        assert 'size_S' in encoded.columns
+
+        # Check original columns removed
+        assert 'color' not in encoded.columns
+        assert 'size' not in encoded.columns
+
+        # Check values preserved
+        assert encoded['value'].tolist() == [1, 2, 3, 4]
+
+    def test_scale_features_standard(self, sample_regression_data):
+        """Test standard scaling of features"""
+        df = sample_regression_data.copy()
+        X = df.drop('target', axis=1)
+
+        scaled, scaler = scale_features(X, method='standard')
+
+        # Check mean close to 0 and std close to 1
+        assert np.allclose(scaled.mean(axis=0), 0, atol=0.1)
+        assert np.allclose(scaled.std(axis=0), 1, atol=0.1)
+
+        # Check scaler can transform new data
+        new_data = X.iloc[:10]
+        transformed = scaler.transform(new_data)
+        assert transformed.shape == new_data.shape
+
+    def test_handle_missing_values_imputation(self):
+        """Test missing value imputation"""
+        df = pd.DataFrame({
+            'a': [1, 2, np.nan, 4, 5],
+            'b': [np.nan, 2, 3, 4, 5],
+            'c': ['x', 'y', 'z', np.nan, 'w']
+        })
+
+        filled = handle_missing_values(
+            df,
+            strategy='mean',
+            categorical_strategy='most_frequent'
+        )
+
+        assert not filled.isnull().any().any()
+        assert filled['a'].iloc[2] == pytest.approx(3.0, rel=0.1)
+        assert filled['c'].iloc[3] in ['x', 'y', 'z', 'w']
+
+    def test_validate_data_schema(self, sample_classification_data):
+        """Test data schema validation"""
+        df = sample_classification_data
+
+        schema = {
+            'required_columns': [f'feature_{i}' for i in range(20)] + ['target'],
+            'column_types': {
+                'feature_0': 'float64',
+                'target': 'int64'
+            },
+            'value_ranges': {
+                'target': {'min': 0, 'max': 1}
+            }
+        }
+
+        # Valid data should pass
+        assert validate_data_schema(df, schema) == True
+
+        # Missing column should fail
+        df_invalid = df.drop('feature_0', axis=1)
+        assert validate_data_schema(df_invalid, schema) == False
+
+# tests/unit/test_model_training.py
+"""Unit tests for model training"""
+
+import pytest
+import numpy as np
+from src.models.trainer import ModelTrainer
+from src.models.model_factory import create_model
+
+class TestModelTrainer:
+    """Test suite for model training"""
+
+    def test_train_classification_model(self, sample_classification_data):
+        """Test training a classification model"""
+        df = sample_classification_data
+        X = df.drop('target', axis=1)
+        y = df['target']
+
+        trainer = ModelTrainer(model_type='random_forest')
+        model, metrics = trainer.train(X, y)
+
+        assert model is not None
+        assert 'accuracy' in metrics
+        assert metrics['accuracy'] > 0.5  # Better than random
+        assert 'f1_score' in metrics
+
+    def test_model_reproducibility(self, sample_classification_data):
+        """Test that training with same seed gives same results"""
+        df = sample_classification_data
+        X = df.drop('target', axis=1)
+        y = df['target']
+
+        trainer1 = ModelTrainer(model_type='random_forest', random_state=42)
+        model1, metrics1 = trainer1.train(X, y)
+
+        trainer2 = ModelTrainer(model_type='random_forest', random_state=42)
+        model2, metrics2 = trainer2.train(X, y)
+
+        # Predictions should be identical
+        preds1 = model1.predict(X)
+        preds2 = model2.predict(X)
+
+        assert np.array_equal(preds1, preds2)
+
+    def test_train_with_validation_split(self, sample_classification_data):
+        """Test training with validation split"""
+        df = sample_classification_data
+        X = df.drop('target', axis=1)
+        y = df['target']
+
+        trainer = ModelTrainer(
+            model_type='gradient_boosting',
+            validation_split=0.2
+        )
+        model, metrics = trainer.train(X, y)
+
+        assert 'train_accuracy' in metrics
+        assert 'val_accuracy' in metrics
+
+        # Validation accuracy should be reasonable
+        assert metrics['val_accuracy'] > 0.5
+        assert metrics['val_accuracy'] <= metrics['train_accuracy']
+
+    def test_early_stopping(self, sample_classification_data):
+        """Test early stopping during training"""
+        df = sample_classification_data
+        X = df.drop('target', axis=1)
+        y = df['target']
+
+        trainer = ModelTrainer(
+            model_type='gradient_boosting',
+            early_stopping=True,
+            early_stopping_rounds=10,
+            validation_split=0.2
+        )
+
+        model, metrics = trainer.train(X, y)
+
+        assert 'best_iteration' in metrics
+        assert metrics['best_iteration'] < 100  # Should stop early
+
+# tests/unit/test_model_inference.py
+"""Unit tests for model inference"""
+
+import pytest
+import numpy as np
+import pandas as pd
+from src.models.inference import ModelPredictor
+
+class TestModelInference:
+    """Test suite for model inference"""
+
+    def test_single_prediction(self, trained_model, sample_classification_data):
+        """Test prediction on single sample"""
+        X = sample_classification_data.drop('target', axis=1)
+        sample = X.iloc[0:1]
+
+        predictor = ModelPredictor(trained_model)
+        prediction = predictor.predict(sample)
+
+        assert prediction.shape == (1,)
+        assert prediction[0] in [0, 1]
+
+    def test_batch_prediction(self, trained_model, sample_classification_data):
+        """Test prediction on batch of samples"""
+        X = sample_classification_data.drop('target', axis=1)
+
+        predictor = ModelPredictor(trained_model)
+        predictions = predictor.predict(X)
+
+        assert predictions.shape == (len(X),)
+        assert all(p in [0, 1] for p in predictions)
+
+    def test_prediction_probabilities(self, trained_model, sample_classification_data):
+        """Test probability predictions"""
+        X = sample_classification_data.drop('target', axis=1)
+
+        predictor = ModelPredictor(trained_model)
+        probabilities = predictor.predict_proba(X)
+
+        assert probabilities.shape == (len(X), 2)
+        assert np.allclose(probabilities.sum(axis=1), 1.0)
+        assert np.all((probabilities >= 0) & (probabilities <= 1))
+
+    def test_input_validation(self, trained_model):
+        """Test input validation for predictions"""
+        predictor = ModelPredictor(trained_model)
+
+        # Wrong number of features
+        invalid_input = pd.DataFrame(np.random.randn(10, 5))
+
+        with pytest.raises(ValueError):
+            predictor.predict(invalid_input)
+
+    def test_prediction_latency(self, trained_model, sample_classification_data):
+        """Test prediction latency meets requirements"""
+        import time
+
+        X = sample_classification_data.drop('target', axis=1)
+        predictor = ModelPredictor(trained_model)
+
+        # Warmup
+        _ = predictor.predict(X.iloc[:10])
+
+        # Measure latency
+        start = time.time()
+        _ = predictor.predict(X.iloc[:100])
+        elapsed = time.time() - start
+
+        # Should predict 100 samples in less than 1 second
+        assert elapsed < 1.0
+
+# tests/integration/test_training_pipeline.py
+"""Integration tests for complete training pipeline"""
+
+import pytest
+import mlflow
+from pathlib import Path
+from src.pipelines.training_pipeline import TrainingPipeline
+
+class TestTrainingPipeline:
+    """Test suite for end-to-end training pipeline"""
+
+    def test_complete_pipeline(
+        self,
+        sample_classification_data,
+        test_data_dir,
+        mlflow_tracking
+    ):
+        """Test complete training pipeline from data to model"""
+
+        # Save test data
+        data_path = test_data_dir / "train.csv"
+        sample_classification_data.to_csv(data_path, index=False)
+
+        # Run pipeline
+        pipeline = TrainingPipeline(
+            data_path=str(data_path),
+            model_type='random_forest',
+            experiment_name='test_pipeline'
+        )
+
+        result = pipeline.run()
+
+        # Check pipeline completed successfully
+        assert result['status'] == 'success'
+        assert 'model' in result
+        assert 'metrics' in result
+        assert 'run_id' in result
+
+        # Check MLflow logging
+        run = mlflow.get_run(result['run_id'])
+        assert run.info.status == 'FINISHED'
+        assert 'accuracy' in run.data.metrics
+
+    def test_pipeline_with_preprocessing(
+        self,
+        sample_classification_data,
+        test_data_dir,
+        mlflow_tracking
+    ):
+        """Test pipeline with preprocessing steps"""
+
+        # Add missing values and categorical columns
+        df = sample_classification_data.copy()
+        df.loc[0, 'feature_0'] = np.nan
+        df['category'] = np.random.choice(['A', 'B', 'C'], size=len(df))
+
+        data_path = test_data_dir / "train_with_preprocessing.csv"
+        df.to_csv(data_path, index=False)
+
+        # Configure preprocessing
+        preprocessing_config = {
+            'handle_missing': True,
+            'encode_categorical': True,
+            'scale_features': True
+        }
+
+        pipeline = TrainingPipeline(
+            data_path=str(data_path),
+            model_type='random_forest',
+            preprocessing_config=preprocessing_config
+        )
+
+        result = pipeline.run()
+
+        assert result['status'] == 'success'
+        assert 'preprocessing_steps' in result
+
+    def test_pipeline_failure_handling(self, test_data_dir):
+        """Test pipeline handles errors gracefully"""
+
+        # Non-existent data file
+        pipeline = TrainingPipeline(
+            data_path=str(test_data_dir / "nonexistent.csv"),
+            model_type='random_forest'
+        )
+
+        result = pipeline.run()
+
+        assert result['status'] == 'failed'
+        assert 'error' in result
+
+\end{lstlisting}
+
+\subsection{Model Performance Testing}
+
+\begin{lstlisting}[language=Python, caption=Model Performance and Fairness Testing]
+# tests/model/test_model_performance.py
+"""Tests for model performance requirements"""
+
+import pytest
+import pandas as pd
+import numpy as np
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+import json
+
+class TestModelPerformance:
+    """Test suite for model performance requirements"""
+
+    @pytest.fixture
+    def performance_thresholds(self):
+        """Load performance thresholds"""
+        return {
+            'min_accuracy': 0.80,
+            'min_precision': 0.75,
+            'min_recall': 0.75,
+            'min_f1': 0.75,
+            'max_prediction_time_ms': 100
+        }
+
+    def test_accuracy_threshold(
+        self,
+        trained_model,
+        sample_classification_data,
+        performance_thresholds
+    ):
+        """Test model meets minimum accuracy requirement"""
+        X = sample_classification_data.drop('target', axis=1)
+        y = sample_classification_data['target']
+
+        predictions = trained_model.predict(X)
+        accuracy = accuracy_score(y, predictions)
+
+        assert accuracy >= performance_thresholds['min_accuracy'], \
+            f"Accuracy {accuracy:.3f} below threshold {performance_thresholds['min_accuracy']}"
+
+    def test_precision_recall_balance(
+        self,
+        trained_model,
+        sample_classification_data,
+        performance_thresholds
+    ):
+        """Test precision and recall are balanced"""
+        X = sample_classification_data.drop('target', axis=1)
+        y = sample_classification_data['target']
+
+        predictions = trained_model.predict(X)
+
+        precision = precision_score(y, predictions, average='binary')
+        recall = recall_score(y, predictions, average='binary')
+
+        assert precision >= performance_thresholds['min_precision']
+        assert recall >= performance_thresholds['min_recall']
+
+        # Check balance (neither should be much worse than the other)
+        ratio = max(precision, recall) / min(precision, recall)
+        assert ratio < 1.5, "Precision and recall are imbalanced"
+
+    def test_class_distribution_robustness(self, trained_model):
+        """Test model performs well on imbalanced classes"""
+        # Create imbalanced test set (90-10 split)
+        X_imbalanced = pd.DataFrame(
+            np.random.randn(1000, 20),
+            columns=[f'feature_{i}' for i in range(20)]
+        )
+        y_imbalanced = np.array([0] * 900 + [1] * 100)
+
+        predictions = trained_model.predict(X_imbalanced)
+
+        # Should predict at least some minority class samples
+        minority_predictions = predictions[y_imbalanced == 1]
+        minority_recall = (minority_predictions == 1).mean()
+
+        assert minority_recall > 0.3, \
+            "Model fails to predict minority class"
+
+    def test_prediction_consistency(self, trained_model, sample_classification_data):
+        """Test predictions are consistent across multiple calls"""
+        X = sample_classification_data.drop('target', axis=1)
+
+        pred1 = trained_model.predict(X)
+        pred2 = trained_model.predict(X)
+        pred3 = trained_model.predict(X)
+
+        assert np.array_equal(pred1, pred2)
+        assert np.array_equal(pred2, pred3)
+
+    def test_inference_latency(
+        self,
+        trained_model,
+        sample_classification_data,
+        performance_thresholds
+    ):
+        """Test inference meets latency requirements"""
+        import time
+
+        X = sample_classification_data.drop('target', axis=1)
+        sample = X.iloc[:100]  # Test with batch of 100
+
+        # Warmup
+        _ = trained_model.predict(sample)
+
+        # Measure latency
+        times = []
+        for _ in range(10):
+            start = time.perf_counter()
+            _ = trained_model.predict(sample)
+            elapsed = (time.perf_counter() - start) * 1000  # ms
+            times.append(elapsed)
+
+        avg_latency = np.mean(times)
+        p95_latency = np.percentile(times, 95)
+
+        assert p95_latency < performance_thresholds['max_prediction_time_ms'], \
+            f"P95 latency {p95_latency:.1f}ms exceeds threshold"
+
+# tests/model/test_fairness.py
+"""Tests for model fairness and bias"""
+
+import pytest
+import pandas as pd
+import numpy as np
+from sklearn.metrics import confusion_matrix
+
+class TestModelFairness:
+    """Test suite for model fairness across protected groups"""
+
+    @pytest.fixture
+    def data_with_protected_attributes(self, sample_classification_data):
+        """Add protected attributes to test data"""
+        df = sample_classification_data.copy()
+
+        # Add gender (protected attribute)
+        df['gender'] = np.random.choice(['M', 'F'], size=len(df))
+
+        # Add age group (protected attribute)
+        df['age_group'] = np.random.choice(
+            ['18-30', '31-50', '51+'],
+            size=len(df)
+        )
+
+        return df
+
+    def test_demographic_parity(
+        self,
+        trained_model,
+        data_with_protected_attributes
+    ):
+        """Test demographic parity across protected groups"""
+        df = data_with_protected_attributes
+        X = df.drop(['target', 'gender', 'age_group'], axis=1)
+
+        predictions = trained_model.predict(X)
+        df['prediction'] = predictions
+
+        # Calculate positive prediction rate by gender
+        male_rate = df[df['gender'] == 'M']['prediction'].mean()
+        female_rate = df[df['gender'] == 'F']['prediction'].mean()
+
+        # Rates should be similar (within 10% difference)
+        rate_diff = abs(male_rate - female_rate)
+        assert rate_diff < 0.1, \
+            f"Demographic parity violated: M={male_rate:.3f}, F={female_rate:.3f}"
+
+    def test_equal_opportunity(
+        self,
+        trained_model,
+        data_with_protected_attributes
+    ):
+        """Test equal opportunity (equal TPR across groups)"""
+        df = data_with_protected_attributes
+        X = df.drop(['target', 'gender', 'age_group'], axis=1)
+        y = df['target']
+
+        predictions = trained_model.predict(X)
+
+        # Calculate TPR for each gender
+        male_mask = df['gender'] == 'M'
+        female_mask = df['gender'] == 'F'
+
+        # True Positive Rate for males
+        male_positives = (y[male_mask] == 1)
+        male_tpr = (predictions[male_mask][male_positives] == 1).mean()
+
+        # True Positive Rate for females
+        female_positives = (y[female_mask] == 1)
+        female_tpr = (predictions[female_mask][female_positives] == 1).mean()
+
+        tpr_diff = abs(male_tpr - female_tpr)
+        assert tpr_diff < 0.15, \
+            f"Equal opportunity violated: M_TPR={male_tpr:.3f}, F_TPR={female_tpr:.3f}"
+
+    def test_fairness_across_age_groups(
+        self,
+        trained_model,
+        data_with_protected_attributes
+    ):
+        """Test fairness across different age groups"""
+        df = data_with_protected_attributes
+        X = df.drop(['target', 'gender', 'age_group'], axis=1)
+        y = df['target']
+
+        predictions = trained_model.predict(X)
+
+        # Calculate accuracy for each age group
+        age_accuracies = {}
+        for age_group in df['age_group'].unique():
+            mask = df['age_group'] == age_group
+            age_acc = (predictions[mask] == y[mask]).mean()
+            age_accuracies[age_group] = age_acc
+
+        # Check accuracy variance across age groups
+        min_acc = min(age_accuracies.values())
+        max_acc = max(age_accuracies.values())
+
+        assert (max_acc - min_acc) < 0.15, \
+            f"Large accuracy variance across age groups: {age_accuracies}"
+
+    def test_calibration_across_groups(
+        self,
+        trained_model,
+        data_with_protected_attributes
+    ):
+        """Test prediction calibration across protected groups"""
+        df = data_with_protected_attributes
+        X = df.drop(['target', 'gender', 'age_group'], axis=1)
+        y = df['target']
+
+        # Get probability predictions
+        proba = trained_model.predict_proba(X)[:, 1]
+
+        # Check calibration for each gender
+        for gender in ['M', 'F']:
+            mask = df['gender'] == gender
+            gender_proba = proba[mask]
+            gender_y = y[mask]
+
+            # Bin predictions and check calibration
+            bins = np.linspace(0, 1, 11)
+            bin_indices = np.digitize(gender_proba, bins)
+
+            for bin_idx in range(1, len(bins)):
+                bin_mask = bin_indices == bin_idx
+                if bin_mask.sum() > 10:  # Enough samples in bin
+                    predicted_prob = gender_proba[bin_mask].mean()
+                    actual_prob = gender_y[bin_mask].mean()
+
+                    # Predicted probability should match actual
+                    calibration_error = abs(predicted_prob - actual_prob)
+                    assert calibration_error < 0.2, \
+                        f"Poor calibration for {gender} in bin {bin_idx}"
+
+# tests/model/test_robustness.py
+"""Tests for model robustness"""
+
+import pytest
+import pandas as pd
+import numpy as np
+
+class TestModelRobustness:
+    """Test suite for model robustness"""
+
+    def test_noise_robustness(self, trained_model, sample_classification_data):
+        """Test model is robust to input noise"""
+        X = sample_classification_data.drop('target', axis=1)
+        y = sample_classification_data['target']
+
+        # Baseline predictions
+        baseline_pred = trained_model.predict(X)
+        baseline_acc = (baseline_pred == y).mean()
+
+        # Add noise to features
+        noise_std = X.std() * 0.1  # 10% noise
+        X_noisy = X + np.random.randn(*X.shape) * noise_std.values
+
+        noisy_pred = trained_model.predict(X_noisy)
+        noisy_acc = (noisy_pred == y).mean()
+
+        # Accuracy shouldn't degrade too much
+        acc_degradation = baseline_acc - noisy_acc
+        assert acc_degradation < 0.05, \
+            f"Model not robust to noise: {acc_degradation:.3f} accuracy drop"
+
+    def test_missing_value_handling(self, trained_model, sample_classification_data):
+        """Test model handles missing values gracefully"""
+        X = sample_classification_data.drop('target', axis=1)
+
+        # Introduce 5% missing values randomly
+        X_missing = X.copy()
+        missing_mask = np.random.random(X.shape) < 0.05
+        X_missing[missing_mask] = np.nan
+
+        # Model should either handle missing values or raise clear error
+        try:
+            predictions = trained_model.predict(X_missing.fillna(X_missing.mean()))
+            assert len(predictions) == len(X)
+        except ValueError as e:
+            assert "missing" in str(e).lower() or "nan" in str(e).lower()
+
+    def test_outlier_robustness(self, trained_model, sample_classification_data):
+        """Test model is robust to outliers"""
+        X = sample_classification_data.drop('target', axis=1)
+        y = sample_classification_data['target']
+
+        baseline_pred = trained_model.predict(X)
+
+        # Introduce outliers (1% of data)
+        X_outliers = X.copy()
+        outlier_mask = np.random.random(len(X)) < 0.01
+        for col in X_outliers.columns:
+            X_outliers.loc[outlier_mask, col] *= 100  # Extreme values
+
+        outlier_pred = trained_model.predict(X_outliers)
+
+        # Most predictions should remain the same
+        unchanged = (baseline_pred == outlier_pred).mean()
+        assert unchanged > 0.95, \
+            "Model predictions too sensitive to outliers"
+
+    def test_feature_importance_stability(self, trained_model, sample_classification_data):
+        """Test feature importances are stable"""
+        if not hasattr(trained_model, 'feature_importances_'):
+            pytest.skip("Model doesn't support feature importances")
+
+        X = sample_classification_data.drop('target', axis=1)
+        y = sample_classification_data['target']
+
+        # Train multiple models with same configuration
+        importances = []
+        for seed in range(5):
+            from sklearn.ensemble import RandomForestClassifier
+            model = RandomForestClassifier(n_estimators=10, random_state=seed)
+            model.fit(X, y)
+            importances.append(model.feature_importances_)
+
+        importances = np.array(importances)
+
+        # Feature importance rankings should be relatively stable
+        std_importance = importances.std(axis=0).mean()
+        assert std_importance < 0.1, \
+            "Feature importances are unstable across runs"
+\end{lstlisting}
+
+\section{Continuous Training Pipeline Implementation}
+
+\subsection{Automated Continuous Training System}
+
+\begin{lstlisting}[language=Python, caption=Production Continuous Training Pipeline]
+# src/pipelines/continuous_training.py
+"""Continuous training pipeline with drift detection and auto-retraining"""
+
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import logging
+import mlflow
+import pandas as pd
+import numpy as np
+from pathlib import Path
+
+@dataclass
+class TrainingConfig:
+    """Configuration for continuous training"""
+    model_type: str
+    hyperparameters: Dict[str, Any]
+    training_schedule: str  # cron expression
+    drift_threshold: float = 0.1
+    performance_threshold: float = 0.02
+    min_training_samples: int = 1000
+    validation_split: float = 0.2
+    max_training_time_hours: int = 4
+
+class DriftDetector:
+    """Detect data drift and concept drift"""
+
+    def __init__(self, reference_data: pd.DataFrame):
+        self.reference_data = reference_data
+        self.reference_stats = self._compute_statistics(reference_data)
+
+    def _compute_statistics(self, data: pd.DataFrame) -> Dict:
+        """Compute statistical properties of dataset"""
+        stats = {}
+
+        for col in data.select_dtypes(include=[np.number]).columns:
+            stats[col] = {
+                'mean': data[col].mean(),
+                'std': data[col].std(),
+                'min': data[col].min(),
+                'max': data[col].max(),
+                'q25': data[col].quantile(0.25),
+                'q50': data[col].quantile(0.50),
+                'q75': data[col].quantile(0.75)
+            }
+
+        return stats
+
+    def detect_drift(self, current_data: pd.DataFrame) -> Dict[str, Any]:
+        """Detect if data has drifted from reference"""
+        current_stats = self._compute_statistics(current_data)
+
+        drift_scores = {}
+        for col in self.reference_stats:
+            if col not in current_stats:
+                continue
+
+            # Calculate normalized difference in statistics
+            ref = self.reference_stats[col]
+            curr = current_stats[col]
+
+            mean_diff = abs(curr['mean'] - ref['mean']) / (ref['std'] + 1e-6)
+            std_ratio = curr['std'] / (ref['std'] + 1e-6)
+
+            drift_scores[col] = {
+                'mean_shift': mean_diff,
+                'std_ratio': std_ratio,
+                'drifted': mean_shift > 2.0 or abs(std_ratio - 1.0) > 0.5
+            }
+
+        # Overall drift assessment
+        drifted_features = [
+            col for col, score in drift_scores.items()
+            if score['drifted']
+        ]
+
+        return {
+            'drift_detected': len(drifted_features) > len(drift_scores) * 0.2,
+            'drifted_features': drifted_features,
+            'drift_scores': drift_scores,
+            'num_drifted': len(drifted_features),
+            'total_features': len(drift_scores)
+        }
+
+class PerformanceMonitor:
+    """Monitor model performance in production"""
+
+    def __init__(self, model_id: str, mlflow_tracking_uri: str):
+        self.model_id = model_id
+        mlflow.set_tracking_uri(mlflow_tracking_uri)
+        self.logger = logging.getLogger(__name__)
+
+    def check_performance_degradation(
+        self,
+        current_metrics: Dict[str, float],
+        baseline_metrics: Dict[str, float],
+        threshold: float = 0.02
+    ) -> Dict[str, Any]:
+        """Check if performance has degraded"""
+
+        degradations = {}
+        for metric, current_value in current_metrics.items():
+            if metric not in baseline_metrics:
+                continue
+
+            baseline_value = baseline_metrics[metric]
+            degradation = baseline_value - current_value
+
+            degradations[metric] = {
+                'current': current_value,
+                'baseline': baseline_value,
+                'degradation': degradation,
+                'degraded': degradation > threshold
+            }
+
+        any_degraded = any(d['degraded'] for d in degradations.values())
+
+        return {
+            'performance_degraded': any_degraded,
+            'metrics': degradations
+        }
+
+    def get_recent_performance(
+        self,
+        days: int = 7
+    ) -> Dict[str, List[float]]:
+        """Get recent performance metrics from production"""
+
+        # In production, this would query monitoring system
+        # For example: Prometheus, CloudWatch, or custom metrics store
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+
+        # Placeholder - would query actual metrics
+        metrics_history = {
+            'accuracy': [],
+            'precision': [],
+            'recall': [],
+            'latency_ms': []
+        }
+
+        self.logger.info(
+            f"Retrieved {days} days of metrics for model {self.model_id}"
+        )
+
+        return metrics_history
+
+class ContinuousTrainingPipeline:
+    """
+    Automated continuous training pipeline
+
+    Monitors data and performance, triggers retraining when needed
+    """
+
+    def __init__(
+        self,
+        config: TrainingConfig,
+        mlflow_tracking_uri: str,
+        data_source: str,
+        model_registry_name: str
+    ):
+        self.config = config
+        self.data_source = data_source
+        self.model_registry_name = model_registry_name
+
+        mlflow.set_tracking_uri(mlflow_tracking_uri)
+        self.logger = logging.getLogger(__name__)
+
+        self.drift_detector: Optional[DriftDetector] = None
+        self.performance_monitor: Optional[PerformanceMonitor] = None
+
+    def should_retrain(self) -> Dict[str, Any]:
+        """Determine if model should be retrained"""
+
+        reasons = []
+
+        # Check 1: Data drift
+        current_data = self._load_recent_data()
+
+        if self.drift_detector is None:
+            # Initialize drift detector with current data as reference
+            self.drift_detector = DriftDetector(current_data)
+            self.logger.info("Initialized drift detector with current data")
+
+        drift_result = self.drift_detector.detect_drift(current_data)
+
+        if drift_result['drift_detected']:
+            reasons.append({
+                'type': 'data_drift',
+                'severity': 'high',
+                'details': drift_result
+            })
+            self.logger.warning(
+                f"Data drift detected in {drift_result['num_drifted']} features"
+            )
+
+        # Check 2: Performance degradation
+        current_model = self._get_current_production_model()
+
+        if current_model:
+            current_metrics = self._evaluate_model(current_model, current_data)
+            baseline_metrics = self._get_baseline_metrics()
+
+            if self.performance_monitor is None:
+                self.performance_monitor = PerformanceMonitor(
+                    model_id=current_model['model_id'],
+                    mlflow_tracking_uri=mlflow.get_tracking_uri()
+                )
+
+            perf_check = self.performance_monitor.check_performance_degradation(
+                current_metrics,
+                baseline_metrics,
+                threshold=self.config.performance_threshold
+            )
+
+            if perf_check['performance_degraded']:
+                reasons.append({
+                    'type': 'performance_degradation',
+                    'severity': 'high',
+                    'details': perf_check
+                })
+                self.logger.warning("Performance degradation detected")
+
+        # Check 3: Scheduled retraining
+        last_training_time = self._get_last_training_time()
+        time_since_training = datetime.now() - last_training_time
+
+        if time_since_training > timedelta(days=7):  # Weekly retraining
+            reasons.append({
+                'type': 'scheduled',
+                'severity': 'low',
+                'details': {
+                    'days_since_training': time_since_training.days
+                }
+            })
+
+        # Check 4: Sufficient new data
+        new_samples = len(current_data)
+        if new_samples < self.config.min_training_samples:
+            reasons.append({
+                'type': 'insufficient_data',
+                'severity': 'blocking',
+                'details': {
+                    'current_samples': new_samples,
+                    'required_samples': self.config.min_training_samples
+                }
+            })
+
+        # Decision
+        should_train = any(
+            r['severity'] in ['high', 'critical'] for r in reasons
+        ) and not any(
+            r['severity'] == 'blocking' for r in reasons
+        )
+
+        return {
+            'should_retrain': should_train,
+            'reasons': reasons,
+            'timestamp': datetime.now().isoformat()
+        }
+
+    def train_and_validate(self) -> Dict[str, Any]:
+        """Train new model and validate performance"""
+
+        self.logger.info("Starting training pipeline...")
+
+        # Start MLflow run
+        with mlflow.start_run(run_name=f"continuous_training_{datetime.now().strftime('%Y%m%d_%H%M%S')}"):
+
+            # Log configuration
+            mlflow.log_params(self.config.hyperparameters)
+            mlflow.set_tag("pipeline", "continuous_training")
+            mlflow.set_tag("trigger", "automated")
+
+            # Load and prepare data
+            train_data, val_data = self._prepare_training_data()
+
+            # Log data statistics
+            mlflow.log_metric("train_samples", len(train_data))
+            mlflow.log_metric("val_samples", len(val_data))
+
+            # Train model
+            model, training_metrics = self._train_model(train_data)
+
+            # Log training metrics
+            for metric_name, value in training_metrics.items():
+                mlflow.log_metric(f"train_{metric_name}", value)
+
+            # Validate model
+            validation_metrics = self._validate_model(model, val_data)
+
+            for metric_name, value in validation_metrics.items():
+                mlflow.log_metric(f"val_{metric_name}", value)
+
+            # Compare with baseline
+            baseline_metrics = self._get_baseline_metrics()
+            comparison = self._compare_with_baseline(
+                validation_metrics,
+                baseline_metrics
+            )
+
+            mlflow.log_dict(comparison, "baseline_comparison.json")
+
+            # Log model
+            mlflow.sklearn.log_model(
+                model,
+                "model",
+                registered_model_name=self.model_registry_name
+            )
+
+            run_id = mlflow.active_run().info.run_id
+
+            result = {
+                'status': 'success',
+                'run_id': run_id,
+                'training_metrics': training_metrics,
+                'validation_metrics': validation_metrics,
+                'baseline_comparison': comparison,
+                'model_improved': comparison['is_improvement']
+            }
+
+            self.logger.info(
+                f"Training completed. Run ID: {run_id}, "
+                f"Improved: {result['model_improved']}"
+            )
+
+            return result
+
+    def deploy_if_improved(self, training_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Deploy new model if it's better than current"""
+
+        if not training_result['model_improved']:
+            self.logger.info("New model did not improve. Skipping deployment.")
+            return {
+                'deployed': False,
+                'reason': 'no_improvement'
+            }
+
+        # Get model URI
+        run_id = training_result['run_id']
+        model_uri = f"runs:/{run_id}/model"
+
+        # Register model version
+        model_version = mlflow.register_model(
+            model_uri,
+            self.model_registry_name
+        )
+
+        # Transition to staging
+        client = mlflow.tracking.MlflowClient()
+        client.transition_model_version_stage(
+            name=self.model_registry_name,
+            version=model_version.version,
+            stage="Staging"
+        )
+
+        self.logger.info(
+            f"Model version {model_version.version} moved to Staging"
+        )
+
+        # Run canary deployment tests
+        canary_result = self._run_canary_tests(model_version.version)
+
+        if canary_result['passed']:
+            # Promote to production
+            client.transition_model_version_stage(
+                name=self.model_registry_name,
+                version=model_version.version,
+                stage="Production"
+            )
+
+            # Archive old production model
+            self._archive_old_production_model()
+
+            self.logger.info(
+                f"Model version {model_version.version} deployed to Production"
+            )
+
+            return {
+                'deployed': True,
+                'version': model_version.version,
+                'stage': 'Production',
+                'canary_results': canary_result
+            }
+        else:
+            self.logger.warning(
+                f"Canary tests failed. Model {model_version.version} "
+                f"remains in Staging"
+            )
+
+            return {
+                'deployed': False,
+                'reason': 'canary_failed',
+                'canary_results': canary_result
+            }
+
+    def run(self) -> Dict[str, Any]:
+        """Run complete continuous training pipeline"""
+
+        try:
+            # Check if retraining is needed
+            retrain_decision = self.should_retrain()
+
+            if not retrain_decision['should_retrain']:
+                self.logger.info("Retraining not needed at this time")
+                return {
+                    'status': 'skipped',
+                    'decision': retrain_decision
+                }
+
+            self.logger.info(
+                f"Retraining triggered. Reasons: "
+                f"{[r['type'] for r in retrain_decision['reasons']]}"
+            )
+
+            # Train and validate new model
+            training_result = self.train_and_validate()
+
+            # Deploy if improved
+            deployment_result = self.deploy_if_improved(training_result)
+
+            return {
+                'status': 'completed',
+                'decision': retrain_decision,
+                'training': training_result,
+                'deployment': deployment_result
+            }
+
+        except Exception as e:
+            self.logger.error(f"Pipeline failed: {str(e)}", exc_info=True)
+            return {
+                'status': 'failed',
+                'error': str(e)
+            }
+
+    def _load_recent_data(self) -> pd.DataFrame:
+        """Load recent data from data source"""
+        # Implementation depends on data source
+        pass
+
+    def _get_current_production_model(self) -> Optional[Dict]:
+        """Get current production model"""
+        pass
+
+    def _evaluate_model(
+        self,
+        model: Any,
+        data: pd.DataFrame
+    ) -> Dict[str, float]:
+        """Evaluate model on data"""
+        pass
+
+    def _get_baseline_metrics(self) -> Dict[str, float]:
+        """Get baseline metrics for comparison"""
+        pass
+
+    def _get_last_training_time(self) -> datetime:
+        """Get timestamp of last training"""
+        pass
+
+    def _prepare_training_data(self) -> tuple:
+        """Prepare train and validation datasets"""
+        pass
+
+    def _train_model(self, train_data: pd.DataFrame) -> tuple:
+        """Train model on data"""
+        pass
+
+    def _validate_model(
+        self,
+        model: Any,
+        val_data: pd.DataFrame
+    ) -> Dict[str, float]:
+        """Validate model"""
+        pass
+
+    def _compare_with_baseline(
+        self,
+        current_metrics: Dict[str, float],
+        baseline_metrics: Dict[str, float]
+    ) -> Dict[str, Any]:
+        """Compare current model with baseline"""
+
+        improvements = {}
+        for metric, current_value in current_metrics.items():
+            if metric in baseline_metrics:
+                baseline_value = baseline_metrics[metric]
+                improvement = current_value - baseline_value
+                improvements[metric] = {
+                    'current': current_value,
+                    'baseline': baseline_value,
+                    'improvement': improvement,
+                    'pct_improvement': (improvement / baseline_value) * 100
+                }
+
+        # Overall assessment
+        is_improvement = all(
+            imp['improvement'] > -0.01  # Allow small degradation
+            for imp in improvements.values()
+        ) and any(
+            imp['improvement'] > 0.01  # Require improvement in at least one metric
+            for imp in improvements.values()
+        )
+
+        return {
+            'is_improvement': is_improvement,
+            'metrics': improvements
+        }
+
+    def _run_canary_tests(self, model_version: str) -> Dict[str, Any]:
+        """Run canary tests on new model version"""
+
+        # Simulate canary testing
+        # In production, this would involve:
+        # - Deploying to small percentage of traffic
+        # - Monitoring metrics for N hours
+        # - Comparing with baseline
+
+        return {
+            'passed': True,
+            'duration_hours': 1,
+            'traffic_percentage': 10,
+            'metrics': {
+                'error_rate': 0.001,
+                'latency_p99': 45,
+                'throughput': 1000
+            }
+        }
+
+    def _archive_old_production_model(self):
+        """Archive the current production model"""
+
+        client = mlflow.tracking.MlflowClient()
+
+        # Get current production model
+        production_models = client.get_latest_versions(
+            self.model_registry_name,
+            stages=["Production"]
+        )
+
+        for model in production_models:
+            client.transition_model_version_stage(
+                name=self.model_registry_name,
+                version=model.version,
+                stage="Archived"
+            )
+
+            self.logger.info(
+                f"Archived old production model version {model.version}"
+            )
+
+# Script to run continuous training
+# scripts/run_continuous_training.py
+"""Script to run continuous training pipeline"""
+
+import argparse
+import logging
+import yaml
+from src.pipelines.continuous_training import (
+    ContinuousTrainingPipeline,
+    TrainingConfig
+)
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run continuous training pipeline"
+    )
+    parser.add_argument(
+        '--config',
+        required=True,
+        help='Path to training configuration file'
+    )
+    parser.add_argument(
+        '--mlflow-uri',
+        default='http://localhost:5000',
+        help='MLflow tracking URI'
+    )
+    parser.add_argument(
+        '--data-source',
+        required=True,
+        help='Data source URI'
+    )
+    parser.add_argument(
+        '--model-name',
+        default='production_model',
+        help='Model registry name'
+    )
+
+    args = parser.parse_args()
+
+    # Setup logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
+    # Load configuration
+    with open(args.config) as f:
+        config_dict = yaml.safe_load(f)
+
+    config = TrainingConfig(**config_dict)
+
+    # Create and run pipeline
+    pipeline = ContinuousTrainingPipeline(
+        config=config,
+        mlflow_tracking_uri=args.mlflow_uri,
+        data_source=args.data_source,
+        model_registry_name=args.model_name
+    )
+
+    result = pipeline.run()
+
+    print(f"\nPipeline completed with status: {result['status']}")
+
+    if result['status'] == 'completed':
+        if result['deployment']['deployed']:
+            print(f"New model version {result['deployment']['version']} "
+                  f"deployed to production")
+        else:
+            print(f"Model not deployed: {result['deployment']['reason']}")
+
+if __name__ == '__main__':
+    main()
+\end{lstlisting}
+
+\section{Model Validation and Deployment Automation}
+
+\subsection{Automated Model Validation Gates}
+
+Before deploying models to production, they must pass comprehensive validation gates that ensure quality, safety, and compliance.
+
+\begin{lstlisting}[language=Python, caption=Automated Model Validation System]
+# src/validation/model_validator.py
+"""Automated model validation with configurable gates"""
+
+from typing import Dict, List, Any, Optional
+from dataclasses import dataclass, field
+from enum import Enum
+import pandas as pd
+import numpy as np
+import logging
+
+class ValidationStatus(Enum):
+    """Status of validation check"""
+    PASSED = "passed"
+    FAILED = "failed"
+    WARNING = "warning"
+    SKIPPED = "skipped"
+
+@dataclass
+class ValidationResult:
+    """Result of a single validation check"""
+    check_name: str
+    status: ValidationStatus
+    message: str
+    details: Dict[str, Any] = field(default_factory=dict)
+    severity: str = "medium"  # low, medium, high, critical
+
+@dataclass
+class ModelValidationReport:
+    """Complete validation report"""
+    model_id: str
+    timestamp: str
+    overall_status: ValidationStatus
+    checks: List[ValidationResult]
+    blocking_issues: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+
+class ModelValidator:
+    """
+    Comprehensive model validation system
+
+    Performs multiple validation checks before model deployment
+    """
+
+    def __init__(self, validation_config: Dict[str, Any]):
+        self.config = validation_config
+        self.logger = logging.getLogger(__name__)
+
+    def validate_model(
+        self,
+        model: Any,
+        test_data: pd.DataFrame,
+        metadata: Dict[str, Any]
+    ) -> ModelValidationReport:
+        """
+        Run all validation checks on model
+
+        Returns validation report with pass/fail status
+        """
+
+        self.logger.info(f"Starting validation for model {metadata.get('model_id')}")
+
+        checks = []
+
+        # Performance validation
+        perf_result = self._validate_performance(model, test_data)
+        checks.append(perf_result)
+
+        # Fairness validation
+        if 'sensitive_features' in self.config:
+            fairness_result = self._validate_fairness(
+                model,
+                test_data,
+                self.config['sensitive_features']
+            )
+            checks.append(fairness_result)
+
+        # Robustness validation
+        robustness_result = self._validate_robustness(model, test_data)
+        checks.append(robustness_result)
+
+        # Latency validation
+        latency_result = self._validate_latency(model, test_data)
+        checks.append(latency_result)
+
+        # Explainability validation
+        if self.config.get('require_explainability', False):
+            explainability_result = self._validate_explainability(model)
+            checks.append(explainability_result)
+
+        # Schema validation
+        schema_result = self._validate_input_schema(model, test_data)
+        checks.append(schema_result)
+
+        # Dependency validation
+        dependency_result = self._validate_dependencies(metadata)
+        checks.append(dependency_result)
+
+        # Determine overall status
+        blocking_issues = [
+            c.check_name for c in checks
+            if c.status == ValidationStatus.FAILED and c.severity in ['high', 'critical']
+        ]
+
+        warnings = [
+            c.check_name for c in checks
+            if c.status == ValidationStatus.WARNING or
+            (c.status == ValidationStatus.FAILED and c.severity == 'medium')
+        ]
+
+        if blocking_issues:
+            overall_status = ValidationStatus.FAILED
+        elif any(c.status == ValidationStatus.FAILED for c in checks):
+            overall_status = ValidationStatus.WARNING
+        else:
+            overall_status = ValidationStatus.PASSED
+
+        report = ModelValidationReport(
+            model_id=metadata.get('model_id', 'unknown'),
+            timestamp=datetime.now().isoformat(),
+            overall_status=overall_status,
+            checks=checks,
+            blocking_issues=blocking_issues,
+            warnings=warnings
+        )
+
+        self.logger.info(f"Validation complete. Status: {overall_status.value}")
+
+        return report
+
+    def _validate_performance(
+        self,
+        model: Any,
+        test_data: pd.DataFrame
+    ) -> ValidationResult:
+        """Validate model meets performance requirements"""
+
+        X = test_data.drop('target', axis=1)
+        y_true = test_data['target']
+
+        y_pred = model.predict(X)
+
+        from sklearn.metrics import accuracy_score, f1_score
+
+        accuracy = accuracy_score(y_true, y_pred)
+        f1 = f1_score(y_true, y_pred, average='weighted')
+
+        # Check against thresholds
+        min_accuracy = self.config.get('min_accuracy', 0.80)
+        min_f1 = self.config.get('min_f1', 0.75)
+
+        passed = accuracy >= min_accuracy and f1 >= min_f1
+
+        return ValidationResult(
+            check_name="performance",
+            status=ValidationStatus.PASSED if passed else ValidationStatus.FAILED,
+            message=(
+                f"Accuracy: {accuracy:.3f} (>= {min_accuracy}), "
+                f"F1: {f1:.3f} (>= {min_f1})"
+            ),
+            details={'accuracy': accuracy, 'f1_score': f1},
+            severity='critical'
+        )
+
+    def _validate_fairness(
+        self,
+        model: Any,
+        test_data: pd.DataFrame,
+        sensitive_features: List[str]
+    ) -> ValidationResult:
+        """Validate model fairness across protected groups"""
+
+        X = test_data.drop(['target'] + sensitive_features, axis=1)
+        y_true = test_data['target']
+
+        y_pred = model.predict(X)
+
+        # Check demographic parity for each sensitive feature
+        fairness_violations = []
+
+        for feature in sensitive_features:
+            groups = test_data[feature].unique()
+
+            rates = {}
+            for group in groups:
+                mask = test_data[feature] == group
+                rates[group] = y_pred[mask].mean()
+
+            max_diff = max(rates.values()) - min(rates.values())
+
+            threshold = self.config.get('fairness_threshold', 0.1)
+
+            if max_diff > threshold:
+                fairness_violations.append(
+                    f"{feature}: max difference {max_diff:.3f}"
+                )
+
+        passed = len(fairness_violations) == 0
+
+        return ValidationResult(
+            check_name="fairness",
+            status=ValidationStatus.PASSED if passed else ValidationStatus.WARNING,
+            message=(
+                "Fairness check passed" if passed
+                else f"Fairness violations: {', '.join(fairness_violations)}"
+            ),
+            details={'violations': fairness_violations},
+            severity='high'
+        )
+
+    def _validate_robustness(
+        self,
+        model: Any,
+        test_data: pd.DataFrame
+    ) -> ValidationResult:
+        """Validate model robustness to perturbations"""
+
+        X = test_data.drop('target', axis=1)
+        y_true = test_data['target']
+
+        baseline_pred = model.predict(X)
+
+        # Add noise
+        noise_std = X.std() * 0.1
+        X_noisy = X + np.random.randn(*X.shape) * noise_std.values
+
+        noisy_pred = model.predict(X_noisy)
+
+        # Check prediction consistency
+        consistency = (baseline_pred == noisy_pred).mean()
+
+        threshold = self.config.get('robustness_threshold', 0.90)
+        passed = consistency >= threshold
+
+        return ValidationResult(
+            check_name="robustness",
+            status=ValidationStatus.PASSED if passed else ValidationStatus.WARNING,
+            message=f"Prediction consistency: {consistency:.3f} (>= {threshold})",
+            details={'consistency': consistency},
+            severity='medium'
+        )
+
+    def _validate_latency(
+        self,
+        model: Any,
+        test_data: pd.DataFrame
+    ) -> ValidationResult:
+        """Validate inference latency"""
+
+        import time
+
+        X = test_data.drop('target', axis=1).head(100)
+
+        # Warmup
+        _ = model.predict(X)
+
+        # Measure
+        times = []
+        for _ in range(10):
+            start = time.perf_counter()
+            _ = model.predict(X)
+            elapsed = (time.perf_counter() - start) * 1000
+            times.append(elapsed)
+
+        p95_latency = np.percentile(times, 95)
+
+        max_latency = self.config.get('max_latency_ms', 100)
+        passed = p95_latency < max_latency
+
+        return ValidationResult(
+            check_name="latency",
+            status=ValidationStatus.PASSED if passed else ValidationStatus.FAILED,
+            message=f"P95 latency: {p95_latency:.1f}ms (< {max_latency}ms)",
+            details={'p95_latency_ms': p95_latency},
+            severity='high'
+        )
+
+    def _validate_explainability(self, model: Any) -> ValidationResult:
+        """Validate model explainability"""
+
+        # Check if model supports explainability
+        has_feature_importance = hasattr(model, 'feature_importances_')
+        has_coef = hasattr(model, 'coef_')
+
+        explainable = has_feature_importance or has_coef
+
+        return ValidationResult(
+            check_name="explainability",
+            status=ValidationStatus.PASSED if explainable else ValidationStatus.WARNING,
+            message="Model provides explainability" if explainable else "Model lacks explainability",
+            details={'explainable': explainable},
+            severity='low'
+        )
+
+    def _validate_input_schema(
+        self,
+        model: Any,
+        test_data: pd.DataFrame
+    ) -> ValidationResult:
+        """Validate input schema matches expectations"""
+
+        X = test_data.drop('target', axis=1)
+
+        try:
+            # Test prediction with expected schema
+            _ = model.predict(X.head(1))
+
+            return ValidationResult(
+                check_name="schema",
+                status=ValidationStatus.PASSED,
+                message="Input schema validation passed",
+                details={},
+                severity='critical'
+            )
+
+        except Exception as e:
+            return ValidationResult(
+                check_name="schema",
+                status=ValidationStatus.FAILED,
+                message=f"Schema validation failed: {str(e)}",
+                details={'error': str(e)},
+                severity='critical'
+            )
+
+    def _validate_dependencies(self, metadata: Dict) -> ValidationResult:
+        """Validate model dependencies are documented"""
+
+        has_dependencies = 'dependencies' in metadata
+        has_version = 'model_version' in metadata
+
+        passed = has_dependencies and has_version
+
+        return ValidationResult(
+            check_name="dependencies",
+            status=ValidationStatus.PASSED if passed else ValidationStatus.WARNING,
+            message="Dependencies documented" if passed else "Missing dependency information",
+            details=metadata.get('dependencies', {}),
+            severity='low'
+        )
+
+# Integration with CI/CD
+# scripts/validate_model_for_deployment.py
+"""Validate model before deployment"""
+
+import argparse
+import json
+import yaml
+import mlflow
+from src.validation.model_validator import ModelValidator, ValidationStatus
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model-uri', required=True)
+    parser.add_argument('--test-data', required=True)
+    parser.add_argument('--config', required=True)
+    parser.add_argument('--output', default='validation_report.json')
+
+    args = parser.parse_args()
+
+    # Load validation configuration
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
+
+    # Load model
+    model = mlflow.sklearn.load_model(args.model_uri)
+
+    # Load test data
+    test_data = pd.read_csv(args.test_data)
+
+    # Run validation
+    validator = ModelValidator(config)
+    report = validator.validate_model(
+        model,
+        test_data,
+        metadata={'model_uri': args.model_uri}
+    )
+
+    # Save report
+    report_dict = {
+        'overall_status': report.overall_status.value,
+        'checks': [
+            {
+                'name': c.check_name,
+                'status': c.status.value,
+                'message': c.message,
+                'details': c.details
+            }
+            for c in report.checks
+        ],
+        'blocking_issues': report.blocking_issues,
+        'warnings': report.warnings
+    }
+
+    with open(args.output, 'w') as f:
+        json.dump(report_dict, f, indent=2)
+
+    # Exit with appropriate code
+    if report.overall_status == ValidationStatus.FAILED:
+        print(f"Validation FAILED: {', '.join(report.blocking_issues)}")
+        exit(1)
+    elif report.overall_status == ValidationStatus.WARNING:
+        print(f"Validation passed with warnings: {', '.join(report.warnings)}")
+        exit(0)
+    else:
+        print("Validation PASSED")
+        exit(0)
+
+if __name__ == '__main__':
+    main()
+\end{lstlisting}
+
+\section{Integration with Model Registry and Monitoring}
+
+\subsection{Model Registry Integration}
+
+\begin{lstlisting}[language=Python, caption=Model Registry Integration for CI/CD]
+# src/registry/model_registry_client.py
+"""Model registry client for CI/CD pipelines"""
+
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+from datetime import datetime
+import mlflow
+from mlflow.tracking import MlflowClient
+import logging
+
+@dataclass
+class ModelVersion:
+    """Model version information"""
+    name: str
+    version: str
+    stage: str
+    creation_timestamp: datetime
+    tags: Dict[str, str]
+    description: Optional[str] = None
+
+class MLModelRegistry:
+    """
+    Integration with MLflow Model Registry
+
+    Manages model lifecycle from staging to production
+    """
+
+    def __init__(self, tracking_uri: str):
+        mlflow.set_tracking_uri(tracking_uri)
+        self.client = MlflowClient()
+        self.logger = logging.getLogger(__name__)
+
+    def register_model(
+        self,
+        run_id: str,
+        model_name: str,
+        tags: Optional[Dict[str, str]] = None,
+        description: Optional[str] = None
+    ) -> ModelVersion:
+        """Register new model version"""
+
+        model_uri = f"runs:/{run_id}/model"
+
+        # Register model
+        mv = mlflow.register_model(model_uri, model_name)
+
+        # Add tags
+        if tags:
+            for key, value in tags.items():
+                self.client.set_model_version_tag(
+                    name=model_name,
+                    version=mv.version,
+                    key=key,
+                    value=value
+                )
+
+        # Add description
+        if description:
+            self.client.update_model_version(
+                name=model_name,
+                version=mv.version,
+                description=description
+            )
+
+        self.logger.info(
+            f"Registered model {model_name} version {mv.version}"
+        )
+
+        return ModelVersion(
+            name=model_name,
+            version=mv.version,
+            stage="None",
+            creation_timestamp=datetime.fromtimestamp(mv.creation_timestamp / 1000),
+            tags=tags or {},
+            description=description
+        )
+
+    def promote_model(
+        self,
+        model_name: str,
+        version: str,
+        stage: str,
+        archive_existing: bool = True
+    ):
+        """Promote model to new stage"""
+
+        if archive_existing and stage == "Production":
+            # Archive existing production models
+            prod_models = self.client.get_latest_versions(
+                model_name,
+                stages=["Production"]
+            )
+
+            for model in prod_models:
+                self.client.transition_model_version_stage(
+                    name=model_name,
+                    version=model.version,
+                    stage="Archived"
+                )
+                self.logger.info(
+                    f"Archived previous production version {model.version}"
+                )
+
+        # Promote new version
+        self.client.transition_model_version_stage(
+            name=model_name,
+            version=version,
+            stage=stage
+        )
+
+        self.logger.info(
+            f"Promoted model {model_name} version {version} to {stage}"
+        )
+
+    def get_production_model(self, model_name: str) -> Optional[ModelVersion]:
+        """Get current production model version"""
+
+        prod_models = self.client.get_latest_versions(
+            model_name,
+            stages=["Production"]
+        )
+
+        if not prod_models:
+            return None
+
+        model = prod_models[0]
+
+        return ModelVersion(
+            name=model.name,
+            version=model.version,
+            stage=model.current_stage,
+            creation_timestamp=datetime.fromtimestamp(model.creation_timestamp / 1000),
+            tags=model.tags
+        )
+
+    def compare_models(
+        self,
+        model_name: str,
+        version1: str,
+        version2: str,
+        metric_names: List[str]
+    ) -> Dict[str, Any]:
+        """Compare metrics between two model versions"""
+
+        # Get runs for both versions
+        mv1 = self.client.get_model_version(model_name, version1)
+        mv2 = self.client.get_model_version(model_name, version2)
+
+        run1 = self.client.get_run(mv1.run_id)
+        run2 = self.client.get_run(mv2.run_id)
+
+        comparison = {}
+
+        for metric in metric_names:
+            val1 = run1.data.metrics.get(metric)
+            val2 = run2.data.metrics.get(metric)
+
+            if val1 is not None and val2 is not None:
+                comparison[metric] = {
+                    f'version_{version1}': val1,
+                    f'version_{version2}': val2,
+                    'difference': val2 - val1,
+                    'pct_change': ((val2 - val1) / val1) * 100 if val1 != 0 else 0
+                }
+
+        return comparison
+\end{lstlisting}
+
+\section{Infrastructure as Code for ML CI/CD}
+
+Managing ML infrastructure as code ensures reproducibility, version control, and automated provisioning of resources needed for CI/CD pipelines.
+
+\subsection{Terraform for ML Infrastructure}
+
+\begin{lstlisting}[language=Python, caption=Terraform Configuration for ML Infrastructure]
+# infrastructure/main.tf
+"""
+Terraform configuration for ML CI/CD infrastructure
+Provisions compute, storage, and networking resources
+"""
+
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 4.0"
+    }
+  }
+
+  backend "s3" {
+    bucket = "ml-terraform-state"
+    key    = "ml-cicd/terraform.tfstate"
+    region = "us-west-2"
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+# S3 bucket for model artifacts
+resource "aws_s3_bucket" "model_artifacts" {
+  bucket = "${var.project_name}-model-artifacts-${var.environment}"
+
+  tags = {
+    Environment = var.environment
+    Purpose     = "ML Model Storage"
+    ManagedBy   = "Terraform"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "model_artifacts_versioning" {
+  bucket = aws_s3_bucket.model_artifacts.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "model_artifacts_lifecycle" {
+  bucket = aws_s3_bucket.model_artifacts.id
+
+  rule {
+    id     = "archive_old_models"
+    status = "Enabled"
+
+    transition {
+      days          = 90
+      storage_class = "GLACIER"
+    }
+
+    expiration {
+      days = 365
+    }
+  }
+}
+
+# ECR repository for ML container images
+resource "aws_ecr_repository" "ml_training" {
+  name                 = "${var.project_name}-ml-training"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Environment = var.environment
+    Purpose     = "ML Training Images"
+  }
+}
+
+resource "aws_ecr_lifecycle_policy" "ml_training_lifecycle" {
+  repository = aws_ecr_repository.ml_training.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep last 10 images"
+      selection = {
+        tagStatus     = "any"
+        countType     = "imageCountMoreThan"
+        countNumber   = 10
+      }
+      action = {
+        type = "expire"
+      }
+    }]
+  })
+}
+
+# SageMaker notebook instance for experimentation
+resource "aws_sagemaker_notebook_instance" "ml_dev" {
+  name          = "${var.project_name}-ml-notebook-${var.environment}"
+  role_arn      = aws_iam_role.sagemaker_role.arn
+  instance_type = var.notebook_instance_type
+
+  tags = {
+    Environment = var.environment
+    Purpose     = "ML Development"
+  }
+}
+
+# IAM role for SageMaker
+resource "aws_iam_role" "sagemaker_role" {
+  name = "${var.project_name}-sagemaker-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "sagemaker.amazonaws.com"
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "sagemaker_full_access" {
+  role       = aws_iam_role.sagemaker_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSageMakerFullAccess"
+}
+
+# ECS cluster for model serving
+resource "aws_ecs_cluster" "ml_serving" {
+  name = "${var.project_name}-ml-serving-${var.environment}"
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+
+  tags = {
+    Environment = var.environment
+    Purpose     = "ML Model Serving"
+  }
+}
+
+resource "aws_ecs_cluster_capacity_providers" "ml_serving" {
+  cluster_name = aws_ecs_cluster.ml_serving.name
+
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
+
+  default_capacity_provider_strategy {
+    capacity_provider = "FARGATE_SPOT"
+    weight           = 1
+  }
+}
+
+# Application Load Balancer for model endpoint
+resource "aws_lb" "ml_api" {
+  name               = "${var.project_name}-ml-api-${var.environment}"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.ml_api_lb.id]
+  subnets            = var.public_subnet_ids
+
+  enable_deletion_protection = var.environment == "production"
+
+  tags = {
+    Environment = var.environment
+    Purpose     = "ML API Load Balancer"
+  }
+}
+
+resource "aws_lb_target_group" "ml_api" {
+  name        = "${var.project_name}-ml-api-tg-${var.environment}"
+  port        = 8080
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200"
+    path                = "/health"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 3
+  }
+
+  deregistration_delay = 30
+}
+
+# CloudWatch Log Group for ML logs
+resource "aws_cloudwatch_log_group" "ml_logs" {
+  name              = "/aws/ml/${var.project_name}/${var.environment}"
+  retention_in_days = var.log_retention_days
+
+  tags = {
+    Environment = var.environment
+    Purpose     = "ML System Logs"
+  }
+}
+
+# RDS for metadata storage (MLflow tracking)
+resource "aws_db_instance" "mlflow_backend" {
+  identifier     = "${var.project_name}-mlflow-db-${var.environment}"
+  engine         = "postgres"
+  engine_version = "14.7"
+  instance_class = var.db_instance_type
+
+  allocated_storage     = 100
+  max_allocated_storage = 1000
+  storage_encrypted     = true
+
+  db_name  = "mlflow"
+  username = var.db_username
+  password = var.db_password
+
+  backup_retention_period = var.environment == "production" ? 30 : 7
+  skip_final_snapshot     = var.environment != "production"
+
+  vpc_security_group_ids = [aws_security_group.mlflow_db.id]
+  db_subnet_group_name   = aws_db_subnet_group.mlflow.name
+
+  tags = {
+    Environment = var.environment
+    Purpose     = "MLflow Tracking Backend"
+  }
+}
+
+# Outputs for use in CI/CD
+output "model_artifacts_bucket" {
+  description = "S3 bucket for model artifacts"
+  value       = aws_s3_bucket.model_artifacts.id
+}
+
+output "ecr_repository_url" {
+  description = "ECR repository URL for ML images"
+  value       = aws_ecr_repository.ml_training.repository_url
+}
+
+output "ecs_cluster_name" {
+  description = "ECS cluster for model serving"
+  value       = aws_ecs_cluster.ml_serving.name
+}
+
+output "load_balancer_dns" {
+  description = "Load balancer DNS for ML API"
+  value       = aws_lb.ml_api.dns_name
+}
+
+output "mlflow_db_endpoint" {
+  description = "MLflow database endpoint"
+  value       = aws_db_instance.mlflow_backend.endpoint
+  sensitive   = true
+}
+\end{lstlisting}
+
+\subsection{GitHub Actions with Terraform}
+
+\begin{lstlisting}[style=yaml, caption=Infrastructure Provisioning in CI/CD]
+# .github/workflows/infrastructure.yml
+name: Infrastructure Provisioning
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infrastructure/**'
+  pull_request:
+    paths:
+      - 'infrastructure/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+env:
+  TF_VERSION: '1.5.0'
+  AWS_REGION: 'us-west-2'
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'development' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Terraform Format Check
+      working-directory: ./infrastructure
+      run: terraform fmt -check -recursive
+
+    - name: Terraform Init
+      working-directory: ./infrastructure
+      run: |
+        terraform init \
+          -backend-config="bucket=ml-terraform-state" \
+          -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate"
+
+    - name: Terraform Validate
+      working-directory: ./infrastructure
+      run: terraform validate
+
+    - name: Terraform Plan
+      working-directory: ./infrastructure
+      run: |
+        terraform plan \
+          -var="environment=${{ github.event.inputs.environment }}" \
+          -var="project_name=${{ github.event.repository.name }}" \
+          -out=tfplan
+
+    - name: Upload Plan
+      uses: actions/upload-artifact@v3
+      with:
+        name: terraform-plan
+        path: infrastructure/tfplan
+
+    - name: Cost Estimation
+      uses: infracost/actions/setup@v2
+      with:
+        api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+    - name: Generate Cost Estimate
+      working-directory: ./infrastructure
+      run: |
+        infracost breakdown \
+          --path tfplan \
+          --format json \
+          --out-file /tmp/infracost.json
+
+        infracost output \
+          --path /tmp/infracost.json \
+          --format table
+
+  terraform-apply:
+    needs: terraform-plan
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'development' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Download Plan
+      uses: actions/download-artifact@v3
+      with:
+        name: terraform-plan
+        path: infrastructure/
+
+    - name: Terraform Init
+      working-directory: ./infrastructure
+      run: |
+        terraform init \
+          -backend-config="bucket=ml-terraform-state" \
+          -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate"
+
+    - name: Terraform Apply
+      working-directory: ./infrastructure
+      run: terraform apply -auto-approve tfplan
+
+    - name: Export Outputs
+      working-directory: ./infrastructure
+      run: |
+        terraform output -json > terraform-outputs.json
+
+    - name: Update GitHub Secrets
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Extract outputs and update repository secrets
+        BUCKET=$(terraform -chdir=infrastructure output -raw model_artifacts_bucket)
+        gh secret set MODEL_ARTIFACTS_BUCKET --body "$BUCKET"
+
+        ECR_URL=$(terraform -chdir=infrastructure output -raw ecr_repository_url)
+        gh secret set ECR_REPOSITORY_URL --body "$ECR_URL"
+
+        CLUSTER=$(terraform -chdir=infrastructure output -raw ecs_cluster_name)
+        gh secret set ECS_CLUSTER_NAME --body "$CLUSTER"
+\end{lstlisting}
+
+\subsection{Docker Compose for Local Development}
+
+\begin{lstlisting}[style=yaml, caption=Docker Compose for Local ML Environment]
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # MLflow tracking server
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    container_name: mlflow-server
+    ports:
+      - "5000:5000"
+    environment:
+      - BACKEND_STORE_URI=postgresql://mlflow:mlflow@postgres:5432/mlflow
+      - DEFAULT_ARTIFACT_ROOT=s3://mlflow-artifacts
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://mlflow:mlflow@postgres:5432/mlflow
+      --default-artifact-root s3://mlflow-artifacts
+      --host 0.0.0.0
+      --port 5000
+    depends_on:
+      - postgres
+    networks:
+      - ml-network
+
+  # PostgreSQL for MLflow backend
+  postgres:
+    image: postgres:14
+    container_name: mlflow-postgres
+    environment:
+      - POSTGRES_USER=mlflow
+      - POSTGRES_PASSWORD=mlflow
+      - POSTGRES_DB=mlflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - ml-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and task queue
+  redis:
+    image: redis:7-alpine
+    container_name: ml-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - ml-network
+    command: redis-server --appendonly yes
+
+  # Jupyter notebook for development
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile.jupyter
+    container_name: ml-jupyter
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    volumes:
+      - ./notebooks:/home/jovyan/notebooks
+      - ./data:/home/jovyan/data
+      - ./src:/home/jovyan/src
+    networks:
+      - ml-network
+    depends_on:
+      - mlflow
+
+  # Model serving API
+  model-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: ml-model-api
+    ports:
+      - "8080:8080"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MODEL_NAME=my-model
+      - MODEL_VERSION=latest
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    networks:
+      - ml-network
+    depends_on:
+      - mlflow
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ml-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - ml-network
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ml-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards
+    networks:
+      - ml-network
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  ml-network:
+    driver: bridge
+\end{lstlisting}
+
+\textbf{Infrastructure Best Practices:}
+
+\begin{itemize}
+    \item \textbf{Environment Parity:} Keep dev, staging, and production as similar as possible
+    \item \textbf{Immutable Infrastructure:} Recreate instead of modifying existing resources
+    \item \textbf{Cost Optimization:} Use spot instances for training, auto-scaling for serving
+    \item \textbf{Security:} Encrypt at rest and in transit, use IAM roles instead of keys
+    \item \textbf{Monitoring:} Instrument all infrastructure with CloudWatch/Prometheus
+    \item \textbf{Disaster Recovery:} Regular backups, multi-region for production
+    \item \textbf{Cost Tracking:} Tag all resources, use Infracost for budget awareness
+\end{itemize}
+
+\section{Security Scanning and Compliance}
+
+\subsection{Security and Compliance Checks}
+
+\begin{lstlisting}[style=yaml, caption=Security Scanning in CI/CD]
+# .github/workflows/security-scan.yml
+name: Security and Compliance Scan
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly
+
+jobs:
+  dependency-security-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install safety bandit pip-audit
+
+    - name: Run Safety check
+      run: |
+        safety check --json --output safety-report.json
+      continue-on-error: true
+
+    - name: Run pip-audit
+      run: |
+        pip-audit --format json --output pip-audit-report.json
+      continue-on-error: true
+
+    - name: Run Bandit security scan
+      run: |
+        bandit -r src/ -f json -o bandit-report.json
+      continue-on-error: true
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          safety-report.json
+          pip-audit-report.json
+          bandit-report.json
+
+  model-security-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Scan for secrets
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: ${{ github.event.repository.default_branch }}
+        head: HEAD
+
+    - name: Check for PII in data
+      run: |
+        python scripts/scan_for_pii.py \
+          --data-dir data/ \
+          --output pii-scan-results.json
+
+    - name: Validate data lineage
+      run: |
+        python scripts/validate_data_lineage.py \
+          --dvc-files data/*.dvc \
+          --output lineage-report.json
+
+  compliance-check:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Check model documentation
+      run: |
+        python scripts/check_model_documentation.py \
+          --models-dir models/ \
+          --required-fields "description,metrics,dependencies,limitations"
+
+    - name: Validate model cards
+      run: |
+        python scripts/validate_model_cards.py \
+          --cards-dir docs/model_cards/
+
+    - name: Check license compliance
+      uses: pilosus/action-pip-license-checker@v2
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        requirements: 'requirements.txt'
+        fail: 'StrongCopyleft,NetworkCopyleft,Error'
+
+  generate-security-report:
+    runs-on: ubuntu-latest
+    needs: [dependency-security-scan, model-security-scan, compliance-check]
+
+    steps:
+    - name: Download all reports
+      uses: actions/download-artifact@v3
+
+    - name: Generate consolidated report
+      run: |
+        python scripts/generate_security_report.py \
+          --reports-dir . \
+          --output security-summary.html
+
+    - name: Upload consolidated report
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-summary
+        path: security-summary.html
+
+    - name: Comment on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('security-summary.html', 'utf8');
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## Security Scan Results\n\n${report}`
+          });
+\end{lstlisting}
+
+\section{Practical CI/CD Implementation Exercises}
+
+\subsection{Exercise 1: Build Complete ML CI/CD Pipeline}
+
+\textbf{Objective:} Implement end-to-end CI/CD for an ML project using GitHub Actions.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Set up GitHub Actions workflow with all stages
+    \item Implement unit tests for data processing and model code
+    \item Add data validation with Great Expectations
+    \item Configure model training with matrix strategy (3+ models)
+    \item Implement model validation gates
+    \item Add automated deployment to staging
+    \item Require manual approval for production deployment
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Complete `.github/workflows/ml-cicd.yml` workflow
+    \item Test suite with >80\% coverage
+    \item Data validation suite
+    \item Model validation configuration
+    \item Deployment scripts for staging and production
+    \item Documentation for running and monitoring the pipeline
+\end{itemize}
+
+\subsection{Exercise 2: Implement Continuous Training Pipeline}
+
+\textbf{Objective:} Build automated continuous training with drift detection.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Implement data drift detection using statistical tests
+    \item Add performance monitoring and degradation detection
+    \item Create retraining trigger logic (drift, performance, schedule)
+    \item Implement automated model evaluation and comparison
+    \item Add canary deployment with automatic rollback
+    \item Integrate with MLflow for experiment tracking
+\end{itemize}
+
+\textbf{Test Scenarios:}
+\begin{enumerate}
+    \item Gradual data drift over 30 days
+    \item Sudden performance degradation
+    \item Scheduled weekly retraining
+    \item Failed canary deployment requiring rollback
+\end{enumerate}
+
+\subsection{Exercise 3: Create Comprehensive ML Test Suite}
+
+\textbf{Objective:} Develop complete testing framework for ML systems.
+
+\textbf{Test Categories:}
+\begin{itemize}
+    \item Unit tests: Data processing, feature engineering, model training
+    \item Integration tests: End-to-end training pipeline
+    \item Model performance tests: Accuracy, precision, recall, F1
+    \item Fairness tests: Demographic parity, equal opportunity
+    \item Robustness tests: Noise resilience, outlier handling
+    \item Latency tests: Inference speed requirements
+\end{itemize}
+
+\textbf{Expected Output:}
+\begin{itemize}
+    \item 50+ test cases covering all categories
+    \item Pytest configuration with fixtures
+    \item Test coverage report >85\%
+    \item Integration with CI pipeline
+    \item Documentation of test rationale
+\end{itemize}
+
+\subsection{Exercise 4: Model Registry Integration}
+
+\textbf{Objective:} Integrate MLflow Model Registry into CI/CD pipeline.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Automatically register models after successful training
+    \item Implement model versioning with semantic versions
+    \item Add model tagging (git commit, branch, metrics)
+    \item Create promotion workflow: None → Staging → Production
+    \item Implement model comparison before promotion
+    \item Add automatic archival of old production models
+\end{itemize}
+
+\textbf{Workflow:}
+\begin{enumerate}
+    \item Train model, log to MLflow
+    \item Register in model registry with metadata
+    \item Promote to Staging if validation passes
+    \item Run integration tests against Staging
+    \item Promote to Production with approval
+    \item Archive previous Production version
+\end{enumerate}
+
+\subsection{Exercise 5: Security and Compliance Automation}
+
+\textbf{Objective:} Implement automated security scanning and compliance checks.
+
+\textbf{Security Checks:}
+\begin{itemize}
+    \item Dependency vulnerability scanning (Safety, pip-audit)
+    \item Secret scanning (TruffleHog, detect-secrets)
+    \item Code security analysis (Bandit)
+    \item Container image scanning
+    \item PII detection in training data
+    \item Model watermarking for tracking
+\end{itemize}
+
+\textbf{Compliance Checks:}
+\begin{itemize}
+    \item Model documentation completeness
+    \item Model card validation
+    \item License compliance
+    \item Data lineage tracking
+    \item Audit trail generation
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Security scanning workflow
+    \item Compliance checking scripts
+    \item Automated reporting
+    \item PR comments with scan results
+    \item Security policy documentation
+\end{itemize}
+
+\subsection{Exercise 6: Multi-Environment Deployment Pipeline}
+
+\textbf{Objective:} Create deployment pipeline across dev, staging, and production.
+
+\textbf{Environments:}
+\begin{itemize}
+    \item Development: Automatic deployment from feature branches
+    \item Staging: Automatic deployment from develop branch
+    \item Production: Manual deployment from main branch
+\end{itemize}
+
+\textbf{Deployment Strategy:}
+\begin{itemize}
+    \item Blue-green deployment for zero-downtime
+    \item Canary deployment with gradual traffic shift
+    \item Automatic rollback on error rate spike
+    \item Smoke tests after each deployment
+    \item Load testing in staging
+\end{itemize}
+
+\textbf{Implementation:}
+\begin{itemize}
+    \item Docker containerization
+    \item Kubernetes deployment manifests
+    \item Environment-specific configurations
+    \item Health check endpoints
+    \item Monitoring integration
+\end{itemize}
+
+\subsection{Exercise 7: Model Monitoring Integration}
+
+\textbf{Objective:} Integrate production monitoring into CI/CD.
+
+\textbf{Monitoring Components:}
+\begin{itemize}
+    \item Prediction logging and sampling
+    \item Performance metric tracking (accuracy, latency)
+    \item Data drift detection in production
+    \item Alert configuration for anomalies
+    \item Dashboard for model health
+    \item Integration with incident management
+\end{itemize}
+
+\textbf{Alert Conditions:}
+\begin{itemize}
+    \item Error rate > 1\%
+    \item P99 latency > 500ms
+    \item Throughput drop > 20\%
+    \item Data drift detected
+    \item Performance degradation > 5\%
+\end{itemize}
+
+\subsection{Exercise 8: A/B Testing Framework}
+
+\textbf{Objective:} Build automated A/B testing for model comparison.
+
+\textbf{Framework Components:}
+\begin{itemize}
+    \item Traffic splitting mechanism
+    \item Statistical significance testing
+    \item Automatic winner selection
+    \item Gradual rollout of winning model
+    \item Experiment tracking and reporting
+\end{itemize}
+
+\textbf{Test Scenarios:}
+\begin{itemize}
+    \item Compare two model architectures
+    \item Test hyperparameter variations
+    \item Evaluate feature engineering changes
+    \item Measure impact of new training data
+\end{itemize}
+
+\section{Summary}
+
+This chapter covered comprehensive CI/CD practices for machine learning systems. Key takeaways:
+
+\textbf{1. ML-Specific CI/CD Challenges:}
+\begin{itemize}
+    \item Large model artifacts require specialized storage and transfer
+    \item Data dependencies complicate reproducibility
+    \item GPU requirements necessitate custom runners
+    \item Non-determinism requires statistical testing approaches
+    \item Multiple stakeholders need clear handoff points
+\end{itemize}
+
+\textbf{2. Complete Pipeline Components:}
+\begin{itemize}
+    \item Code quality: Linting, formatting, type checking, security scanning
+    \item Testing: Unit, integration, model performance, fairness, robustness
+    \item Data validation: Schema checks, quality metrics, drift detection
+    \item Model training: Automated training with multiple model types
+    \item Model validation: Performance gates, fairness checks, latency requirements
+    \item Deployment: Staging, canary, production with rollback
+    \item Monitoring: Performance tracking, alerting, incident response
+\end{itemize}
+
+\textbf{3. GitHub Actions Best Practices:}
+\begin{itemize}
+    \item Use job dependencies to create clear pipeline stages
+    \item Implement matrix builds for testing multiple configurations
+    \item Cache dependencies to speed up workflows
+    \item Use self-hosted runners for GPU-intensive tasks
+    \item Separate workflows for different triggers (PR, push, schedule)
+    \item Use environments for production deployment gates
+\end{itemize}
+
+\textbf{4. Testing Strategies:}
+\begin{itemize}
+    \item Unit tests for data processing and feature engineering
+    \item Integration tests for complete training pipelines
+    \item Performance tests with thresholds for metrics
+    \item Fairness tests across protected groups
+    \item Robustness tests for noise and outliers
+    \item Latency tests for inference speed
+\end{itemize}
+
+\textbf{5. Continuous Training:}
+\begin{itemize}
+    \item Monitor data and performance for drift
+    \item Implement intelligent retraining triggers
+    \item Compare new models against baselines
+    \item Use canary deployments for safe rollout
+    \item Maintain audit trail of all changes
+\end{itemize}
+
+\textbf{6. Model Registry Integration:}
+\begin{itemize}
+    \item Centralized model versioning with MLflow
+    \item Stage-based promotion workflow
+    \item Model comparison and lineage tracking
+    \item Metadata and tag management
+    \item Rollback capabilities
+\end{itemize}
+
+\textbf{7. Security and Compliance:}
+\begin{itemize}
+    \item Automated vulnerability scanning
+    \item Secret detection in code and data
+    \item PII detection in training data
+    \item License compliance checking
+    \item Model documentation and cards
+    \item Audit trails for regulatory requirements
+\end{itemize}
+
+\textbf{8. Deployment Strategies:}
+\begin{itemize}
+    \item Blue-green for zero-downtime updates
+    \item Canary for gradual rollout with monitoring
+    \item A/B testing for model comparison
+    \item Automatic rollback on failures
+    \item Multi-environment progression
+\end{itemize}
+
+\textbf{Key Success Factors:}
+\begin{enumerate}
+    \item \textbf{Automation:} Automate everything from testing to deployment
+    \item \textbf{Validation Gates:} Never deploy without passing all checks
+    \item \textbf{Monitoring:} Watch models in production continuously
+    \item \textbf{Rollback:} Always have a quick rollback strategy
+    \item \textbf{Documentation:} Document models, decisions, and processes
+    \item \textbf{Collaboration:} Design for data scientists and engineers
+\end{enumerate}
+
+CI/CD for ML requires adapting traditional software practices while adding ML-specific components. The investment in robust pipelines pays off through faster iteration, fewer production issues, and greater confidence in deployments.
+

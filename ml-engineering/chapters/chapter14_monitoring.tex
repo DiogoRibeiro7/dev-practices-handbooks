@@ -2,31 +2,4178 @@
 
 After completing this chapter, readers will be able to:
 \begin{itemize}
-    \item Design comprehensive monitoring strategies for ML systems
-    \item Detect data drift and concept drift
-    \item Implement model performance monitoring
-    \item Set up alerting for model degradation
-    \item Use monitoring tools (Prometheus, Grafana, Evidently)
+    \item Design comprehensive monitoring architectures for production ML systems
+    \item Implement data drift and concept drift detection using multiple methods
+    \item Build real-time model performance monitoring dashboards
+    \item Integrate Prometheus and Grafana for ML metrics collection and visualization
+    \item Create intelligent alert systems with automated incident response
+    \item Apply observability best practices for debugging and optimization
+    \item Diagnose and resolve common ML system failures
+    \item Implement complete monitoring stacks for enterprise ML deployments
 \end{itemize}
 
-\section{ML Monitoring Fundamentals}
+\section{Introduction}
 
-% Placeholder content
+ML models in production face unique challenges: data distributions shift, model performance degrades, infrastructure fails, and business requirements change. Without comprehensive monitoring, teams discover issues only after significant business impact. Production ML monitoring requires tracking not just traditional software metrics (latency, throughput, errors), but also ML-specific concerns like data drift, prediction quality, and model staleness.
 
-\section{Drift Detection}
+Effective ML monitoring provides:
+\begin{itemize}
+    \item \textbf{Early warning:} Detect degradation before business impact
+    \item \textbf{Root cause analysis:} Understand why models fail
+    \item \textbf{Continuous validation:} Ensure ongoing model quality
+    \item \textbf{Compliance:} Audit trail for regulatory requirements
+    \item \textbf{Optimization insights:} Data for model improvement
+\end{itemize}
 
-% Placeholder content
+This chapter covers production-grade monitoring systems that combine traditional observability with ML-specific metrics.
 
-\section{Monitoring Infrastructure}
+\section{ML Monitoring Architecture}
 
-% Placeholder content
+\subsection{Monitoring System Components}
 
-\section{Chapter Summary}
+A comprehensive ML monitoring architecture consists of multiple layers working together to provide complete observability.
 
-% Placeholder summary
+\textbf{Architecture layers:}
+\begin{itemize}
+    \item \textbf{Data collection:} Metrics, logs, traces from ML systems
+    \item \textbf{Storage:} Time-series databases for metric history
+    \item \textbf{Processing:} Real-time drift detection and aggregation
+    \item \textbf{Alerting:} Intelligent thresholds and incident management
+    \item \textbf{Visualization:} Dashboards for human insight
+    \item \textbf{Analysis:} Automated root cause identification
+\end{itemize}
+
+\subsection{Complete Monitoring Architecture Implementation}
+
+\begin{lstlisting}[language=Python, caption=ML Monitoring Architecture]
+from typing import Dict, List, Optional, Any, Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+import numpy as np
+import pandas as pd
+import logging
+from collections import deque
+import json
+
+class MetricType(Enum):
+    """Types of metrics to monitor"""
+    COUNTER = "counter"
+    GAUGE = "gauge"
+    HISTOGRAM = "histogram"
+    SUMMARY = "summary"
+
+class AlertSeverity(Enum):
+    """Alert severity levels"""
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+@dataclass
+class Metric:
+    """Individual metric data point"""
+    name: str
+    value: float
+    timestamp: datetime
+    labels: Dict[str, str] = field(default_factory=dict)
+    metric_type: MetricType = MetricType.GAUGE
+
+@dataclass
+class Alert:
+    """Alert configuration and state"""
+    alert_id: str
+    name: str
+    condition: Callable
+    severity: AlertSeverity
+    message_template: str
+    cooldown_minutes: int = 15
+    last_triggered: Optional[datetime] = None
+
+class MetricsCollector:
+    """
+    Collect and store ML system metrics
+
+    Provides thread-safe metric collection with buffering
+    """
+
+    def __init__(self, buffer_size: int = 10000):
+        """
+        Initialize metrics collector
+
+        Args:
+            buffer_size: Maximum metrics to buffer before flush
+        """
+        self.metrics_buffer: deque = deque(maxlen=buffer_size)
+        self.counters: Dict[str, float] = {}
+        self.gauges: Dict[str, float] = {}
+        self.histograms: Dict[str, List[float]] = {}
+        self.logger = logging.getLogger("MetricsCollector")
+
+    def record_counter(self, name: str, value: float = 1,
+                      labels: Dict[str, str] = None):
+        """
+        Record a counter metric (monotonically increasing)
+
+        Args:
+            name: Metric name
+            value: Increment amount
+            labels: Metric labels
+        """
+        key = self._make_key(name, labels)
+        self.counters[key] = self.counters.get(key, 0) + value
+
+        self._buffer_metric(Metric(
+            name=name,
+            value=self.counters[key],
+            timestamp=datetime.now(),
+            labels=labels or {},
+            metric_type=MetricType.COUNTER
+        ))
+
+    def record_gauge(self, name: str, value: float,
+                    labels: Dict[str, str] = None):
+        """
+        Record a gauge metric (can go up or down)
+
+        Args:
+            name: Metric name
+            value: Current value
+            labels: Metric labels
+        """
+        key = self._make_key(name, labels)
+        self.gauges[key] = value
+
+        self._buffer_metric(Metric(
+            name=name,
+            value=value,
+            timestamp=datetime.now(),
+            labels=labels or {},
+            metric_type=MetricType.GAUGE
+        ))
+
+    def record_histogram(self, name: str, value: float,
+                        labels: Dict[str, str] = None):
+        """
+        Record a histogram metric (distribution of values)
+
+        Args:
+            name: Metric name
+            value: Observed value
+            labels: Metric labels
+        """
+        key = self._make_key(name, labels)
+        if key not in self.histograms:
+            self.histograms[key] = []
+
+        self.histograms[key].append(value)
+
+        self._buffer_metric(Metric(
+            name=name,
+            value=value,
+            timestamp=datetime.now(),
+            labels=labels or {},
+            metric_type=MetricType.HISTOGRAM
+        ))
+
+    def get_metrics(self, name: str = None,
+                   start_time: datetime = None,
+                   end_time: datetime = None) -> List[Metric]:
+        """
+        Retrieve metrics from buffer
+
+        Args:
+            name: Filter by metric name
+            start_time: Filter by start time
+            end_time: Filter by end time
+
+        Returns:
+            Filtered list of metrics
+        """
+        metrics = list(self.metrics_buffer)
+
+        if name:
+            metrics = [m for m in metrics if m.name == name]
+
+        if start_time:
+            metrics = [m for m in metrics if m.timestamp >= start_time]
+
+        if end_time:
+            metrics = [m for m in metrics if m.timestamp <= end_time]
+
+        return metrics
+
+    def get_histogram_percentiles(self, name: str,
+                                  labels: Dict[str, str] = None,
+                                  percentiles: List[float] = [50, 95, 99]) -> Dict[float, float]:
+        """
+        Calculate histogram percentiles
+
+        Args:
+            name: Metric name
+            labels: Metric labels
+            percentiles: Percentiles to calculate
+
+        Returns:
+            Dictionary of percentile values
+        """
+        key = self._make_key(name, labels)
+        values = self.histograms.get(key, [])
+
+        if not values:
+            return {p: 0.0 for p in percentiles}
+
+        return {
+            p: np.percentile(values, p)
+            for p in percentiles
+        }
+
+    def _make_key(self, name: str, labels: Dict[str, str] = None) -> str:
+        """Create unique key for metric"""
+        if not labels:
+            return name
+
+        label_str = ",".join(f"{k}={v}" for k, v in sorted(labels.items()))
+        return f"{name}{{{label_str}}}"
+
+    def _buffer_metric(self, metric: Metric):
+        """Add metric to buffer"""
+        self.metrics_buffer.append(metric)
+
+    def flush(self) -> List[Metric]:
+        """
+        Flush all buffered metrics
+
+        Returns:
+            All buffered metrics
+        """
+        metrics = list(self.metrics_buffer)
+        self.metrics_buffer.clear()
+        return metrics
+
+class MonitoringArchitecture:
+    """
+    Complete ML monitoring architecture
+
+    Coordinates metrics collection, storage, and alerting
+    """
+
+    def __init__(self,
+                 metrics_collector: MetricsCollector,
+                 storage_backend: Optional[Any] = None):
+        """
+        Initialize monitoring architecture
+
+        Args:
+            metrics_collector: Metrics collector instance
+            storage_backend: Backend for metric storage (e.g., Prometheus)
+        """
+        self.metrics = metrics_collector
+        self.storage = storage_backend
+        self.alerts: Dict[str, Alert] = {}
+        self.logger = logging.getLogger("MonitoringArchitecture")
+
+        # Standard ML metrics
+        self._register_standard_metrics()
+
+    def _register_standard_metrics(self):
+        """Register standard ML metrics"""
+        self.standard_metrics = {
+            'prediction_count': MetricType.COUNTER,
+            'prediction_latency_ms': MetricType.HISTOGRAM,
+            'model_accuracy': MetricType.GAUGE,
+            'data_drift_score': MetricType.GAUGE,
+            'feature_null_count': MetricType.COUNTER,
+            'prediction_confidence': MetricType.HISTOGRAM,
+            'error_count': MetricType.COUNTER,
+            'cache_hit_rate': MetricType.GAUGE
+        }
+
+    def record_prediction(self,
+                         model_name: str,
+                         model_version: str,
+                         features: Dict[str, Any],
+                         prediction: Any,
+                         confidence: float,
+                         latency_ms: float):
+        """
+        Record a model prediction with all associated metrics
+
+        Args:
+            model_name: Name of model
+            model_version: Model version
+            features: Input features
+            prediction: Model prediction
+            confidence: Prediction confidence
+            latency_ms: Prediction latency
+        """
+        labels = {
+            'model_name': model_name,
+            'model_version': model_version
+        }
+
+        # Record prediction count
+        self.metrics.record_counter(
+            'prediction_count',
+            value=1,
+            labels=labels
+        )
+
+        # Record latency
+        self.metrics.record_histogram(
+            'prediction_latency_ms',
+            value=latency_ms,
+            labels=labels
+        )
+
+        # Record confidence
+        self.metrics.record_histogram(
+            'prediction_confidence',
+            value=confidence,
+            labels=labels
+        )
+
+        # Check for null features
+        null_count = sum(1 for v in features.values() if v is None)
+        if null_count > 0:
+            self.metrics.record_counter(
+                'feature_null_count',
+                value=null_count,
+                labels=labels
+            )
+
+    def record_ground_truth(self,
+                           model_name: str,
+                           model_version: str,
+                           prediction: Any,
+                           actual: Any,
+                           metric_value: float):
+        """
+        Record ground truth and calculate accuracy
+
+        Args:
+            model_name: Name of model
+            model_version: Model version
+            prediction: Model prediction
+            actual: Actual value
+            metric_value: Calculated metric (e.g., accuracy, error)
+        """
+        labels = {
+            'model_name': model_name,
+            'model_version': model_version
+        }
+
+        # Record metric
+        self.metrics.record_gauge(
+            'model_accuracy',
+            value=metric_value,
+            labels=labels
+        )
+
+        # Record if prediction was correct
+        correct = 1 if prediction == actual else 0
+        self.metrics.record_counter(
+            'correct_predictions',
+            value=correct,
+            labels=labels
+        )
+
+    def register_alert(self, alert: Alert):
+        """
+        Register an alert condition
+
+        Args:
+            alert: Alert configuration
+        """
+        self.alerts[alert.alert_id] = alert
+        self.logger.info(f"Registered alert: {alert.name}")
+
+    def check_alerts(self) -> List[Dict]:
+        """
+        Check all registered alerts
+
+        Returns:
+            List of triggered alerts
+        """
+        triggered_alerts = []
+
+        for alert_id, alert in self.alerts.items():
+            # Check cooldown
+            if alert.last_triggered:
+                time_since = datetime.now() - alert.last_triggered
+                if time_since.total_seconds() < alert.cooldown_minutes * 60:
+                    continue
+
+            # Evaluate condition
+            try:
+                if alert.condition(self.metrics):
+                    alert.last_triggered = datetime.now()
+
+                    triggered_alerts.append({
+                        'alert_id': alert_id,
+                        'name': alert.name,
+                        'severity': alert.severity.value,
+                        'message': alert.message_template,
+                        'timestamp': datetime.now().isoformat()
+                    })
+
+                    self.logger.warning(
+                        f"Alert triggered: {alert.name} ({alert.severity.value})"
+                    )
+
+            except Exception as e:
+                self.logger.error(f"Alert check failed for {alert.name}: {str(e)}")
+
+        return triggered_alerts
+
+    def get_health_status(self) -> Dict:
+        """
+        Get overall system health
+
+        Returns:
+            Health status summary
+        """
+        # Get recent metrics
+        recent_time = datetime.now() - timedelta(minutes=5)
+        recent_metrics = self.metrics.get_metrics(start_time=recent_time)
+
+        # Calculate health indicators
+        total_predictions = sum(
+            1 for m in recent_metrics
+            if m.name == 'prediction_count'
+        )
+
+        total_errors = sum(
+            m.value for m in recent_metrics
+            if m.name == 'error_count'
+        )
+
+        error_rate = total_errors / total_predictions if total_predictions > 0 else 0
+
+        # Determine status
+        if error_rate > 0.1:
+            status = "unhealthy"
+        elif error_rate > 0.05:
+            status = "degraded"
+        else:
+            status = "healthy"
+
+        return {
+            'status': status,
+            'total_predictions': total_predictions,
+            'total_errors': total_errors,
+            'error_rate': error_rate,
+            'timestamp': datetime.now().isoformat()
+        }
+
+# Example usage
+def example_monitoring_architecture():
+    """Example of monitoring architecture setup"""
+
+    # Initialize components
+    collector = MetricsCollector(buffer_size=10000)
+    monitoring = MonitoringArchitecture(collector)
+
+    # Simulate predictions
+    for i in range(100):
+        monitoring.record_prediction(
+            model_name='fraud_detector',
+            model_version='v2.0',
+            features={'amount': 100.0, 'merchant': 'store_123'},
+            prediction='legitimate',
+            confidence=0.95,
+            latency_ms=np.random.normal(50, 10)
+        )
+
+    # Register alert for high latency
+    def high_latency_check(metrics: MetricsCollector) -> bool:
+        percentiles = metrics.get_histogram_percentiles(
+            'prediction_latency_ms',
+            labels={'model_name': 'fraud_detector'},
+            percentiles=[95]
+        )
+        return percentiles[95] > 100  # Alert if p95 > 100ms
+
+    monitoring.register_alert(Alert(
+        alert_id='high_latency',
+        name='High Prediction Latency',
+        condition=high_latency_check,
+        severity=AlertSeverity.WARNING,
+        message_template='Prediction latency p95 exceeded 100ms',
+        cooldown_minutes=15
+    ))
+
+    # Check alerts
+    triggered = monitoring.check_alerts()
+    print(f"Triggered alerts: {len(triggered)}")
+
+    # Get health status
+    health = monitoring.get_health_status()
+    print(f"System health: {health['status']}")
+    print(f"Predictions: {health['total_predictions']}")
+    print(f"Error rate: {health['error_rate']:.2%}")
+
+example_monitoring_architecture()
+\end{lstlisting}
+
+\section{Data Drift Detection}
+
+\subsection{Types of Drift}
+
+Data drift occurs when the statistical properties of production data diverge from training data, degrading model performance.
+
+\textbf{Drift categories:}
+\begin{itemize}
+    \item \textbf{Covariate drift:} Input feature distributions change ($P(X)$ changes)
+    \item \textbf{Concept drift:} Relationship between features and target changes ($P(Y|X)$ changes)
+    \item \textbf{Label drift:} Target distribution changes ($P(Y)$ changes)
+    \item \textbf{Prediction drift:} Model predictions distribution changes
+\end{itemize}
+
+\subsection{Drift Detection with Evidently and Custom Methods}
+
+\begin{lstlisting}[language=Python, caption=Comprehensive Drift Detection System]
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
+import logging
+import pandas as pd
+import numpy as np
+from scipy import stats
+from scipy.spatial.distance import jensenshannon
+import warnings
+
+@dataclass
+class DriftResult:
+    """Result of drift detection"""
+    feature_name: str
+    drift_detected: bool
+    drift_score: float
+    p_value: float
+    method: str
+    threshold: float
+    reference_stats: Dict[str, float]
+    current_stats: Dict[str, float]
+
+class DriftDetector:
+    """
+    Comprehensive drift detection system
+
+    Implements multiple statistical tests for drift detection
+    """
+
+    def __init__(self, significance_level: float = 0.05):
+        """
+        Initialize drift detector
+
+        Args:
+            significance_level: Statistical significance threshold
+        """
+        self.significance_level = significance_level
+        self.logger = logging.getLogger("DriftDetector")
+
+    def detect_drift_ks(self,
+                       reference_data: pd.Series,
+                       current_data: pd.Series) -> DriftResult:
+        """
+        Kolmogorov-Smirnov test for continuous features
+
+        Args:
+            reference_data: Training/reference data
+            current_data: Current production data
+
+        Returns:
+            Drift detection result
+        """
+        # Perform KS test
+        statistic, p_value = stats.ks_2samp(reference_data, current_data)
+
+        drift_detected = p_value < self.significance_level
+
+        # Calculate statistics
+        ref_stats = {
+            'mean': float(reference_data.mean()),
+            'std': float(reference_data.std()),
+            'min': float(reference_data.min()),
+            'max': float(reference_data.max()),
+            'median': float(reference_data.median())
+        }
+
+        curr_stats = {
+            'mean': float(current_data.mean()),
+            'std': float(current_data.std()),
+            'min': float(current_data.min()),
+            'max': float(current_data.max()),
+            'median': float(current_data.median())
+        }
+
+        return DriftResult(
+            feature_name=reference_data.name if hasattr(reference_data, 'name') else 'unnamed',
+            drift_detected=drift_detected,
+            drift_score=statistic,
+            p_value=p_value,
+            method='Kolmogorov-Smirnov',
+            threshold=self.significance_level,
+            reference_stats=ref_stats,
+            current_stats=curr_stats
+        )
+
+    def detect_drift_chi2(self,
+                         reference_data: pd.Series,
+                         current_data: pd.Series,
+                         bins: int = 10) -> DriftResult:
+        """
+        Chi-squared test for categorical or binned continuous features
+
+        Args:
+            reference_data: Training/reference data
+            current_data: Current production data
+            bins: Number of bins for continuous data
+
+        Returns:
+            Drift detection result
+        """
+        # Create contingency table
+        if reference_data.dtype in ['object', 'category']:
+            # Categorical data
+            ref_counts = reference_data.value_counts()
+            curr_counts = current_data.value_counts()
+
+            # Align categories
+            all_categories = set(ref_counts.index) | set(curr_counts.index)
+            ref_freq = [ref_counts.get(cat, 0) for cat in all_categories]
+            curr_freq = [curr_counts.get(cat, 0) for cat in all_categories]
+
+        else:
+            # Continuous data - bin it
+            combined = pd.concat([reference_data, current_data])
+            bins_edges = pd.cut(combined, bins=bins, retbins=True)[1]
+
+            ref_freq, _ = np.histogram(reference_data, bins=bins_edges)
+            curr_freq, _ = np.histogram(current_data, bins=bins_edges)
+
+        # Normalize to frequencies
+        ref_freq = np.array(ref_freq) / np.sum(ref_freq)
+        curr_freq = np.array(curr_freq) / np.sum(curr_freq)
+
+        # Chi-squared test
+        # Add small constant to avoid division by zero
+        expected = (ref_freq + 1e-10) * len(current_data)
+        observed = (curr_freq + 1e-10) * len(current_data)
+
+        chi2_stat = np.sum((observed - expected) ** 2 / expected)
+        dof = len(ref_freq) - 1
+        p_value = 1 - stats.chi2.cdf(chi2_stat, dof)
+
+        drift_detected = p_value < self.significance_level
+
+        ref_stats = {
+            'unique_values': len(reference_data.unique()),
+            'mode': reference_data.mode()[0] if len(reference_data.mode()) > 0 else None
+        }
+
+        curr_stats = {
+            'unique_values': len(current_data.unique()),
+            'mode': current_data.mode()[0] if len(current_data.mode()) > 0 else None
+        }
+
+        return DriftResult(
+            feature_name=reference_data.name if hasattr(reference_data, 'name') else 'unnamed',
+            drift_detected=drift_detected,
+            drift_score=chi2_stat,
+            p_value=p_value,
+            method='Chi-Squared',
+            threshold=self.significance_level,
+            reference_stats=ref_stats,
+            current_stats=curr_stats
+        )
+
+    def detect_drift_psi(self,
+                        reference_data: pd.Series,
+                        current_data: pd.Series,
+                        bins: int = 10,
+                        psi_threshold: float = 0.2) -> DriftResult:
+        """
+        Population Stability Index (PSI) for drift detection
+
+        Args:
+            reference_data: Training/reference data
+            current_data: Current production data
+            bins: Number of bins
+            psi_threshold: PSI threshold (0.1=small, 0.2=medium, 0.25+=large shift)
+
+        Returns:
+            Drift detection result
+        """
+        # Create bins based on reference data
+        if reference_data.dtype in ['object', 'category']:
+            # Categorical
+            ref_counts = reference_data.value_counts(normalize=True)
+            curr_counts = current_data.value_counts(normalize=True)
+
+            all_categories = set(ref_counts.index) | set(curr_counts.index)
+            ref_pct = np.array([ref_counts.get(cat, 1e-10) for cat in all_categories])
+            curr_pct = np.array([curr_counts.get(cat, 1e-10) for cat in all_categories])
+
+        else:
+            # Continuous - create bins
+            bins_edges = pd.qcut(reference_data, q=bins, duplicates='drop', retbins=True)[1]
+
+            ref_binned = pd.cut(reference_data, bins=bins_edges, include_lowest=True)
+            curr_binned = pd.cut(current_data, bins=bins_edges, include_lowest=True)
+
+            ref_pct = ref_binned.value_counts(normalize=True, sort=False).values
+            curr_pct = curr_binned.value_counts(normalize=True, sort=False).values
+
+        # Calculate PSI
+        # PSI = sum((curr_pct - ref_pct) * ln(curr_pct / ref_pct))
+        psi = np.sum((curr_pct - ref_pct) * np.log(curr_pct / ref_pct))
+
+        drift_detected = abs(psi) > psi_threshold
+
+        return DriftResult(
+            feature_name=reference_data.name if hasattr(reference_data, 'name') else 'unnamed',
+            drift_detected=drift_detected,
+            drift_score=abs(psi),
+            p_value=0.0,  # PSI doesn't have p-value
+            method='PSI',
+            threshold=psi_threshold,
+            reference_stats={'mean': float(reference_data.mean())},
+            current_stats={'mean': float(current_data.mean())}
+        )
+
+    def detect_drift_jensen_shannon(self,
+                                   reference_data: pd.Series,
+                                   current_data: pd.Series,
+                                   bins: int = 50) -> DriftResult:
+        """
+        Jensen-Shannon divergence for drift detection
+
+        Args:
+            reference_data: Training/reference data
+            current_data: Current production data
+            bins: Number of bins for histogram
+
+        Returns:
+            Drift detection result
+        """
+        # Create histograms
+        if reference_data.dtype in ['object', 'category']:
+            ref_counts = reference_data.value_counts(normalize=True)
+            curr_counts = current_data.value_counts(normalize=True)
+
+            all_categories = sorted(set(ref_counts.index) | set(curr_counts.index))
+            ref_dist = np.array([ref_counts.get(cat, 1e-10) for cat in all_categories])
+            curr_dist = np.array([curr_counts.get(cat, 1e-10) for cat in all_categories])
+
+        else:
+            # Continuous data
+            combined = pd.concat([reference_data, current_data])
+            bins_edges = np.histogram_bin_edges(combined, bins=bins)
+
+            ref_hist, _ = np.histogram(reference_data, bins=bins_edges, density=True)
+            curr_hist, _ = np.histogram(current_data, bins=bins_edges, density=True)
+
+            ref_dist = ref_hist / (ref_hist.sum() + 1e-10)
+            curr_dist = curr_hist / (curr_hist.sum() + 1e-10)
+
+        # Calculate Jensen-Shannon divergence
+        js_divergence = jensenshannon(ref_dist, curr_dist)
+
+        # JS divergence ranges from 0 (identical) to 1 (completely different)
+        # Threshold: 0.1 = small drift, 0.3 = significant drift
+        drift_detected = js_divergence > 0.1
+
+        return DriftResult(
+            feature_name=reference_data.name if hasattr(reference_data, 'name') else 'unnamed',
+            drift_detected=drift_detected,
+            drift_score=js_divergence,
+            p_value=0.0,  # JS doesn't have p-value
+            method='Jensen-Shannon',
+            threshold=0.1,
+            reference_stats={'mean': float(reference_data.mean())} if reference_data.dtype != 'object' else {},
+            current_stats={'mean': float(current_data.mean())} if current_data.dtype != 'object' else {}
+        )
+
+class DataDriftMonitor:
+    """
+    Monitor data drift across all features
+
+    Provides comprehensive drift monitoring for ML systems
+    """
+
+    def __init__(self,
+                 reference_data: pd.DataFrame,
+                 detector: DriftDetector = None):
+        """
+        Initialize drift monitor
+
+        Args:
+            reference_data: Reference/training dataset
+            detector: Drift detector (creates default if None)
+        """
+        self.reference_data = reference_data
+        self.detector = detector or DriftDetector()
+        self.drift_history: List[Dict] = []
+        self.logger = logging.getLogger("DataDriftMonitor")
+
+    def check_drift(self,
+                   current_data: pd.DataFrame,
+                   method: str = 'auto') -> Dict[str, DriftResult]:
+        """
+        Check drift for all features
+
+        Args:
+            current_data: Current production data
+            method: Detection method ('ks', 'chi2', 'psi', 'js', 'auto')
+
+        Returns:
+            Dictionary of drift results by feature
+        """
+        drift_results = {}
+
+        for column in self.reference_data.columns:
+            if column not in current_data.columns:
+                self.logger.warning(f"Column {column} not in current data")
+                continue
+
+            ref_col = self.reference_data[column]
+            curr_col = current_data[column]
+
+            # Auto-select method based on data type
+            if method == 'auto':
+                if ref_col.dtype in ['object', 'category']:
+                    detection_method = 'chi2'
+                else:
+                    detection_method = 'ks'
+            else:
+                detection_method = method
+
+            # Detect drift
+            try:
+                if detection_method == 'ks':
+                    result = self.detector.detect_drift_ks(ref_col, curr_col)
+                elif detection_method == 'chi2':
+                    result = self.detector.detect_drift_chi2(ref_col, curr_col)
+                elif detection_method == 'psi':
+                    result = self.detector.detect_drift_psi(ref_col, curr_col)
+                elif detection_method == 'js':
+                    result = self.detector.detect_drift_jensen_shannon(ref_col, curr_col)
+                else:
+                    raise ValueError(f"Unknown method: {detection_method}")
+
+                drift_results[column] = result
+
+                if result.drift_detected:
+                    self.logger.warning(
+                        f"Drift detected in {column}: "
+                        f"score={result.drift_score:.4f}, p-value={result.p_value:.4f}"
+                    )
+
+            except Exception as e:
+                self.logger.error(f"Drift detection failed for {column}: {str(e)}")
+
+        # Store in history
+        self.drift_history.append({
+            'timestamp': datetime.now(),
+            'results': drift_results,
+            'drift_count': sum(1 for r in drift_results.values() if r.drift_detected)
+        })
+
+        return drift_results
+
+    def get_drift_report(self) -> pd.DataFrame:
+        """
+        Generate drift report
+
+        Returns:
+            DataFrame with drift summary
+        """
+        if not self.drift_history:
+            return pd.DataFrame()
+
+        latest = self.drift_history[-1]
+        results = latest['results']
+
+        report_data = []
+        for feature, result in results.items():
+            report_data.append({
+                'feature': feature,
+                'drift_detected': result.drift_detected,
+                'drift_score': result.drift_score,
+                'p_value': result.p_value,
+                'method': result.method,
+                'ref_mean': result.reference_stats.get('mean', None),
+                'curr_mean': result.current_stats.get('mean', None),
+                'mean_change_pct': (
+                    ((result.current_stats.get('mean', 0) - result.reference_stats.get('mean', 0)) /
+                     abs(result.reference_stats.get('mean', 1))) * 100
+                    if result.reference_stats.get('mean') else None
+                )
+            })
+
+        return pd.DataFrame(report_data)
+
+# Integration with Evidently AI
+class EvidentlyDriftMonitor:
+    """
+    Drift monitoring using Evidently AI library
+
+    Provides advanced drift detection and reporting
+    """
+
+    def __init__(self, reference_data: pd.DataFrame):
+        """
+        Initialize Evidently monitor
+
+        Args:
+            reference_data: Reference dataset
+        """
+        self.reference_data = reference_data
+        self.logger = logging.getLogger("EvidentlyMonitor")
+
+    def generate_drift_report(self,
+                             current_data: pd.DataFrame,
+                             column_mapping: Dict = None) -> Dict:
+        """
+        Generate comprehensive drift report using Evidently
+
+        Args:
+            current_data: Current production data
+            column_mapping: Column type mapping
+
+        Returns:
+            Drift report dictionary
+        """
+        try:
+            from evidently.report import Report
+            from evidently.metrics import DataDriftTable, DatasetDriftMetric
+
+            # Create report
+            report = Report(metrics=[
+                DataDriftTable(),
+                DatasetDriftMetric()
+            ])
+
+            # Run report
+            report.run(
+                reference_data=self.reference_data,
+                current_data=current_data,
+                column_mapping=column_mapping
+            )
+
+            # Extract results
+            report_dict = report.as_dict()
+
+            return {
+                'dataset_drift': report_dict['metrics'][1]['result']['dataset_drift'],
+                'drift_by_columns': report_dict['metrics'][0]['result']['drift_by_columns'],
+                'number_of_drifted_columns': report_dict['metrics'][1]['result']['number_of_drifted_columns']
+            }
+
+        except ImportError:
+            self.logger.warning("Evidently not installed. Install with: pip install evidently")
+            return {}
+        except Exception as e:
+            self.logger.error(f"Evidently report generation failed: {str(e)}")
+            return {}
+
+# Example usage
+def example_drift_detection():
+    """Example of drift detection"""
+
+    # Create reference data
+    np.random.seed(42)
+    n_samples = 1000
+
+    reference_df = pd.DataFrame({
+        'feature_1': np.random.normal(100, 15, n_samples),
+        'feature_2': np.random.exponential(50, n_samples),
+        'feature_3': np.random.choice(['A', 'B', 'C'], n_samples, p=[0.5, 0.3, 0.2]),
+        'feature_4': np.random.uniform(0, 1, n_samples)
+    })
+
+    # Create current data with drift in feature_1 and feature_3
+    current_df = pd.DataFrame({
+        'feature_1': np.random.normal(110, 15, n_samples),  # Mean shifted
+        'feature_2': np.random.exponential(50, n_samples),  # No drift
+        'feature_3': np.random.choice(['A', 'B', 'C'], n_samples, p=[0.3, 0.4, 0.3]),  # Distribution changed
+        'feature_4': np.random.uniform(0, 1, n_samples)  # No drift
+    })
+
+    # Initialize monitor
+    monitor = DataDriftMonitor(reference_df)
+
+    # Check drift
+    drift_results = monitor.check_drift(current_df, method='auto')
+
+    # Print results
+    print("Drift Detection Results:")
+    print("=" * 70)
+    for feature, result in drift_results.items():
+        status = "DRIFT DETECTED" if result.drift_detected else "No drift"
+        print(f"\n{feature}:")
+        print(f"  Status: {status}")
+        print(f"  Method: {result.method}")
+        print(f"  Score: {result.drift_score:.4f}")
+        print(f"  P-value: {result.p_value:.4f}")
+        print(f"  Reference mean: {result.reference_stats.get('mean', 'N/A')}")
+        print(f"  Current mean: {result.current_stats.get('mean', 'N/A')}")
+
+    # Generate report
+    report = monitor.get_drift_report()
+    print("\n\nDrift Report:")
+    print(report.to_string())
+
+example_drift_detection()
+\end{lstlisting}
+
+\section{Model Performance Monitoring}
+
+\subsection{Performance Metrics Tracking}
+
+Continuous monitoring of model performance ensures early detection of degradation. Unlike training metrics calculated once, production metrics must be tracked continuously as new data arrives.
+
+\textbf{Key performance metrics:}
+\begin{itemize}
+    \item \textbf{Classification:} Accuracy, precision, recall, F1-score, AUC-ROC
+    \item \textbf{Regression:} MAE, MSE, RMSE, R-squared, MAPE
+    \item \textbf{Ranking:} NDCG, MRR, MAP
+    \item \textbf{Business metrics:} Revenue impact, user satisfaction, operational cost
+\end{itemize}
+
+\subsection{Performance Monitoring Implementation}
+
+\begin{lstlisting}[language=Python, caption=Model Performance Monitoring System]
+from dataclasses import dataclass
+from typing import Any, Dict, List
+from datetime import datetime, timedelta
+import logging
+import numpy as np
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+@dataclass
+class PerformanceSnapshot:
+    """Snapshot of model performance"""
+    timestamp: datetime
+    model_name: str
+    model_version: str
+    metrics: Dict[str, float]
+    sample_count: int
+    evaluation_window: str
+
+class PerformanceMonitor:
+    """
+    Monitor model performance over time
+
+    Tracks performance metrics and detects degradation
+    """
+
+    def __init__(self,
+                 metrics_collector: MetricsCollector,
+                 performance_window_hours: int = 24):
+        """
+        Initialize performance monitor
+
+        Args:
+            metrics_collector: Metrics collector instance
+            performance_window_hours: Window for performance calculation
+        """
+        self.metrics = metrics_collector
+        self.window_hours = performance_window_hours
+        self.predictions_buffer: List[Dict] = []
+        self.ground_truth_buffer: List[Dict] = []
+        self.performance_history: List[PerformanceSnapshot] = []
+        self.logger = logging.getLogger("PerformanceMonitor")
+
+    def record_prediction(self,
+                         model_name: str,
+                         model_version: str,
+                         prediction_id: str,
+                         features: Dict,
+                         prediction: Any,
+                         timestamp: datetime = None):
+        """
+        Record a prediction for later evaluation
+
+        Args:
+            model_name: Model name
+            model_version: Model version
+            prediction_id: Unique prediction ID
+            features: Input features
+            prediction: Model prediction
+            timestamp: Prediction timestamp
+        """
+        self.predictions_buffer.append({
+            'prediction_id': prediction_id,
+            'model_name': model_name,
+            'model_version': model_version,
+            'prediction': prediction,
+            'features': features,
+            'timestamp': timestamp or datetime.now()
+        })
+
+    def record_ground_truth(self,
+                           prediction_id: str,
+                           actual: Any,
+                           timestamp: datetime = None):
+        """
+        Record ground truth for a prediction
+
+        Args:
+            prediction_id: Prediction ID
+            actual: Actual value
+            timestamp: Ground truth timestamp
+        """
+        self.ground_truth_buffer.append({
+            'prediction_id': prediction_id,
+            'actual': actual,
+            'timestamp': timestamp or datetime.now()
+        })
+
+        # Try to evaluate
+        self._evaluate_if_ready()
+
+    def _evaluate_if_ready(self):
+        """Evaluate performance if enough ground truth available"""
+        # Match predictions with ground truth
+        matched_pairs = []
+
+        pred_dict = {p['prediction_id']: p for p in self.predictions_buffer}
+        gt_dict = {g['prediction_id']: g for g in self.ground_truth_buffer}
+
+        for pred_id in pred_dict.keys() & gt_dict.keys():
+            pred = pred_dict[pred_id]
+            gt = gt_dict[pred_id]
+
+            # Check if within window
+            time_diff = abs((pred['timestamp'] - gt['timestamp']).total_seconds() / 3600)
+            if time_diff <= self.window_hours:
+                matched_pairs.append({
+                    'model_name': pred['model_name'],
+                    'model_version': pred['model_version'],
+                    'prediction': pred['prediction'],
+                    'actual': gt['actual'],
+                    'timestamp': pred['timestamp']
+                })
+
+        # If enough matched pairs, calculate metrics
+        if len(matched_pairs) >= 100:  # Minimum sample size
+            self._calculate_performance_metrics(matched_pairs)
+
+            # Clear old buffers
+            cutoff_time = datetime.now() - timedelta(hours=self.window_hours * 2)
+            self.predictions_buffer = [
+                p for p in self.predictions_buffer
+                if p['timestamp'] > cutoff_time
+            ]
+            self.ground_truth_buffer = [
+                g for g in self.ground_truth_buffer
+                if g['timestamp'] > cutoff_time
+            ]
+
+    def _calculate_performance_metrics(self, matched_pairs: List[Dict]):
+        """Calculate performance metrics from matched pairs"""
+        if not matched_pairs:
+            return
+
+        # Group by model
+        from collections import defaultdict
+        by_model = defaultdict(list)
+
+        for pair in matched_pairs:
+            key = (pair['model_name'], pair['model_version'])
+            by_model[key].append(pair)
+
+        # Calculate metrics for each model
+        for (model_name, model_version), pairs in by_model.items():
+            predictions = [p['prediction'] for p in pairs]
+            actuals = [p['actual'] for p in pairs]
+
+            # Detect task type
+            is_classification = isinstance(predictions[0], (str, int, bool))
+
+            if is_classification:
+                metrics = self._calculate_classification_metrics(
+                    predictions, actuals
+                )
+            else:
+                metrics = self._calculate_regression_metrics(
+                    predictions, actuals
+                )
+
+            # Create snapshot
+            snapshot = PerformanceSnapshot(
+                timestamp=datetime.now(),
+                model_name=model_name,
+                model_version=model_version,
+                metrics=metrics,
+                sample_count=len(pairs),
+                evaluation_window=f"{self.window_hours}h"
+            )
+
+            self.performance_history.append(snapshot)
+
+            # Log metrics
+            labels = {
+                'model_name': model_name,
+                'model_version': model_version
+            }
+
+            for metric_name, value in metrics.items():
+                self.metrics.record_gauge(
+                    f'model_{metric_name}',
+                    value=value,
+                    labels=labels
+                )
+
+            self.logger.info(
+                f"Performance calculated for {model_name} v{model_version}: {metrics}"
+            )
+
+    def _calculate_classification_metrics(self,
+                                         predictions: List,
+                                         actuals: List) -> Dict[str, float]:
+        """Calculate classification metrics"""
+        try:
+            return {
+                'accuracy': accuracy_score(actuals, predictions),
+                'precision': precision_score(actuals, predictions, average='weighted', zero_division=0),
+                'recall': recall_score(actuals, predictions, average='weighted', zero_division=0),
+                'f1_score': f1_score(actuals, predictions, average='weighted', zero_division=0)
+            }
+        except Exception as e:
+            self.logger.error(f"Classification metrics calculation failed: {str(e)}")
+            return {}
+
+    def _calculate_regression_metrics(self,
+                                     predictions: List,
+                                     actuals: List) -> Dict[str, float]:
+        """Calculate regression metrics"""
+        try:
+            predictions = np.array(predictions)
+            actuals = np.array(actuals)
+
+            mae = mean_absolute_error(actuals, predictions)
+            mse = mean_squared_error(actuals, predictions)
+            rmse = np.sqrt(mse)
+
+            # R-squared
+            ss_res = np.sum((actuals - predictions) ** 2)
+            ss_tot = np.sum((actuals - np.mean(actuals)) ** 2)
+            r2 = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+
+            return {
+                'mae': mae,
+                'mse': mse,
+                'rmse': rmse,
+                'r_squared': r2
+            }
+        except Exception as e:
+            self.logger.error(f"Regression metrics calculation failed: {str(e)}")
+            return {}
+
+    def get_performance_trend(self,
+                             model_name: str,
+                             metric_name: str,
+                             window_snapshots: int = 10) -> List[float]:
+        """
+        Get performance trend for a metric
+
+        Args:
+            model_name: Model name
+            metric_name: Metric to track
+            window_snapshots: Number of recent snapshots
+
+        Returns:
+            List of metric values over time
+        """
+        relevant_snapshots = [
+            s for s in self.performance_history[-window_snapshots:]
+            if s.model_name == model_name and metric_name in s.metrics
+        ]
+
+        return [s.metrics[metric_name] for s in relevant_snapshots]
+
+    def detect_performance_degradation(self,
+                                      model_name: str,
+                                      metric_name: str,
+                                      threshold_pct: float = 5.0) -> bool:
+        """
+        Detect if performance has degraded
+
+        Args:
+            model_name: Model name
+            metric_name: Metric to check
+            threshold_pct: Degradation threshold (percentage)
+
+        Returns:
+            True if degradation detected
+        """
+        trend = self.get_performance_trend(model_name, metric_name, window_snapshots=20)
+
+        if len(trend) < 5:
+            return False
+
+        # Compare recent vs historical
+        recent_avg = np.mean(trend[-5:])
+        historical_avg = np.mean(trend[:-5])
+
+        pct_change = ((recent_avg - historical_avg) / abs(historical_avg)) * 100
+
+        # For metrics where higher is better (accuracy, f1, r2)
+        better_higher = metric_name in ['accuracy', 'f1_score', 'precision', 'recall', 'r_squared']
+
+        if better_higher:
+            return pct_change < -threshold_pct
+        else:
+            return pct_change > threshold_pct
+
+# Example usage
+def example_performance_monitoring():
+    """Example of performance monitoring"""
+
+    collector = MetricsCollector()
+    perf_monitor = PerformanceMonitor(collector, performance_window_hours=24)
+
+    # Simulate predictions and ground truth
+    np.random.seed(42)
+
+    for i in range(200):
+        pred_id = f"pred_{i}"
+
+        # Record prediction
+        features = {'feature_1': np.random.rand(), 'feature_2': np.random.rand()}
+        prediction = 1 if np.random.rand() > 0.5 else 0
+
+        perf_monitor.record_prediction(
+            model_name='classifier_model',
+            model_version='v1.0',
+            prediction_id=pred_id,
+            features=features,
+            prediction=prediction
+        )
+
+        # Simulate ground truth arriving later
+        # Model accuracy degrades over time (from 0.95 to 0.80)
+        accuracy = 0.95 - (i / 200) * 0.15
+        actual = prediction if np.random.rand() < accuracy else (1 - prediction)
+
+        perf_monitor.record_ground_truth(
+            prediction_id=pred_id,
+            actual=actual
+        )
+
+    # Check for degradation
+    degraded = perf_monitor.detect_performance_degradation(
+        model_name='classifier_model',
+        metric_name='accuracy',
+        threshold_pct=5.0
+    )
+
+    print(f"Performance degradation detected: {degraded}")
+
+    # Get trend
+    trend = perf_monitor.get_performance_trend(
+        model_name='classifier_model',
+        metric_name='accuracy',
+        window_snapshots=10
+    )
+
+    print(f"Accuracy trend: {[f'{t:.3f}' for t in trend]}")
+
+example_performance_monitoring()
+\end{lstlisting}
+
+\section{Prometheus and Grafana Integration}
+
+\subsection{Prometheus Metrics Export}
+
+Prometheus is the de-facto standard for metrics collection in modern infrastructure. Integrating ML monitoring with Prometheus provides powerful querying, alerting, and visualization capabilities.
+
+\textbf{Integration benefits:}
+\begin{itemize}
+    \item \textbf{Time-series storage:} Efficient storage of metric history
+    \item \textbf{PromQL:} Powerful query language for metric analysis
+    \item \textbf{Service discovery:} Automatic discovery of monitoring targets
+    \item \textbf{Alerting:} Built-in alert manager integration
+    \item \textbf{Ecosystem:} Wide integration with visualization tools
+\end{itemize}
+
+\subsection{Prometheus Integration Implementation}
+
+\begin{lstlisting}[language=Python, caption=Prometheus Integration for ML Monitoring]
+import logging
+import threading
+from prometheus_client import Counter, Gauge, Histogram, Summary
+from prometheus_client import start_http_server, REGISTRY
+
+class PrometheusExporter:
+    """
+    Export ML metrics to Prometheus
+
+    Provides Prometheus-compatible metrics endpoint
+    """
+
+    def __init__(self, port: int = 8000):
+        """
+        Initialize Prometheus exporter
+
+        Args:
+            port: Port for metrics endpoint
+        """
+        self.port = port
+        self.logger = logging.getLogger("PrometheusExporter")
+
+        # Create Prometheus metrics
+        self._setup_metrics()
+
+    def _setup_metrics(self):
+        """Setup Prometheus metrics"""
+        # Prediction counters
+        self.prediction_count = Counter(
+            'ml_prediction_total',
+            'Total number of predictions',
+            ['model_name', 'model_version']
+        )
+
+        self.prediction_errors = Counter(
+            'ml_prediction_errors_total',
+            'Total prediction errors',
+            ['model_name', 'model_version', 'error_type']
+        )
+
+        # Performance gauges
+        self.model_accuracy = Gauge(
+            'ml_model_accuracy',
+            'Model accuracy',
+            ['model_name', 'model_version']
+        )
+
+        self.model_precision = Gauge(
+            'ml_model_precision',
+            'Model precision',
+            ['model_name', 'model_version']
+        )
+
+        self.model_recall = Gauge(
+            'ml_model_recall',
+            'Model recall',
+            ['model_name', 'model_version']
+        )
+
+        self.model_f1 = Gauge(
+            'ml_model_f1_score',
+            'Model F1 score',
+            ['model_name', 'model_version']
+        )
+
+        # Drift metrics
+        self.drift_score = Gauge(
+            'ml_data_drift_score',
+            'Data drift score',
+            ['model_name', 'feature_name', 'drift_method']
+        )
+
+        # Latency histogram
+        self.prediction_latency = Histogram(
+            'ml_prediction_latency_seconds',
+            'Prediction latency in seconds',
+            ['model_name', 'model_version'],
+            buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]
+        )
+
+        # Confidence summary
+        self.prediction_confidence = Summary(
+            'ml_prediction_confidence',
+            'Prediction confidence scores',
+            ['model_name', 'model_version']
+        )
+
+        # Feature statistics
+        self.feature_null_count = Counter(
+            'ml_feature_null_total',
+            'Total null features',
+            ['model_name', 'feature_name']
+        )
+
+    def record_prediction(self,
+                         model_name: str,
+                         model_version: str,
+                         latency_seconds: float,
+                         confidence: float):
+        """
+        Record prediction metrics
+
+        Args:
+            model_name: Model name
+            model_version: Model version
+            latency_seconds: Prediction latency
+            confidence: Prediction confidence
+        """
+        labels = {'model_name': model_name, 'model_version': model_version}
+
+        self.prediction_count.labels(**labels).inc()
+        self.prediction_latency.labels(**labels).observe(latency_seconds)
+        self.prediction_confidence.labels(**labels).observe(confidence)
+
+    def record_error(self,
+                    model_name: str,
+                    model_version: str,
+                    error_type: str):
+        """
+        Record prediction error
+
+        Args:
+            model_name: Model name
+            model_version: Model version
+            error_type: Type of error
+        """
+        self.prediction_errors.labels(
+            model_name=model_name,
+            model_version=model_version,
+            error_type=error_type
+        ).inc()
+
+    def update_performance_metrics(self,
+                                   model_name: str,
+                                   model_version: str,
+                                   metrics: Dict[str, float]):
+        """
+        Update model performance metrics
+
+        Args:
+            model_name: Model name
+            model_version: Model version
+            metrics: Performance metrics dictionary
+        """
+        labels = {'model_name': model_name, 'model_version': model_version}
+
+        if 'accuracy' in metrics:
+            self.model_accuracy.labels(**labels).set(metrics['accuracy'])
+
+        if 'precision' in metrics:
+            self.model_precision.labels(**labels).set(metrics['precision'])
+
+        if 'recall' in metrics:
+            self.model_recall.labels(**labels).set(metrics['recall'])
+
+        if 'f1_score' in metrics:
+            self.model_f1.labels(**labels).set(metrics['f1_score'])
+
+    def update_drift_metrics(self,
+                            model_name: str,
+                            drift_results: Dict[str, Any]):
+        """
+        Update drift metrics
+
+        Args:
+            model_name: Model name
+            drift_results: Drift detection results
+        """
+        for feature, result in drift_results.items():
+            self.drift_score.labels(
+                model_name=model_name,
+                feature_name=feature,
+                drift_method=result.method
+            ).set(result.drift_score)
+
+    def start_server(self):
+        """Start Prometheus metrics server"""
+        try:
+            start_http_server(self.port)
+            self.logger.info(f"Prometheus exporter started on port {self.port}")
+        except Exception as e:
+            self.logger.error(f"Failed to start Prometheus exporter: {str(e)}")
+
+# Grafana Dashboard Configuration
+
+class GrafanaDashboardGenerator:
+    """
+    Generate Grafana dashboard configurations for ML monitoring
+
+    Creates JSON dashboard definitions
+    """
+
+    def __init__(self):
+        """Initialize dashboard generator"""
+        self.logger = logging.getLogger("GrafanaDashboard")
+
+    def generate_ml_overview_dashboard(self) -> Dict:
+        """
+        Generate ML model overview dashboard
+
+        Returns:
+            Grafana dashboard JSON
+        """
+        dashboard = {
+            "dashboard": {
+                "title": "ML Model Monitoring Overview",
+                "tags": ["ml", "monitoring"],
+                "timezone": "browser",
+                "panels": [
+                    # Prediction rate panel
+                    {
+                        "id": 1,
+                        "title": "Prediction Rate",
+                        "type": "graph",
+                        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+                        "targets": [{
+                            "expr": "rate(ml_prediction_total[5m])",
+                            "legendFormat": "{{model_name}} v{{model_version}}"
+                        }]
+                    },
+                    # Error rate panel
+                    {
+                        "id": 2,
+                        "title": "Error Rate",
+                        "type": "graph",
+                        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+                        "targets": [{
+                            "expr": "rate(ml_prediction_errors_total[5m])",
+                            "legendFormat": "{{model_name}} - {{error_type}}"
+                        }]
+                    },
+                    # Model accuracy panel
+                    {
+                        "id": 3,
+                        "title": "Model Accuracy",
+                        "type": "graph",
+                        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+                        "targets": [{
+                            "expr": "ml_model_accuracy",
+                            "legendFormat": "{{model_name}} v{{model_version}}"
+                        }],
+                        "yaxes": [
+                            {"format": "percentunit", "min": 0, "max": 1},
+                            {"format": "short"}
+                        ]
+                    },
+                    # Latency percentiles panel
+                    {
+                        "id": 4,
+                        "title": "Prediction Latency (p50, p95, p99)",
+                        "type": "graph",
+                        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+                        "targets": [
+                            {
+                                "expr": "histogram_quantile(0.50, rate(ml_prediction_latency_seconds_bucket[5m]))",
+                                "legendFormat": "p50 - {{model_name}}"
+                            },
+                            {
+                                "expr": "histogram_quantile(0.95, rate(ml_prediction_latency_seconds_bucket[5m]))",
+                                "legendFormat": "p95 - {{model_name}}"
+                            },
+                            {
+                                "expr": "histogram_quantile(0.99, rate(ml_prediction_latency_seconds_bucket[5m]))",
+                                "legendFormat": "p99 - {{model_name}}"
+                            }
+                        ]
+                    },
+                    # Data drift panel
+                    {
+                        "id": 5,
+                        "title": "Data Drift Scores",
+                        "type": "graph",
+                        "gridPos": {"x": 0, "y": 16, "w": 24, "h": 8},
+                        "targets": [{
+                            "expr": "ml_data_drift_score",
+                            "legendFormat": "{{model_name}} - {{feature_name}}"
+                        }],
+                        "alert": {
+                            "conditions": [{
+                                "evaluator": {
+                                    "params": [0.2],
+                                    "type": "gt"
+                                },
+                                "operator": {"type": "and"},
+                                "query": {"params": ["A", "5m", "now"]},
+                                "reducer": {"params": [], "type": "avg"},
+                                "type": "query"
+                            }]
+                        }
+                    }
+                ],
+                "refresh": "30s",
+                "time": {"from": "now-1h", "to": "now"}
+            }
+        }
+
+        return dashboard
+
+    def generate_performance_dashboard(self) -> Dict:
+        """
+        Generate detailed performance monitoring dashboard
+
+        Returns:
+            Grafana dashboard JSON
+        """
+        dashboard = {
+            "dashboard": {
+                "title": "ML Model Performance Metrics",
+                "tags": ["ml", "performance"],
+                "panels": [
+                    {
+                        "id": 1,
+                        "title": "Accuracy Over Time",
+                        "type": "graph",
+                        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+                        "targets": [{
+                            "expr": "ml_model_accuracy",
+                            "legendFormat": "{{model_name}} v{{model_version}}"
+                        }]
+                    },
+                    {
+                        "id": 2,
+                        "title": "Precision vs Recall",
+                        "type": "graph",
+                        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+                        "targets": [
+                            {
+                                "expr": "ml_model_precision",
+                                "legendFormat": "Precision - {{model_name}}"
+                            },
+                            {
+                                "expr": "ml_model_recall",
+                                "legendFormat": "Recall - {{model_name}}"
+                            }
+                        ]
+                    },
+                    {
+                        "id": 3,
+                        "title": "F1 Score",
+                        "type": "stat",
+                        "gridPos": {"x": 0, "y": 8, "w": 6, "h": 4},
+                        "targets": [{
+                            "expr": "ml_model_f1_score",
+                            "legendFormat": "{{model_name}}"
+                        }],
+                        "options": {
+                            "graphMode": "area",
+                            "colorMode": "value"
+                        }
+                    }
+                ]
+            }
+        }
+
+        return dashboard
+
+# Example usage
+def example_prometheus_integration():
+    """Example of Prometheus integration"""
+
+    # Initialize exporter
+    exporter = PrometheusExporter(port=8000)
+
+    # Start metrics server in background
+    server_thread = threading.Thread(target=exporter.start_server, daemon=True)
+    server_thread.start()
+
+    # Simulate some predictions
+    for i in range(100):
+        exporter.record_prediction(
+            model_name='fraud_detector',
+            model_version='v2.0',
+            latency_seconds=np.random.uniform(0.01, 0.1),
+            confidence=np.random.uniform(0.7, 0.99)
+        )
+
+        # Simulate some errors
+        if np.random.rand() < 0.05:
+            exporter.record_error(
+                model_name='fraud_detector',
+                model_version='v2.0',
+                error_type='timeout'
+            )
+
+    # Update performance metrics
+    exporter.update_performance_metrics(
+        model_name='fraud_detector',
+        model_version='v2.0',
+        metrics={
+            'accuracy': 0.94,
+            'precision': 0.92,
+            'recall': 0.91,
+            'f1_score': 0.915
+        }
+    )
+
+    print("Prometheus metrics available at http://localhost:8000/metrics")
+
+    # Generate Grafana dashboards
+    dashboard_gen = GrafanaDashboardGenerator()
+
+    overview_dashboard = dashboard_gen.generate_ml_overview_dashboard()
+    performance_dashboard = dashboard_gen.generate_performance_dashboard()
+
+    print(f"Generated {len(overview_dashboard['dashboard']['panels'])} overview panels")
+    print(f"Generated {len(performance_dashboard['dashboard']['panels'])} performance panels")
+
+example_prometheus_integration()
+\end{lstlisting}
+
+\section{Alert Systems and Incident Response}
+
+\subsection{Intelligent Alerting}
+
+Effective alerting balances sensitivity (catching real issues) with specificity (avoiding false alarms). ML systems require specialized alerting strategies that account for gradual degradation and statistical variation.
+
+\textbf{Alerting principles:}
+\begin{itemize}
+    \item \textbf{Actionable alerts:} Every alert should require human action
+    \item \textbf{Context-rich:} Include enough information for diagnosis
+    \item \textbf{Prioritized:} Clear severity levels guide response
+    \item \textbf{Deduplicated:} Avoid alert storms from correlated issues
+    \item \textbf{Adaptive thresholds:} Account for normal variation patterns
+\end{itemize}
+
+\subsection{Alert System Implementation}
+
+\begin{lstlisting}[language=Python, caption=Alert System and Incident Response]
+import logging
+from typing import Any, Callable, Dict
+from datetime import datetime
+
+class AlertManager:
+    """Manage ML monitoring alerts with incident response"""
+
+    def __init__(self, monitoring_architecture: MonitoringArchitecture):
+        self.monitoring = monitoring_architecture
+        self.logger = logging.getLogger("AlertManager")
+        self.incidents: Dict[str, Dict] = {}
+        self.notification_channels: Dict[str, Callable] = {}
+
+    def register_notification_channel(self,
+                                     channel_name: str,
+                                     handler: Callable):
+        """Register notification channel"""
+        self.notification_channels[channel_name] = handler
+
+    def create_incident(self,
+                       alert_id: str,
+                       alert_name: str,
+                       severity: AlertSeverity,
+                       details: Dict) -> str:
+        """Create incident from alert"""
+        import uuid
+        incident_id = str(uuid.uuid4())
+
+        incident = {
+            'incident_id': incident_id,
+            'alert_id': alert_id,
+            'alert_name': alert_name,
+            'severity': severity.value,
+            'status': 'open',
+            'created_at': datetime.now(),
+            'updated_at': datetime.now(),
+            'details': details,
+            'notifications_sent': [],
+            'actions_taken': []
+        }
+
+        self.incidents[incident_id] = incident
+        self._send_notifications(incident)
+
+        self.logger.warning(
+            f"Incident created: {incident_id} - {alert_name} ({severity.value})"
+        )
+
+        return incident_id
+
+    def _send_notifications(self, incident: Dict):
+        """Send incident notifications"""
+        severity = AlertSeverity(incident['severity'])
+
+        if severity == AlertSeverity.CRITICAL:
+            channels = ['pagerduty', 'slack', 'email']
+        elif severity == AlertSeverity.ERROR:
+            channels = ['slack', 'email']
+        elif severity == AlertSeverity.WARNING:
+            channels = ['slack']
+        else:
+            channels = []
+
+        for channel in channels:
+            if channel in self.notification_channels:
+                try:
+                    self.notification_channels[channel](incident)
+                    incident['notifications_sent'].append({
+                        'channel': channel,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                except Exception as e:
+                    self.logger.error(
+                        f"Notification failed for {channel}: {str(e)}"
+                    )
+
+    def resolve_incident(self, incident_id: str, resolution: str):
+        """Resolve an incident"""
+        if incident_id not in self.incidents:
+            self.logger.error(f"Incident {incident_id} not found")
+            return
+
+        incident = self.incidents[incident_id]
+        incident['status'] = 'resolved'
+        incident['resolution'] = resolution
+        incident['resolved_at'] = datetime.now()
+        incident['updated_at'] = datetime.now()
+
+        self.logger.info(f"Incident {incident_id} resolved: {resolution}")
+
+class IncidentRunbook:
+    """Automated incident response runbooks"""
+
+    def __init__(self):
+        self.runbooks: Dict[str, List[Callable]] = {}
+        self.logger = logging.getLogger("IncidentRunbook")
+
+    def register_runbook(self, alert_type: str, actions: List[Callable]):
+        """Register runbook for alert type"""
+        self.runbooks[alert_type] = actions
+        self.logger.info(
+            f"Registered runbook for {alert_type} with {len(actions)} actions"
+        )
+
+    def execute_runbook(self, alert_type: str, context: Dict) -> List[Dict]:
+        """Execute runbook actions"""
+        if alert_type not in self.runbooks:
+            self.logger.warning(f"No runbook for {alert_type}")
+            return []
+
+        results = []
+        actions = self.runbooks[alert_type]
+
+        for i, action in enumerate(actions):
+            try:
+                self.logger.info(
+                    f"Executing runbook action {i+1}/{len(actions)} for {alert_type}"
+                )
+                result = action(context)
+                results.append({
+                    'action_index': i,
+                    'status': 'success',
+                    'result': result,
+                    'timestamp': datetime.now().isoformat()
+                })
+            except Exception as e:
+                self.logger.error(f"Runbook action {i+1} failed: {str(e)}")
+                results.append({
+                    'action_index': i,
+                    'status': 'failed',
+                    'error': str(e),
+                    'timestamp': datetime.now().isoformat()
+                })
+
+        return results
+
+# Example notification handlers
+def slack_notification(incident: Dict):
+    """Send Slack notification"""
+    print(f"[SLACK] Incident {incident['incident_id']}: {incident['alert_name']}")
+    print(f"Severity: {incident['severity']}")
+
+def pagerduty_notification(incident: Dict):
+    """Send PagerDuty notification"""
+    print(f"[PAGERDUTY] CRITICAL: {incident['alert_name']}")
+    print(f"Incident ID: {incident['incident_id']}")
+
+# Example runbook actions
+def rollback_model_action(context: Dict):
+    """Rollback to previous model version"""
+    model_name = context['model_name']
+    print(f"Rolling back {model_name} to previous version")
+    return {'action': 'rollback', 'model': model_name}
+
+def trigger_retraining_action(context: Dict):
+    """Trigger model retraining"""
+    print(f"Triggering retraining for {context['model_name']}")
+    return {'action': 'retrain', 'reason': 'drift_detected'}
+\end{lstlisting}
+
+\section{Observability Best Practices}
+
+\subsection{Comprehensive Observability}
+
+Observability extends beyond monitoring to provide deep insights into system behavior. The three pillars of observability work together to enable debugging and optimization.
+
+\textbf{Best practices for ML observability:}
+
+\textbf{1. Structured Logging:}
+\begin{itemize}
+    \item Use structured logs (JSON) for machine parsing
+    \item Include prediction IDs for request tracking
+    \item Log model versions and feature values
+    \item Implement log sampling for high-volume systems
+\end{itemize}
+
+\textbf{2. Distributed Tracing:}
+\begin{itemize}
+    \item Trace requests through preprocessing, inference, postprocessing
+    \item Measure latency at each stage
+    \item Identify bottlenecks in serving pipeline
+    \item Use OpenTelemetry for standardized instrumentation
+\end{itemize}
+
+\textbf{3. Feature Store Observability:}
+\begin{itemize}
+    \item Monitor feature computation latency
+    \item Track feature freshness and staleness
+    \item Alert on feature pipeline failures
+    \item Log feature transformations for debugging
+\end{itemize}
+
+\textbf{4. Model Explainability Integration:}
+\begin{itemize}
+    \item Log feature importance for predictions
+    \item Store SHAP values for critical decisions
+    \item Track explanation consistency over time
+    \item Enable auditing of model decisions
+\end{itemize}
+
+\textbf{5. Cost Monitoring:}
+\begin{itemize}
+    \item Track inference costs per prediction
+    \item Monitor resource utilization vs capacity
+    \item Optimize batch sizes for cost efficiency
+    \item Alert on budget overruns
+\end{itemize}
+
+\textbf{6. Data Quality Monitoring:}
+\begin{itemize}
+    \item Validate input schemas continuously
+    \item Detect anomalous feature values
+    \item Track null/missing feature rates
+    \item Monitor data pipeline health
+\end{itemize}
+
+\textbf{7. Security and Compliance:}
+\begin{itemize}
+    \item Audit data access patterns
+    \item Monitor for adversarial inputs
+    \item Track PII handling in predictions
+    \item Log consent and data retention
+\end{itemize}
+
+\subsection{Implementing Structured Logging for ML}
+
+Structured logging enables machine-parseable logs that can be aggregated, searched, and analyzed at scale. For ML systems, structured logs should capture the complete context of each prediction.
+
+\begin{lstlisting}[language=Python, caption=Structured Logging System]
+import json
+import logging
+from typing import Any, Dict, Optional
+from datetime import datetime
+from enum import Enum
+import hashlib
+
+class LogLevel(Enum):
+    """Log severity levels"""
+    DEBUG = "debug"
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+class MLLogger:
+    """
+    Structured logger for ML systems
+
+    Captures prediction context, model metadata, and performance info
+    with machine-parseable JSON format
+    """
+
+    def __init__(self, service_name: str, log_file: Optional[str] = None):
+        self.service_name = service_name
+        self.logger = logging.getLogger(service_name)
+        self.logger.setLevel(logging.INFO)
+
+        # JSON formatter
+        handler = logging.FileHandler(log_file) if log_file else logging.StreamHandler()
+        self.logger.addHandler(handler)
+
+    def _create_log_entry(self, level: LogLevel, event: str,
+                         context: Dict[str, Any]) -> Dict[str, Any]:
+        """Create structured log entry"""
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'service': self.service_name,
+            'level': level.value,
+            'event': event,
+            'context': context
+        }
+
+    def log_prediction(self, model_name: str, model_version: str,
+                      prediction_id: str, features: Dict,
+                      prediction: Any, confidence: float,
+                      latency_ms: float):
+        """Log ML prediction with full context"""
+
+        # Hash features for privacy
+        feature_hash = hashlib.sha256(
+            json.dumps(features, sort_keys=True).encode()
+        ).hexdigest()[:16]
+
+        log_entry = self._create_log_entry(
+            level=LogLevel.INFO,
+            event='ml_prediction',
+            context={
+                'model_name': model_name,
+                'model_version': model_version,
+                'prediction_id': prediction_id,
+                'feature_hash': feature_hash,
+                'prediction': str(prediction),
+                'confidence': confidence,
+                'latency_ms': latency_ms,
+                'feature_count': len(features)
+            }
+        )
+
+        self.logger.info(json.dumps(log_entry))
+
+    def log_drift_detection(self, feature_name: str, drift_score: float,
+                           drift_detected: bool, method: str):
+        """Log drift detection results"""
+
+        log_entry = self._create_log_entry(
+            level=LogLevel.WARNING if drift_detected else LogLevel.INFO,
+            event='drift_detection',
+            context={
+                'feature_name': feature_name,
+                'drift_score': drift_score,
+                'drift_detected': drift_detected,
+                'detection_method': method
+            }
+        )
+
+        self.logger.warning(json.dumps(log_entry)) if drift_detected \
+            else self.logger.info(json.dumps(log_entry))
+
+    def log_model_error(self, model_name: str, model_version: str,
+                       error_type: str, error_message: str,
+                       prediction_id: Optional[str] = None):
+        """Log model errors with context"""
+
+        log_entry = self._create_log_entry(
+            level=LogLevel.ERROR,
+            event='model_error',
+            context={
+                'model_name': model_name,
+                'model_version': model_version,
+                'error_type': error_type,
+                'error_message': error_message,
+                'prediction_id': prediction_id
+            }
+        )
+
+        self.logger.error(json.dumps(log_entry))
+
+    def log_performance_metrics(self, model_name: str, model_version: str,
+                               metrics: Dict[str, float], window_hours: int):
+        """Log model performance metrics"""
+
+        log_entry = self._create_log_entry(
+            level=LogLevel.INFO,
+            event='performance_metrics',
+            context={
+                'model_name': model_name,
+                'model_version': model_version,
+                'metrics': metrics,
+                'window_hours': window_hours
+            }
+        )
+
+        self.logger.info(json.dumps(log_entry))
+
+# Example usage
+logger = MLLogger('fraud_detection_service', log_file='ml_predictions.jsonl')
+
+# Log prediction
+logger.log_prediction(
+    model_name='fraud_detector',
+    model_version='v2.3',
+    prediction_id='pred_12345',
+    features={'amount': 150.0, 'merchant_category': 'retail'},
+    prediction=0,
+    confidence=0.92,
+    latency_ms=45.2
+)
+
+# Log drift detection
+logger.log_drift_detection(
+    feature_name='transaction_amount',
+    drift_score=0.28,
+    drift_detected=True,
+    method='kolmogorov_smirnov'
+)
+
+# Log error
+logger.log_model_error(
+    model_name='fraud_detector',
+    model_version='v2.3',
+    error_type='FeatureExtractionError',
+    error_message='Missing required feature: merchant_id',
+    prediction_id='pred_12346'
+)
+\end{lstlisting}
+
+\subsection{Distributed Tracing for ML Pipelines}
+
+Distributed tracing tracks requests across multiple services, essential for understanding latency in complex ML serving pipelines.
+
+\begin{lstlisting}[language=Python, caption=Distributed Tracing with OpenTelemetry]
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.sdk.resources import Resource
+import time
+from typing import Dict, Any
+
+# Setup OpenTelemetry
+resource = Resource(attributes={
+    "service.name": "ml-inference-service"
+})
+
+trace.set_tracer_provider(TracerProvider(resource=resource))
+tracer = trace.get_tracer(__name__)
+
+# Setup Jaeger exporter
+jaeger_exporter = JaegerExporter(
+    agent_host_name='localhost',
+    agent_port=6831,
+)
+
+trace.get_tracer_provider().add_span_processor(
+    BatchSpanProcessor(jaeger_exporter)
+)
+
+class TracedMLPipeline:
+    """ML serving pipeline with distributed tracing"""
+
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+        self.tracer = trace.get_tracer(__name__)
+
+    def predict(self, features: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute prediction with full tracing"""
+
+        # Create root span for the prediction request
+        with self.tracer.start_as_current_span("ml_prediction") as span:
+            span.set_attribute("model.name", self.model_name)
+            span.set_attribute("feature.count", len(features))
+
+            try:
+                # Step 1: Validate input
+                validated = self._validate_input(features)
+
+                # Step 2: Preprocess features
+                processed = self._preprocess(validated)
+
+                # Step 3: Run inference
+                prediction = self._inference(processed)
+
+                # Step 4: Postprocess results
+                result = self._postprocess(prediction)
+
+                span.set_attribute("prediction.confidence", result['confidence'])
+                span.set_attribute("prediction.class", result['class'])
+
+                return result
+
+            except Exception as e:
+                span.record_exception(e)
+                span.set_status(trace.Status(trace.StatusCode.ERROR))
+                raise
+
+    def _validate_input(self, features: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate input features"""
+        with self.tracer.start_as_current_span("validate_input") as span:
+            start = time.time()
+
+            # Validation logic
+            required_features = ['age', 'income', 'credit_score']
+            missing = [f for f in required_features if f not in features]
+
+            if missing:
+                span.set_attribute("validation.failed", True)
+                span.set_attribute("missing_features", ','.join(missing))
+                raise ValueError(f"Missing features: {missing}")
+
+            span.set_attribute("validation.duration_ms",
+                             (time.time() - start) * 1000)
+            return features
+
+    def _preprocess(self, features: Dict[str, Any]) -> Dict[str, Any]:
+        """Preprocess features"""
+        with self.tracer.start_as_current_span("preprocess_features") as span:
+            start = time.time()
+
+            # Simulate preprocessing
+            processed = {
+                'age_normalized': features['age'] / 100,
+                'income_log': np.log1p(features['income']),
+                'credit_normalized': features['credit_score'] / 850
+            }
+
+            span.set_attribute("preprocessing.duration_ms",
+                             (time.time() - start) * 1000)
+            span.set_attribute("preprocessing.method", "standard_scaler")
+
+            return processed
+
+    def _inference(self, features: Dict[str, Any]) -> Dict[str, Any]:
+        """Run model inference"""
+        with self.tracer.start_as_current_span("model_inference") as span:
+            start = time.time()
+
+            # Simulate model inference
+            time.sleep(0.05)  # Model execution time
+
+            prediction = {
+                'class': 1,
+                'probability': 0.87
+            }
+
+            inference_time = (time.time() - start) * 1000
+            span.set_attribute("inference.duration_ms", inference_time)
+            span.set_attribute("inference.batch_size", 1)
+
+            return prediction
+
+    def _postprocess(self, prediction: Dict[str, Any]) -> Dict[str, Any]:
+        """Postprocess predictions"""
+        with self.tracer.start_as_current_span("postprocess_results") as span:
+            start = time.time()
+
+            # Add business logic
+            result = {
+                'class': prediction['class'],
+                'confidence': prediction['probability'],
+                'risk_level': 'high' if prediction['probability'] > 0.8 else 'low'
+            }
+
+            span.set_attribute("postprocessing.duration_ms",
+                             (time.time() - start) * 1000)
+
+            return result
+
+# Example usage
+pipeline = TracedMLPipeline(model_name='credit_risk_v2')
+
+features = {
+    'age': 35,
+    'income': 75000,
+    'credit_score': 720
+}
+
+result = pipeline.predict(features)
+print(f"Prediction: {result}")
+\end{lstlisting}
+
+\subsection{Data Quality Monitoring Implementation}
+
+Data quality issues are the most common cause of ML failures in production. Comprehensive data quality monitoring detects schema violations, distribution shifts, and anomalies.
+
+\begin{lstlisting}[language=Python, caption=Data Quality Monitoring System]
+from typing import Dict, List, Set, Optional, Any
+import pandas as pd
+import numpy as np
+from dataclasses import dataclass
+from datetime import datetime
+from scipy import stats
+
+@dataclass
+class DataQualityRule:
+    """Define data quality validation rule"""
+    feature_name: str
+    rule_type: str  # 'range', 'categorical', 'not_null', 'pattern'
+    parameters: Dict[str, Any]
+    severity: str = 'error'  # 'error', 'warning', 'info'
+
+@dataclass
+class QualityViolation:
+    """Data quality violation record"""
+    feature_name: str
+    rule_type: str
+    severity: str
+    violation_count: int
+    violation_rate: float
+    timestamp: datetime
+    details: str
+
+class DataQualityMonitor:
+    """
+    Monitor data quality for ML feature pipelines
+
+    Validates schemas, detects anomalies, tracks data quality metrics
+    """
+
+    def __init__(self):
+        self.rules: List[DataQualityRule] = []
+        self.violations: List[QualityViolation] = []
+        self.baseline_stats: Dict[str, Dict] = {}
+
+    def add_rule(self, rule: DataQualityRule):
+        """Add data quality rule"""
+        self.rules.append(rule)
+
+    def set_baseline(self, reference_data: pd.DataFrame):
+        """Set baseline statistics from reference data"""
+        for column in reference_data.columns:
+            if pd.api.types.is_numeric_dtype(reference_data[column]):
+                self.baseline_stats[column] = {
+                    'mean': reference_data[column].mean(),
+                    'std': reference_data[column].std(),
+                    'min': reference_data[column].min(),
+                    'max': reference_data[column].max(),
+                    'q25': reference_data[column].quantile(0.25),
+                    'q75': reference_data[column].quantile(0.75),
+                    'null_rate': reference_data[column].isnull().mean()
+                }
+            else:
+                self.baseline_stats[column] = {
+                    'unique_values': set(reference_data[column].dropna().unique()),
+                    'null_rate': reference_data[column].isnull().mean(),
+                    'mode': reference_data[column].mode()[0] if len(reference_data[column].mode()) > 0 else None
+                }
+
+    def validate_batch(self, data: pd.DataFrame) -> List[QualityViolation]:
+        """Validate data batch against quality rules"""
+        violations = []
+
+        # Check schema
+        violations.extend(self._check_schema(data))
+
+        # Check null rates
+        violations.extend(self._check_nulls(data))
+
+        # Check value ranges
+        violations.extend(self._check_ranges(data))
+
+        # Check categorical values
+        violations.extend(self._check_categorical(data))
+
+        # Check for anomalies
+        violations.extend(self._check_anomalies(data))
+
+        self.violations.extend(violations)
+        return violations
+
+    def _check_schema(self, data: pd.DataFrame) -> List[QualityViolation]:
+        """Validate data schema"""
+        violations = []
+
+        expected_columns = set(self.baseline_stats.keys())
+        actual_columns = set(data.columns)
+
+        missing_cols = expected_columns - actual_columns
+        extra_cols = actual_columns - expected_columns
+
+        if missing_cols:
+            violations.append(QualityViolation(
+                feature_name='schema',
+                rule_type='missing_columns',
+                severity='error',
+                violation_count=len(missing_cols),
+                violation_rate=len(missing_cols) / len(expected_columns),
+                timestamp=datetime.now(),
+                details=f"Missing columns: {missing_cols}"
+            ))
+
+        if extra_cols:
+            violations.append(QualityViolation(
+                feature_name='schema',
+                rule_type='extra_columns',
+                severity='warning',
+                violation_count=len(extra_cols),
+                violation_rate=len(extra_cols) / len(expected_columns),
+                timestamp=datetime.now(),
+                details=f"Extra columns: {extra_cols}"
+            ))
+
+        return violations
+
+    def _check_nulls(self, data: pd.DataFrame) -> List[QualityViolation]:
+        """Check for excessive null values"""
+        violations = []
+
+        for column in data.columns:
+            if column not in self.baseline_stats:
+                continue
+
+            null_rate = data[column].isnull().mean()
+            baseline_null_rate = self.baseline_stats[column].get('null_rate', 0)
+
+            # Alert if null rate increases by more than 50%
+            if null_rate > baseline_null_rate * 1.5:
+                violations.append(QualityViolation(
+                    feature_name=column,
+                    rule_type='high_null_rate',
+                    severity='error' if null_rate > 0.5 else 'warning',
+                    violation_count=int(data[column].isnull().sum()),
+                    violation_rate=null_rate,
+                    timestamp=datetime.now(),
+                    details=f"Null rate {null_rate:.2%} vs baseline {baseline_null_rate:.2%}"
+                ))
+
+        return violations
+
+    def _check_ranges(self, data: pd.DataFrame) -> List[QualityViolation]:
+        """Check numeric values are within expected ranges"""
+        violations = []
+
+        for column in data.columns:
+            if column not in self.baseline_stats:
+                continue
+
+            if 'min' not in self.baseline_stats[column]:
+                continue
+
+            baseline = self.baseline_stats[column]
+
+            # Check for values outside baseline range
+            out_of_range = (
+                (data[column] < baseline['min']) |
+                (data[column] > baseline['max'])
+            ).sum()
+
+            if out_of_range > 0:
+                violations.append(QualityViolation(
+                    feature_name=column,
+                    rule_type='out_of_range',
+                    severity='warning',
+                    violation_count=int(out_of_range),
+                    violation_rate=out_of_range / len(data),
+                    timestamp=datetime.now(),
+                    details=f"Values outside [{baseline['min']:.2f}, {baseline['max']:.2f}]"
+                ))
+
+        return violations
+
+    def _check_categorical(self, data: pd.DataFrame) -> List[QualityViolation]:
+        """Check categorical values match expected set"""
+        violations = []
+
+        for column in data.columns:
+            if column not in self.baseline_stats:
+                continue
+
+            if 'unique_values' not in self.baseline_stats[column]:
+                continue
+
+            baseline_values = self.baseline_stats[column]['unique_values']
+            current_values = set(data[column].dropna().unique())
+
+            # New values not seen in baseline
+            new_values = current_values - baseline_values
+
+            if new_values:
+                violations.append(QualityViolation(
+                    feature_name=column,
+                    rule_type='unexpected_categorical_value',
+                    severity='warning',
+                    violation_count=len(new_values),
+                    violation_rate=len(new_values) / len(baseline_values) if baseline_values else 1.0,
+                    timestamp=datetime.now(),
+                    details=f"New categorical values: {new_values}"
+                ))
+
+        return violations
+
+    def _check_anomalies(self, data: pd.DataFrame) -> List[QualityViolation]:
+        """Detect statistical anomalies"""
+        violations = []
+
+        for column in data.columns:
+            if column not in self.baseline_stats:
+                continue
+
+            if 'mean' not in self.baseline_stats[column]:
+                continue
+
+            baseline = self.baseline_stats[column]
+            current_mean = data[column].mean()
+            current_std = data[column].std()
+
+            # Check if mean shifted significantly (>3 standard deviations)
+            z_score = abs(current_mean - baseline['mean']) / baseline['std']
+
+            if z_score > 3:
+                violations.append(QualityViolation(
+                    feature_name=column,
+                    rule_type='mean_shift',
+                    severity='warning',
+                    violation_count=1,
+                    violation_rate=z_score / 3,
+                    timestamp=datetime.now(),
+                    details=f"Mean shifted from {baseline['mean']:.2f} to {current_mean:.2f} (z-score: {z_score:.2f})"
+                ))
+
+        return violations
+
+    def get_quality_report(self) -> Dict[str, Any]:
+        """Generate data quality report"""
+        if not self.violations:
+            return {
+                'status': 'healthy',
+                'total_violations': 0,
+                'violations_by_severity': {},
+                'violations_by_type': {}
+            }
+
+        violations_by_severity = {}
+        violations_by_type = {}
+
+        for v in self.violations:
+            violations_by_severity[v.severity] = violations_by_severity.get(v.severity, 0) + 1
+            violations_by_type[v.rule_type] = violations_by_type.get(v.rule_type, 0) + 1
+
+        return {
+            'status': 'unhealthy' if 'error' in violations_by_severity else 'degraded',
+            'total_violations': len(self.violations),
+            'violations_by_severity': violations_by_severity,
+            'violations_by_type': violations_by_type,
+            'recent_violations': [
+                {
+                    'feature': v.feature_name,
+                    'type': v.rule_type,
+                    'severity': v.severity,
+                    'details': v.details
+                }
+                for v in sorted(self.violations, key=lambda x: x.timestamp, reverse=True)[:10]
+            ]
+        }
+
+# Example usage
+monitor = DataQualityMonitor()
+
+# Set baseline from training data
+train_data = pd.DataFrame({
+    'age': np.random.normal(40, 12, 1000),
+    'income': np.random.normal(60000, 20000, 1000),
+    'category': np.random.choice(['A', 'B', 'C'], 1000)
+})
+
+monitor.set_baseline(train_data)
+
+# Validate production data
+prod_data = pd.DataFrame({
+    'age': np.random.normal(42, 12, 100),  # Slight shift
+    'income': np.concatenate([np.random.normal(60000, 20000, 95), [np.nan]*5]),  # Some nulls
+    'category': np.random.choice(['A', 'B', 'C', 'D'], 100)  # New category D
+})
+
+violations = monitor.validate_batch(prod_data)
+
+# Generate report
+report = monitor.get_quality_report()
+print(json.dumps(report, indent=2))
+\end{lstlisting}
 
 \section{Exercises}
 
-\begin{exercise}
-Implement a complete monitoring dashboard for an ML model in production.
-\end{exercise}
+\subsection{Exercise 1: Complete Monitoring Stack Setup}
+
+\textbf{Problem:} Implement a complete monitoring stack with metrics collection, drift detection, and alerting for a classification model.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 1 Solution
+def solution_exercise_1():
+    """Complete monitoring stack implementation"""
+
+    # Step 1: Setup metrics collection
+    collector = MetricsCollector(buffer_size=10000)
+    monitoring = MonitoringArchitecture(collector)
+
+    # Step 2: Setup drift detection
+    np.random.seed(42)
+    reference_df = pd.DataFrame({
+        'age': np.random.normal(45, 15, 1000),
+        'income': np.random.normal(60000, 20000, 1000),
+        'credit_score': np.random.normal(700, 50, 1000)
+    })
+
+    drift_monitor = DataDriftMonitor(reference_df)
+
+    # Step 3: Setup performance monitoring
+    perf_monitor = PerformanceMonitor(collector)
+
+    # Step 4: Setup alerts
+    def accuracy_degradation_check(metrics: MetricsCollector) -> bool:
+        recent_metrics = metrics.get_metrics(
+            name='model_accuracy',
+            start_time=datetime.now() - timedelta(hours=1)
+        )
+        if not recent_metrics:
+            return False
+        recent_accuracy = np.mean([m.value for m in recent_metrics])
+        return recent_accuracy < 0.85
+
+    monitoring.register_alert(Alert(
+        alert_id='accuracy_degradation',
+        name='Model Accuracy Degradation',
+        condition=accuracy_degradation_check,
+        severity=AlertSeverity.ERROR,
+        message_template='Model accuracy dropped below 85%',
+        cooldown_minutes=30
+    ))
+
+    # Simulate production traffic
+    print("=" * 70)
+    print("Monitoring Stack Operational")
+    print("=" * 70)
+
+    for i in range(500):
+        features = {
+            'age': np.random.normal(45, 15),
+            'income': np.random.normal(60000, 20000),
+            'credit_score': np.random.normal(700, 50)
+        }
+
+        prediction = np.random.choice([0, 1], p=[0.7, 0.3])
+        confidence = np.random.uniform(0.6, 0.99)
+        latency = np.random.uniform(0.01, 0.1)
+
+        monitoring.record_prediction(
+            model_name='credit_risk_model',
+            model_version='v1.0',
+            features=features,
+            prediction=prediction,
+            confidence=confidence,
+            latency_ms=latency * 1000
+        )
+
+        perf_monitor.record_prediction(
+            model_name='credit_risk_model',
+            model_version='v1.0',
+            prediction_id=f'pred_{i}',
+            features=features,
+            prediction=prediction
+        )
+
+        accuracy = 0.90 - (i / 500) * 0.10
+        actual = prediction if np.random.rand() < accuracy else (1 - prediction)
+
+        perf_monitor.record_ground_truth(
+            prediction_id=f'pred_{i}',
+            actual=actual
+        )
+
+        if i % 100 == 0 and i > 0:
+            current_df = pd.DataFrame({
+                'age': np.random.normal(48, 15, 100),
+                'income': np.random.normal(62000, 20000, 100),
+                'credit_score': np.random.normal(705, 50, 100)
+            })
+
+            drift_results = drift_monitor.check_drift(current_df)
+            drifted = sum(1 for r in drift_results.values() if r.drift_detected)
+            print(f"\n[Batch {i}] Drift check: {drifted}/{len(drift_results)} features drifted")
+
+    triggered_alerts = monitoring.check_alerts()
+
+    print(f"\n\n=== Monitoring Summary ===")
+    print(f"Predictions processed: 500")
+    print(f"Alerts triggered: {len(triggered_alerts)}")
+
+    if triggered_alerts:
+        for alert in triggered_alerts:
+            print(f"  - {alert['name']} ({alert['severity']})")
+
+    health = monitoring.get_health_status()
+    print(f"\nSystem health: {health['status']}")
+
+    trend = perf_monitor.get_performance_trend(
+        'credit_risk_model',
+        'accuracy',
+        window_snapshots=5
+    )
+
+    if trend:
+        print(f"Accuracy trend: {' -> '.join([f'{t:.3f}' for t in trend])}")
+
+    degraded = perf_monitor.detect_performance_degradation(
+        'credit_risk_model',
+        'accuracy',
+        threshold_pct=5.0
+    )
+
+    print(f"Performance degradation detected: {degraded}")
+
+solution_exercise_1()
+\end{lstlisting}
+
+\subsection{Exercise 2: Drift Detection Comparison}
+
+\textbf{Problem:} Implement comprehensive drift detection using KS test, PSI, and Jensen-Shannon divergence. Compare results across methods.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 2 Solution
+def solution_exercise_2():
+    """Compare drift detection methods"""
+
+    np.random.seed(42)
+
+    reference_df = pd.DataFrame({
+        'continuous_1': np.random.normal(100, 15, 1000),
+        'continuous_2': np.random.exponential(50, 1000),
+        'categorical_1': np.random.choice(['A', 'B', 'C'], 1000, p=[0.5, 0.3, 0.2])
+    })
+
+    current_df = pd.DataFrame({
+        'continuous_1': np.random.normal(105, 15, 1000),
+        'continuous_2': np.random.exponential(55, 1000),
+        'categorical_1': np.random.choice(['A', 'B', 'C'], 1000, p=[0.4, 0.4, 0.2])
+    })
+
+    detector = DriftDetector(significance_level=0.05)
+
+    print("=" * 70)
+    print("Drift Detection Method Comparison")
+    print("=" * 70)
+
+    for column in reference_df.columns:
+        print(f"\n{'='*70}")
+        print(f"Feature: {column}")
+        print(f"{'='*70}")
+
+        ref_col = reference_df[column]
+        curr_col = current_df[column]
+
+        if ref_col.dtype in ['object', 'category']:
+            methods = ['chi2', 'psi', 'js']
+        else:
+            methods = ['ks', 'psi', 'js']
+
+        for method in methods:
+            if method == 'ks':
+                result = detector.detect_drift_ks(ref_col, curr_col)
+            elif method == 'chi2':
+                result = detector.detect_drift_chi2(ref_col, curr_col)
+            elif method == 'psi':
+                result = detector.detect_drift_psi(ref_col, curr_col)
+            elif method == 'js':
+                result = detector.detect_drift_jensen_shannon(ref_col, curr_col)
+
+            status = "DRIFT" if result.drift_detected else "NO DRIFT"
+            print(f"\n{method.upper():15} {status:10}")
+            print(f"  Score:     {result.drift_score:.4f}")
+            print(f"  P-value:   {result.p_value:.4f}")
+            print(f"  Threshold: {result.threshold:.4f}")
+
+            if 'mean' in result.reference_stats and 'mean' in result.current_stats:
+                ref_mean = result.reference_stats['mean']
+                curr_mean = result.current_stats['mean']
+                change_pct = ((curr_mean - ref_mean) / abs(ref_mean)) * 100
+
+                print(f"  Ref mean:  {ref_mean:.2f}")
+                print(f"  Curr mean: {curr_mean:.2f}")
+                print(f"  Change:    {change_pct:+.2f}%")
+
+solution_exercise_2()
+\end{lstlisting}
+
+\subsection{Exercise 3: Prometheus and Grafana Dashboard}
+
+\textbf{Problem:} Create a Prometheus exporter for ML metrics and generate Grafana dashboard configurations.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 3 Solution
+def solution_exercise_3():
+    """Prometheus and Grafana integration"""
+
+    # Initialize Prometheus exporter
+    exporter = PrometheusExporter(port=8001)
+
+    # Start metrics server
+    import threading
+    server_thread = threading.Thread(target=exporter.start_server, daemon=True)
+    server_thread.start()
+
+    print("=" * 70)
+    print("Prometheus Exporter Running")
+    print("=" * 70)
+
+    # Simulate model serving with metrics
+    models = ['fraud_detector_v1', 'fraud_detector_v2', 'fraud_detector_v3']
+
+    for iteration in range(3):
+        print(f"\nIteration {iteration + 1}/3")
+
+        for model in models:
+            # Record predictions
+            for _ in range(100):
+                exporter.record_prediction(
+                    model_name=model.split('_v')[0],
+                    model_version=f"v{model.split('_v')[1]}",
+                    latency_seconds=np.random.uniform(0.01, 0.15),
+                    confidence=np.random.uniform(0.7, 0.99)
+                )
+
+                # Simulate errors
+                if np.random.rand() < 0.03:
+                    exporter.record_error(
+                        model_name=model.split('_v')[0],
+                        model_version=f"v{model.split('_v')[1]}",
+                        error_type=np.random.choice(['timeout', 'invalid_input', 'model_error'])
+                    )
+
+            # Update performance metrics
+            accuracy = 0.88 + np.random.uniform(-0.05, 0.05)
+            precision = 0.86 + np.random.uniform(-0.05, 0.05)
+            recall = 0.84 + np.random.uniform(-0.05, 0.05)
+            f1 = 2 * (precision * recall) / (precision + recall)
+
+            exporter.update_performance_metrics(
+                model_name=model.split('_v')[0],
+                model_version=f"v{model.split('_v')[1]}",
+                metrics={
+                    'accuracy': accuracy,
+                    'precision': precision,
+                    'recall': recall,
+                    'f1_score': f1
+                }
+            )
+
+            print(f"  {model}: acc={accuracy:.3f}, prec={precision:.3f}, rec={recall:.3f}")
+
+    print(f"\n{'='*70}")
+    print("Metrics available at http://localhost:8001/metrics")
+    print(f"{'='*70}")
+
+    # Generate Grafana dashboards
+    dashboard_gen = GrafanaDashboardGenerator()
+
+    overview_dashboard = dashboard_gen.generate_ml_overview_dashboard()
+    performance_dashboard = dashboard_gen.generate_performance_dashboard()
+
+    print(f"\nGenerated Dashboards:")
+    print(f"  - Overview: {len(overview_dashboard['dashboard']['panels'])} panels")
+    print(f"  - Performance: {len(performance_dashboard['dashboard']['panels'])} panels")
+
+    # Show sample PromQL queries
+    print(f"\nSample PromQL Queries:")
+    print(f"  Prediction rate:")
+    print(f"    rate(ml_prediction_total[5m])")
+    print(f"  Error rate:")
+    print(f"    rate(ml_prediction_errors_total[5m]) / rate(ml_prediction_total[5m])")
+    print(f"  P95 latency:")
+    print(f"    histogram_quantile(0.95, rate(ml_prediction_latency_seconds_bucket[5m]))")
+
+solution_exercise_3()
+\end{lstlisting}
+
+\subsection{Exercise 4: Alert System with Runbooks}
+
+\textbf{Problem:} Implement an alert manager with automated incident response runbooks.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 4 Solution
+def solution_exercise_4():
+    """Alert system with automated runbooks"""
+
+    # Setup monitoring
+    collector = MetricsCollector()
+    monitoring = MonitoringArchitecture(collector)
+    alert_manager = AlertManager(monitoring)
+
+    # Register notification channels
+    alert_manager.register_notification_channel('slack', slack_notification)
+    alert_manager.register_notification_channel('pagerduty', pagerduty_notification)
+
+    # Setup runbooks
+    runbook = IncidentRunbook()
+
+    # High latency runbook
+    runbook.register_runbook('high_latency', [
+        scale_resources_action,
+        lambda ctx: {'action': 'notify', 'channel': 'slack'}
+    ])
+
+    # Data drift runbook
+    runbook.register_runbook('data_drift', [
+        trigger_retraining_action,
+        lambda ctx: {'action': 'create_ticket', 'system': 'jira'}
+    ])
+
+    # Accuracy degradation runbook
+    runbook.register_runbook('accuracy_degradation', [
+        rollback_model_action,
+        lambda ctx: {'action': 'page_oncall', 'severity': 'high'}
+    ])
+
+    print("=" * 70)
+    print("Alert System with Runbooks")
+    print("=" * 70)
+
+    # Simulate scenarios
+    scenarios = [
+        {
+            'type': 'high_latency',
+            'alert_name': 'High Prediction Latency',
+            'severity': AlertSeverity.WARNING,
+            'details': {
+                'model_name': 'fraud_detector',
+                'p95_latency_ms': 250,
+                'threshold_ms': 100
+            }
+        },
+        {
+            'type': 'data_drift',
+            'alert_name': 'Significant Data Drift',
+            'severity': AlertSeverity.ERROR,
+            'details': {
+                'model_name': 'fraud_detector',
+                'drifted_features': ['transaction_amount', 'merchant_category'],
+                'max_drift_score': 0.45
+            }
+        },
+        {
+            'type': 'accuracy_degradation',
+            'alert_name': 'Model Accuracy Degradation',
+            'severity': AlertSeverity.CRITICAL,
+            'details': {
+                'model_name': 'fraud_detector',
+                'current_accuracy': 0.78,
+                'threshold': 0.85,
+                'degradation_pct': 8.2
+            }
+        }
+    ]
+
+    for i, scenario in enumerate(scenarios, 1):
+        print(f"\n{'='*70}")
+        print(f"Scenario {i}: {scenario['alert_name']}")
+        print(f"{'='*70}")
+
+        # Create incident
+        incident_id = alert_manager.create_incident(
+            alert_id=f"{scenario['type']}_{i}",
+            alert_name=scenario['alert_name'],
+            severity=scenario['severity'],
+            details=scenario['details']
+        )
+
+        print(f"\nIncident created: {incident_id}")
+        print(f"Severity: {scenario['severity'].value}")
+        print(f"Details: {scenario['details']}")
+
+        # Execute runbook
+        print(f"\nExecuting runbook for '{scenario['type']}'...")
+        runbook_results = runbook.execute_runbook(
+            alert_type=scenario['type'],
+            context={
+                'incident_id': incident_id,
+                **scenario['details']
+            }
+        )
+
+        print(f"Runbook completed: {len(runbook_results)} actions")
+        for j, result in enumerate(runbook_results, 1):
+            print(f"  Action {j}: {result['status']}")
+
+        # Resolve incident
+        alert_manager.resolve_incident(
+            incident_id,
+            f"Automated runbook completed. Issue resolved."
+        )
+
+        print(f"Incident resolved: {incident_id}")
+
+    print(f"\n{'='*70}")
+    print(f"Total incidents handled: {len(scenarios)}")
+    print(f"{'='*70}")
+
+solution_exercise_4()
+\end{lstlisting}
+
+\subsection{Exercise 5: Performance Degradation Detection}
+
+\textbf{Problem:} Implement a system to detect performance degradation using statistical methods and trigger alerts.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 5 Solution
+def solution_exercise_5():
+    """Performance degradation detection system"""
+
+    collector = MetricsCollector()
+    perf_monitor = PerformanceMonitor(collector, performance_window_hours=24)
+
+    print("=" * 70)
+    print("Performance Degradation Detection")
+    print("=" * 70)
+
+    # Simulate model predictions over time with gradual degradation
+    np.random.seed(42)
+    total_predictions = 1000
+
+    print(f"\nSimulating {total_predictions} predictions with gradual degradation")
+
+    for i in range(total_predictions):
+        pred_id = f"pred_{i}"
+
+        # Features
+        features = {
+            'feature_1': np.random.rand(),
+            'feature_2': np.random.rand(),
+            'feature_3': np.random.randint(0, 10)
+        }
+
+        # Prediction
+        prediction = np.random.choice([0, 1])
+
+        # Record prediction
+        perf_monitor.record_prediction(
+            model_name='churn_predictor',
+            model_version='v2.3',
+            prediction_id=pred_id,
+            features=features,
+            prediction=prediction
+        )
+
+        # Simulate gradual performance degradation
+        # Start at 92% accuracy, degrade to 82%
+        base_accuracy = 0.92
+        degradation = (i / total_predictions) * 0.10
+        current_accuracy = base_accuracy - degradation
+
+        # Generate ground truth based on current accuracy
+        actual = prediction if np.random.rand() < current_accuracy else (1 - prediction)
+
+        perf_monitor.record_ground_truth(
+            prediction_id=pred_id,
+            actual=actual
+        )
+
+        # Check for degradation periodically
+        if (i + 1) % 100 == 0:
+            degraded = perf_monitor.detect_performance_degradation(
+                model_name='churn_predictor',
+                metric_name='accuracy',
+                threshold_pct=5.0
+            )
+
+            trend = perf_monitor.get_performance_trend(
+                model_name='churn_predictor',
+                metric_name='accuracy',
+                window_snapshots=5
+            )
+
+            if trend:
+                avg_acc = np.mean(trend)
+                print(f"\n[Batch {i+1:4d}] Avg accuracy: {avg_acc:.3f} | Degradation: {degraded}")
+
+                if degraded:
+                    print(f"  [!] WARNING: Performance degradation detected!")
+                    print(f"  Trend: {' -> '.join([f'{t:.3f}' for t in trend])}")
+
+    # Final summary
+    print(f"\n{'='*70}")
+    print("Final Performance Summary")
+    print(f"{'='*70}")
+
+    final_trend = perf_monitor.get_performance_trend(
+        model_name='churn_predictor',
+        metric_name='accuracy',
+        window_snapshots=10
+    )
+
+    if final_trend:
+        print(f"Last 10 snapshots:")
+        for i, acc in enumerate(final_trend, 1):
+            print(f"  Snapshot {i}: {acc:.3f}")
+
+        print(f"\nAccuracy range: {min(final_trend):.3f} - {max(final_trend):.3f}")
+        print(f"Mean accuracy: {np.mean(final_trend):.3f}")
+        print(f"Std dev: {np.std(final_trend):.4f}")
+
+solution_exercise_5()
+\end{lstlisting}
+
+\subsection{Exercise 6: Comprehensive Monitoring Dashboard}
+
+\textbf{Problem:} Build a complete real-time monitoring dashboard that integrates metrics, drift detection, and performance tracking.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 6 Solution
+class MonitoringDashboard:
+    """Real-time monitoring dashboard"""
+
+    def __init__(self):
+        self.collector = MetricsCollector()
+        self.monitoring = MonitoringArchitecture(self.collector)
+        self.exporter = PrometheusExporter(port=8002)
+        self.logger = logging.getLogger("Dashboard")
+
+    def start(self):
+        """Start dashboard"""
+        print("=" * 70)
+        print("MONITORING DASHBOARD")
+        print("=" * 70)
+
+    def display_metrics_summary(self):
+        """Display metrics summary"""
+        health = self.monitoring.get_health_status()
+
+        print(f"\n### System Health: {health['status'].upper()} ###")
+        print(f"  Total predictions (5min): {health['total_predictions']}")
+        print(f"  Total errors (5min): {health['total_errors']}")
+        print(f"  Error rate: {health['error_rate']:.2%}")
+
+    def display_latency_stats(self, model_name: str):
+        """Display latency statistics"""
+        percentiles = self.collector.get_histogram_percentiles(
+            'prediction_latency_ms',
+            labels={'model_name': model_name},
+            percentiles=[50, 90, 95, 99]
+        )
+
+        print(f"\n### Latency Statistics ({model_name}) ###")
+        for p, value in sorted(percentiles.items()):
+            print(f"  p{int(p)}: {value:.2f}ms")
+
+    def display_drift_status(self, drift_results: Dict):
+        """Display drift detection status"""
+        drifted = sum(1 for r in drift_results.values() if r.drift_detected)
+        total = len(drift_results)
+
+        print(f"\n### Data Drift Status ###")
+        print(f"  Features monitored: {total}")
+        print(f"  Features with drift: {drifted}")
+
+        if drifted > 0:
+            print(f"\n  Drifted features:")
+            for feature, result in drift_results.items():
+                if result.drift_detected:
+                    print(f"    - {feature}: score={result.drift_score:.3f} ({result.method})")
+
+def solution_exercise_6():
+    """Complete monitoring dashboard"""
+
+    dashboard = MonitoringDashboard()
+    dashboard.start()
+
+    # Setup reference data for drift
+    np.random.seed(42)
+    reference_df = pd.DataFrame({
+        'age': np.random.normal(40, 12, 1000),
+        'balance': np.random.lognormal(10, 2, 1000),
+        'tenure_months': np.random.poisson(24, 1000)
+    })
+
+    drift_monitor = DataDriftMonitor(reference_df)
+
+    # Simulate monitoring cycles
+    for cycle in range(5):
+        print(f"\n{'='*70}")
+        print(f"Monitoring Cycle {cycle + 1}")
+        print(f"{'='*70}")
+
+        # Simulate predictions
+        for i in range(100):
+            features = {
+                'age': np.random.normal(40, 12),
+                'balance': np.random.lognormal(10, 2),
+                'tenure_months': np.random.poisson(24)
+            }
+
+            prediction = np.random.choice([0, 1], p=[0.75, 0.25])
+            confidence = np.random.uniform(0.6, 0.99)
+            latency = np.random.gamma(2, 25)
+
+            dashboard.monitoring.record_prediction(
+                model_name='churn_model',
+                model_version='v3.1',
+                features=features,
+                prediction=prediction,
+                confidence=confidence,
+                latency_ms=latency
+            )
+
+            dashboard.exporter.record_prediction(
+                model_name='churn_model',
+                model_version='v3.1',
+                latency_seconds=latency / 1000,
+                confidence=confidence
+            )
+
+        # Display dashboard
+        dashboard.display_metrics_summary()
+        dashboard.display_latency_stats('churn_model')
+
+        # Check drift
+        current_df = pd.DataFrame({
+            'age': np.random.normal(41 + cycle, 12, 100),
+            'balance': np.random.lognormal(10 + cycle*0.1, 2, 100),
+            'tenure_months': np.random.poisson(24, 100)
+        })
+
+        drift_results = drift_monitor.check_drift(current_df)
+        dashboard.display_drift_status(drift_results)
+
+    print(f"\n{'='*70}")
+    print("Dashboard session complete")
+    print(f"{'='*70}")
+
+solution_exercise_6()
+\end{lstlisting}
+
+\subsection{Exercise 7: Custom Drift Detection with Multiple Methods}
+
+\textbf{Problem:} Implement a custom drift detection system that combines multiple statistical methods (KS test, PSI, Jensen-Shannon divergence) and creates an ensemble score to make drift decisions more robust.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 7 Solution
+from typing import Dict, List, Tuple
+from dataclasses import dataclass
+from enum import Enum
+
+class DriftSeverity(Enum):
+    """Drift severity levels"""
+    NONE = "none"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+@dataclass
+class EnsembleDriftResult:
+    """Result from ensemble drift detection"""
+    feature_name: str
+    ensemble_score: float
+    severity: DriftSeverity
+    individual_results: Dict[str, DriftResult]
+    recommendation: str
+
+class EnsembleDriftDetector:
+    """
+    Ensemble drift detector using multiple statistical methods
+
+    Combines KS test, PSI, and Jensen-Shannon divergence for
+    robust drift detection with configurable thresholds
+    """
+
+    def __init__(self,
+                 ks_threshold: float = 0.05,
+                 psi_threshold: float = 0.2,
+                 js_threshold: float = 0.15,
+                 ensemble_weights: Dict[str, float] = None):
+        self.detector = DriftDetector()
+        self.ks_threshold = ks_threshold
+        self.psi_threshold = psi_threshold
+        self.js_threshold = js_threshold
+
+        # Default weights for ensemble
+        self.weights = ensemble_weights or {
+            'ks': 0.35,
+            'psi': 0.35,
+            'js': 0.30
+        }
+
+    def detect_ensemble_drift(self,
+                            reference_data: pd.Series,
+                            current_data: pd.Series,
+                            feature_name: str) -> EnsembleDriftResult:
+        """Detect drift using ensemble of methods"""
+
+        # Run all detection methods
+        ks_result = self.detector.detect_drift_ks(reference_data, current_data)
+        psi_result = self.detector.detect_drift_psi(
+            reference_data, current_data, psi_threshold=self.psi_threshold
+        )
+        js_result = self.detector.detect_drift_jensen_shannon(
+            reference_data, current_data
+        )
+
+        # Store individual results
+        individual_results = {
+            'ks': ks_result,
+            'psi': psi_result,
+            'js': js_result
+        }
+
+        # Calculate normalized scores (0-1 scale)
+        ks_score = 1 - ks_result.drift_score  # p-value: lower = more drift
+        psi_score = min(psi_result.drift_score / 0.5, 1.0)  # normalize PSI
+        js_score = min(js_result.drift_score / 0.5, 1.0)  # normalize JS
+
+        # Weighted ensemble score
+        ensemble_score = (
+            self.weights['ks'] * ks_score +
+            self.weights['psi'] * psi_score +
+            self.weights['js'] * js_score
+        )
+
+        # Determine severity
+        severity = self._calculate_severity(ensemble_score)
+
+        # Generate recommendation
+        recommendation = self._generate_recommendation(
+            severity, individual_results, feature_name
+        )
+
+        return EnsembleDriftResult(
+            feature_name=feature_name,
+            ensemble_score=ensemble_score,
+            severity=severity,
+            individual_results=individual_results,
+            recommendation=recommendation
+        )
+
+    def _calculate_severity(self, ensemble_score: float) -> DriftSeverity:
+        """Calculate drift severity from ensemble score"""
+        if ensemble_score < 0.2:
+            return DriftSeverity.NONE
+        elif ensemble_score < 0.4:
+            return DriftSeverity.LOW
+        elif ensemble_score < 0.6:
+            return DriftSeverity.MEDIUM
+        elif ensemble_score < 0.8:
+            return DriftSeverity.HIGH
+        else:
+            return DriftSeverity.CRITICAL
+
+    def _generate_recommendation(self,
+                                severity: DriftSeverity,
+                                individual_results: Dict[str, DriftResult],
+                                feature_name: str) -> str:
+        """Generate actionable recommendation"""
+
+        if severity == DriftSeverity.NONE:
+            return f"No action required for {feature_name}"
+
+        elif severity == DriftSeverity.LOW:
+            return f"Monitor {feature_name} closely; consider investigating if trend continues"
+
+        elif severity == DriftSeverity.MEDIUM:
+            return f"Investigate {feature_name} distribution change; may need model retraining soon"
+
+        elif severity == DriftSeverity.HIGH:
+            methods_detected = [
+                name for name, result in individual_results.items()
+                if result.drift_detected
+            ]
+            return f"ACTION REQUIRED: {feature_name} showing drift in {methods_detected}; schedule model retraining"
+
+        else:  # CRITICAL
+            return f"URGENT: Critical drift in {feature_name}; consider model rollback or immediate retraining"
+
+def solution_exercise_7():
+    """Ensemble drift detection demonstration"""
+
+    # Create reference data
+    np.random.seed(42)
+    reference_df = pd.DataFrame({
+        'age': np.random.normal(45, 12, 2000),
+        'income': np.random.lognormal(10.5, 0.8, 2000),
+        'transaction_count': np.random.poisson(15, 2000),
+        'credit_score': np.random.normal(680, 60, 2000)
+    })
+
+    # Create ensemble detector
+    ensemble = EnsembleDriftDetector(
+        ks_threshold=0.05,
+        psi_threshold=0.2,
+        js_threshold=0.15
+    )
+
+    # Test scenarios with different drift levels
+    scenarios = {
+        'No Drift': pd.DataFrame({
+            'age': np.random.normal(45, 12, 500),
+            'income': np.random.lognormal(10.5, 0.8, 500),
+            'transaction_count': np.random.poisson(15, 500),
+            'credit_score': np.random.normal(680, 60, 500)
+        }),
+        'Low Drift': pd.DataFrame({
+            'age': np.random.normal(46.5, 12, 500),
+            'income': np.random.lognormal(10.6, 0.8, 500),
+            'transaction_count': np.random.poisson(16, 500),
+            'credit_score': np.random.normal(685, 60, 500)
+        }),
+        'Medium Drift': pd.DataFrame({
+            'age': np.random.normal(50, 13, 500),
+            'income': np.random.lognormal(10.8, 0.9, 500),
+            'transaction_count': np.random.poisson(20, 500),
+            'credit_score': np.random.normal(700, 65, 500)
+        }),
+        'High Drift': pd.DataFrame({
+            'age': np.random.normal(55, 15, 500),
+            'income': np.random.lognormal(11.2, 1.0, 500),
+            'transaction_count': np.random.poisson(30, 500),
+            'credit_score': np.random.normal(730, 70, 500)
+        })
+    }
+
+    print("=" * 90)
+    print("ENSEMBLE DRIFT DETECTION ANALYSIS")
+    print("=" * 90)
+
+    for scenario_name, current_df in scenarios.items():
+        print(f"\n{'='*90}")
+        print(f"Scenario: {scenario_name}")
+        print(f"{'='*90}")
+
+        for feature in reference_df.columns:
+            result = ensemble.detect_ensemble_drift(
+                reference_data=reference_df[feature],
+                current_data=current_df[feature],
+                feature_name=feature
+            )
+
+            print(f"\nFeature: {feature}")
+            print(f"  Ensemble Score: {result.ensemble_score:.3f}")
+            print(f"  Severity: {result.severity.value.upper()}")
+
+            print(f"\n  Individual Method Results:")
+            for method, drift_result in result.individual_results.items():
+                status = "DRIFT" if drift_result.drift_detected else "OK"
+                print(f"    {method.upper():6s}: {status:5s} (score={drift_result.drift_score:.4f})")
+
+            print(f"\n  Recommendation:")
+            print(f"    {result.recommendation}")
+
+        # Calculate overall drift percentage
+        all_results = [
+            ensemble.detect_ensemble_drift(
+                reference_data=reference_df[feature],
+                current_data=current_df[feature],
+                feature_name=feature
+            )
+            for feature in reference_df.columns
+        ]
+
+        drifted_features = sum(
+            1 for r in all_results
+            if r.severity not in [DriftSeverity.NONE, DriftSeverity.LOW]
+        )
+
+        print(f"\n{'='*90}")
+        print(f"Summary: {drifted_features}/{len(reference_df.columns)} features showing medium+ drift")
+        print(f"{'='*90}")
+
+solution_exercise_7()
+\end{lstlisting}
+
+\subsection{Exercise 8: End-to-End Production Monitoring Pipeline}
+
+\textbf{Problem:} Build a complete production monitoring pipeline that integrates structured logging, metrics collection, drift detection, performance tracking, alerting, and automated runbooks for a real-time ML service.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 8 Solution
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+import threading
+import time
+import queue
+
+@dataclass
+class ModelPredictionRequest:
+    """Prediction request with full context"""
+    request_id: str
+    model_name: str
+    model_version: str
+    features: Dict[str, Any]
+    timestamp: datetime = field(default_factory=datetime.now)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class ModelPredictionResponse:
+    """Prediction response with monitoring data"""
+    request_id: str
+    prediction: Any
+    confidence: float
+    latency_ms: float
+    model_name: str
+    model_version: str
+    timestamp: datetime = field(default_factory=datetime.now)
+
+class ProductionMLMonitoringPipeline:
+    """
+    Complete production monitoring pipeline for ML services
+
+    Integrates all monitoring components:
+    - Structured logging
+    - Metrics collection
+    - Drift detection
+    - Performance tracking
+    - Alerting with runbooks
+    - Health checks
+    """
+
+    def __init__(self,
+                 service_name: str,
+                 model_name: str,
+                 model_version: str,
+                 reference_data: pd.DataFrame):
+        # Initialize all monitoring components
+        self.service_name = service_name
+        self.model_name = model_name
+        self.model_version = model_version
+
+        # Logging
+        self.logger = MLLogger(service_name, log_file=f'{service_name}.jsonl')
+
+        # Metrics
+        self.collector = MetricsCollector(buffer_size=100000)
+        self.monitoring = MonitoringArchitecture(self.collector)
+
+        # Drift detection
+        self.drift_monitor = DataDriftMonitor(reference_data)
+        self.drift_check_interval = 3600  # Check every hour
+
+        # Performance monitoring
+        self.perf_monitor = PerformanceMonitor(
+            self.collector,
+            performance_window_hours=24
+        )
+
+        # Data quality
+        self.quality_monitor = DataQualityMonitor()
+        self.quality_monitor.set_baseline(reference_data)
+
+        # Prometheus export
+        self.prometheus = PrometheusExporter(port=8000)
+
+        # Alert system
+        self.alert_manager = AlertManager()
+        self._setup_alerts()
+
+        # Request queue for async processing
+        self.request_queue = queue.Queue(maxsize=10000)
+        self.processing_thread = None
+        self.running = False
+
+        # Statistics
+        self.stats = {
+            'total_predictions': 0,
+            'total_errors': 0,
+            'drift_checks': 0,
+            'quality_violations': 0
+        }
+
+    def _setup_alerts(self):
+        """Configure monitoring alerts with runbooks"""
+
+        # High error rate alert
+        def check_error_rate(collector: MetricsCollector) -> bool:
+            recent_errors = collector.counters.get('prediction_errors', 0)
+            recent_total = collector.counters.get('predictions_total', 1)
+            return (recent_errors / recent_total) > 0.05
+
+        error_alert = Alert(
+            alert_id='high_error_rate',
+            name='High Prediction Error Rate',
+            condition=check_error_rate,
+            severity=AlertSeverity.ERROR,
+            message_template='Error rate above 5%: {error_rate:.2%}',
+            cooldown_minutes=15
+        )
+
+        # High latency alert
+        def check_latency(collector: MetricsCollector) -> bool:
+            percentiles = collector.get_histogram_percentiles(
+                'prediction_latency_ms',
+                percentiles=[95]
+            )
+            return percentiles.get(95, 0) > 500
+
+        latency_alert = Alert(
+            alert_id='high_latency',
+            name='High Prediction Latency',
+            condition=check_latency,
+            severity=AlertSeverity.WARNING,
+            message_template='P95 latency above 500ms: {p95_latency:.2f}ms',
+            cooldown_minutes=10
+        )
+
+        # Add alerts
+        self.monitoring.add_alert(error_alert)
+        self.monitoring.add_alert(latency_alert)
+
+        # Setup runbooks
+        self._setup_runbooks()
+
+    def _setup_runbooks(self):
+        """Configure automated incident response"""
+
+        # Error rate runbook
+        error_runbook = IncidentRunbook(
+            incident_type='high_error_rate',
+            steps=[
+                ('check_model_health', self._check_model_health),
+                ('check_data_quality', self._check_data_quality),
+                ('log_recent_errors', self._log_recent_errors),
+                ('notify_oncall', self._notify_oncall)
+            ]
+        )
+
+        # Latency runbook
+        latency_runbook = IncidentRunbook(
+            incident_type='high_latency',
+            steps=[
+                ('check_resource_usage', self._check_resources),
+                ('analyze_batch_size', self._analyze_batch_size),
+                ('check_dependencies', self._check_dependencies)
+            ]
+        )
+
+        self.alert_manager.runbooks = {
+            'high_error_rate': error_runbook,
+            'high_latency': latency_runbook
+        }
+
+    # Runbook action implementations
+    def _check_model_health(self, context: Dict) -> Dict:
+        health = self.monitoring.get_health_status()
+        return {'model_health': health}
+
+    def _check_data_quality(self, context: Dict) -> Dict:
+        report = self.quality_monitor.get_quality_report()
+        return {'quality_report': report}
+
+    def _log_recent_errors(self, context: Dict) -> Dict:
+        # Log recent prediction errors
+        return {'logged': True}
+
+    def _notify_oncall(self, context: Dict) -> Dict:
+        # Send notification to on-call engineer
+        print(f"[ALERT] Notifying on-call: {context}")
+        return {'notified': True}
+
+    def _check_resources(self, context: Dict) -> Dict:
+        # Check CPU/memory usage
+        return {'resources': 'healthy'}
+
+    def _analyze_batch_size(self, context: Dict) -> Dict:
+        # Analyze prediction batch sizes
+        return {'batch_analysis': 'complete'}
+
+    def _check_dependencies(self, context: Dict) -> Dict:
+        # Check external service health
+        return {'dependencies': 'healthy'}
+
+    def start(self):
+        """Start the monitoring pipeline"""
+        self.running = True
+        self.processing_thread = threading.Thread(target=self._process_predictions)
+        self.processing_thread.daemon = True
+        self.processing_thread.start()
+
+        # Start drift monitoring thread
+        self.drift_thread = threading.Thread(target=self._drift_monitoring_loop)
+        self.drift_thread.daemon = True
+        self.drift_thread.start()
+
+        self.logger.log_performance_metrics(
+            model_name=self.model_name,
+            model_version=self.model_version,
+            metrics={'status': 'started'},
+            window_hours=0
+        )
+
+    def stop(self):
+        """Stop the monitoring pipeline"""
+        self.running = False
+        if self.processing_thread:
+            self.processing_thread.join(timeout=5)
+
+    def predict(self, request: ModelPredictionRequest) -> ModelPredictionResponse:
+        """
+        Make prediction with full monitoring
+
+        Captures metrics, logs, and queues for async processing
+        """
+        start_time = time.time()
+
+        try:
+            # Validate data quality
+            features_df = pd.DataFrame([request.features])
+            violations = self.quality_monitor.validate_batch(features_df)
+
+            if any(v.severity == 'error' for v in violations):
+                self.stats['quality_violations'] += len(violations)
+                raise ValueError(f"Data quality violations: {violations}")
+
+            # Simulate prediction (replace with actual model)
+            prediction = self._run_model(request.features)
+            confidence = np.random.uniform(0.7, 0.99)
+
+            latency_ms = (time.time() - start_time) * 1000
+
+            # Create response
+            response = ModelPredictionResponse(
+                request_id=request.request_id,
+                prediction=prediction,
+                confidence=confidence,
+                latency_ms=latency_ms,
+                model_name=self.model_name,
+                model_version=self.model_version
+            )
+
+            # Record metrics
+            self._record_metrics(request, response)
+
+            # Log prediction
+            self.logger.log_prediction(
+                model_name=self.model_name,
+                model_version=self.model_version,
+                prediction_id=request.request_id,
+                features=request.features,
+                prediction=prediction,
+                confidence=confidence,
+                latency_ms=latency_ms
+            )
+
+            # Queue for async processing
+            try:
+                self.request_queue.put((request, response), block=False)
+            except queue.Full:
+                self.logger.log_model_error(
+                    model_name=self.model_name,
+                    model_version=self.model_version,
+                    error_type='QueueFull',
+                    error_message='Monitoring queue is full'
+                )
+
+            self.stats['total_predictions'] += 1
+
+            return response
+
+        except Exception as e:
+            self.stats['total_errors'] += 1
+
+            self.logger.log_model_error(
+                model_name=self.model_name,
+                model_version=self.model_version,
+                error_type=type(e).__name__,
+                error_message=str(e),
+                prediction_id=request.request_id
+            )
+
+            # Record error metrics
+            self.collector.record_counter(
+                'prediction_errors',
+                labels={
+                    'model_name': self.model_name,
+                    'error_type': type(e).__name__
+                }
+            )
+
+            raise
+
+    def _run_model(self, features: Dict[str, Any]) -> Any:
+        """Simulate model inference"""
+        time.sleep(0.02)  # Simulate inference time
+        return np.random.choice([0, 1], p=[0.7, 0.3])
+
+    def _record_metrics(self,
+                       request: ModelPredictionRequest,
+                       response: ModelPredictionResponse):
+        """Record prediction metrics"""
+
+        labels = {
+            'model_name': self.model_name,
+            'model_version': self.model_version
+        }
+
+        # Counter
+        self.collector.record_counter('predictions_total', labels=labels)
+
+        # Latency histogram
+        self.collector.record_histogram(
+            'prediction_latency_ms',
+            response.latency_ms,
+            labels=labels
+        )
+
+        # Confidence gauge
+        self.collector.record_gauge(
+            'prediction_confidence',
+            response.confidence,
+            labels=labels
+        )
+
+        # Prometheus metrics
+        self.prometheus.record_prediction(
+            model_name=self.model_name,
+            model_version=self.model_version,
+            latency_seconds=response.latency_ms / 1000,
+            confidence=response.confidence
+        )
+
+    def _process_predictions(self):
+        """Async processing of predictions"""
+        batch = []
+        batch_size = 100
+
+        while self.running:
+            try:
+                request, response = self.request_queue.get(timeout=1)
+                batch.append((request, response))
+
+                if len(batch) >= batch_size:
+                    self._process_batch(batch)
+                    batch = []
+
+            except queue.Empty:
+                if batch:
+                    self._process_batch(batch)
+                    batch = []
+
+    def _process_batch(self, batch: List[Tuple]):
+        """Process batch of predictions"""
+        # Could do batch drift detection, performance analysis, etc.
+        pass
+
+    def _drift_monitoring_loop(self):
+        """Periodic drift detection"""
+        while self.running:
+            time.sleep(self.drift_check_interval)
+
+            # Get recent predictions for drift check
+            # (In production, fetch from storage)
+            self.stats['drift_checks'] += 1
+
+    def get_monitoring_report(self) -> Dict[str, Any]:
+        """Generate comprehensive monitoring report"""
+
+        health = self.monitoring.get_health_status()
+        quality = self.quality_monitor.get_quality_report()
+
+        return {
+            'timestamp': datetime.now().isoformat(),
+            'service': self.service_name,
+            'model': {
+                'name': self.model_name,
+                'version': self.model_version
+            },
+            'statistics': self.stats,
+            'health': health,
+            'data_quality': quality,
+            'recent_alerts': [
+                {
+                    'alert_id': a.alert_id,
+                    'name': a.name,
+                    'severity': a.severity.value,
+                    'last_triggered': a.last_triggered.isoformat() if a.last_triggered else None
+                }
+                for a in self.monitoring.alerts
+            ]
+        }
+
+def solution_exercise_8():
+    """Production monitoring pipeline demonstration"""
+
+    # Setup reference data
+    np.random.seed(42)
+    reference_data = pd.DataFrame({
+        'transaction_amount': np.random.lognormal(5, 2, 5000),
+        'account_age_days': np.random.exponential(730, 5000),
+        'transaction_count_30d': np.random.poisson(25, 5000),
+        'merchant_risk_score': np.random.beta(2, 5, 5000)
+    })
+
+    # Create monitoring pipeline
+    pipeline = ProductionMLMonitoringPipeline(
+        service_name='fraud_detection_service',
+        model_name='fraud_detector',
+        model_version='v4.2',
+        reference_data=reference_data
+    )
+
+    # Start pipeline
+    pipeline.start()
+
+    print("=" * 90)
+    print("PRODUCTION ML MONITORING PIPELINE")
+    print("=" * 90)
+
+    # Simulate production traffic
+    print("\nSimulating production predictions...")
+
+    for i in range(500):
+        # Generate request
+        request = ModelPredictionRequest(
+            request_id=f'req_{i:06d}',
+            model_name='fraud_detector',
+            model_version='v4.2',
+            features={
+                'transaction_amount': float(np.random.lognormal(5, 2)),
+                'account_age_days': int(np.random.exponential(730)),
+                'transaction_count_30d': int(np.random.poisson(25)),
+                'merchant_risk_score': float(np.random.beta(2, 5))
+            },
+            metadata={'source': 'api', 'region': 'us-east-1'}
+        )
+
+        try:
+            response = pipeline.predict(request)
+
+            if i % 100 == 0:
+                print(f"  Processed {i} predictions...")
+
+        except Exception as e:
+            print(f"  Error in prediction {request.request_id}: {e}")
+
+        # Simulate realistic request rate
+        time.sleep(0.001)
+
+    # Generate final report
+    time.sleep(2)  # Allow async processing to complete
+
+    print("\n" + "=" * 90)
+    print("MONITORING REPORT")
+    print("=" * 90)
+
+    report = pipeline.get_monitoring_report()
+
+    print(f"\nService: {report['service']}")
+    print(f"Model: {report['model']['name']} v{report['model']['version']}")
+
+    print(f"\nStatistics:")
+    for key, value in report['statistics'].items():
+        print(f"  {key}: {value}")
+
+    print(f"\nHealth Status: {report['health']['status'].upper()}")
+    print(f"  Total predictions (5min): {report['health']['total_predictions']}")
+    print(f"  Error rate: {report['health']['error_rate']:.2%}")
+
+    print(f"\nData Quality: {report['data_quality']['status'].upper()}")
+    print(f"  Total violations: {report['data_quality']['total_violations']}")
+
+    # Stop pipeline
+    pipeline.stop()
+
+    print("\n" + "=" * 90)
+    print("Pipeline stopped successfully")
+    print("=" * 90)
+
+solution_exercise_8()
+\end{lstlisting}
+
+\section{Chapter Summary}
+
+This chapter covered comprehensive ML monitoring and observability, essential for maintaining production ML systems. We explored the complete monitoring stack from metrics collection to incident response.
+
+\subsection{Key Concepts Covered}
+
+\textbf{Monitoring Architecture:}
+\begin{itemize}
+    \item Complete metrics collection system with counters, gauges, histograms
+    \item Health status monitoring and alerting
+    \item Time-series metrics storage and retrieval
+    \item Production-grade metric buffering and flushing
+\end{itemize}
+
+\textbf{Data Drift Detection:}
+\begin{itemize}
+    \item Kolmogorov-Smirnov test for continuous features
+    \item Chi-squared test for categorical features
+    \item Population Stability Index (PSI) for industry-standard monitoring
+    \item Jensen-Shannon divergence for distribution comparison
+    \item Integration with Evidently AI for advanced reporting
+\end{itemize}
+
+\textbf{Performance Monitoring:}
+\begin{itemize}
+    \item Prediction and ground truth tracking
+    \item Automated metric calculation (accuracy, precision, recall, F1, MAE, RMSE)
+    \item Performance trend analysis
+    \item Statistical degradation detection
+    \item Sliding window evaluation
+\end{itemize}
+
+\textbf{Prometheus and Grafana:}
+\begin{itemize}
+    \item ML-specific metric exporters
+    \item Standard Prometheus metric types (Counter, Gauge, Histogram, Summary)
+    \item Grafana dashboard generation
+    \item PromQL queries for ML metrics
+    \item Alert rule configuration
+\end{itemize}
+
+\textbf{Alert Systems:}
+\begin{itemize}
+    \item Intelligent alerting with cooldowns
+    \item Multi-channel notifications (Slack, PagerDuty, email)
+    \item Incident management with tracking
+    \item Automated runbook execution
+    \item Resolution workflows
+\end{itemize}
+
+\textbf{Observability:}
+\begin{itemize}
+    \item Structured logging for ML systems
+    \item Distributed tracing through ML pipelines
+    \item Feature store observability
+    \item Model explainability integration
+    \item Cost and security monitoring
+\end{itemize}
+
+\subsection{Best Practices}
+
+\begin{enumerate}
+    \item \textbf{Monitor continuously:} Track metrics, drift, and performance in real-time
+    \item \textbf{Use multiple drift methods:} Different tests catch different types of drift
+    \item \textbf{Set intelligent thresholds:} Balance sensitivity and specificity
+    \item \textbf{Automate responses:} Use runbooks for common incidents
+    \item \textbf{Track lineage:} Connect metrics to specific model versions
+    \item \textbf{Implement graceful degradation:} Plan for performance issues
+    \item \textbf{Monitor the monitors:} Ensure monitoring systems are healthy
+    \item \textbf{Regular review:} Periodically assess alert effectiveness
+\end{enumerate}
+
+\subsection{Common Pitfalls}
+
+\begin{itemize}
+    \item \textbf{Alert fatigue:} Too many low-value alerts reduce effectiveness
+    \item \textbf{Delayed ground truth:} Long feedback loops prevent timely detection
+    \item \textbf{Ignoring gradual drift:} Small changes accumulate to major issues
+    \item \textbf{Single metric focus:} Monitor multiple performance dimensions
+    \item \textbf{Missing context:} Alerts need actionable information
+    \item \textbf{Over-sensitive drift detection:} Natural variation triggers false alerts
+    \item \textbf{No baseline:} Insufficient reference data for comparison
+\end{itemize}
+
+\subsection{Production Checklist}
+
+Before deploying monitoring to production:
+
+\begin{enumerate}
+    \item Metrics collection covers all critical dimensions
+    \item Reference datasets established for drift detection
+    \item Alert thresholds tuned with historical data
+    \item Notification channels tested and working
+    \item Runbooks documented and automated
+    \item Dashboards created for key stakeholders
+    \item Monitoring system itself is monitored
+    \item Incident response procedures documented
+    \item On-call rotation established
+    \item Regular review cadence scheduled
+\end{enumerate}
+
+\subsection{Integration Points}
+
+ML monitoring integrates with broader infrastructure:
+
+\begin{itemize}
+    \item \textbf{Model registry:} Track which models are deployed
+    \item \textbf{Feature store:} Monitor feature pipeline health
+    \item \textbf{CI/CD:} Trigger retraining or rollbacks
+    \item \textbf{Incident management:} Create tickets automatically
+    \item \textbf{Cost management:} Track inference spend
+    \item \textbf{Compliance systems:} Audit model decisions
+\end{itemize}
+
+By implementing comprehensive monitoring and observability, teams can confidently operate ML systems at scale, detect issues before they impact users, and continuously improve model performance. The combination of metrics collection, drift detection, performance tracking, and intelligent alerting provides complete visibility into ML system health.

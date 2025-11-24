@@ -8,21 +8,33 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{longtable}
-\usepackage{hyperref}
+\usepackage[hidelinks,hypertexnames=false]{hyperref}
 \usepackage{cleveref}
 \usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{listings}
+\usepackage{listingsutf8}
 \usepackage{xcolor}
 \usepackage{natbib}
 \usepackage{geometry}
 \usepackage{fancyhdr}
 \usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows,positioning,fit,calc,backgrounds}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 
 % Page setup
 \geometry{margin=1in}
+\setlength{\headheight}{14.5pt}
+\setlength{\emergencystretch}{4em} % help LaTeX stretch lines to avoid overfull hboxes
+\hfuzz=2pt % suppress tiny overfull hbox warnings
+\raggedbottom % avoid forcing vertical stretch that triggers underfull vboxes
+\sloppy % favor line breaks over overfull boxes
+% Widen TOC page number boxes to avoid overfull boxes with long roman numerals
+\makeatletter
+\renewcommand{\@pnumwidth}{3em}
+\renewcommand{\@tocrmarg}{4em}
+\makeatother
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[LE,RO]{\thepage}
@@ -36,6 +48,16 @@
 \definecolor{codepurple}{RGB}{128,0,128}
 \definecolor{codegray}{RGB}{128,128,128}
 \definecolor{backcolour}{RGB}{245,245,245}
+
+% YAML language definition for listings
+\lstdefinelanguage{YAML}{
+    keywords={true,false,null,yes,no},
+    keywordstyle=\color{keywordblue}\bfseries,
+    sensitive=false,
+    comment=[l]{\#},
+    commentstyle=\color{codegreen}\itshape,
+    stringstyle=\color{codepurple}
+}
 
 % Python code listing style
 \lstdefinestyle{python}{
@@ -72,6 +94,7 @@
 
 % YAML code listing style
 \lstdefinestyle{yaml}{
+    language=YAML,
     basicstyle=\ttfamily\footnotesize,
     backgroundcolor=\color{backcolour},
     frame=single,
@@ -100,8 +123,30 @@
     captionpos=b
 }
 
-% Set default style
-\lstset{style=python}
+% Set default style and UTF-8 handling for listings
+\lstset{
+    style=python,
+    inputencoding=utf8,
+    extendedchars=true,
+    literate={
+        {±}{{$\pm$}}1
+        {²}{{$^2$}}1
+        {é}{{\'e}}1
+        {α}{{$\alpha$}}1
+        {δ}{{$\delta$}}1
+        {ε}{{$\epsilon$}}1
+        {λ}{{$\lambda$}}1
+        {—}{{---}}1
+        {→}{{$\to$}}1
+        {≈}{{$\approx$}}1
+        {─}{{-}}1
+        {│}{{|}}1
+        {└}{{\textbackslash}}1
+        {├}{{|-}}1
+        {✓}{{\checkmark}}1
+        {✗}{{x}}1
+    }
+}
 
 % Theorem environments
 \theoremstyle{definition}
@@ -150,6 +195,8 @@
 
 \chapter{Preface}
 \input{chapters/preface}
+
+\input{chapters/unified_case_study}
 
 \mainmatter
 
@@ -326,6 +373,10 @@
 \chapter{Glossary}
 \label{app:glossary}
 \input{appendices/appendix_glossary}
+
+\chapter{Code Style Guide}
+\label{app:code_style}
+\input{appendices/appendix_code_style}
 
 % Bibliography
 \bibliographystyle{plainnat}
