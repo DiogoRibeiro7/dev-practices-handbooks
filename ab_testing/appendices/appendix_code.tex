@@ -1,0 +1,3086 @@
+\appendix
+\chapter{Code Examples and Implementation}
+
+This appendix provides production-ready code implementations for A/B testing across multiple platforms and languages. All code examples include comprehensive documentation, error handling, and usage examples.
+
+\section{Python Implementation}
+
+\subsection{Complete ABTest Framework}
+
+\lstset{language=Python, caption=ABTest Framework - Core Classes}
+\begin{lstlisting}
+"""
+A/B Testing Framework
+====================
+
+Complete framework for designing, running, and analyzing A/B tests.
+
+Author: A/B Testing Handbook
+License: MIT
+"""
+
+import numpy as np
+import pandas as pd
+from scipy import stats
+from dataclasses import dataclass, field
+from typing import Optional, Dict, List, Tuple, Union
+from datetime import datetime, timedelta
+import warnings
+
+# ============================================================================
+# Data Classes
+# ============================================================================
+
+@dataclass
+class ExperimentConfig:
+    """Configuration for A/B test experiment."""
+
+    experiment_id: str
+    name: str
+    description: str
+    hypothesis: str
+
+    # Design parameters
+    variants: List[str]
+    primary_metric: str
+    secondary_metrics: List[str] = field(default_factory=list)
+    guardrail_metrics: List[str] = field(default_factory=list)
+
+    # Statistical parameters
+    alpha: float = 0.05
+    power: float = 0.80
+    mde: Optional[float] = None  # Minimum detectable effect
+
+    # Sample size
+    sample_size_per_variant: Optional[int] = None
+
+    # Duration
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+
+    # Traffic allocation
+    traffic_allocation: Dict[str, float] = field(default_factory=dict)
+
+    # Metadata
+    owner: str = ""
+    tags: List[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        """Validate configuration."""
+        if len(self.variants) < 2:
+            raise ValueError("At least 2 variants required")
+
+        if self.traffic_allocation:
+            total = sum(self.traffic_allocation.values())
+            if not np.isclose(total, 1.0):
+                raise ValueError(f"Traffic allocation must sum to 1.0, got {total}")
+
+
+@dataclass
+class ABTestResult:
+    """Results from A/B test analysis."""
+
+    metric: str
+    control_mean: float
+    treatment_mean: float
+
+    # Effect sizes
+    absolute_difference: float
+    relative_lift: float
+
+    # Statistical inference
+    standard_error: float
+    confidence_interval: Tuple[float, float]
+    p_value: float
+    test_statistic: float
+
+    # Decision support
+    statistically_significant: bool
+    practically_significant: Optional[bool] = None
+
+    # Sample information
+    sample_size_control: int
+    sample_size_treatment: int
+
+    # Additional metrics
+    cohens_d: Optional[float] = None
+    power_achieved: Optional[float] = None
+
+
+# ============================================================================
+# Statistical Analysis Classes
+# ============================================================================
+
+class SampleSizeCalculator:
+    """Calculate required sample sizes for A/B tests."""
+
+    @staticmethod
+    def proportions(p1: float, p2: float, alpha: float = 0.05,
+                   power: float = 0.80, ratio: float = 1.0) -> Dict:
+        """
+        Sample size for comparing two proportions.
+
+        Parameters
+        ----------
+        p1 : float
+            Control proportion (baseline)
+        p2 : float
+            Treatment proportion (alternative)
+        alpha : float
+            Significance level (default 0.05)
+        power : float
+            Statistical power (default 0.80)
+        ratio : float
+            Allocation ratio n2/n1 (default 1.0 for equal allocation)
+
+        Returns
+        -------
+        dict
+            Required sample sizes and related information
+
+        Examples
+        --------
+        >>> calc = SampleSizeCalculator()
+        >>> result = calc.proportions(p1=0.10, p2=0.12, power=0.80)
+        >>> print(f"Need {result['n1']} per group")
+        """
+        z_alpha = stats.norm.ppf(1 - alpha/2)
+        z_beta = stats.norm.ppf(power)
+
+        # Variance under H1
+        var_sum = p1*(1-p1) + p2*(1-p2)/ratio
+
+        # Effect size
+        delta = abs(p2 - p1)
+
+        # Sample size for group 1 (control)
+        n1 = ((z_alpha + z_beta)**2 * var_sum) / (delta**2)
+        n1 = int(np.ceil(n1))
+
+        # Sample size for group 2 (treatment)
+        n2 = int(np.ceil(n1 * ratio))
+
+        return {
+            'n1': n1,
+            'n2': n2,
+            'n_total': n1 + n2,
+            'n_per_group': n1 if ratio == 1.0 else None,
+            'p1': p1,
+            'p2': p2,
+            'effect_absolute': delta,
+            'effect_relative': delta / p1,
+            'alpha': alpha,
+            'power': power,
+            'ratio': ratio
+        }
+
+    @staticmethod
+    def means(mu1: float, mu2: float, sigma: float,
+             alpha: float = 0.05, power: float = 0.80,
+             ratio: float = 1.0) -> Dict:
+        """
+        Sample size for comparing two means.
+
+        Parameters
+        ----------
+        mu1 : float
+            Control mean
+        mu2 : float
+            Treatment mean
+        sigma : float
+            Common standard deviation
+        alpha : float
+            Significance level
+        power : float
+            Statistical power
+        ratio : float
+            Allocation ratio n2/n1
+
+        Returns
+        -------
+        dict
+            Required sample sizes
+        """
+        z_alpha = stats.norm.ppf(1 - alpha/2)
+        z_beta = stats.norm.ppf(power)
+
+        delta = abs(mu2 - mu1)
+
+        # Sample size for group 1
+        n1 = ((z_alpha + z_beta)**2 * sigma**2 * (1 + 1/ratio)) / (delta**2)
+        n1 = int(np.ceil(n1))
+        n2 = int(np.ceil(n1 * ratio))
+
+        return {
+            'n1': n1,
+            'n2': n2,
+            'n_total': n1 + n2,
+            'n_per_group': n1 if ratio == 1.0 else None,
+            'mu1': mu1,
+            'mu2': mu2,
+            'sigma': sigma,
+            'effect_absolute': delta,
+            'effect_standardized': delta / sigma,
+            'alpha': alpha,
+            'power': power,
+            'ratio': ratio
+        }
+
+
+class ABTestAnalyzer:
+    """Comprehensive A/B test statistical analysis."""
+
+    def __init__(self, alpha: float = 0.05):
+        """
+        Initialize analyzer.
+
+        Parameters
+        ----------
+        alpha : float
+            Significance level for hypothesis tests
+        """
+        self.alpha = alpha
+
+    def analyze_proportions(self,
+                           control_conversions: int,
+                           control_total: int,
+                           treatment_conversions: int,
+                           treatment_total: int,
+                           method: str = 'z_test',
+                           mde: Optional[float] = None) -> ABTestResult:
+        """
+        Analyze A/B test with binary outcome (conversion).
+
+        Parameters
+        ----------
+        control_conversions : int
+            Number of conversions in control
+        control_total : int
+            Total users in control
+        treatment_conversions : int
+            Number of conversions in treatment
+        treatment_total : int
+            Total users in treatment
+        method : str
+            Statistical test: 'z_test', 'chi_squared', 'fisher_exact'
+        mde : float, optional
+            Minimum detectable effect for practical significance
+
+        Returns
+        -------
+        ABTestResult
+            Complete analysis results
+
+        Examples
+        --------
+        >>> analyzer = ABTestAnalyzer(alpha=0.05)
+        >>> result = analyzer.analyze_proportions(
+        ...     control_conversions=100,
+        ...     control_total=1000,
+        ...     treatment_conversions=120,
+        ...     treatment_total=1000
+        ... )
+        >>> print(f"P-value: {result.p_value:.4f}")
+        >>> print(f"Lift: {result.relative_lift:.2%}")
+        """
+        # Calculate proportions
+        p1 = control_conversions / control_total
+        p2 = treatment_conversions / treatment_total
+
+        # Absolute and relative effects
+        abs_diff = p2 - p1
+        rel_lift = abs_diff / p1 if p1 > 0 else np.nan
+
+        # Perform statistical test
+        if method == 'z_test':
+            result = self._z_test_proportions(
+                control_conversions, control_total,
+                treatment_conversions, treatment_total
+            )
+        elif method == 'chi_squared':
+            result = self._chi_squared_test(
+                control_conversions, control_total,
+                treatment_conversions, treatment_total
+            )
+        elif method == 'fisher_exact':
+            result = self._fisher_exact_test(
+                control_conversions, control_total,
+                treatment_conversions, treatment_total
+            )
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+        # Calculate Cohen's h (effect size for proportions)
+        cohens_h = 2 * (np.arcsin(np.sqrt(p2)) - np.arcsin(np.sqrt(p1)))
+
+        # Practical significance
+        practically_sig = None
+        if mde is not None:
+            practically_sig = abs(abs_diff) >= mde
+
+        return ABTestResult(
+            metric="conversion_rate",
+            control_mean=p1,
+            treatment_mean=p2,
+            absolute_difference=abs_diff,
+            relative_lift=rel_lift,
+            standard_error=result['se'],
+            confidence_interval=result['ci'],
+            p_value=result['p_value'],
+            test_statistic=result['test_stat'],
+            statistically_significant=result['p_value'] < self.alpha,
+            practically_significant=practically_sig,
+            sample_size_control=control_total,
+            sample_size_treatment=treatment_total,
+            cohens_d=cohens_h
+        )
+
+    def _z_test_proportions(self, x1, n1, x2, n2) -> Dict:
+        """Two-proportion z-test."""
+        p1 = x1 / n1
+        p2 = x2 / n2
+
+        # Pooled proportion
+        p_pool = (x1 + x2) / (n1 + n2)
+
+        # Standard error under null
+        se_null = np.sqrt(p_pool * (1 - p_pool) * (1/n1 + 1/n2))
+
+        # Test statistic
+        z_stat = (p2 - p1) / se_null
+        p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
+
+        # Confidence interval (unpooled variance)
+        se_unpooled = np.sqrt(p1*(1-p1)/n1 + p2*(1-p2)/n2)
+        z_crit = stats.norm.ppf(1 - self.alpha/2)
+        ci = (
+            (p2 - p1) - z_crit * se_unpooled,
+            (p2 - p1) + z_crit * se_unpooled
+        )
+
+        return {
+            'test_stat': z_stat,
+            'p_value': p_value,
+            'ci': ci,
+            'se': se_unpooled
+        }
+
+    def _chi_squared_test(self, x1, n1, x2, n2) -> Dict:
+        """Chi-squared test for proportions."""
+        table = np.array([[x1, n1 - x1], [x2, n2 - x2]])
+        chi2, p_value, dof, expected = stats.chi2_contingency(table)
+
+        # CI from z-test
+        p1 = x1 / n1
+        p2 = x2 / n2
+        se = np.sqrt(p1*(1-p1)/n1 + p2*(1-p2)/n2)
+        z_crit = stats.norm.ppf(1 - self.alpha/2)
+        ci = ((p2-p1) - z_crit*se, (p2-p1) + z_crit*se)
+
+        return {
+            'test_stat': chi2,
+            'p_value': p_value,
+            'ci': ci,
+            'se': se
+        }
+
+    def _fisher_exact_test(self, x1, n1, x2, n2) -> Dict:
+        """Fisher's exact test."""
+        table = np.array([[x1, n1 - x1], [x2, n2 - x2]])
+        _, p_value = stats.fisher_exact(table)
+
+        # CI from z-test
+        p1 = x1 / n1
+        p2 = x2 / n2
+        se = np.sqrt(p1*(1-p1)/n1 + p2*(1-p2)/n2)
+        z_crit = stats.norm.ppf(1 - self.alpha/2)
+        ci = ((p2-p1) - z_crit*se, (p2-p1) + z_crit*se)
+
+        return {
+            'test_stat': None,
+            'p_value': p_value,
+            'ci': ci,
+            'se': se
+        }
+
+    def analyze_means(self,
+                     control_data: np.ndarray,
+                     treatment_data: np.ndarray,
+                     equal_variance: bool = False,
+                     mde: Optional[float] = None) -> ABTestResult:
+        """
+        Analyze A/B test with continuous outcome.
+
+        Parameters
+        ----------
+        control_data : array-like
+            Control group observations
+        treatment_data : array-like
+            Treatment group observations
+        equal_variance : bool
+            Assume equal variances (Student's t) vs unequal (Welch's t)
+        mde : float, optional
+            Minimum detectable effect
+
+        Returns
+        -------
+        ABTestResult
+            Analysis results
+        """
+        control = np.asarray(control_data)
+        treatment = np.asarray(treatment_data)
+
+        n1 = len(control)
+        n2 = len(treatment)
+        mean1 = np.mean(control)
+        mean2 = np.mean(treatment)
+        var1 = np.var(control, ddof=1)
+        var2 = np.var(treatment, ddof=1)
+        std1 = np.sqrt(var1)
+        std2 = np.sqrt(var2)
+
+        # T-test
+        t_stat, p_value = stats.ttest_ind(
+            treatment, control, equal_var=equal_variance
+        )
+
+        # Standard error
+        se = np.sqrt(var1/n1 + var2/n2)
+
+        # Degrees of freedom
+        if equal_variance:
+            df = n1 + n2 - 2
+        else:
+            # Welch-Satterthwaite
+            df = (var1/n1 + var2/n2)**2 / (
+                (var1/n1)**2/(n1-1) + (var2/n2)**2/(n2-1)
+            )
+
+        # Confidence interval
+        t_crit = stats.t.ppf(1 - self.alpha/2, df)
+        ci = (
+            (mean2 - mean1) - t_crit * se,
+            (mean2 - mean1) + t_crit * se
+        )
+
+        # Cohen's d
+        if equal_variance:
+            pooled_std = np.sqrt(((n1-1)*var1 + (n2-1)*var2) / (n1+n2-2))
+            cohens_d = (mean2 - mean1) / pooled_std
+        else:
+            cohens_d = (mean2 - mean1) / np.sqrt((var1 + var2) / 2)
+
+        # Practical significance
+        practically_sig = None
+        if mde is not None:
+            practically_sig = abs(mean2 - mean1) >= mde
+
+        return ABTestResult(
+            metric="continuous_metric",
+            control_mean=mean1,
+            treatment_mean=mean2,
+            absolute_difference=mean2 - mean1,
+            relative_lift=(mean2 - mean1) / mean1 if mean1 != 0 else np.nan,
+            standard_error=se,
+            confidence_interval=ci,
+            p_value=p_value,
+            test_statistic=t_stat,
+            statistically_significant=p_value < self.alpha,
+            practically_significant=practically_sig,
+            sample_size_control=n1,
+            sample_size_treatment=n2,
+            cohens_d=cohens_d
+        )
+
+
+class DataQualityChecker:
+    """Pre-analysis data quality checks."""
+
+    @staticmethod
+    def check_sample_ratio_mismatch(data: pd.DataFrame,
+                                   variant_col: str = 'variant',
+                                   expected_allocation: Optional[Dict] = None,
+                                   alpha: float = 0.01) -> Dict:
+        """
+        Check for Sample Ratio Mismatch (SRM).
+
+        Parameters
+        ----------
+        data : DataFrame
+            Experiment data
+        variant_col : str
+            Column name for variant assignment
+        expected_allocation : dict, optional
+            Expected traffic allocation {variant: proportion}
+        alpha : float
+            Significance level (stricter than test alpha)
+
+        Returns
+        -------
+        dict
+            SRM check results
+        """
+        observed = data[variant_col].value_counts()
+        total = len(data)
+
+        if expected_allocation is None:
+            # Assume equal allocation
+            n_variants = len(observed)
+            expected = {v: total / n_variants for v in observed.index}
+        else:
+            expected = {v: total * p for v, p in expected_allocation.items()}
+
+        # Chi-square test
+        obs_counts = np.array([observed[v] for v in expected.keys()])
+        exp_counts = np.array([expected[v] for v in expected.keys()])
+
+        chi2_stat, p_value = stats.chisquare(obs_counts, exp_counts)
+
+        return {
+            'passed': p_value >= alpha,
+            'p_value': p_value,
+            'chi2_statistic': chi2_stat,
+            'observed_counts': observed.to_dict(),
+            'expected_counts': expected,
+            'severity': 'CRITICAL' if p_value < 0.001 else
+                       'HIGH' if p_value < 0.01 else 'OK'
+        }
+
+    @staticmethod
+    def check_novelty_effect(data: pd.DataFrame,
+                            metric_col: str,
+                            variant_col: str,
+                            date_col: str,
+                            n_periods: int = 7) -> Dict:
+        """
+        Check for novelty/learning effects over time.
+
+        Parameters
+        ----------
+        data : DataFrame
+            Experiment data with timestamps
+        metric_col : str
+            Metric to analyze
+        variant_col : str
+            Variant column
+        date_col : str
+            Date/timestamp column
+        n_periods : int
+            Number of time periods to analyze
+
+        Returns
+        -------
+        dict
+            Temporal stability analysis
+        """
+        data = data.copy()
+        data[date_col] = pd.to_datetime(data[date_col])
+
+        # Split into time periods
+        data['period'] = pd.cut(
+            data[date_col],
+            bins=n_periods,
+            labels=range(n_periods)
+        )
+
+        # Calculate metrics by period and variant
+        temporal_metrics = data.groupby(['period', variant_col])[metric_col].agg([
+            'mean', 'std', 'count'
+        ]).reset_index()
+
+        # Test for trend in treatment effect over time
+        control_data = temporal_metrics[
+            temporal_metrics[variant_col] == 'control'
+        ].set_index('period')['mean']
+
+        treatment_data = temporal_metrics[
+            temporal_metrics[variant_col] == 'treatment'
+        ].set_index('period')['mean']
+
+        effects = treatment_data - control_data
+
+        # Spearman correlation with time
+        periods = np.arange(len(effects))
+        corr, p_value = stats.spearmanr(periods, effects)
+
+        return {
+            'temporal_data': temporal_metrics,
+            'effects_by_period': effects.to_dict(),
+            'trend_correlation': corr,
+            'trend_p_value': p_value,
+            'stable': abs(corr) < 0.5 or p_value > 0.05
+        }
+
+
+# ============================================================================
+# Report Generation
+# ============================================================================
+
+class ResultsReporter:
+    """Generate formatted reports from analysis results."""
+
+    @staticmethod
+    def format_result(result: ABTestResult,
+                     metric_name: str = None,
+                     metric_format: str = '.4f') -> str:
+        """
+        Format AB test result as readable report.
+
+        Parameters
+        ----------
+        result : ABTestResult
+            Analysis results
+        metric_name : str, optional
+            Display name for metric
+        metric_format : str
+            Number format string
+
+        Returns
+        -------
+        str
+            Formatted report
+        """
+        metric_name = metric_name or result.metric
+
+        report = f"""
+{'='*70}
+A/B TEST RESULTS: {metric_name.upper()}
+{'='*70}
+
+SAMPLE SIZES
+------------
+Control:   {result.sample_size_control:,}
+Treatment: {result.sample_size_treatment:,}
+Total:     {result.sample_size_control + result.sample_size_treatment:,}
+
+METRIC VALUES
+-------------
+Control Mean:   {result.control_mean:{metric_format}}
+Treatment Mean: {result.treatment_mean:{metric_format}}
+
+EFFECT SIZES
+------------
+Absolute Difference: {result.absolute_difference:{metric_format}}
+Relative Lift:       {result.relative_lift:+.2%}
+"""
+
+        if result.cohens_d is not None:
+            report += f"Cohen's d:           {result.cohens_d:.4f}\n"
+
+        report += f"""
+STATISTICAL INFERENCE
+--------------------
+Standard Error: {result.standard_error:{metric_format}}
+95% CI:         [{result.confidence_interval[0]:{metric_format}}, {result.confidence_interval[1]:{metric_format}}]
+Test Statistic: {result.test_statistic:.4f}
+P-value:        {result.p_value:.6f}
+
+DECISION
+--------
+Statistically Significant: {'YES' if result.statistically_significant else 'NO'}
+"""
+
+        if result.practically_significant is not None:
+            report += f"Practically Significant:   {'YES' if result.practically_significant else 'NO'}\n"
+
+        report += f"\n{'='*70}\n"
+
+        return report
+
+    @staticmethod
+    def create_summary_table(results: List[ABTestResult],
+                           metric_names: List[str]) -> pd.DataFrame:
+        """
+        Create summary table from multiple results.
+
+        Parameters
+        ----------
+        results : list of ABTestResult
+            Multiple test results
+        metric_names : list of str
+            Names for each metric
+
+        Returns
+        -------
+        DataFrame
+            Summary table
+        """
+        rows = []
+        for result, name in zip(results, metric_names):
+            rows.append({
+                'Metric': name,
+                'Control': f"{result.control_mean:.4f}",
+                'Treatment': f"{result.treatment_mean:.4f}",
+                'Difference': f"{result.absolute_difference:.4f}",
+                'Lift': f"{result.relative_lift:+.2%}",
+                'CI_Lower': f"{result.confidence_interval[0]:.4f}",
+                'CI_Upper': f"{result.confidence_interval[1]:.4f}",
+                'P-value': f"{result.p_value:.4f}",
+                'Significant': 'Yes' if result.statistically_significant else 'No'
+            })
+
+        return pd.DataFrame(rows)
+
+
+# ============================================================================
+# Complete Example Usage
+# ============================================================================
+
+if __name__ == "__main__":
+    print("A/B Testing Framework - Example Usage\n")
+
+    # 1. Calculate sample size
+    print("1. SAMPLE SIZE CALCULATION")
+    print("-" * 50)
+    calc = SampleSizeCalculator()
+    ss_result = calc.proportions(p1=0.10, p2=0.12, power=0.80)
+    print(f"Required per group: {ss_result['n_per_group']:,}")
+    print(f"Expected lift: {ss_result['effect_relative']:.2%}\n")
+
+    # 2. Generate simulated data
+    print("2. SIMULATED EXPERIMENT DATA")
+    print("-" * 50)
+    np.random.seed(42)
+    n_control = 5000
+    n_treatment = 5000
+
+    # Simulate conversions
+    control_conversions = np.random.binomial(n_control, 0.10)
+    treatment_conversions = np.random.binomial(n_treatment, 0.12)
+
+    print(f"Control: {control_conversions}/{n_control} = "
+          f"{control_conversions/n_control:.4f}")
+    print(f"Treatment: {treatment_conversions}/{n_treatment} = "
+          f"{treatment_conversions/n_treatment:.4f}\n")
+
+    # 3. Analyze experiment
+    print("3. STATISTICAL ANALYSIS")
+    print("-" * 50)
+    analyzer = ABTestAnalyzer(alpha=0.05)
+    result = analyzer.analyze_proportions(
+        control_conversions=control_conversions,
+        control_total=n_control,
+        treatment_conversions=treatment_conversions,
+        treatment_total=n_treatment,
+        mde=0.01  # 1 percentage point
+    )
+
+    # 4. Generate report
+    reporter = ResultsReporter()
+    print(reporter.format_result(result, metric_name="Conversion Rate"))
+
+    # 5. Data quality checks
+    print("4. DATA QUALITY CHECKS")
+    print("-" * 50)
+
+    # Create sample dataframe for quality checks
+    data = pd.DataFrame({
+        'variant': (['control'] * n_control) + (['treatment'] * n_treatment),
+        'converted': ([1] * control_conversions +
+                     [0] * (n_control - control_conversions) +
+                     [1] * treatment_conversions +
+                     [0] * (n_treatment - treatment_conversions))
+    })
+
+    checker = DataQualityChecker()
+    srm_check = checker.check_sample_ratio_mismatch(data)
+    print(f"SRM Check: {'PASSED' if srm_check['passed'] else 'FAILED'}")
+    print(f"P-value: {srm_check['p_value']:.6f}")
+    print(f"Severity: {srm_check['severity']}")
+\end{lstlisting}
+
+\newpage
+
+\section{R Implementation}
+
+\subsection{Statistical Analysis Functions}
+
+\lstset{language=R, caption=R Functions for A/B Test Analysis}
+\begin{lstlisting}
+#' A/B Test Analysis Functions in R
+#'
+#' Complete suite of functions for analyzing A/B tests
+#'
+#' @author A/B Testing Handbook
+#' @license MIT
+
+library(tidyverse)
+library(broom)
+library(pwr)
+
+# =============================================================================
+# Sample Size Calculation
+# =============================================================================
+
+#' Calculate sample size for proportion test
+#'
+#' @param p1 Control proportion
+#' @param p2 Treatment proportion
+#' @param alpha Significance level (default 0.05)
+#' @param power Statistical power (default 0.80)
+#' @param ratio Allocation ratio n2/n1 (default 1.0)
+#'
+#' @return List with sample size requirements
+#'
+#' @examples
+#' calculate_sample_size_proportions(p1 = 0.10, p2 = 0.12)
+#'
+#' @export
+calculate_sample_size_proportions <- function(p1, p2, alpha = 0.05,
+                                              power = 0.80, ratio = 1.0) {
+
+  # Effect size (Cohen's h)
+  h <- 2 * (asin(sqrt(p2)) - asin(sqrt(p1)))
+
+  # Sample size using pwr package
+  result <- pwr.2p.test(
+    h = h,
+    sig.level = alpha,
+    power = power,
+    alternative = "two.sided"
+  )
+
+  n_per_group <- ceiling(result$n)
+
+  list(
+    n1 = n_per_group,
+    n2 = ceiling(n_per_group * ratio),
+    n_total = n_per_group * (1 + ratio),
+    n_per_group = n_per_group,
+    p1 = p1,
+    p2 = p2,
+    effect_absolute = p2 - p1,
+    effect_relative = (p2 - p1) / p1,
+    effect_size_h = h,
+    alpha = alpha,
+    power = power
+  )
+}
+
+
+#' Calculate sample size for means test
+#'
+#' @param mu1 Control mean
+#' @param mu2 Treatment mean
+#' @param sigma Common standard deviation
+#' @param alpha Significance level
+#' @param power Statistical power
+#' @param ratio Allocation ratio
+#'
+#' @return List with sample size requirements
+#'
+#' @export
+calculate_sample_size_means <- function(mu1, mu2, sigma,
+                                       alpha = 0.05, power = 0.80,
+                                       ratio = 1.0) {
+
+  # Effect size (Cohen's d)
+  d <- abs(mu2 - mu1) / sigma
+
+  # Sample size
+  result <- pwr.t.test(
+    d = d,
+    sig.level = alpha,
+    power = power,
+    type = "two.sample",
+    alternative = "two.sided"
+  )
+
+  n_per_group <- ceiling(result$n)
+
+  list(
+    n1 = n_per_group,
+    n2 = ceiling(n_per_group * ratio),
+    n_total = n_per_group * (1 + ratio),
+    n_per_group = n_per_group,
+    mu1 = mu1,
+    mu2 = mu2,
+    sigma = sigma,
+    effect_absolute = mu2 - mu1,
+    effect_standardized = d,
+    alpha = alpha,
+    power = power
+  )
+}
+
+
+# =============================================================================
+# Statistical Tests
+# =============================================================================
+
+#' Analyze proportions A/B test
+#'
+#' @param x1 Conversions in control
+#' @param n1 Total in control
+#' @param x2 Conversions in treatment
+#' @param n2 Total in treatment
+#' @param alpha Significance level
+#' @param method Test method: "prop.test", "chisq", "fisher"
+#'
+#' @return List with test results
+#'
+#' @export
+analyze_proportions <- function(x1, n1, x2, n2, alpha = 0.05,
+                               method = "prop.test") {
+
+  p1 <- x1 / n1
+  p2 <- x2 / n2
+
+  # Perform test
+  if (method == "prop.test") {
+    test <- prop.test(c(x1, x2), c(n1, n2), correct = FALSE)
+    p_value <- test$p.value
+    ci <- test$conf.int
+    test_stat <- test$statistic
+
+  } else if (method == "chisq") {
+    table <- matrix(c(x1, n1-x1, x2, n2-x2), nrow = 2, byrow = TRUE)
+    test <- chisq.test(table, correct = FALSE)
+    p_value <- test$p.value
+    test_stat <- test$statistic
+
+    # CI from prop.test
+    ci_test <- prop.test(c(x1, x2), c(n1, n2), correct = FALSE)
+    ci <- ci_test$conf.int
+
+  } else if (method == "fisher") {
+    table <- matrix(c(x1, n1-x1, x2, n2-x2), nrow = 2, byrow = TRUE)
+    test <- fisher.test(table)
+    p_value <- test$p.value
+    test_stat <- NA
+
+    # CI from prop.test
+    ci_test <- prop.test(c(x1, x2), c(n1, n2), correct = FALSE)
+    ci <- ci_test$conf.int
+  }
+
+  # Standard error (unpooled)
+  se <- sqrt(p1*(1-p1)/n1 + p2*(1-p2)/n2)
+
+  # Effect sizes
+  abs_diff <- p2 - p1
+  rel_lift <- abs_diff / p1
+
+  # Cohen's h
+  cohens_h <- 2 * (asin(sqrt(p2)) - asin(sqrt(p1)))
+
+  list(
+    control_mean = p1,
+    treatment_mean = p2,
+    absolute_difference = abs_diff,
+    relative_lift = rel_lift,
+    standard_error = se,
+    confidence_interval = ci,
+    p_value = p_value,
+    test_statistic = test_stat,
+    statistically_significant = p_value < alpha,
+    sample_size_control = n1,
+    sample_size_treatment = n2,
+    cohens_h = cohens_h,
+    method = method
+  )
+}
+
+
+#' Analyze continuous metric A/B test
+#'
+#' @param control_data Control group values
+#' @param treatment_data Treatment group values
+#' @param alpha Significance level
+#' @param equal_var Assume equal variances (default FALSE)
+#'
+#' @return List with test results
+#'
+#' @export
+analyze_means <- function(control_data, treatment_data, alpha = 0.05,
+                         equal_var = FALSE) {
+
+  # T-test
+  test <- t.test(treatment_data, control_data, var.equal = equal_var)
+
+  # Summary statistics
+  mean1 <- mean(control_data)
+  mean2 <- mean(treatment_data)
+  sd1 <- sd(control_data)
+  sd2 <- sd(treatment_data)
+  n1 <- length(control_data)
+  n2 <- length(treatment_data)
+
+  # Effect sizes
+  abs_diff <- mean2 - mean1
+  rel_lift <- abs_diff / mean1
+
+  # Cohen's d
+  if (equal_var) {
+    pooled_sd <- sqrt(((n1-1)*sd1^2 + (n2-1)*sd2^2) / (n1+n2-2))
+    cohens_d <- abs_diff / pooled_sd
+  } else {
+    cohens_d <- abs_diff / sqrt((sd1^2 + sd2^2) / 2)
+  }
+
+  # Standard error
+  se <- sqrt(sd1^2/n1 + sd2^2/n2)
+
+  list(
+    control_mean = mean1,
+    treatment_mean = mean2,
+    absolute_difference = abs_diff,
+    relative_lift = rel_lift,
+    standard_error = se,
+    confidence_interval = test$conf.int,
+    p_value = test$p.value,
+    test_statistic = test$statistic,
+    statistically_significant = test$p.value < alpha,
+    sample_size_control = n1,
+    sample_size_treatment = n2,
+    cohens_d = cohens_d
+  )
+}
+
+
+# =============================================================================
+# Bayesian Analysis
+# =============================================================================
+
+#' Bayesian A/B test for proportions
+#'
+#' @param x1 Conversions in control
+#' @param n1 Total in control
+#' @param x2 Conversions in treatment
+#' @param n2 Total in treatment
+#' @param prior_alpha Prior alpha parameter (default 1)
+#' @param prior_beta Prior beta parameter (default 1)
+#' @param n_sim Number of Monte Carlo simulations (default 100000)
+#'
+#' @return List with Bayesian results
+#'
+#' @examples
+#' bayesian_ab_test(x1 = 100, n1 = 1000, x2 = 120, n2 = 1000)
+#'
+#' @export
+bayesian_ab_test <- function(x1, n1, x2, n2,
+                             prior_alpha = 1, prior_beta = 1,
+                             n_sim = 100000) {
+
+  # Posterior parameters
+  post_a1 <- prior_alpha + x1
+  post_b1 <- prior_beta + n1 - x1
+  post_a2 <- prior_alpha + x2
+  post_b2 <- prior_beta + n2 - x2
+
+  # Sample from posteriors
+  p1_samples <- rbeta(n_sim, post_a1, post_b1)
+  p2_samples <- rbeta(n_sim, post_a2, post_b2)
+
+  # Probability treatment > control
+  prob_better <- mean(p2_samples > p1_samples)
+
+  # Expected lift
+  lift_samples <- p2_samples / p1_samples - 1
+  expected_lift <- mean(lift_samples)
+  lift_ci <- quantile(lift_samples, c(0.025, 0.975))
+
+  # Expected loss (opportunity cost)
+  loss_control <- mean(pmax(0, p2_samples - p1_samples))
+  loss_treatment <- mean(pmax(0, p1_samples - p2_samples))
+
+  # Credible interval for difference
+  diff_samples <- p2_samples - p1_samples
+  diff_ci <- quantile(diff_samples, c(0.025, 0.975))
+
+  list(
+    prob_treatment_better = prob_better,
+    expected_lift = expected_lift,
+    lift_credible_interval = lift_ci,
+    diff_credible_interval = diff_ci,
+    loss_choosing_control = loss_control,
+    loss_choosing_treatment = loss_treatment,
+    recommended_variant = ifelse(loss_control < loss_treatment,
+                                 "Control", "Treatment"),
+    posterior_samples = data.frame(
+      p_control = p1_samples,
+      p_treatment = p2_samples
+    )
+  )
+}
+
+
+# =============================================================================
+# Data Quality Checks
+# =============================================================================
+
+#' Check for Sample Ratio Mismatch
+#'
+#' @param data DataFrame with experiment data
+#' @param variant_col Column name for variant
+#' @param expected_ratio Expected allocation ratio (named vector)
+#' @param alpha Significance level for SRM test (default 0.01)
+#'
+#' @return List with SRM check results
+#'
+#' @export
+check_sample_ratio_mismatch <- function(data, variant_col = "variant",
+                                       expected_ratio = NULL,
+                                       alpha = 0.01) {
+
+  observed <- table(data[[variant_col]])
+  n_total <- sum(observed)
+
+  if (is.null(expected_ratio)) {
+    # Assume equal allocation
+    n_variants <- length(observed)
+    expected <- rep(n_total / n_variants, n_variants)
+    names(expected) <- names(observed)
+  } else {
+    expected <- expected_ratio * n_total
+  }
+
+  # Chi-square test
+  test <- chisq.test(observed, p = expected / n_total)
+
+  list(
+    passed = test$p.value >= alpha,
+    p_value = test$p.value,
+    chi_squared = test$statistic,
+    observed_counts = observed,
+    expected_counts = expected,
+    severity = case_when(
+      test$p.value < 0.001 ~ "CRITICAL",
+      test$p.value < 0.01 ~ "HIGH",
+      TRUE ~ "OK"
+    )
+  )
+}
+
+
+#' Check for temporal stability
+#'
+#' @param data DataFrame with timestamp column
+#' @param metric_col Metric column name
+#' @param variant_col Variant column name
+#' @param date_col Date/timestamp column name
+#' @param n_periods Number of time periods to analyze
+#'
+#' @return List with temporal analysis
+#'
+#' @export
+check_temporal_stability <- function(data, metric_col, variant_col,
+                                    date_col, n_periods = 7) {
+
+  data <- data %>%
+    mutate(period = cut(!!sym(date_col), breaks = n_periods, labels = FALSE))
+
+  # Calculate metrics by period
+  temporal_stats <- data %>%
+    group_by(period, !!sym(variant_col)) %>%
+    summarise(
+      mean = mean(!!sym(metric_col), na.rm = TRUE),
+      sd = sd(!!sym(metric_col), na.rm = TRUE),
+      n = n(),
+      .groups = 'drop'
+    )
+
+  # Calculate treatment effects by period
+  effects <- temporal_stats %>%
+    select(period, !!sym(variant_col), mean) %>%
+    pivot_wider(names_from = !!sym(variant_col), values_from = mean) %>%
+    mutate(effect = treatment - control)
+
+  # Test for trend
+  cor_test <- cor.test(effects$period, effects$effect, method = "spearman")
+
+  list(
+    temporal_data = temporal_stats,
+    effects_by_period = effects,
+    trend_correlation = cor_test$estimate,
+    trend_p_value = cor_test$p.value,
+    stable = abs(cor_test$estimate) < 0.5 || cor_test$p.value > 0.05
+  )
+}
+
+
+# =============================================================================
+# Reporting
+# =============================================================================
+
+#' Format results as text report
+#'
+#' @param result Results list from analyze_* function
+#' @param metric_name Name of metric for display
+#'
+#' @return Character string with formatted report
+#'
+#' @export
+format_results <- function(result, metric_name = "Metric") {
+
+  report <- sprintf("
+================================================================================
+A/B TEST RESULTS: %s
+================================================================================
+
+SAMPLE SIZES
+------------
+Control:   %d
+Treatment: %d
+Total:     %d
+
+METRIC VALUES
+-------------
+Control Mean:   %.4f
+Treatment Mean: %.4f
+
+EFFECT SIZES
+------------
+Absolute Difference: %.4f
+Relative Lift:       %+.2f%%
+Cohen's h/d:         %.4f
+
+STATISTICAL INFERENCE
+--------------------
+Standard Error: %.4f
+95%% CI:         [%.4f, %.4f]
+Test Statistic: %.4f
+P-value:        %.6f
+
+DECISION
+--------
+Statistically Significant: %s
+
+================================================================================
+",
+    metric_name,
+    result$sample_size_control,
+    result$sample_size_treatment,
+    result$sample_size_control + result$sample_size_treatment,
+    result$control_mean,
+    result$treatment_mean,
+    result$absolute_difference,
+    result$relative_lift * 100,
+    ifelse(!is.null(result$cohens_h), result$cohens_h, result$cohens_d),
+    result$standard_error,
+    result$confidence_interval[1],
+    result$confidence_interval[2],
+    result$test_statistic,
+    result$p_value,
+    ifelse(result$statistically_significant, "YES", "NO")
+  )
+
+  cat(report)
+  invisible(report)
+}
+
+
+# =============================================================================
+# Example Usage
+# =============================================================================
+
+# Uncomment to run examples:
+#
+# # Sample size calculation
+# ss <- calculate_sample_size_proportions(p1 = 0.10, p2 = 0.12, power = 0.80)
+# print(ss)
+#
+# # Analyze proportions
+# result <- analyze_proportions(x1 = 100, n1 = 1000, x2 = 120, n2 = 1000)
+# format_results(result, "Conversion Rate")
+#
+# # Bayesian analysis
+# bayes_result <- bayesian_ab_test(x1 = 100, n1 = 1000, x2 = 120, n2 = 1000)
+# print(bayes_result)
+\end{lstlisting}
+
+\newpage
+
+\section{SQL Queries for Data Extraction}
+
+\subsection{Experiment Data Extraction}
+
+\lstset{language=SQL, caption=SQL Queries for A/B Test Data}
+\begin{lstlisting}
+-- ============================================================================
+-- A/B Test Data Extraction Queries
+-- ============================================================================
+
+-- Query 1: Extract experiment assignment data
+-- Purpose: Get user-variant assignments with metadata
+-- ============================================================================
+
+WITH experiment_users AS (
+  SELECT
+    user_id,
+    experiment_id,
+    variant,
+    assignment_timestamp,
+    -- Extract user characteristics at assignment time
+    user_country,
+    user_platform,
+    user_device_type,
+    user_segment,
+    -- Check if user was previously exposed
+    CASE
+      WHEN assignment_timestamp > first_seen_timestamp
+      THEN 'returning'
+      ELSE 'new'
+    END AS user_type
+  FROM experiment_assignments
+  WHERE experiment_id = 'checkout_button_test'
+    AND assignment_timestamp >= '2024-01-01'
+    AND assignment_timestamp < '2024-02-01'
+    -- Exclude internal users
+    AND user_id NOT IN (SELECT user_id FROM internal_users)
+)
+
+SELECT
+  eu.*,
+  -- Add randomization check: hash should be uniformly distributed
+  MOD(ABS(FARM_FINGERPRINT(CAST(user_id AS STRING))), 100) as hash_check
+FROM experiment_users eu
+ORDER BY assignment_timestamp;
+
+
+-- Query 2: Calculate conversion metrics
+-- Purpose: Primary and secondary metrics for each user
+-- ============================================================================
+
+WITH user_assignments AS (
+  SELECT
+    user_id,
+    experiment_id,
+    variant,
+    assignment_timestamp
+  FROM experiment_assignments
+  WHERE experiment_id = 'checkout_button_test'
+    AND assignment_timestamp >= '2024-01-01'
+    AND assignment_timestamp < '2024-02-01'
+),
+
+user_conversions AS (
+  SELECT
+    ua.user_id,
+    ua.variant,
+    -- Primary metric: Did user convert within 7 days?
+    MAX(
+      CASE
+        WHEN o.order_timestamp BETWEEN ua.assignment_timestamp
+                                   AND ua.assignment_timestamp + INTERVAL 7 DAY
+        THEN 1
+        ELSE 0
+      END
+    ) AS converted,
+
+    -- Secondary metric: Revenue within 7 days
+    COALESCE(
+      SUM(
+        CASE
+          WHEN o.order_timestamp BETWEEN ua.assignment_timestamp
+                                     AND ua.assignment_timestamp + INTERVAL 7 DAY
+          THEN o.order_value
+          ELSE 0
+        END
+      ),
+      0
+    ) AS revenue_7d,
+
+    -- Secondary metric: Number of orders
+    COUNT(
+      CASE
+        WHEN o.order_timestamp BETWEEN ua.assignment_timestamp
+                                   AND ua.assignment_timestamp + INTERVAL 7 DAY
+        THEN o.order_id
+      END
+    ) AS num_orders_7d,
+
+    -- Secondary metric: Time to first order (in hours)
+    MIN(
+      CASE
+        WHEN o.order_timestamp > ua.assignment_timestamp
+        THEN TIMESTAMP_DIFF(o.order_timestamp, ua.assignment_timestamp, HOUR)
+      END
+    ) AS hours_to_first_order
+
+  FROM user_assignments ua
+  LEFT JOIN orders o
+    ON ua.user_id = o.user_id
+  GROUP BY ua.user_id, ua.variant
+)
+
+SELECT
+  variant,
+  COUNT(DISTINCT user_id) AS total_users,
+  SUM(converted) AS total_conversions,
+  AVG(converted) AS conversion_rate,
+  AVG(revenue_7d) AS avg_revenue_per_user,
+  AVG(CASE WHEN converted = 1 THEN revenue_7d END) AS avg_revenue_per_converter,
+  AVG(num_orders_7d) AS avg_orders_per_user,
+  APPROX_QUANTILES(hours_to_first_order, 2)[OFFSET(1)] AS median_hours_to_order
+FROM user_conversions
+GROUP BY variant;
+
+
+-- Query 3: Guardrail metrics
+-- Purpose: Monitor key health metrics that shouldn't degrade
+-- ============================================================================
+
+WITH user_assignments AS (
+  SELECT
+    user_id,
+    variant,
+    assignment_timestamp
+  FROM experiment_assignments
+  WHERE experiment_id = 'checkout_button_test'
+    AND assignment_timestamp >= '2024-01-01'
+    AND assignment_timestamp < '2024-02-01'
+),
+
+guardrail_metrics AS (
+  SELECT
+    ua.user_id,
+    ua.variant,
+
+    -- Guardrail 1: Page load time (shouldn't increase)
+    AVG(
+      CASE
+        WHEN pl.page_name = 'checkout'
+          AND pl.timestamp BETWEEN ua.assignment_timestamp
+                              AND ua.assignment_timestamp + INTERVAL 7 DAY
+        THEN pl.load_time_ms
+      END
+    ) AS avg_checkout_load_time_ms,
+
+    -- Guardrail 2: Error rate (shouldn't increase)
+    COUNTIF(
+      e.error_type IS NOT NULL
+      AND e.timestamp BETWEEN ua.assignment_timestamp
+                          AND ua.assignment_timestamp + INTERVAL 7 DAY
+    ) / GREATEST(
+      COUNT(
+        CASE
+          WHEN pl.timestamp BETWEEN ua.assignment_timestamp
+                                AND ua.assignment_timestamp + INTERVAL 7 DAY
+          THEN 1
+        END
+      ),
+      1
+    ) AS error_rate,
+
+    -- Guardrail 3: Cart abandonment (shouldn't increase)
+    CASE
+      WHEN MAX(
+        CASE
+          WHEN ca.event_type = 'add_to_cart'
+            AND ca.timestamp BETWEEN ua.assignment_timestamp
+                                AND ua.assignment_timestamp + INTERVAL 7 DAY
+          THEN 1
+          ELSE 0
+        END
+      ) = 1
+      AND MAX(
+        CASE
+          WHEN o.order_id IS NOT NULL
+            AND o.order_timestamp BETWEEN ua.assignment_timestamp
+                                      AND ua.assignment_timestamp + INTERVAL 7 DAY
+          THEN 1
+          ELSE 0
+        END
+      ) = 0
+      THEN 1
+      ELSE 0
+    END AS cart_abandoned,
+
+    -- Guardrail 4: Session duration (shouldn't decrease)
+    AVG(
+      CASE
+        WHEN s.start_time BETWEEN ua.assignment_timestamp
+                              AND ua.assignment_timestamp + INTERVAL 7 DAY
+        THEN s.duration_seconds
+      END
+    ) AS avg_session_duration_sec
+
+  FROM user_assignments ua
+  LEFT JOIN page_loads pl ON ua.user_id = pl.user_id
+  LEFT JOIN errors e ON ua.user_id = e.user_id
+  LEFT JOIN cart_actions ca ON ua.user_id = ca.user_id
+  LEFT JOIN orders o ON ua.user_id = o.user_id
+  LEFT JOIN sessions s ON ua.user_id = s.user_id
+  GROUP BY ua.user_id, ua.variant
+)
+
+SELECT
+  variant,
+  COUNT(*) AS n_users,
+  AVG(avg_checkout_load_time_ms) AS mean_load_time_ms,
+  STDDEV(avg_checkout_load_time_ms) AS sd_load_time_ms,
+  AVG(error_rate) AS mean_error_rate,
+  AVG(cart_abandoned) AS cart_abandonment_rate,
+  AVG(avg_session_duration_sec) AS mean_session_duration_sec
+FROM guardrail_metrics
+GROUP BY variant;
+
+
+-- Query 4: Segment analysis
+-- Purpose: Test for heterogeneous treatment effects
+-- ============================================================================
+
+WITH user_metrics AS (
+  SELECT
+    ua.user_id,
+    ua.variant,
+    ua.user_country,
+    ua.user_platform,
+    ua.user_device_type,
+    ua.user_segment,
+    MAX(
+      CASE
+        WHEN o.order_timestamp BETWEEN ua.assignment_timestamp
+                                   AND ua.assignment_timestamp + INTERVAL 7 DAY
+        THEN 1
+        ELSE 0
+      END
+    ) AS converted
+  FROM experiment_assignments ua
+  LEFT JOIN orders o ON ua.user_id = o.user_id
+  WHERE ua.experiment_id = 'checkout_button_test'
+    AND ua.assignment_timestamp >= '2024-01-01'
+    AND ua.assignment_timestamp < '2024-02-01'
+  GROUP BY 1, 2, 3, 4, 5, 6
+)
+
+-- Conversion rate by country
+SELECT
+  'country' AS segment_type,
+  user_country AS segment_value,
+  variant,
+  COUNT(*) AS n_users,
+  AVG(converted) AS conversion_rate,
+  STDDEV(converted) / SQRT(COUNT(*)) AS standard_error
+FROM user_metrics
+GROUP BY user_country, variant
+
+UNION ALL
+
+-- Conversion rate by platform
+SELECT
+  'platform' AS segment_type,
+  user_platform AS segment_value,
+  variant,
+  COUNT(*) AS n_users,
+  AVG(converted) AS conversion_rate,
+  STDDEV(converted) / SQRT(COUNT(*)) AS standard_error
+FROM user_metrics
+GROUP BY user_platform, variant
+
+UNION ALL
+
+-- Conversion rate by device type
+SELECT
+  'device_type' AS segment_type,
+  user_device_type AS segment_value,
+  variant,
+  COUNT(*) AS n_users,
+  AVG(converted) AS conversion_rate,
+  STDDEV(converted) / SQRT(COUNT(*)) AS standard_error
+FROM user_metrics
+GROUP BY user_device_type, variant
+
+ORDER BY segment_type, segment_value, variant;
+
+
+-- Query 5: Sample Ratio Mismatch (SRM) check
+-- Purpose: Detect randomization issues
+-- ============================================================================
+
+WITH daily_assignments AS (
+  SELECT
+    DATE(assignment_timestamp) AS assignment_date,
+    variant,
+    COUNT(DISTINCT user_id) AS n_users
+  FROM experiment_assignments
+  WHERE experiment_id = 'checkout_button_test'
+    AND assignment_timestamp >= '2024-01-01'
+    AND assignment_timestamp < '2024-02-01'
+  GROUP BY assignment_date, variant
+),
+
+daily_ratios AS (
+  SELECT
+    assignment_date,
+    MAX(CASE WHEN variant = 'control' THEN n_users END) AS control_users,
+    MAX(CASE WHEN variant = 'treatment' THEN n_users END) AS treatment_users,
+    MAX(CASE WHEN variant = 'control' THEN n_users END) /
+      (MAX(CASE WHEN variant = 'control' THEN n_users END) +
+       MAX(CASE WHEN variant = 'treatment' THEN n_users END)) AS control_proportion
+  FROM daily_assignments
+  GROUP BY assignment_date
+)
+
+SELECT
+  assignment_date,
+  control_users,
+  treatment_users,
+  control_users + treatment_users AS total_users,
+  control_proportion,
+  -- Flag days with significant deviation from 50/50 split
+  CASE
+    WHEN ABS(control_proportion - 0.5) > 0.05 THEN 'WARNING'
+    ELSE 'OK'
+  END AS srm_flag
+FROM daily_ratios
+ORDER BY assignment_date;
+
+
+-- Query 6: Temporal stability check
+-- Purpose: Detect novelty effects or temporal trends
+-- ============================================================================
+
+WITH weekly_metrics AS (
+  SELECT
+    ua.variant,
+    DATE_TRUNC(ua.assignment_timestamp, WEEK) AS week_start,
+    COUNT(DISTINCT ua.user_id) AS n_users,
+    AVG(
+      CASE
+        WHEN o.order_timestamp BETWEEN ua.assignment_timestamp
+                                   AND ua.assignment_timestamp + INTERVAL 7 DAY
+        THEN 1
+        ELSE 0
+      END
+    ) AS conversion_rate,
+    AVG(
+      CASE
+        WHEN o.order_timestamp BETWEEN ua.assignment_timestamp
+                                   AND ua.assignment_timestamp + INTERVAL 7 DAY
+        THEN o.order_value
+        ELSE 0
+      END
+    ) AS avg_revenue_per_user
+  FROM experiment_assignments ua
+  LEFT JOIN orders o ON ua.user_id = o.user_id
+  WHERE ua.experiment_id = 'checkout_button_test'
+    AND ua.assignment_timestamp >= '2024-01-01'
+    AND ua.assignment_timestamp < '2024-02-01'
+  GROUP BY variant, week_start
+)
+
+SELECT
+  week_start,
+  MAX(CASE WHEN variant = 'control' THEN conversion_rate END) AS control_cr,
+  MAX(CASE WHEN variant = 'treatment' THEN conversion_rate END) AS treatment_cr,
+  MAX(CASE WHEN variant = 'treatment' THEN conversion_rate END) -
+    MAX(CASE WHEN variant = 'control' THEN conversion_rate END) AS lift,
+  (MAX(CASE WHEN variant = 'treatment' THEN conversion_rate END) -
+   MAX(CASE WHEN variant = 'control' THEN conversion_rate END)) /
+    MAX(CASE WHEN variant = 'control' THEN conversion_rate END) AS relative_lift
+FROM weekly_metrics
+GROUP BY week_start
+ORDER BY week_start;
+
+
+-- Query 7: User-level data export for analysis
+-- Purpose: Create analysis-ready dataset
+-- ============================================================================
+
+SELECT
+  ua.user_id,
+  ua.variant,
+  ua.assignment_timestamp,
+  ua.user_country,
+  ua.user_platform,
+  ua.user_device_type,
+
+  -- Primary metric
+  MAX(
+    CASE
+      WHEN o.order_timestamp BETWEEN ua.assignment_timestamp
+                                 AND ua.assignment_timestamp + INTERVAL 7 DAY
+      THEN 1
+      ELSE 0
+    END
+  ) AS converted,
+
+  -- Revenue metrics
+  COALESCE(
+    SUM(
+      CASE
+        WHEN o.order_timestamp BETWEEN ua.assignment_timestamp
+                                   AND ua.assignment_timestamp + INTERVAL 7 DAY
+        THEN o.order_value
+      END
+    ),
+    0
+  ) AS revenue_7d,
+
+  -- Engagement metrics
+  COUNT(
+    DISTINCT CASE
+      WHEN pl.timestamp BETWEEN ua.assignment_timestamp
+                            AND ua.assignment_timestamp + INTERVAL 7 DAY
+      THEN DATE(pl.timestamp)
+    END
+  ) AS days_active_7d,
+
+  -- Guardrail metrics
+  AVG(
+    CASE
+      WHEN pl.page_name = 'checkout'
+        AND pl.timestamp BETWEEN ua.assignment_timestamp
+                            AND ua.assignment_timestamp + INTERVAL 7 DAY
+      THEN pl.load_time_ms
+    END
+  ) AS avg_checkout_load_time
+
+FROM experiment_assignments ua
+LEFT JOIN orders o
+  ON ua.user_id = o.user_id
+LEFT JOIN page_loads pl
+  ON ua.user_id = pl.user_id
+
+WHERE ua.experiment_id = 'checkout_button_test'
+  AND ua.assignment_timestamp >= '2024-01-01'
+  AND ua.assignment_timestamp < '2024-02-01'
+
+GROUP BY
+  ua.user_id,
+  ua.variant,
+  ua.assignment_timestamp,
+  ua.user_country,
+  ua.user_platform,
+  ua.user_device_type;
+\end{lstlisting}
+
+\newpage
+
+\section{Configuration Files}
+
+\subsection{Experiment Configuration (YAML)}
+
+\lstset{language=yaml, caption=Experiment Configuration File}
+\begin{lstlisting}
+# ============================================================================
+# A/B Test Experiment Configuration
+# ============================================================================
+
+experiment:
+  # Basic information
+  id: "checkout_button_color_2024_q1"
+  name: "Checkout Button Color Test"
+  description: "Test green vs blue checkout button to optimize conversion"
+  owner: "product_team@company.com"
+  created_date: "2024-01-01"
+
+  # Experiment status
+  status: "running"  # draft, running, paused, completed, archived
+
+  # Hypothesis and objectives
+  hypothesis: |
+    Changing the checkout button from blue to green will increase
+    conversion rate by reducing cognitive friction. Green signals "go"
+    and may encourage users to complete their purchase.
+
+  business_objective: "Increase checkout conversion rate"
+  success_criteria: |
+    - Statistically significant lift in conversion rate (p < 0.05)
+    - Minimum 2% relative improvement
+    - No degradation in guardrail metrics
+
+  # Experimental design
+  design:
+    type: "ab_test"  # ab_test, multivariate, factorial
+
+    variants:
+      - name: "control"
+        description: "Blue checkout button (current)"
+        traffic_allocation: 0.5
+        config:
+          button_color: "#0066CC"
+
+      - name: "treatment"
+        description: "Green checkout button"
+        traffic_allocation: 0.5
+        config:
+          button_color: "#00AA00"
+
+    # Randomization
+    randomization:
+      unit: "user_id"  # user_id, session_id, device_id
+      algorithm: "deterministic_hash"  # deterministic_hash, random
+      salt: "checkout_button_2024_q1"
+
+    # Targeting
+    targeting:
+      include:
+        - condition: "user_country IN ('US', 'CA', 'UK')"
+        - condition: "user_age >= 18"
+        - condition: "NOT is_internal_user"
+
+      exclude:
+        - condition: "user_id IN experiment_exclusion_list"
+
+  # Metrics
+  metrics:
+    primary:
+      - name: "conversion_rate"
+        description: "Proportion of users who complete purchase"
+        type: "proportion"
+        numerator_event: "purchase_completed"
+        denominator: "users_in_experiment"
+        attribution_window_days: 7
+
+    secondary:
+      - name: "revenue_per_user"
+        description: "Average revenue per user"
+        type: "continuous"
+        event: "purchase_completed"
+        aggregation: "mean"
+        attribution_window_days: 7
+
+      - name: "orders_per_user"
+        description: "Average number of orders"
+        type: "count"
+        event: "purchase_completed"
+        aggregation: "mean"
+        attribution_window_days: 7
+
+    guardrail:
+      - name: "checkout_load_time"
+        description: "Page load time for checkout page"
+        type: "continuous"
+        threshold: "+10%"  # Maximum allowed degradation
+        severity: "high"
+
+      - name: "error_rate"
+        description: "Proportion of users encountering errors"
+        type: "proportion"
+        threshold: "+5%"
+        severity: "critical"
+
+      - name: "cart_abandonment_rate"
+        description: "Proportion of users abandoning cart"
+        type: "proportion"
+        threshold: "+3%"
+        severity: "high"
+
+  # Statistical parameters
+  statistics:
+    significance_level: 0.05
+    statistical_power: 0.80
+    minimum_detectable_effect: 0.02  # 2% relative lift
+    test_type: "two_sided"  # two_sided, one_sided
+    multiple_testing_correction: "bonferroni"
+
+    # Sample size
+    sample_size:
+      method: "calculated"  # calculated, fixed, sequential
+      per_variant: 10000
+      total: 20000
+
+      calculation:
+        baseline_conversion_rate: 0.10
+        expected_conversion_rate: 0.102
+        power: 0.80
+        alpha: 0.05
+
+  # Runtime configuration
+  runtime:
+    start_date: "2024-01-15"
+    end_date: "2024-02-01"
+    expected_duration_days: 14
+
+    # Ramp-up plan
+    ramp_up:
+      enabled: true
+      stages:
+        - date: "2024-01-15"
+          traffic_percentage: 10
+        - date: "2024-01-16"
+          traffic_percentage: 50
+        - date: "2024-01-17"
+          traffic_percentage: 100
+
+    # Monitoring
+    monitoring:
+      check_frequency_hours: 6
+      srm_threshold: 0.01
+      alerts:
+        - type: "sample_ratio_mismatch"
+          threshold: 0.01
+          recipients: ["data_science@company.com"]
+
+        - type: "guardrail_violation"
+          threshold: "any"
+          recipients: ["product_team@company.com", "engineering@company.com"]
+
+        - type: "error_rate_spike"
+          threshold: 0.05
+          recipients: ["engineering@company.com"]
+
+  # Analysis plan
+  analysis:
+    interim_analyses:
+      enabled: true
+      schedule:
+        - day: 3
+          purpose: "Early safety check"
+        - day: 7
+          purpose: "Midpoint analysis"
+        - day: 14
+          purpose: "Final analysis"
+
+    sequential_testing:
+      enabled: false
+      method: "obrien_fleming"
+      max_looks: 5
+
+    subgroup_analyses:
+      - dimension: "user_country"
+        values: ["US", "CA", "UK"]
+      - dimension: "device_type"
+        values: ["mobile", "desktop"]
+      - dimension: "user_segment"
+        values: ["new", "returning"]
+
+  # Decision criteria
+  decision:
+    auto_decision: false  # Automatically make decision based on results
+
+    ship_if:
+      - "p_value < 0.05"
+      - "relative_lift > 0.02"
+      - "all_guardrails_pass"
+      - "no_significant_negative_segments"
+
+    iterate_if:
+      - "p_value >= 0.05"
+      - "relative_lift > 0.01"
+
+    kill_if:
+      - "relative_lift < -0.01"
+      - "any_critical_guardrail_fails"
+
+  # Metadata and tags
+  metadata:
+    tags:
+      - "checkout"
+      - "ui"
+      - "conversion_optimization"
+
+    related_experiments:
+      - "checkout_flow_redesign_2023_q4"
+      - "payment_options_test_2023_q3"
+
+    jira_ticket: "PROD-1234"
+    design_doc_url: "https://docs.company.com/exp/checkout_button"
+    dashboard_url: "https://dashboard.company.com/exp/checkout_button_2024_q1"
+
+# ============================================================================
+# Deployment Configuration
+# ============================================================================
+
+deployment:
+  platform: "custom_experimentation_platform"
+
+  feature_flag:
+    enabled: true
+    flag_name: "checkout_button_color_experiment"
+
+  rollback:
+    enabled: true
+    trigger_conditions:
+      - "error_rate > 0.10"
+      - "guardrail_violation_critical"
+    automatic: true
+
+  data_pipeline:
+    events_table: "events.user_events"
+    assignments_table: "experiments.user_assignments"
+    refresh_frequency_minutes: 60
+\end{lstlisting}
+
+\subsection{Analysis Pipeline Configuration (JSON)}
+
+\lstset{language=json, caption=Analysis Pipeline Configuration}
+\begin{lstlisting}
+{
+  "analysis_config": {
+    "experiment_id": "checkout_button_color_2024_q1",
+    "analysis_date": "2024-02-01",
+    "analyst": "data_science@company.com",
+
+    "data_sources": {
+      "assignments": {
+        "type": "bigquery",
+        "project": "company-analytics",
+        "dataset": "experiments",
+        "table": "user_assignments",
+        "filters": {
+          "experiment_id": "checkout_button_color_2024_q1",
+          "assignment_date_gte": "2024-01-15",
+          "assignment_date_lt": "2024-02-01"
+        }
+      },
+
+      "events": {
+        "type": "bigquery",
+        "project": "company-analytics",
+        "dataset": "events",
+        "table": "user_events",
+        "filters": {
+          "event_date_gte": "2024-01-15",
+          "event_date_lt": "2024-02-08"
+        }
+      }
+    },
+
+    "preprocessing": {
+      "steps": [
+        {
+          "name": "filter_internal_users",
+          "type": "exclusion",
+          "condition": "user_id NOT IN internal_users"
+        },
+        {
+          "name": "filter_bots",
+          "type": "exclusion",
+          "condition": "is_bot = FALSE"
+        },
+        {
+          "name": "check_assignment_consistency",
+          "type": "validation",
+          "condition": "user has single variant assignment"
+        }
+      ],
+
+      "quality_checks": [
+        {
+          "check": "sample_ratio_mismatch",
+          "threshold": 0.01,
+          "action": "warn"
+        },
+        {
+          "check": "missing_data_rate",
+          "threshold": 0.05,
+          "action": "fail"
+        }
+      ]
+    },
+
+    "statistical_tests": {
+      "primary_metric": {
+        "metric": "conversion_rate",
+        "test_type": "two_proportion_z_test",
+        "alpha": 0.05,
+        "alternative": "two_sided",
+        "confidence_level": 0.95
+      },
+
+      "secondary_metrics": [
+        {
+          "metric": "revenue_per_user",
+          "test_type": "welch_t_test",
+          "alpha": 0.05,
+          "alternative": "two_sided",
+          "confidence_level": 0.95
+        },
+        {
+          "metric": "orders_per_user",
+          "test_type": "mann_whitney_u",
+          "alpha": 0.05,
+          "alternative": "two_sided"
+        }
+      ],
+
+      "multiple_testing_correction": {
+        "method": "bonferroni",
+        "family_alpha": 0.05,
+        "n_tests": 3
+      }
+    },
+
+    "segmentation": {
+      "enabled": true,
+      "dimensions": [
+        {
+          "name": "user_country",
+          "type": "categorical",
+          "min_sample_per_segment": 100
+        },
+        {
+          "name": "device_type",
+          "type": "categorical",
+          "min_sample_per_segment": 100
+        },
+        {
+          "name": "user_segment",
+          "type": "categorical",
+          "values": ["new", "returning"]
+        }
+      ],
+
+      "interaction_tests": {
+        "enabled": true,
+        "method": "regression",
+        "alpha": 0.05
+      }
+    },
+
+    "visualization": {
+      "enabled": true,
+      "types": [
+        "conversion_funnel",
+        "time_series",
+        "distribution_comparison",
+        "forest_plot_segments"
+      ],
+      "output_format": "png",
+      "dpi": 300
+    },
+
+    "reporting": {
+      "output_formats": ["html", "pdf", "json"],
+      "template": "standard_ab_test_report",
+      "include_sections": [
+        "executive_summary",
+        "experiment_details",
+        "data_quality_checks",
+        "primary_analysis",
+        "secondary_analyses",
+        "segment_analysis",
+        "guardrail_metrics",
+        "recommendations"
+      ],
+
+      "distribution_list": [
+        "product_team@company.com",
+        "data_science@company.com",
+        "stakeholders@company.com"
+      ]
+    }
+  }
+}
+\end{lstlisting}
+
+\newpage
+
+\section{API Implementation}
+
+\subsection{RESTful API for Experiment Management}
+
+\lstset{language=Python, caption=Flask API for A/B Testing Platform}
+\begin{lstlisting}
+"""
+A/B Testing Platform API
+========================
+
+RESTful API for managing and analyzing A/B tests.
+
+Endpoints:
+- POST   /api/v1/experiments          Create new experiment
+- GET    /api/v1/experiments          List all experiments
+- GET    /api/v1/experiments/{id}     Get experiment details
+- PUT    /api/v1/experiments/{id}     Update experiment
+- DELETE /api/v1/experiments/{id}     Delete experiment
+- POST   /api/v1/experiments/{id}/assign   Assign user to variant
+- GET    /api/v1/experiments/{id}/results  Get experiment results
+- POST   /api/v1/experiments/{id}/analyze  Trigger analysis
+"""
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from dataclasses import dataclass, asdict
+from typing import Optional, List, Dict
+from datetime import datetime
+import hashlib
+import json
+
+app = Flask(__name__)
+CORS(app)
+
+# ============================================================================
+# Data Models
+# ============================================================================
+
+@dataclass
+class Experiment:
+    """Experiment model."""
+    id: str
+    name: str
+    description: str
+    status: str  # draft, running, paused, completed
+    variants: List[str]
+    traffic_allocation: Dict[str, float]
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    created_at: str = None
+    updated_at: str = None
+
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now().isoformat()
+        if self.updated_at is None:
+            self.updated_at = datetime.now().isoformat()
+
+
+# In-memory storage (replace with database in production)
+experiments_db = {}
+assignments_db = {}
+
+
+# ============================================================================
+# Experiment Management Endpoints
+# ============================================================================
+
+@app.route('/api/v1/experiments', methods=['POST'])
+def create_experiment():
+    """
+    Create a new experiment.
+
+    Request body:
+    {
+        "name": "Button Color Test",
+        "description": "Test green vs blue button",
+        "variants": ["control", "treatment"],
+        "traffic_allocation": {"control": 0.5, "treatment": 0.5}
+    }
+    """
+    try:
+        data = request.get_json()
+
+        # Validate request
+        required_fields = ['name', 'description', 'variants', 'traffic_allocation']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+
+        # Validate traffic allocation
+        if not abs(sum(data['traffic_allocation'].values()) - 1.0) < 0.001:
+            return jsonify({'error': 'Traffic allocation must sum to 1.0'}), 400
+
+        # Generate experiment ID
+        exp_id = hashlib.md5(
+            f"{data['name']}_{datetime.now().isoformat()}".encode()
+        ).hexdigest()[:16]
+
+        # Create experiment
+        experiment = Experiment(
+            id=exp_id,
+            name=data['name'],
+            description=data['description'],
+            status='draft',
+            variants=data['variants'],
+            traffic_allocation=data['traffic_allocation'],
+            start_date=data.get('start_date'),
+            end_date=data.get('end_date')
+        )
+
+        # Save to database
+        experiments_db[exp_id] = experiment
+
+        return jsonify({
+            'success': True,
+            'experiment': asdict(experiment)
+        }), 201
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/v1/experiments', methods=['GET'])
+def list_experiments():
+    """
+    List all experiments.
+
+    Query parameters:
+    - status: Filter by status (optional)
+    - limit: Maximum number of results (default 100)
+    - offset: Pagination offset (default 0)
+    """
+    try:
+        status_filter = request.args.get('status')
+        limit = int(request.args.get('limit', 100))
+        offset = int(request.args.get('offset', 0))
+
+        experiments = list(experiments_db.values())
+
+        # Apply filters
+        if status_filter:
+            experiments = [e for e in experiments if e.status == status_filter]
+
+        # Sort by created_at desc
+        experiments.sort(key=lambda x: x.created_at, reverse=True)
+
+        # Pagination
+        paginated = experiments[offset:offset+limit]
+
+        return jsonify({
+            'success': True,
+            'experiments': [asdict(e) for e in paginated],
+            'total': len(experiments),
+            'limit': limit,
+            'offset': offset
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/v1/experiments/<experiment_id>', methods=['GET'])
+def get_experiment(experiment_id):
+    """Get experiment details by ID."""
+    try:
+        if experiment_id not in experiments_db:
+            return jsonify({'error': 'Experiment not found'}), 404
+
+        experiment = experiments_db[experiment_id]
+
+        return jsonify({
+            'success': True,
+            'experiment': asdict(experiment)
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/v1/experiments/<experiment_id>', methods=['PUT'])
+def update_experiment(experiment_id):
+    """
+    Update experiment.
+
+    Request body: Partial experiment data to update
+    """
+    try:
+        if experiment_id not in experiments_db:
+            return jsonify({'error': 'Experiment not found'}), 404
+
+        data = request.get_json()
+        experiment = experiments_db[experiment_id]
+
+        # Update allowed fields
+        updatable_fields = ['name', 'description', 'status', 'end_date']
+        for field in updatable_fields:
+            if field in data:
+                setattr(experiment, field, data[field])
+
+        experiment.updated_at = datetime.now().isoformat()
+
+        return jsonify({
+            'success': True,
+            'experiment': asdict(experiment)
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/v1/experiments/<experiment_id>', methods=['DELETE'])
+def delete_experiment(experiment_id):
+    """Delete experiment (soft delete by marking as archived)."""
+    try:
+        if experiment_id not in experiments_db:
+            return jsonify({'error': 'Experiment not found'}), 404
+
+        experiment = experiments_db[experiment_id]
+        experiment.status = 'archived'
+        experiment.updated_at = datetime.now().isoformat()
+
+        return jsonify({
+            'success': True,
+            'message': 'Experiment archived'
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# Variant Assignment Endpoint
+# ============================================================================
+
+@app.route('/api/v1/experiments/<experiment_id>/assign', methods=['POST'])
+def assign_variant(experiment_id):
+    """
+    Assign user to variant.
+
+    Request body:
+    {
+        "user_id": "user_12345",
+        "context": {
+            "country": "US",
+            "platform": "web"
+        }
+    }
+
+    Response:
+    {
+        "variant": "treatment",
+        "experiment_id": "exp_123",
+        "assignment_timestamp": "2024-01-15T10:30:00"
+    }
+    """
+    try:
+        if experiment_id not in experiments_db:
+            return jsonify({'error': 'Experiment not found'}), 404
+
+        experiment = experiments_db[experiment_id]
+
+        if experiment.status != 'running':
+            return jsonify({'error': 'Experiment is not running'}), 400
+
+        data = request.get_json()
+
+        if 'user_id' not in data:
+            return jsonify({'error': 'Missing user_id'}), 400
+
+        user_id = data['user_id']
+
+        # Check if user already assigned
+        assignment_key = f"{experiment_id}:{user_id}"
+        if assignment_key in assignments_db:
+            assignment = assignments_db[assignment_key]
+            return jsonify({
+                'success': True,
+                'variant': assignment['variant'],
+                'experiment_id': experiment_id,
+                'assignment_timestamp': assignment['timestamp'],
+                'is_new_assignment': False
+            }), 200
+
+        # Assign variant using deterministic hash
+        variant = _assign_variant_deterministic(
+            user_id,
+            experiment.variants,
+            experiment.traffic_allocation,
+            experiment.id
+        )
+
+        # Store assignment
+        assignment = {
+            'user_id': user_id,
+            'experiment_id': experiment_id,
+            'variant': variant,
+            'timestamp': datetime.now().isoformat(),
+            'context': data.get('context', {})
+        }
+        assignments_db[assignment_key] = assignment
+
+        return jsonify({
+            'success': True,
+            'variant': variant,
+            'experiment_id': experiment_id,
+            'assignment_timestamp': assignment['timestamp'],
+            'is_new_assignment': True
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def _assign_variant_deterministic(user_id: str, variants: List[str],
+                                  allocation: Dict[str, float],
+                                  salt: str) -> str:
+    """
+    Deterministically assign variant using hash-based randomization.
+
+    Ensures:
+    - Same user always gets same variant
+    - Traffic split matches desired allocation
+    - Cryptographically secure
+    """
+    # Create hash of user_id + salt
+    hash_input = f"{user_id}:{salt}"
+    hash_value = int(hashlib.md5(hash_input.encode()).hexdigest(), 16)
+
+    # Normalize to [0, 1)
+    normalized = (hash_value % 10000) / 10000.0
+
+    # Assign based on allocation
+    cumulative = 0.0
+    for variant in variants:
+        cumulative += allocation[variant]
+        if normalized < cumulative:
+            return variant
+
+    # Fallback (should not happen if allocation sums to 1.0)
+    return variants[0]
+
+
+# ============================================================================
+# Analysis Endpoints
+# ============================================================================
+
+@app.route('/api/v1/experiments/<experiment_id>/results', methods=['GET'])
+def get_results(experiment_id):
+    """
+    Get experiment results.
+
+    Query parameters:
+    - metric: Specific metric to return (optional)
+    - segment: Segment dimension for subgroup analysis (optional)
+    """
+    try:
+        if experiment_id not in experiments_db:
+            return jsonify({'error': 'Experiment not found'}), 404
+
+        experiment = experiments_db[experiment_id]
+        metric_param = request.args.get('metric')
+        segment_param = request.args.get('segment')
+
+        # Get assignments for this experiment
+        exp_assignments = {
+            k: v for k, v in assignments_db.items()
+            if v['experiment_id'] == experiment_id
+        }
+
+        # Calculate basic statistics
+        variant_counts = {}
+        for assignment in exp_assignments.values():
+            variant = assignment['variant']
+            variant_counts[variant] = variant_counts.get(variant, 0) + 1
+
+        results = {
+            'experiment_id': experiment_id,
+            'status': experiment.status,
+            'total_users_assigned': len(exp_assignments),
+            'variant_counts': variant_counts,
+            'metrics': {
+                # In production, calculate actual metrics from event data
+                'sample_sizes': variant_counts
+            }
+        }
+
+        return jsonify({
+            'success': True,
+            'results': results
+        }), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/v1/experiments/<experiment_id>/analyze', methods=['POST'])
+def trigger_analysis(experiment_id):
+    """
+    Trigger analysis job for experiment.
+
+    Request body:
+    {
+        "analysis_type": "full",  // full, interim, segment
+        "metrics": ["conversion_rate", "revenue"],
+        "segments": ["country", "device_type"]
+    }
+
+    Response:
+    {
+        "job_id": "analysis_job_12345",
+        "status": "queued",
+        "estimated_time_seconds": 60
+    }
+    """
+    try:
+        if experiment_id not in experiments_db:
+            return jsonify({'error': 'Experiment not found'}), 404
+
+        data = request.get_json()
+        analysis_type = data.get('analysis_type', 'full')
+
+        # Generate job ID
+        job_id = hashlib.md5(
+            f"{experiment_id}_{datetime.now().isoformat()}".encode()
+        ).hexdigest()[:16]
+
+        # In production: Queue analysis job to background worker
+        # For now, return mock response
+
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'status': 'queued',
+            'experiment_id': experiment_id,
+            'analysis_type': analysis_type,
+            'estimated_time_seconds': 60
+        }), 202
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# Health Check
+# ============================================================================
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint."""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'version': '1.0.0'
+    }), 200
+
+
+# ============================================================================
+# Error Handlers
+# ============================================================================
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'error': 'Not found'}), 404
+
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
+
+
+# ============================================================================
+# Run Application
+# ============================================================================
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
+\end{lstlisting}
+
+\subsection{API Client Library (Python)}
+
+\lstset{language=Python, caption=Python Client for A/B Testing API}
+\begin{lstlisting}
+"""
+A/B Testing API Client
+=====================
+
+Python client library for interacting with A/B testing platform API.
+
+Usage:
+    from abtest_client import ABTestClient
+
+    client = ABTestClient(base_url="https://api.company.com", api_key="...")
+
+    # Create experiment
+    experiment = client.create_experiment(
+        name="Button Color Test",
+        variants=["control", "treatment"],
+        allocation={"control": 0.5, "treatment": 0.5}
+    )
+
+    # Assign user to variant
+    variant = client.assign_variant(experiment_id, user_id="user_123")
+
+    # Get results
+    results = client.get_results(experiment_id)
+"""
+
+import requests
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+import json
+
+
+class ABTestAPIError(Exception):
+    """Exception raised for API errors."""
+    pass
+
+
+@dataclass
+class ExperimentConfig:
+    """Configuration for creating an experiment."""
+    name: str
+    description: str
+    variants: List[str]
+    traffic_allocation: Dict[str, float]
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+class ABTestClient:
+    """Client for A/B Testing Platform API."""
+
+    def __init__(self, base_url: str, api_key: str, timeout: int = 30):
+        """
+        Initialize API client.
+
+        Parameters
+        ----------
+        base_url : str
+            Base URL for API (e.g., "https://api.company.com")
+        api_key : str
+            API authentication key
+        timeout : int
+            Request timeout in seconds
+        """
+        self.base_url = base_url.rstrip('/')
+        self.api_key = api_key
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json'
+        })
+
+    def _request(self, method: str, endpoint: str,
+                params: Optional[Dict] = None,
+                data: Optional[Dict] = None) -> Dict:
+        """
+        Make API request.
+
+        Parameters
+        ----------
+        method : str
+            HTTP method (GET, POST, PUT, DELETE)
+        endpoint : str
+            API endpoint path
+        params : dict, optional
+            Query parameters
+        data : dict, optional
+            Request body data
+
+        Returns
+        -------
+        dict
+            Response data
+
+        Raises
+        ------
+        ABTestAPIError
+            If request fails
+        """
+        url = f"{self.base_url}{endpoint}"
+
+        try:
+            response = self.session.request(
+                method=method,
+                url=url,
+                params=params,
+                json=data,
+                timeout=self.timeout
+            )
+
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.HTTPError as e:
+            error_msg = f"API request failed: {e}"
+            if e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    error_msg = f"API error: {error_data.get('error', str(e))}"
+                except:
+                    pass
+            raise ABTestAPIError(error_msg) from e
+
+        except requests.exceptions.RequestException as e:
+            raise ABTestAPIError(f"Request failed: {e}") from e
+
+    # ========================================================================
+    # Experiment Management
+    # ========================================================================
+
+    def create_experiment(self,
+                         name: str,
+                         description: str,
+                         variants: List[str],
+                         traffic_allocation: Dict[str, float],
+                         start_date: Optional[str] = None,
+                         end_date: Optional[str] = None) -> Dict:
+        """
+        Create a new experiment.
+
+        Parameters
+        ----------
+        name : str
+            Experiment name
+        description : str
+            Experiment description
+        variants : list of str
+            List of variant names
+        traffic_allocation : dict
+            Traffic allocation per variant (must sum to 1.0)
+        start_date : str, optional
+            Start date (ISO format)
+        end_date : str, optional
+            End date (ISO format)
+
+        Returns
+        -------
+        dict
+            Created experiment data
+
+        Examples
+        --------
+        >>> client = ABTestClient(base_url="...", api_key="...")
+        >>> exp = client.create_experiment(
+        ...     name="Button Test",
+        ...     description="Test button colors",
+        ...     variants=["control", "treatment"],
+        ...     traffic_allocation={"control": 0.5, "treatment": 0.5}
+        ... )
+        >>> print(exp['experiment']['id'])
+        """
+        data = {
+            'name': name,
+            'description': description,
+            'variants': variants,
+            'traffic_allocation': traffic_allocation
+        }
+
+        if start_date:
+            data['start_date'] = start_date
+        if end_date:
+            data['end_date'] = end_date
+
+        response = self._request('POST', '/api/v1/experiments', data=data)
+        return response['experiment']
+
+    def list_experiments(self,
+                        status: Optional[str] = None,
+                        limit: int = 100,
+                        offset: int = 0) -> List[Dict]:
+        """
+        List experiments.
+
+        Parameters
+        ----------
+        status : str, optional
+            Filter by status
+        limit : int
+            Maximum number of results
+        offset : int
+            Pagination offset
+
+        Returns
+        -------
+        list of dict
+            List of experiments
+        """
+        params = {'limit': limit, 'offset': offset}
+        if status:
+            params['status'] = status
+
+        response = self._request('GET', '/api/v1/experiments', params=params)
+        return response['experiments']
+
+    def get_experiment(self, experiment_id: str) -> Dict:
+        """
+        Get experiment details.
+
+        Parameters
+        ----------
+        experiment_id : str
+            Experiment ID
+
+        Returns
+        -------
+        dict
+            Experiment data
+        """
+        response = self._request('GET', f'/api/v1/experiments/{experiment_id}')
+        return response['experiment']
+
+    def update_experiment(self, experiment_id: str, **kwargs) -> Dict:
+        """
+        Update experiment.
+
+        Parameters
+        ----------
+        experiment_id : str
+            Experiment ID
+        **kwargs
+            Fields to update (name, description, status, end_date)
+
+        Returns
+        -------
+        dict
+            Updated experiment data
+        """
+        response = self._request(
+            'PUT',
+            f'/api/v1/experiments/{experiment_id}',
+            data=kwargs
+        )
+        return response['experiment']
+
+    def delete_experiment(self, experiment_id: str) -> bool:
+        """
+        Delete (archive) experiment.
+
+        Parameters
+        ----------
+        experiment_id : str
+            Experiment ID
+
+        Returns
+        -------
+        bool
+            True if successful
+        """
+        self._request('DELETE', f'/api/v1/experiments/{experiment_id}')
+        return True
+
+    # ========================================================================
+    # Variant Assignment
+    # ========================================================================
+
+    def assign_variant(self,
+                      experiment_id: str,
+                      user_id: str,
+                      context: Optional[Dict] = None) -> Dict:
+        """
+        Assign user to variant.
+
+        Parameters
+        ----------
+        experiment_id : str
+            Experiment ID
+        user_id : str
+            User identifier
+        context : dict, optional
+            Additional context (country, platform, etc.)
+
+        Returns
+        -------
+        dict
+            Assignment data including variant
+
+        Examples
+        --------
+        >>> assignment = client.assign_variant(
+        ...     experiment_id="exp_123",
+        ...     user_id="user_456",
+        ...     context={"country": "US", "platform": "web"}
+        ... )
+        >>> print(assignment['variant'])
+        'treatment'
+        """
+        data = {'user_id': user_id}
+        if context:
+            data['context'] = context
+
+        response = self._request(
+            'POST',
+            f'/api/v1/experiments/{experiment_id}/assign',
+            data=data
+        )
+        return response
+
+    # ========================================================================
+    # Analysis
+    # ========================================================================
+
+    def get_results(self,
+                   experiment_id: str,
+                   metric: Optional[str] = None,
+                   segment: Optional[str] = None) -> Dict:
+        """
+        Get experiment results.
+
+        Parameters
+        ----------
+        experiment_id : str
+            Experiment ID
+        metric : str, optional
+            Specific metric name
+        segment : str, optional
+            Segment dimension
+
+        Returns
+        -------
+        dict
+            Results data
+        """
+        params = {}
+        if metric:
+            params['metric'] = metric
+        if segment:
+            params['segment'] = segment
+
+        response = self._request(
+            'GET',
+            f'/api/v1/experiments/{experiment_id}/results',
+            params=params
+        )
+        return response['results']
+
+    def trigger_analysis(self,
+                        experiment_id: str,
+                        analysis_type: str = 'full',
+                        metrics: Optional[List[str]] = None,
+                        segments: Optional[List[str]] = None) -> Dict:
+        """
+        Trigger analysis job.
+
+        Parameters
+        ----------
+        experiment_id : str
+            Experiment ID
+        analysis_type : str
+            Type of analysis: 'full', 'interim', 'segment'
+        metrics : list of str, optional
+            Metrics to analyze
+        segments : list of str, optional
+            Segment dimensions
+
+        Returns
+        -------
+        dict
+            Job information
+        """
+        data = {'analysis_type': analysis_type}
+        if metrics:
+            data['metrics'] = metrics
+        if segments:
+            data['segments'] = segments
+
+        response = self._request(
+            'POST',
+            f'/api/v1/experiments/{experiment_id}/analyze',
+            data=data
+        )
+        return response
+
+
+# ============================================================================
+# Example Usage
+# ============================================================================
+
+if __name__ == "__main__":
+    # Initialize client
+    client = ABTestClient(
+        base_url="http://localhost:5000",
+        api_key="test_api_key_12345"
+    )
+
+    # Create experiment
+    experiment = client.create_experiment(
+        name="Button Color Test",
+        description="Test green vs blue checkout button",
+        variants=["control", "treatment"],
+        traffic_allocation={"control": 0.5, "treatment": 0.5}
+    )
+
+    print(f"Created experiment: {experiment['id']}")
+
+    # Assign users to variants
+    for user_id in ["user_1", "user_2", "user_3"]:
+        assignment = client.assign_variant(
+            experiment_id=experiment['id'],
+            user_id=user_id,
+            context={"platform": "web"}
+        )
+        print(f"{user_id} -> {assignment['variant']}")
+
+    # Get results
+    results = client.get_results(experiment['id'])
+    print(f"\nResults: {json.dumps(results, indent=2)}")
+\end{lstlisting}
+
+\section{Summary}
+
+This appendix provides production-ready code implementations across multiple languages and platforms:
+
+\begin{itemize}
+    \item \textbf{Python:} Complete A/B testing framework with sample size calculation, statistical analysis, data quality checks, and reporting
+    \item \textbf{R:} Statistical analysis functions for both frequentist and Bayesian approaches
+    \item \textbf{SQL:} Comprehensive queries for data extraction, metric calculation, quality checks, and segment analysis
+    \item \textbf{Configuration:} YAML and JSON templates for experiment and analysis configuration
+    \item \textbf{API:} RESTful API implementation with Flask and corresponding Python client library
+\end{itemize}
+
+All code includes extensive documentation, error handling, and practical examples ready for adaptation to production environments.

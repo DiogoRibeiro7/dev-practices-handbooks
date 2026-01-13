@@ -1,0 +1,43 @@
+\chapter{Documenting Pull Requests for Durable Knowledge}
+
+\section{Chapter Overview}
+Great pull requests do more than show diffs---they capture the reasoning, constraints, and validation that led to the change. This chapter explains how to document PRs so reviewers, auditors, and future maintainers can quickly reconstruct context. You will learn how to curate background information, explain testing at multiple layers, attach visual or operational evidence, and keep documentation current as PRs evolve.
+
+\section{Designing Context Packages}
+Each PR should ship with a ``context package'': a short bundle of links, summaries, and diagrams that explain why the change exists. Begin with the motivating ticket or incident report, add data that informed the solution (metrics, logs, customer interviews), and mention any rejected approaches. Treat this as a mini case study---reviewers can skim to understand intent, and newcomers can revisit the PR months later to understand architectural decisions without re-reading entire specs.
+
+\section{Capturing Architectural Decisions}
+When a PR alters architecture, include a concise rationale similar to a lightweight Architecture Decision Record. Explain the problem, options evaluated, chosen approach, and consequences. Keep paragraphs short and link to deeper documents if necessary. This practice prevents ``mystery conventions'' where future developers see strange patterns with no explanation. A PR that introduces a new caching layer, for example, should mention why it sits in front of the API, what invalidation strategy it uses, and what risks the team accepted.
+
+\section{Documenting Validation}
+Testing notes should do more than list checkboxes. Describe which suites ran, what data sets or fixtures were used, and how environments differed (local, staging, canary). For manual QA, document the exact steps, credentials, and expected outcomes so others can reproduce them. When tests are intentionally missing, say so and explain the mitigation (e.g., ``skipped load tests because staging environment lacks realistic dataset; will run during pre-release''), which reassures reviewers that the omission was intentional.
+
+\section{Visual and Operational Evidence}
+Certain changes require visual proof or operational data. Capture before-and-after screenshots for UI updates, short screen recordings for interaction changes, and metric snapshots for performance work. For backend modifications, paste log excerpts, traces, or dashboards showing the effect. Store media in the PR itself or in shared storage and link to it; avoid relying solely on ephemeral chat threads. Evidence makes documentation credible because reviewers can see the outcome rather than taking the author's word for it.
+
+\section{Referencing Dependencies and Sequencing}
+Complex features often span multiple PRs. Document the dependency chain: reference prerequisite PRs, mention feature flags, and indicate whether this PR can ship independently or must wait for others. If the PR is part of a rollout plan, include a timeline and link to a tracking issue. Reviewers then know which order to review in, and release managers can see how the pieces fit together without chasing down spreadsheets.
+
+\section{Providing Reviewer Guides}
+Large or risky PRs benefit from reviewer guides. Offer a quick tour: ``Start with commit 3 for schema changes, then review controller updates, then the UI delta.'' Call out areas that need deep attention and flag generated files to skip. When relevant, attach diagrams or pseudocode summarizing new flows. Reviewer guides reduce back-and-forth because authors anticipate questions and steer attention to the highest-value sections.
+
+\section{Maintaining Documentation During Iteration}
+PR documentation should evolve as the code changes. After each major revision, update the description with a ``Changes since last review'' section so reviewers know what to re-read. If testing steps change, rewrite them immediately rather than leaving outdated notes that mislead readers. When features are dropped or defered during review, note the decision in the PR so future audits reflect reality. A stale description undermines reviewer trust as much as missing documentation.
+
+\section{Automating Documentation Quality}
+Use templates and bots to ensure documentation quality stays high. Templates should prompt for context, validation, rollout plans, and evidence. Bots can check that required sections are filled, confirm that screenshot links exist when front-end files change, or remind authors to mention feature flags when config files update. Automation keeps standards consistent without relying on reviewers to police documentation manually.
+
+\section{Archiving Knowledge After Merge}
+Once a PR merges, decide which parts of the documentation deserve a permanent home. Extract architectural rationales into ADRs, move runbooks into internal wikis, and attach testing instructions to onboarding guides. Include the PR link in those destinations so readers can explore the full discussion if necessary. This practice prevents PR knowledge from vanishing into the merge history and turns one-time effort into long-term documentation assets.
+
+\section*{Exercises}
+
+\paragraph{1. Context audit} Choose a recently merged PR and evaluate whether its description includes motivation, architectural reasoning, and validation details. Rewrite the description to include missing context.
+
+\paragraph{2. Reviewer guide practice} For an upcoming complex change, draft a reviewer guide that walks someone through the key files, risks, and testing steps. Share it with a teammate for feedback before opening the PR.
+
+\paragraph{3. Evidence inventory} Collect examples of screenshots, logs, or metrics from the last month of PRs. Identify which ones best communicated outcomes and which ones were unclear. Document guidelines for future evidence attachments.
+
+\paragraph{4. Template tuning} Update your PR template or bot rules to require a ``Changes since last review'' section for PRs with more than one review cycle. Measure whether review turnaround time improves after the change.
+
+\paragraph{5. Knowledge transfer drill} After merging a PR, extract one insight (e.g., a new operational runbook or ADR) into a permanent documentation space. Track how long it took and whether the extra documentation prevented follow-up questions.

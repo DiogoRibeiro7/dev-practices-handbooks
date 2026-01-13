@@ -1,0 +1,397 @@
+\chapter{Running Case Study: FraudGuard Payment System}
+\label{ch:case_study}
+
+Throughout this book, we build and evolve \textbf{FraudGuard}, a production-ready fraud detection system for payment processing. This unified case study provides continuity across chapters, demonstrating how concepts integrate in real-world systems.
+
+\section{System Overview}
+
+\textbf{FraudGuard} is a real-time fraud detection system deployed at a mid-sized fintech company processing 10 million transactions per day (\$500M daily volume). The system must:
+
+\begin{itemize}
+    \item Detect fraudulent transactions with 95\% precision and 85\% recall
+    \item Return predictions within 100ms (p99 latency)
+    \item Handle traffic spikes during peak hours (3x normal load)
+    \item Comply with PCI-DSS and financial regulations
+    \item Minimize false positives to avoid blocking legitimate customers
+    \item Adapt to evolving fraud patterns (continuous learning)
+\end{itemize}
+
+\section{Business Context}
+
+\subsection{Problem Statement}
+
+The company loses approximately \$2M annually to fraud (0.4\% of transaction volume). Each fraud investigation costs \$150, and chargebacks cost \$25 per incident. Conversely, false positives (blocking legitimate transactions) cause customer frustration and lost revenue estimated at \$500 per blocked transaction.
+
+\subsection{Success Metrics}
+
+\begin{table}[h]
+\centering
+\caption{FraudGuard Success Metrics}
+\begin{tabular}{@{}p{3.4cm}p{3cm}p{3cm}p{4cm}@{}}
+\toprule
+\textbf{Metric} & \textbf{Current} & \textbf{Target} & \textbf{Business Impact} \\
+\midrule
+Fraud Detection Rate & 72\% & 85\% & \$800K annual savings \\
+False Positive Rate & 2.5\% & 1.0\% & \$15M revenue protection \\
+P99 Latency & 350ms & 100ms & Improved user experience \\
+Model Retraining & Manual, quarterly & Automated, daily & Faster adaptation \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{System Architecture Evolution}
+
+\subsection{Phase 1: Initial MVP (Chapters 1-7)}
+
+\textbf{Covered in:} Chapters~\ref{ch:introduction}, \ref{ch:ml_lifecycle}, \ref{ch:training_pipelines}, \ref{ch:data_pipelines}, \ref{ch:data_quality}, \ref{ch:feature_stores}, \ref{ch:model_development}
+
+\textbf{System components:}
+\begin{itemize}
+    \item Batch data pipeline processing transaction history
+    \item Feature engineering for transaction patterns
+    \item XGBoost classifier trained weekly
+    \item Simple REST API for predictions
+    \item Basic logging and metrics
+\end{itemize}
+
+\textbf{Challenges:}
+\begin{itemize}
+    \item Manual data quality checks (Chapter~\ref{ch:data_quality})
+    \item No feature reusability across models (Chapter~\ref{ch:feature_stores})
+    \item Inconsistent experiment tracking (Chapter~\ref{ch:experiment_tracking})
+    \item Slow model iteration (2-week cycle)
+\end{itemize}
+
+\subsection{Phase 2: Production System (Chapters 8-13)}
+
+\textbf{Covered in:} Chapters~\ref{ch:experiment_tracking}, \ref{ch:distributed_training}, \ref{ch:hyperparameter_optimization}, \ref{ch:model_serving}, \ref{ch:deployment_strategies}, \ref{ch:model_versioning}
+
+\textbf{Improvements:}
+\begin{itemize}
+    \item MLflow for experiment tracking and model registry
+    \item Distributed training with Spark for faster iteration
+    \item Bayesian optimization for hyperparameter tuning (Chapter~\ref{ch:hyperparameter_optimization})
+    \item FastAPI serving with Redis caching (Chapter~\ref{ch:model_serving})
+    \item Blue-green deployment strategy (Chapter~\ref{ch:deployment_strategies})
+    \item Model versioning and A/B testing (Chapter~\ref{ch:model_versioning})
+\end{itemize}
+
+\textbf{Architecture diagram:}
+\begin{center}
+\begin{tikzpicture}[
+    node distance=1.5cm,
+    box/.style={rectangle, draw, minimum width=3cm, minimum height=1cm, align=center},
+    arrow/.style={->, >=stealth, thick}
+]
+    % Data sources
+    \node[box] (transactions) {Transaction\\Database};
+    \node[box, right=of transactions] (logs) {Application\\Logs};
+
+    % Data pipeline
+    \node[box, below=of transactions, xshift=1.5cm] (pipeline) {Data Pipeline\\(Spark)};
+
+    % Feature store
+    \node[box, below=of pipeline] (features) {Feature Store\\(Redis/S3)};
+
+    % Training
+    \node[box, left=of features, xshift=-1cm] (training) {Training\\Pipeline};
+
+    % Model registry
+    \node[box, below=of features] (registry) {Model Registry\\(MLflow)};
+
+    % Serving
+    \node[box, right=of registry, xshift=1cm] (serving) {Serving\\(FastAPI)};
+
+    % Monitoring
+    \node[box, below=of serving] (monitoring) {Monitoring\\(Prometheus)};
+
+    % Arrows
+    \draw[arrow] (transactions) -- (pipeline);
+    \draw[arrow] (logs) -- (pipeline);
+    \draw[arrow] (pipeline) -- (features);
+    \draw[arrow] (features) -- (training);
+    \draw[arrow] (training) -- (registry);
+    \draw[arrow] (registry) -- (serving);
+    \draw[arrow] (serving) -- (monitoring);
+    \draw[arrow] (features) -- (serving);
+\end{tikzpicture}
+\end{center}
+
+\subsection{Phase 3: Production Excellence (Chapters 14-19)}
+
+\textbf{Covered in:} Chapters~\ref{ch:monitoring}, \ref{ch:model_maintenance}, \ref{ch:performance_optimization}, \ref{ch:cicd}, \ref{ch:infrastructure}, \ref{ch:mlops_platforms}
+
+\textbf{Advanced capabilities:}
+\begin{itemize}
+    \item Real-time drift detection (KS test, PSI) (Chapter~\ref{ch:monitoring})
+    \item Automated retraining triggers (Chapter~\ref{ch:model_maintenance})
+    \item Model quantization for faster inference (Chapter~\ref{ch:performance_optimization})
+    \item Complete CI/CD pipeline (Chapter~\ref{ch:cicd})
+    \item Infrastructure as Code with Terraform (Chapter~\ref{ch:infrastructure})
+    \item Integration with Kubeflow (Chapter~\ref{ch:mlops_platforms})
+\end{itemize}
+
+\subsection{Phase 4: Governance and Scale (Chapters 20-22)}
+
+\textbf{Covered in:} Chapters~\ref{ch:governance}, \ref{ch:security}, \ref{ch:cost_optimization}
+
+\textbf{Enterprise requirements:}
+\begin{itemize}
+    \item Model cards for compliance (Chapter~\ref{ch:governance})
+    \item Differential privacy for sensitive data (Chapter~\ref{ch:security})
+    \item Cost optimization with spot instances (Chapter~\ref{ch:cost_optimization})
+    \item Fairness metrics and bias detection
+    \item Audit trail for all predictions
+\end{itemize}
+
+\section{Data Schema}
+
+\subsection{Transaction Features}
+
+\begin{lstlisting}[style=python, caption=FraudGuard Feature Schema]
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Optional, List
+
+@dataclass
+class TransactionFeatures:
+    """Feature schema for fraud detection"""
+
+    # Transaction details
+    transaction_id: str
+    amount: float
+    currency: str
+    timestamp: datetime
+    merchant_id: str
+    merchant_category: str
+
+    # User features
+    user_id: str
+    account_age_days: int
+    total_transactions_30d: int
+    total_amount_30d: float
+    avg_transaction_amount_30d: float
+
+    # Behavioral features
+    time_since_last_transaction_minutes: float
+    is_international: bool
+    distance_from_home_km: float
+    device_id: str
+    ip_address: str
+
+    # Velocity features (derived)
+    transactions_last_hour: int
+    transactions_last_24h: int
+    amount_last_hour: float
+    unique_merchants_last_24h: int
+
+    # Risk signals
+    failed_auth_attempts_24h: int
+    shipping_address_matches_billing: bool
+    email_verified: bool
+    phone_verified: bool
+
+    # Target
+    is_fraud: Optional[bool] = None
+\end{lstlisting}
+
+\subsection{Sample Data Statistics}
+
+\begin{table}[h]
+\centering
+\caption{FraudGuard Dataset Characteristics}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Characteristic} & \textbf{Value} \\
+\midrule
+Total transactions (30 days) & 300M \\
+Fraud rate & 0.4\% (1.2M fraudulent) \\
+Avg. transaction value & \$47.50 \\
+Median transaction value & \$23.00 \\
+P99 transaction value & \$485.00 \\
+Number of unique users & 15M \\
+Number of features & 47 (35 raw + 12 derived) \\
+Data volume (30 days) & 450 GB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Model Performance Requirements}
+
+\subsection{Prediction Requirements}
+
+\begin{itemize}
+    \item \textbf{Latency:} p99 < 100ms, p50 < 30ms
+    \item \textbf{Throughput:} 10,000 predictions/second (peak)
+    \item \textbf{Availability:} 99.9\% uptime
+    \item \textbf{Precision:} $\geq$ 95\% (minimize false positives)
+    \item \textbf{Recall:} $\geq$ 85\% (catch most fraud)
+    \item \textbf{F1 Score:} $\geq$ 0.90
+\end{itemize}
+
+\subsection{Training Requirements}
+
+\begin{itemize}
+    \item \textbf{Training time:} < 2 hours for full retrain
+    \item \textbf{Data freshness:} < 24 hours
+    \item \textbf{Model update frequency:} Daily (automated)
+    \item \textbf{Experiment tracking:} All experiments logged
+    \item \textbf{Reproducibility:} 100\% reproducible training
+\end{itemize}
+
+\section{Cost Budget}
+
+\begin{table}[h]
+\centering
+\caption{FraudGuard Monthly Cost Budget}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Component} & \textbf{Monthly Cost} & \textbf{Chapter Reference} \\
+\midrule
+Training (EMR Spot) & \$2,500 & Chapter~\ref{ch:distributed_training} \\
+Feature Store (Redis) & \$1,800 & Chapter~\ref{ch:feature_stores} \\
+Serving (EKS) & \$3,200 & Chapter~\ref{ch:model_serving} \\
+Monitoring (Prometheus/Grafana) & \$400 & Chapter~\ref{ch:monitoring} \\
+Storage (S3) & \$1,100 & Chapter~\ref{ch:data_pipelines} \\
+MLflow & \$600 & Chapter~\ref{ch:experiment_tracking} \\
+\midrule
+\textbf{Total} & \textbf{\$9,600} & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Chapter-by-Chapter Application}
+
+This section shows how FraudGuard concepts map to each chapter:
+
+\begin{description}
+    \item[Chapter~\ref{ch:introduction}:] Introduction to the business problem and ROI analysis
+
+    \item[Chapter~\ref{ch:ml_lifecycle}:] Full lifecycle from research to production deployment
+
+    \item[Chapter~\ref{ch:training_pipelines}:] Setting up development environment and notebook structure
+
+    \item[Chapter~\ref{ch:data_pipelines}:] Building Spark pipeline for transaction processing
+
+    \item[Chapter~\ref{ch:data_quality}:] Implementing data validation with Great Expectations
+
+    \item[Chapter~\ref{ch:feature_stores}:] Creating feature store for reusable features
+
+    \item[Chapter~\ref{ch:model_development}:] Refactoring notebook code to production modules
+
+    \item[Chapter~\ref{ch:experiment_tracking}:] Tracking experiments with MLflow
+
+    \item[Chapter~\ref{ch:distributed_training}:] Distributed XGBoost training on Spark
+
+    \item[Chapter~\ref{ch:hyperparameter_optimization}:] Bayesian optimization with Optuna
+
+    \item[Chapter~\ref{ch:model_serving}:] FastAPI serving with Redis caching
+
+    \item[Chapter~\ref{ch:deployment_strategies}:] Blue-green deployment and A/B testing
+
+    \item[Chapter~\ref{ch:model_versioning}:] Model registry and version management
+
+    \item[Chapter~\ref{ch:monitoring}:] Drift detection and performance monitoring
+
+    \item[Chapter~\ref{ch:model_maintenance}:] Automated retraining pipelines
+
+    \item[Chapter~\ref{ch:performance_optimization}:] Model quantization and latency optimization
+
+    \item[Chapter~\ref{ch:cicd}:] GitHub Actions pipeline for continuous deployment
+
+    \item[Chapter~\ref{ch:infrastructure}:] Terraform for AWS infrastructure
+
+    \item[Chapter~\ref{ch:mlops_platforms}:] Kubeflow Pipelines integration
+
+    \item[Chapter~\ref{ch:governance}:] Model cards and audit trails
+
+    \item[Chapter~\ref{ch:security}:] PCI-DSS compliance and differential privacy
+
+    \item[Chapter~\ref{ch:cost_optimization}:] Spot instances and right-sizing
+\end{description}
+
+\section{Evolution Timeline}
+
+\begin{table}[h]
+\centering
+\caption{FraudGuard Evolution Milestones}
+\begin{tabular}{@{}p{2cm}p{3cm}p{7cm}@{}}
+\toprule
+\textbf{Timeline} & \textbf{Phase} & \textbf{Key Changes} \\
+\midrule
+Week 1-2 & MVP & Jupyter notebook, manual training, CSV files \\
+Week 3-4 & Basic Pipeline & Automated data pipeline, weekly retraining \\
+Month 2 & Feature Store & Centralized features, reduced duplication \\
+Month 3 & Production Serving & FastAPI, load balancing, monitoring \\
+Month 4 & Automation & CI/CD, automated retraining, drift detection \\
+Month 5 & Optimization & Model quantization, cost reduction 40\% \\
+Month 6 & Governance & Compliance, audit trails, model cards \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Key Learnings and Patterns}
+
+Throughout the FraudGuard case study, we demonstrate these recurring patterns:
+
+\begin{enumerate}
+    \item \textbf{Start simple, iterate fast:} Begin with basic XGBoost before complex deep learning
+
+    \item \textbf{Measure everything:} Comprehensive logging from day one (Chapter~\ref{ch:monitoring})
+
+    \item \textbf{Automate incrementally:} Manual → scheduled → event-driven automation
+
+    \item \textbf{Feature reusability:} Feature store reduces duplication by 70\%
+
+    \item \textbf{Test in production:} A/B testing for safe deployment (Chapter~\ref{ch:deployment_strategies})
+
+    \item \textbf{Cost-performance tradeoffs:} Optimize after establishing baseline
+
+    \item \textbf{Regulatory compliance:} Build in from the start, not retrofitted
+\end{enumerate}
+
+\section{Code Repository Structure}
+
+The complete FraudGuard codebase follows this structure:
+
+\begin{lstlisting}[style=shell]
+fraudguard/
+|-- config/
+|   |-- data_pipeline.yaml
+|   |-- training.yaml
+|   -- serving.yaml
+|-- src/
+|   |-- data/
+|   |   |-- loaders.py
+|   |   |-- validators.py
+|   |   -- processors.py
+|   |-- features/
+|   |   |-- feature_store.py
+|   |   |-- transformers.py
+|   |   -- feature_specs.yaml
+|   |-- models/
+|   |   |-- train.py
+|   |   |-- predict.py
+|   |   -- evaluate.py
+|   |-- serving/
+|   |   |-- api.py
+|   |   |-- cache.py
+|   |   -- monitoring.py
+|   -- monitoring/
+|       |-- drift_detection.py
+|       -- alerting.py
+|-- tests/
+|-- infrastructure/
+|   |-- terraform/
+|   -- kubernetes/
+|-- .github/
+|   -- workflows/
+|-- notebooks/
+-- docs/
+\end{lstlisting}
+
+\vspace{1em}
+
+\begin{bestpractice}
+The FraudGuard case study is referenced throughout the book with specific examples. When you see "In our FraudGuard system..." or references to fraud detection, it refers to this unified example. Code snippets build upon each other, showing how a production system evolves from concept to enterprise-scale deployment.
+\end{bestpractice}

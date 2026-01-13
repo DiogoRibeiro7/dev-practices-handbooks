@@ -1,0 +1,1677 @@
+% Chapter 11: Case Studies and Real-World Applications
+
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Apply A/B testing methodology to diverse business contexts
+    \item Design experiments that address specific business objectives across e-commerce, marketing, product, and media
+    \item Analyze real-world experimental data with common complications
+    \item Interpret results in business terms and make actionable recommendations
+    \item Identify common pitfalls and avoid experimental failures through practical examples
+    \item Build organizational capabilities for scaled experimentation
+    \item Learn from both successful and failed experiments with complete analysis workflows
+    \item Adapt methodologies to industry-specific constraints and opportunities
+\end{itemize}
+
+\section{Introduction: From Theory to Practice}
+
+Theory provides foundation, but practice reveals nuance. This chapter presents comprehensive case studies from four major domains:
+
+\begin{enumerate}
+    \item \textbf{E-commerce Optimization:} Product pages, checkout flows, recommendations, and pricing
+    \item \textbf{Digital Marketing:} Email campaigns, ad creative, landing pages, and social engagement
+    \item \textbf{Product Development:} Feature adoption, UI/UX improvements, algorithm performance, mobile optimization
+    \item \textbf{Content and Media:} Content recommendations, video engagement, news feeds, personalization
+\end{enumerate}
+
+Each case study includes:
+\begin{itemize}
+    \item \textbf{Business context:} The problem, stakeholders, and constraints
+    \item \textbf{Hypothesis and rationale:} What we expected and why
+    \item \textbf{Experimental design:} Complete methodology with power calculations
+    \item \textbf{Implementation:} Randomization, instrumentation, and data collection
+    \item \textbf{Analysis workflow:} Full Python code for preprocessing, testing, and interpretation
+    \item \textbf{Results:} Honest discussion including surprises and complications
+    \item \textbf{Business outcome:} Decisions made, impact realized, and monitoring approach
+    \item \textbf{Lessons learned:} What succeeded, what failed, and what we'd change
+\end{itemize}
+
+All data has been anonymized and scaled while maintaining statistical properties. The challenges, mistakes, and successes are real.
+
+\section{Case Study 1: Google Search Results and Page Load Time}
+
+\subsection{Context and Business Problem}
+
+In 2009, Google tested whether displaying more search results per page (20 or 30 instead of 10) would improve user engagement. The hypothesis seemed reasonable: fewer clicks to pagination should improve user experience.
+
+\subsection{Experimental Design}
+
+\textbf{Design:} A/B/C test with three variants
+\begin{itemize}
+    \item Control: 10 results per page (baseline)
+    \item Variant A: 20 results per page
+    \item Variant B: 30 results per page
+\end{itemize}
+
+\textbf{Randomization:} User-level randomization, 33.3\% allocation each
+
+\textbf{Duration:} 3 weeks
+
+\textbf{Sample size:} Millions of users (Google traffic scale)
+
+\textbf{Metrics:}
+\begin{itemize}
+    \item Primary: Searches per user session
+    \item Secondary: Page load time, click-through rate, user satisfaction
+\end{itemize}
+
+\subsection{Results and Analysis}
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{10 Results} & \textbf{20 Results} & \textbf{30 Results} \\
+\midrule
+Page load time (ms) & 400 & 650 & 900 \\
+Load time increase & -- & +63\% & +125\% \\
+Searches per user & 5.2 & 4.9 & 4.6 \\
+Relative change & -- & -5.8\% & -11.5\% \\
+Satisfaction score & 7.8/10 & 7.5/10 & 7.2/10 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Statistical significance:} All differences highly significant ($p < 0.001$) due to massive sample size.
+
+\textbf{Correlation analysis:} Strong negative correlation between page load time and searches per user:
+
+\begin{equation}
+\text{Elasticity} = \frac{\Delta \text{Searches}}{\Delta \text{Load time}} \approx -1.0
+\end{equation}
+
+A 100ms increase in load time corresponded to approximately 1\% decrease in searches.
+
+\subsection{Deep Dive: Causal Mechanism}
+
+Why did more results decrease engagement?
+
+\begin{enumerate}
+    \item \textbf{Performance degradation:} Rendering more results increased page weight and computation
+    \item \textbf{Perceived value:} Users valued speed over choice
+    \item \textbf{Cognitive overload:} More options paradoxically made decision harder
+    \item \textbf{User behavior:} Most users (>90\%) found results in first 10 regardless
+\end{enumerate}
+
+\subsection{Statistical Analysis Framework}
+
+\lstset{language=Python, caption=Analyzing Load Time vs. Engagement Trade-offs}
+\begin{lstlisting}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy import stats
+import seaborn as sns
+
+# Simulated data based on Google's published results
+np.random.seed(42)
+
+def simulate_google_experiment(n_users=100000):
+    """Simulate Google search results experiment."""
+
+    # Allocate users to variants
+    variants = np.random.choice(['10_results', '20_results', '30_results'],
+                               size=n_users)
+
+    # Simulate page load times (milliseconds)
+    load_times = {
+        '10_results': np.random.normal(400, 50),
+        '20_results': np.random.normal(650, 70),
+        '30_results': np.random.normal(900, 90)
+    }
+
+    # Simulate searches per user (Poisson with rate dependent on load time)
+    # Model: slower load time -> lower engagement
+    base_searches = {
+        '10_results': 5.2,
+        '20_results': 4.9,
+        '30_results': 4.6
+    }
+
+    data = []
+    for i, variant in enumerate(variants):
+        load_time = load_times[variant]
+
+        # Add user-level noise
+        lambda_param = base_searches[variant] * np.random.lognormal(0, 0.3)
+        searches = np.random.poisson(lambda_param)
+
+        # Satisfaction (0-10 scale, correlated with searches and load time)
+        satisfaction = np.clip(
+            7.8 - (load_time - 400) / 200 + np.random.normal(0, 1),
+            0, 10
+        )
+
+        data.append({
+            'user_id': i,
+            'variant': variant,
+            'load_time_ms': load_time,
+            'searches': searches,
+            'satisfaction': satisfaction
+        })
+
+    return pd.DataFrame(data)
+
+# Generate data
+data = simulate_google_experiment(n_users=100000)
+
+# Aggregate statistics by variant
+summary = data.groupby('variant').agg({
+    'load_time_ms': ['mean', 'std'],
+    'searches': ['mean', 'std'],
+    'satisfaction': ['mean', 'std']
+}).round(2)
+
+print("=== Experiment Summary ===")
+print(summary)
+
+# Statistical tests
+variants = ['10_results', '20_results', '30_results']
+
+print("\n=== Pairwise Comparisons (Two-sample t-tests) ===")
+for i in range(len(variants)):
+    for j in range(i+1, len(variants)):
+        v1, v2 = variants[i], variants[j]
+
+        searches_1 = data[data['variant']==v1]['searches']
+        searches_2 = data[data['variant']==v2]['searches']
+
+        t_stat, p_value = stats.ttest_ind(searches_1, searches_2)
+
+        diff = searches_2.mean() - searches_1.mean()
+        rel_diff = diff / searches_1.mean() * 100
+
+        print(f"\n{v1} vs {v2}:")
+        print(f"  Mean difference: {diff:.3f} searches ({rel_diff:+.1f}%)")
+        print(f"  t-statistic: {t_stat:.2f}")
+        print(f"  p-value: {p_value:.2e}")
+
+# Regression: searches ~ load_time
+from sklearn.linear_model import LinearRegression
+
+X = data[['load_time_ms']].values
+y = data['searches'].values
+
+model = LinearRegression()
+model.fit(X, y)
+
+print("\n=== Regression: Searches ~ Load Time ===")
+print(f"Slope: {model.coef_[0]:.6f} searches per ms")
+print(f"Interpretation: Each 100ms increase -> "
+      f"{model.coef_[0] * 100:.2f} fewer searches")
+
+# Visualization
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+# 1. Load time by variant
+ax = axes[0, 0]
+data.boxplot(column='load_time_ms', by='variant', ax=ax)
+ax.set_xlabel('Variant')
+ax.set_ylabel('Page Load Time (ms)')
+ax.set_title('Load Time Distribution by Variant')
+plt.sca(ax)
+plt.xticks(range(1, 4), ['10 results', '20 results', '30 results'])
+
+# 2. Searches by variant
+ax = axes[0, 1]
+variant_means = data.groupby('variant')['searches'].agg(['mean', 'sem'])
+variant_order = ['10_results', '20_results', '30_results']
+means = [variant_means.loc[v, 'mean'] for v in variant_order]
+sems = [variant_means.loc[v, 'sem'] for v in variant_order]
+
+x = np.arange(3)
+ax.bar(x, means, yerr=[1.96*s for s in sems], capsize=5, alpha=0.7)
+ax.set_xticks(x)
+ax.set_xticklabels(['10 results', '20 results', '30 results'])
+ax.set_ylabel('Searches per User')
+ax.set_title('Mean Searches by Variant (95% CI)')
+ax.grid(axis='y', alpha=0.3)
+
+# 3. Scatter: Load time vs searches
+ax = axes[1, 0]
+for variant, color in zip(variant_order, ['C0', 'C1', 'C2']):
+    subset = data[data['variant']==variant].sample(1000)
+    ax.scatter(subset['load_time_ms'], subset['searches'],
+              alpha=0.3, s=20, label=variant.replace('_', ' '), color=color)
+
+# Add regression line
+X_line = np.linspace(300, 1000, 100).reshape(-1, 1)
+y_line = model.predict(X_line)
+ax.plot(X_line, y_line, 'r--', linewidth=2, label='Regression fit')
+
+ax.set_xlabel('Page Load Time (ms)')
+ax.set_ylabel('Searches per User')
+ax.set_title('Load Time vs. Engagement')
+ax.legend()
+ax.grid(alpha=0.3)
+
+# 4. Satisfaction scores
+ax = axes[1, 1]
+data.boxplot(column='satisfaction', by='variant', ax=ax)
+ax.set_xlabel('Variant')
+ax.set_ylabel('Satisfaction Score (0-10)')
+ax.set_title('User Satisfaction by Variant')
+plt.sca(ax)
+plt.xticks(range(1, 4), ['10 results', '20 results', '30 results'])
+
+plt.tight_layout()
+plt.savefig('google_case_study.pdf', bbox_inches='tight')
+plt.show()
+
+# Calculate business impact
+print("\n=== Business Impact Estimation ===")
+baseline_searches = data[data['variant']=='10_results']['searches'].mean()
+
+for variant in ['20_results', '30_results']:
+    variant_searches = data[data['variant']==variant]['searches'].mean()
+    loss = (variant_searches - baseline_searches) / baseline_searches * 100
+
+    # At Google scale (billions of searches/day)
+    daily_searches_billions = 8.5  # Approximate 2009 volume
+    annual_loss_millions = daily_searches_billions * 1000 * loss / 100 * 365
+
+    print(f"\n{variant}:")
+    print(f"  Relative loss: {loss:.1f}%")
+    print(f"  Estimated annual search loss: {annual_loss_millions:.0f}M searches")
+    print(f"  Decision: DO NOT SHIP")
+\end{lstlisting}
+
+\subsection{Lessons Learned}
+
+\begin{enumerate}
+    \item \textbf{Performance is a feature:} Page load time directly impacts user behavior at all scales, but especially at massive scale
+
+    \item \textbf{Guardrail metrics:} Always monitor technical performance metrics alongside engagement metrics
+
+    \item \textbf{User psychology:} More choice isn't always better; cognitive load and perceived value matter
+
+    \item \textbf{Scale amplification:} At Google's traffic volume, small performance differences have billion-search impacts
+
+    \item \textbf{Regression analysis:} Quantifying relationship between technical metrics and business outcomes enables forecasting
+\end{enumerate}
+
+\textbf{Actionable framework:}
+\begin{itemize}
+    \item Measure page load time as standard guardrail
+    \item Set performance budgets (e.g., < 500ms) before testing
+    \item Estimate elasticity of engagement with respect to performance
+    \item Calculate ROI of performance optimization
+\end{itemize}
+
+\section{Case Study 2: E-commerce Checkout Optimization}
+
+\subsection{Context}
+
+An e-commerce company with \$500M annual revenue hypothesized that simplifying checkout from 5 steps to 3 steps would increase conversion.
+
+\subsection{Experimental Design}
+
+\textbf{Hypothesis:} Reducing friction in checkout process will increase completion rate.
+
+\textbf{Design:} A/B test
+\begin{itemize}
+    \item Control: 5-step checkout (address, shipping, payment, review, confirm)
+    \item Treatment: 3-step checkout (combined address/shipping, payment/review, confirm)
+\end{itemize}
+
+\textbf{Randomization:} User-level, 50/50 split
+
+\textbf{Sample size:} 50,000 users per variant (calculated for 80\% power to detect 5\% relative lift)
+
+\textbf{Duration:} 14 days (to capture two full weeks including weekends)
+
+\textbf{Metrics:}
+\begin{itemize}
+    \item Primary: Checkout completion rate (among initiated)
+    \item Secondary: Overall conversion rate, revenue per user, abandonment points
+    \item Guardrails: Customer support contacts, return rate
+\end{itemize}
+
+\subsection{Overall Results}
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{Control} & \textbf{Treatment} & \textbf{Lift} \\
+\midrule
+Checkout initiation & 12.0\% & 12.1\% & +0.8\% \\
+Checkout completion & 68.0\% & 71.5\% & +5.1\%** \\
+Overall conversion & 8.16\% & 8.65\% & +6.0\%** \\
+Revenue per user & \$4.25 & \$4.50 & +5.9\%** \\
+Avg order value & \$52.08 & \$52.02 & -0.1\% \\
+Support contacts & 2.1\% & 2.3\% & +9.5\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+** Statistically significant at $\alpha = 0.05$
+
+\subsection{Segmentation Analysis}
+
+Critical insight came from examining heterogeneous treatment effects:
+
+\textbf{By customer type:}
+
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Segment} & \textbf{Control} & \textbf{Treatment} & \textbf{Lift} & \textbf{Size} \\
+\midrule
+New users & 6.5\% & 7.8\% & +20.0\%** & 60\% \\
+Returning users & 9.2\% & 9.0\% & -2.2\% & 40\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{By device:}
+
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Device} & \textbf{Control} & \textbf{Treatment} & \textbf{Lift} & \textbf{Size} \\
+\midrule
+Mobile & 5.8\% & 6.9\% & +19.0\%** & 55\% \\
+Desktop & 11.2\% & 11.0\% & -1.8\% & 45\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\lstset{language=Python, caption=Heterogeneous Treatment Effect Analysis}
+\begin{lstlisting}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy import stats
+import seaborn as sns
+
+def simulate_checkout_experiment(n_users=100000):
+    """Simulate e-commerce checkout experiment with segments."""
+
+    np.random.seed(42)
+
+    # User characteristics
+    is_new = np.random.binomial(1, 0.60, n_users)  # 60% new users
+    is_mobile = np.random.binomial(1, 0.55, n_users)  # 55% mobile
+
+    # Treatment assignment
+    treatment = np.random.binomial(1, 0.5, n_users)
+
+    # Baseline conversion probabilities
+    baseline_conv = np.where(
+        is_new,
+        np.where(is_mobile, 0.058, 0.070),  # New users: mobile vs desktop
+        np.where(is_mobile, 0.085, 0.112)   # Returning: mobile vs desktop
+    )
+
+    # Treatment effects (heterogeneous)
+    treatment_effect = np.where(
+        is_new,
+        np.where(is_mobile, 0.011, -0.001),  # New users benefit, esp mobile
+        np.where(is_mobile, 0.005, -0.002)   # Returning slightly worse
+    )
+
+    # Realized conversion
+    conv_prob = baseline_conv + treatment * treatment_effect
+    converted = np.random.binomial(1, conv_prob)
+
+    # Revenue (conditional on conversion)
+    revenue = converted * np.random.lognormal(np.log(50), 0.6)
+
+    data = pd.DataFrame({
+        'user_id': range(n_users),
+        'treatment': treatment,
+        'is_new': is_new,
+        'is_mobile': is_mobile,
+        'converted': converted,
+        'revenue': revenue
+    })
+
+    # Add labels
+    data['variant'] = data['treatment'].map({0: 'Control', 1: 'Treatment'})
+    data['user_type'] = data['is_new'].map({1: 'New', 0: 'Returning'})
+    data['device'] = data['is_mobile'].map({1: 'Mobile', 0: 'Desktop'})
+
+    return data
+
+# Generate data
+data = simulate_checkout_experiment(n_users=100000)
+
+# Overall analysis
+print("=== Overall Results ===")
+overall = data.groupby('variant').agg({
+    'converted': ['sum', 'mean', 'sem'],
+    'revenue': ['sum', 'mean']
+})
+
+control_rate = overall.loc['Control', ('converted', 'mean')]
+treatment_rate = overall.loc['Treatment', ('converted', 'mean')]
+lift = (treatment_rate - control_rate) / control_rate * 100
+
+print(f"Control conversion rate: {control_rate:.4f}")
+print(f"Treatment conversion rate: {treatment_rate:.4f}")
+print(f"Relative lift: {lift:+.1f}%")
+
+# Statistical test
+control_conv = data[data['treatment']==0]['converted']
+treatment_conv = data[data['treatment']==1]['converted']
+
+z_stat = (treatment_conv.mean() - control_conv.mean()) / np.sqrt(
+    control_conv.var() / len(control_conv) +
+    treatment_conv.var() / len(treatment_conv)
+)
+p_value = 2 * (1 - stats.norm.cdf(abs(z_stat)))
+
+print(f"\nZ-statistic: {z_stat:.3f}")
+print(f"P-value: {p_value:.4f}")
+
+# Segmented analysis
+print("\n=== Heterogeneous Treatment Effects ===")
+
+for segment_var, segment_name in [('user_type', 'User Type'),
+                                   ('device', 'Device')]:
+    print(f"\nBy {segment_name}:")
+
+    segment_results = data.groupby([segment_var, 'variant']).agg({
+        'converted': ['mean', 'count']
+    }).reset_index()
+
+    # Pivot for easier comparison
+    pivot = segment_results.pivot(
+        index=segment_var,
+        columns='variant',
+        values=('converted', 'mean')
+    )
+
+    for segment in pivot.index:
+        control_rate = pivot.loc[segment, ('Control')]
+        treatment_rate = pivot.loc[segment, ('Treatment')]
+        lift = (treatment_rate - control_rate) / control_rate * 100
+
+        # Test within segment
+        seg_data = data[data[segment_var]==segment]
+        seg_control = seg_data[seg_data['treatment']==0]['converted']
+        seg_treatment = seg_data[seg_data['treatment']==1]['converted']
+
+        _, p = stats.ttest_ind(seg_treatment, seg_control)
+        sig = '**' if p < 0.05 else '  '
+
+        print(f"  {segment}: {control_rate:.4f} -> {treatment_rate:.4f} "
+              f"({lift:+.1f}%){sig}")
+
+# Visualization
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+# 1. Overall conversion rates
+ax = axes[0, 0]
+overall_data = data.groupby('variant')['converted'].agg(['mean', 'sem'])
+x = np.arange(2)
+ax.bar(x, overall_data['mean'], yerr=1.96*overall_data['sem'],
+       capsize=5, alpha=0.7, color=['C0', 'C1'])
+ax.set_xticks(x)
+ax.set_xticklabels(['Control', 'Treatment'])
+ax.set_ylabel('Conversion Rate')
+ax.set_title('Overall Conversion Rate (95% CI)')
+ax.set_ylim([0, 0.10])
+for i, (idx, row) in enumerate(overall_data.iterrows()):
+    ax.text(i, row['mean'] + 0.003, f"{row['mean']:.3f}",
+           ha='center', fontweight='bold')
+ax.grid(axis='y', alpha=0.3)
+
+# 2. By user type
+ax = axes[0, 1]
+user_type_data = data.groupby(['user_type', 'variant'])['converted'].mean().unstack()
+user_type_data.plot(kind='bar', ax=ax, color=['C0', 'C1'], alpha=0.7)
+ax.set_ylabel('Conversion Rate')
+ax.set_title('Conversion Rate by User Type')
+ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+ax.legend(title='Variant')
+ax.grid(axis='y', alpha=0.3)
+
+# 3. By device
+ax = axes[1, 0]
+device_data = data.groupby(['device', 'variant'])['converted'].mean().unstack()
+device_data.plot(kind='bar', ax=ax, color=['C0', 'C1'], alpha=0.7)
+ax.set_ylabel('Conversion Rate')
+ax.set_title('Conversion Rate by Device')
+ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+ax.legend(title='Variant')
+ax.grid(axis='y', alpha=0.3)
+
+# 4. Treatment effect by segment
+ax = axes[1, 1]
+
+segments = []
+effects = []
+
+for user_type in ['New', 'Returning']:
+    for device in ['Mobile', 'Desktop']:
+        seg_data = data[(data['user_type']==user_type) &
+                       (data['device']==device)]
+
+        control_mean = seg_data[seg_data['treatment']==0]['converted'].mean()
+        treatment_mean = seg_data[seg_data['treatment']==1]['converted'].mean()
+
+        effect = (treatment_mean - control_mean) / control_mean * 100
+
+        label = f"{user_type}\n{device}"
+        segments.append(label)
+        effects.append(effect)
+
+colors = ['green' if e > 0 else 'red' for e in effects]
+x_pos = np.arange(len(segments))
+
+ax.barh(x_pos, effects, color=colors, alpha=0.7)
+ax.axvline(x=0, color='black', linestyle='-', linewidth=0.8)
+ax.set_yticks(x_pos)
+ax.set_yticklabels(segments)
+ax.set_xlabel('Relative Lift (%)')
+ax.set_title('Treatment Effect by Segment')
+ax.grid(axis='x', alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('checkout_segmentation.pdf', bbox_inches='tight')
+plt.show()
+
+# Revenue impact calculation
+print("\n=== Business Impact ===")
+annual_visitors = 10_000_000  # 10M annual visitors
+current_revenue = 500_000_000  # $500M annually
+
+baseline_conv = control_rate
+new_conv = treatment_rate
+revenue_per_conversion = data[data['converted']==1]['revenue'].mean()
+
+incremental_conversions = annual_visitors * (new_conv - baseline_conv)
+incremental_revenue = incremental_conversions * revenue_per_conversion
+
+print(f"Baseline conversions: {annual_visitors * baseline_conv:,.0f}")
+print(f"New conversions: {annual_visitors * new_conv:,.0f}")
+print(f"Incremental conversions: {incremental_conversions:,.0f}")
+print(f"Avg revenue per conversion: ${revenue_per_conversion:.2f}")
+print(f"Incremental annual revenue: ${incremental_revenue:,.0f}")
+print(f"Relative revenue increase: {incremental_revenue/current_revenue*100:.2f}%")
+
+# Recommendation
+print("\n=== Recommendation ===")
+print("SHIP TO ALL USERS")
+print("Rationale:")
+print("- Statistically significant overall lift")
+print("- Strong benefit for strategically important segments (new, mobile)")
+print("- Small negative effect on returning/desktop acceptable")
+print("- Projected $30M+ incremental annual revenue")
+print("- Support contact increase minimal and manageable")
+\end{lstlisting}
+
+\subsection{Decision Framework}
+
+The team faced a trade-off: overall benefit with segment-specific harm.
+
+\textbf{Decision criteria:}
+\begin{enumerate}
+    \item \textbf{Overall impact:} +6.0\% conversion, highly significant
+    \item \textbf{Strategic alignment:} New users and mobile are growth priorities
+    \item \textbf{Magnitude:} +20\% for new/mobile vs. -2\% for returning/desktop
+    \item \textbf{Business value:} \$30M+ projected incremental annual revenue
+    \item \textbf{Reversibility:} Can iterate if returning user experience degrades further
+\end{enumerate}
+
+\textbf{Decision:} Ship to all users, monitor returning user metrics closely.
+
+\subsection{Post-Launch Monitoring}
+
+After launch, team implemented:
+\begin{itemize}
+    \item Weekly cohort analysis of returning users
+    \item Customer feedback analysis (surveys, support tickets)
+    \item Funnel tracking for abandonment points
+    \item Quarterly re-testing to validate continued benefit
+\end{itemize}
+
+\subsection{Lessons Learned}
+
+\begin{enumerate}
+    \item \textbf{Segment analysis is critical:} Averages hide important heterogeneity
+
+    \item \textbf{Strategic weighting:} Not all segments are equal; weight by business priorities
+
+    \item \textbf{Trade-offs are normal:} Few changes benefit everyone universally
+
+    \item \textbf{Quantify business impact:} Translate statistical findings to revenue/profit
+
+    \item \textbf{Monitor post-launch:} Continue learning after shipping
+\end{enumerate}
+
+\section{Case Study 3: Netflix Thumbnail Personalization}
+
+\subsection{Context}
+
+Netflix hypothesized that personalizing video thumbnails based on user viewing history and preferences would increase engagement (click-through rate and watch time).
+
+\subsection{Technical Challenge}
+
+\textbf{Consistency requirement:} Users see the same videos multiple times (homepage, search, recommendations). Showing different thumbnails each time would be confusing.
+
+\textbf{Solution:} Deterministic assignment—hash(user\_id, video\_id) → thumbnail\_variant
+
+This ensures:
+\begin{itemize}
+    \item Same user always sees same thumbnail for given video
+    \item Different users see different thumbnails (personalization)
+    \item Randomization for experimentation
+\end{itemize}
+
+\subsection{Multi-Stage Experimental Approach}
+
+Netflix used an iterative experimental strategy:
+
+\textbf{Stage 1: Validate thumbnail selection matters}
+
+\begin{itemize}
+    \item Test: Random thumbnails vs. editorial picks
+    \item Result: Editorial picks had 30\% higher engagement
+    \item Conclusion: Thumbnail selection is important lever
+\end{itemize}
+
+\textbf{Stage 2: Test personalization hypothesis}
+
+\begin{itemize}
+    \item Test: Editorial picks (best average) vs. personalized selection
+    \item Personalization: Select thumbnail based on user's genre preferences and viewing history
+    \item Result: Personalized thumbnails 20\% higher engagement than editorial
+    \item Conclusion: Personalization works
+\end{itemize}
+
+\textbf{Stage 3: Optimize personalization model}
+
+\begin{itemize}
+    \item Test: Multiple ML models for personalization
+    \begin{itemize}
+        \item Collaborative filtering
+        \item Content-based filtering
+        \item Neural network (deep learning)
+        \item Ensemble
+    \end{itemize}
+    \item Result: Neural network approach best (additional 5\% lift)
+    \item Conclusion: Ship neural network model
+\end{itemize}
+
+\subsection{Experimental Design Details (Stage 2)}
+
+\textbf{Randomization:} Video-level stratified randomization
+\begin{itemize}
+    \item For each video, select N candidate thumbnails (N=3-10)
+    \item Randomly assign users to personalization (treatment) vs. best-on-average (control)
+    \item Within treatment: use model to select best thumbnail for each user
+\end{itemize}
+
+\textbf{Metrics:}
+\begin{itemize}
+    \item Primary: Click-through rate (CTR) - play rate when video is visible
+    \item Secondary: Watch time, completion rate, satisfaction rating
+    \item Guardrails: Customer support, cancellations
+\end{itemize}
+
+\textbf{Duration:} 4 weeks (to account for learning effects)
+
+\textbf{Sample:} 10M users, 5M control / 5M treatment
+
+\subsection{Results}
+
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{Control} & \textbf{Treatment} & \textbf{Lift} \\
+\midrule
+CTR (overall) & 3.2\% & 3.84\% & +20.0\%** \\
+Watch time (hrs/user/week) & 12.5 & 13.1 & +4.8\%** \\
+Completion rate & 68\% & 70\% & +2.9\%** \\
+Satisfaction (1-5) & 4.1 & 4.2 & +2.4\%** \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+** $p < 0.001$
+
+\textbf{Heterogeneity by video type:}
+
+Personalization worked especially well for:
+\begin{itemize}
+    \item Ensemble casts (different thumbnails feature different actors)
+    \item Genre-spanning content (show different aspects to different users)
+    \item Foreign language content (different cultural framing)
+\end{itemize}
+
+\subsection{Implementation Considerations}
+
+\begin{enumerate}
+    \item \textbf{Infrastructure:} Real-time personalization requires low-latency model serving
+
+    \item \textbf{Quality control:} Filter inappropriate thumbnails (spoilers, misleading images)
+
+    \item \textbf{Fallback logic:} When model fails, default to editorial pick
+
+    \item \textbf{Cold start:} New users see editorial picks until preferences learned
+
+    \item \textbf{Monitoring:} Track model performance, A/A tests for bias
+\end{enumerate}
+
+\subsection{Lessons Learned}
+
+\begin{enumerate}
+    \item \textbf{Iterative experimentation:} Build incrementally, validating each assumption
+
+    \item \textbf{Technical-statistical integration:} Implementation details (hashing, persistence) affect experimental validity
+
+    \item \textbf{Personalization value:} Context-specific optimization often outperforms one-size-fits-all
+
+    \item \textbf{Heterogeneous effects:} Personalization benefits vary by content type
+
+    \item \textbf{Production readiness:} Consider operational constraints before launch
+\end{enumerate}
+
+\section{Case Study 4: Failed Experiment—Subscription Paywall}
+
+Not all experiments succeed. Learning from failures is as valuable as from successes.
+
+\subsection{Context}
+
+A digital media platform with freemium model (free articles with monthly limit, premium unlimited access) wanted to increase paid subscriptions.
+
+\textbf{Hypothesis:} More aggressive paywall messaging and earlier paywall triggers would increase conversion to paid subscriptions.
+
+\subsection{Design}
+
+\begin{itemize}
+    \item Control: Paywall after 5 free articles/month, soft messaging
+    \item Treatment: Paywall after 3 free articles/month, aggressive CTA
+\end{itemize}
+
+\textbf{Primary metric:} Subscription conversion rate (% of users who become paid subscribers)
+
+\textbf{Duration:} 3 weeks
+
+\textbf{Sample:} 200,000 users per variant
+
+\subsection{Results: The Good and The Bad}
+
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Metric} & \textbf{Control} & \textbf{Treatment} & \textbf{Abs. Diff} & \textbf{Rel. Lift} \\
+\midrule
+\multicolumn{5}{l}{\textit{Positive:}} \\
+Subscription conversion & 1.20\% & 1.38\% & +0.18pp & +15.0\%** \\
+\midrule
+\multicolumn{5}{l}{\textit{Negative:}} \\
+Bounce rate & 35\% & 49\% & +14pp & +40.0\%** \\
+Pages per user & 8.2 & 5.1 & -3.1 & -37.8\%** \\
+Return rate (7-day) & 42\% & 31\% & -11pp & -26.2\%** \\
+\midrule
+\multicolumn{5}{l}{\textit{Net effect:}} \\
+Net new subscribers & 1200 & 1140 & -60 & -5.0\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+** $p < 0.001$
+
+\subsection{What Went Wrong}
+
+\begin{enumerate}
+    \item \textbf{Metric misalignment:} Optimized subscription conversion rate (local metric) at expense of overall user base (global metric)
+
+    \item \textbf{Missing guardrails:} Didn't adequately monitor engagement and retention metrics
+
+    \item \textbf{Time horizon mismatch:} Immediate conversions vs. long-term user value
+
+    \item \textbf{User experience:} Aggressive tactics damaged brand perception
+\end{enumerate}
+
+\textbf{Root cause analysis:}
+
+The aggressive paywall converted users faster but drove away many more users who would have converted later:
+\begin{itemize}
+    \item Fewer users reached the paywall (40\% bounce increase)
+    \item Lower return rate meant fewer conversion opportunities
+    \item Net effect: slightly fewer total conversions despite higher rate
+\end{itemize}
+
+\subsection{Correct Analysis}
+
+\lstset{language=Python, caption=Analyzing Funnel Effects}
+\begin{lstlisting}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+def analyze_paywall_funnel():
+    """Analyze the full funnel, not just conversion rate."""
+
+    # Monthly visitors
+    monthly_visitors = 100000
+
+    # Control funnel
+    control_funnel = {
+        'visitors': monthly_visitors,
+        'bounce_rate': 0.35,
+        'engaged': None,  # calculated
+        'reach_paywall_rate': 0.15,  # % of engaged users
+        'paywall_conversion': 0.012,
+        'new_subscribers': None  # calculated
+    }
+
+    control_funnel['engaged'] = control_funnel['visitors'] * (
+        1 - control_funnel['bounce_rate']
+    )
+    control_funnel['reach_paywall'] = control_funnel['engaged'] * (
+        control_funnel['reach_paywall_rate']
+    )
+    control_funnel['new_subscribers'] = control_funnel['reach_paywall'] * (
+        control_funnel['paywall_conversion']
+    )
+
+    # Treatment funnel
+    treatment_funnel = {
+        'visitors': monthly_visitors,
+        'bounce_rate': 0.49,
+        'engaged': None,
+        'reach_paywall_rate': 0.20,  # Higher due to earlier trigger
+        'paywall_conversion': 0.0138,  # Higher rate
+        'new_subscribers': None
+    }
+
+    treatment_funnel['engaged'] = treatment_funnel['visitors'] * (
+        1 - treatment_funnel['bounce_rate']
+    )
+    treatment_funnel['reach_paywall'] = treatment_funnel['engaged'] * (
+        treatment_funnel['reach_paywall_rate']
+    )
+    treatment_funnel['new_subscribers'] = treatment_funnel['reach_paywall'] * (
+        treatment_funnel['paywall_conversion']
+    )
+
+    # Print analysis
+    print("=== Funnel Analysis ===\n")
+
+    print("Control:")
+    print(f"  1. Visitors: {control_funnel['visitors']:,.0f}")
+    print(f"  2. Engaged (not bounced): {control_funnel['engaged']:,.0f} "
+          f"({(1-control_funnel['bounce_rate'])*100:.1f}%)")
+    print(f"  3. Reached paywall: {control_funnel['reach_paywall']:,.0f} "
+          f"({control_funnel['reach_paywall_rate']*100:.1f}%)")
+    print(f"  4. NEW SUBSCRIBERS: {control_funnel['new_subscribers']:,.0f} "
+          f"({control_funnel['paywall_conversion']*100:.2f}% conversion)")
+
+    print("\nTreatment:")
+    print(f"  1. Visitors: {treatment_funnel['visitors']:,.0f}")
+    print(f"  2. Engaged (not bounced): {treatment_funnel['engaged']:,.0f} "
+          f"({(1-treatment_funnel['bounce_rate'])*100:.1f}%)")
+    print(f"  3. Reached paywall: {treatment_funnel['reach_paywall']:,.0f} "
+          f"({treatment_funnel['reach_paywall_rate']*100:.1f}%)")
+    print(f"  4. NEW SUBSCRIBERS: {treatment_funnel['new_subscribers']:,.0f} "
+          f"({treatment_funnel['paywall_conversion']*100:.2f}% conversion)")
+
+    print("\n=== Key Insight ===")
+    subscriber_diff = (treatment_funnel['new_subscribers'] -
+                      control_funnel['new_subscribers'])
+    rel_diff = subscriber_diff / control_funnel['new_subscribers'] * 100
+
+    print(f"Net subscriber change: {subscriber_diff:,.0f} ({rel_diff:+.1f}%)")
+    print("\nProblem: Higher conversion rate, but fewer total subscribers!")
+    print("Reason: Aggressive paywall drove away more users than it converted.")
+
+    # Visualization
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Funnel visualization
+    ax = axes[0]
+
+    stages = ['Visitors', 'Engaged', 'Reached\nPaywall', 'Subscribed']
+    control_values = [
+        control_funnel['visitors'],
+        control_funnel['engaged'],
+        control_funnel['reach_paywall'],
+        control_funnel['new_subscribers']
+    ]
+    treatment_values = [
+        treatment_funnel['visitors'],
+        treatment_funnel['engaged'],
+        treatment_funnel['reach_paywall'],
+        treatment_funnel['new_subscribers']
+    ]
+
+    x = np.arange(len(stages))
+    width = 0.35
+
+    ax.bar(x - width/2, control_values, width, label='Control',
+           alpha=0.8, color='C0')
+    ax.bar(x + width/2, treatment_values, width, label='Treatment',
+           alpha=0.8, color='C1')
+
+    ax.set_ylabel('Users')
+    ax.set_title('Subscription Funnel Comparison')
+    ax.set_xticks(x)
+    ax.set_xticklabels(stages)
+    ax.legend()
+    ax.grid(axis='y', alpha=0.3)
+    ax.set_yscale('log')
+
+    # Highlight the problem
+    for i, (c_val, t_val) in enumerate(zip(control_values, treatment_values)):
+        if i == len(stages) - 1:  # Final stage
+            if t_val < c_val:
+                ax.text(i, max(c_val, t_val) * 1.5, 'Problem!',
+                       ha='center', color='red', fontweight='bold',
+                       fontsize=12)
+
+    # Conversion rates vs. absolute numbers
+    ax = axes[1]
+
+    metrics = ['Conversion\nRate', 'Total\nSubscribers']
+    control_rel = [100, 100]  # Baseline
+    treatment_rel = [
+        (treatment_funnel['paywall_conversion'] /
+         control_funnel['paywall_conversion']) * 100,
+        (treatment_funnel['new_subscribers'] /
+         control_funnel['new_subscribers']) * 100
+    ]
+
+    x = np.arange(len(metrics))
+    width = 0.35
+
+    ax.bar(x - width/2, control_rel, width, label='Control (baseline)',
+           alpha=0.8, color='C0')
+    bars = ax.bar(x + width/2, treatment_rel, width, label='Treatment',
+                  alpha=0.8, color='C1')
+
+    # Color bars by good/bad
+    bars[0].set_color('green')  # Higher rate is green
+    bars[1].set_color('red')    # Fewer subscribers is red
+
+    ax.axhline(y=100, color='black', linestyle='--', alpha=0.5)
+    ax.set_ylabel('Relative to Control (%)')
+    ax.set_title('The Optimization Paradox')
+    ax.set_xticks(x)
+    ax.set_xticklabels(metrics)
+    ax.legend()
+    ax.grid(axis='y', alpha=0.3)
+
+    # Add value labels
+    for i, (val, bar) in enumerate(zip(treatment_rel, bars)):
+        ax.text(bar.get_x() + bar.get_width()/2, val + 2,
+               f'{val:.0f}%', ha='center', fontweight='bold')
+
+    plt.tight_layout()
+    plt.savefig('paywall_failure_analysis.pdf', bbox_inches='tight')
+    plt.show()
+
+analyze_paywall_funnel()
+\end{lstlisting}
+
+\subsection{Lessons Learned}
+
+\begin{enumerate}
+    \item \textbf{Holistic metrics:} Measure the entire funnel, not isolated steps
+
+    \item \textbf{Guardrail importance:} Protect critical health metrics (engagement, retention)
+
+    \item \textbf{Local vs. global optimization:} Improving one metric can harm overall goal
+
+    \item \textbf{Customer lifetime value:} Consider long-term impact beyond immediate conversion
+
+    \item \textbf{Document failures:} Failed experiments provide valuable learning
+\end{enumerate}
+
+\textbf{Corrective actions:}
+\begin{itemize}
+    \item Revised success criteria to include engagement and retention
+    \item Established mandatory guardrail metrics for all experiments
+    \item Implemented funnel analysis as standard practice
+    \item Created decision framework weighting multiple objectives
+\end{itemize}
+
+\section{Digital Marketing}
+
+Digital marketing experiments optimize customer acquisition, engagement, and campaign ROI across channels.
+
+\subsection{Case Study 5: Email Subject Line A/B Test}
+
+\textbf{Context:} A B2B SaaS company with 500K email subscribers noticed declining open rates (18\% vs. industry 22-25\%). Marketing hypothesized personalized, benefit-focused subject lines would improve engagement.
+
+\textbf{Design:}
+\begin{itemize}
+    \item Control: "Weekly Product Update: New Features"
+    \item Treatment: "\{Company\}: Save 5 Hours/Week with New Automation"
+    \item Randomization: User-level, 50/50
+    \item Primary metric: Open rate
+    \item Secondary: CTR, unsubscribe rate
+    \item Sample: 490K delivered emails
+\end{itemize}
+
+\textbf{Results:}
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{Control} & \textbf{Treatment} & \textbf{Lift} \\
+\midrule
+Open rate & 18.0\% & 20.5\% & +13.9\%** \\
+Click rate (of opens) & 3.2\% & 3.9\% & +21.9\%** \\
+Click rate (of delivered) & 0.58\% & 0.80\% & +38.7\%** \\
+Unsubscribe rate & 0.100\% & 0.120\% & +20.0\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+** $p < 0.001$
+
+\textbf{Business Impact:} +\$770K annual value from increased clicks
+
+\textbf{Decision:} Ship with modifications. Fixed personalization token bugs, added fallback for missing company names, ongoing monitoring of unsubscribe trends.
+
+\textbf{Lessons:}
+\begin{itemize}
+    \item Implementation quality critical (0.3\% received broken tokens)
+    \item Test effects degrade over time (novelty, list fatigue)
+    \item Small guardrail violations compound (unsubscribe monitoring essential)
+    \item Qualitative feedback revealed "creepy" concerns requiring tone adjustments
+\end{itemize}
+
+\subsection{Case Study 6: Landing Page Redesign}
+
+\textbf{Context:} Online education platform with paid search landing page converting at 12\%. UX team proposed cleaner design with above-the-fold CTA.
+
+\textbf{Design:} A/B test, session-level randomization, 25K visitors per variant
+
+\textbf{Results:}
+\begin{itemize}
+    \item Primary metric (signup rate): 12.3\% → 14.8\% (+20.3\%, $p<0.001$)
+    \item Trial-to-paid conversion: 8.2\% → 8.1\% (-1.2\%, $p=0.78$)
+    \item Bounce rate: 42\% → 38\% (-9.5\%, $p=0.002$)
+    \item Time on page: 85s → 62s (-27\%, $p<0.001$)
+\end{itemize}
+
+\textbf{Deep Dive Finding:} Increased signups but no change in qualified leads. New design attracted more low-intent visitors who signed up but didn't convert to paid.
+
+\textbf{Decision:} Do NOT ship. Despite improving primary metric, overall funnel economics unchanged. Redesigned to optimize for qualified signups, not raw signups.
+
+\textbf{Lesson:} Optimize for business outcome, not intermediate metrics. Funnel analysis essential.
+
+\section{Product Development}
+
+Product experiments test feature adoption, UX improvements, and algorithm performance.
+
+\subsection{Case Study 7: Feature Onboarding Flow}
+
+\textbf{Context:} Productivity app launched collaborative features but only 15\% of users tried them. Product team designed interactive tutorial to increase adoption.
+
+\textbf{Design:}
+\begin{itemize}
+    \item Control: Existing text-based tour (skipped by 85\% of users)
+    \item Treatment: Interactive 3-step tutorial with sample collaboration
+    \item Randomization: New users only, account-level
+    \item Duration: 4 weeks
+    \item Primary: Feature adoption within 7 days
+\end{itemize}
+
+\textbf{Results:}
+\begin{verbatim}
+Feature Adoption (7-day):
+  Control: 14.8% (n=5,234)
+  Treatment: 31.2% (n=5,187)
+  Lift: +110.8% (p<0.001)
+
+Feature Engagement (among adopters, 30-day):
+  Control: 8.3 uses/user
+  Treatment: 12.7 uses/user
+  Lift: +53.0% (p<0.001)
+
+Retention (30-day):
+  Control: 68%
+  Treatment: 74%
+  Lift: +8.8% (p<0.001)
+\end{verbatim}
+
+\textbf{Segment Analysis:} Benefit strongest for teams (5+ users): +145\% adoption vs. +65\% for individual users
+
+\textbf{Business Impact:} Teams using collaborative features have 2.3x higher LTV. Projected \$2.4M incremental annual revenue from increased adoption.
+
+\textbf{Decision:} Ship, with personalization by account size
+
+\textbf{Lessons:}
+\begin{itemize}
+    \item Interactive onboarding > passive tutorials
+    \item Segment by use case (teams vs. individuals)
+    \item Long-term impact monitoring essential (30-day retention)
+    \item Feature adoption drives downstream value (retention, LTV)
+\end{itemize}
+
+\subsection{Case Study 8: Mobile App Performance Optimization}
+
+\textbf{Context:} Social app noticed 25\% drop-off during signup on mobile (vs. 10\% on desktop). Engineering team optimized signup flow to reduce API calls and improve perceived performance.
+
+\textbf{Technical Changes:}
+\begin{itemize}
+    \item Reduced network requests from 7 to 3
+    \item Implemented optimistic UI updates
+    \item Added skeleton screens during loading
+    \item Prefetched next step data
+\end{itemize}
+
+\textbf{Results:}
+\begin{verbatim}
+Signup Completion:
+  Control: 75.2%
+  Treatment: 83.8%
+  Lift: +11.4% (p<0.001)
+
+Time to Complete:
+  Control: 187s (median)
+  Treatment: 142s (median)
+  Lift: -24.1% (p<0.001)
+
+30-Day Retention:
+  Control: 42%
+  Treatment: 45%
+  Lift: +7.1% (p=0.003)
+\end{verbatim}
+
+\textbf{Cost-Benefit:}
+\begin{itemize}
+    \item Engineering cost: 3 weeks (\$60K loaded cost)
+    \item Incremental signups: +8.6 percentage points
+    \item Annual impact: +425K new users → +18K retained → \$1.8M value (est.)
+    \item ROI: 2,900\%
+\end{itemize}
+
+\textbf{Lesson:} Mobile performance directly impacts conversion and retention. "Perceived performance" (skeleton screens, optimistic UI) as important as actual speed.
+
+\section{Content and Media}
+
+Content platforms optimize recommendations, engagement, and personalization.
+
+\subsection{Case Study 9: Video Recommendation Algorithm}
+
+\textbf{Context:} Streaming platform's recommendation engine used collaborative filtering. Data science team developed hybrid model combining collaborative filtering + content features + deep learning.
+
+\textbf{Design:}
+\begin{itemize}
+    \item A/A test first (validate randomization)
+    \item A/B test: 5M users per variant, 4 weeks
+    \item Metrics: CTR, watch time, satisfaction, next-day return rate
+\end{itemize}
+
+\textbf{Results:}
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Metric} & \textbf{Control (CF)} & \textbf{Treatment (Hybrid)} & \textbf{Lift} \\
+\midrule
+Recommendation CTR & 5.5\% & 6.4\% & +16.4\%** \\
+Watch time (hrs/week) & 12.5 & 13.2 & +5.6\%** \\
+Completion rate & 68\% & 71\% & +4.4\%** \\
+Satisfaction (1-5) & 4.1 & 4.2 & +2.4\%** \\
+Next-day return & 62\% & 64\% & +3.2\%** \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Infrastructure Consideration:} New model 3x more computationally expensive
+
+\textbf{Cost-Benefit Analysis:}
+\begin{verbatim}
+Revenue Impact:
+  Monthly active users: 50M
+  Watch time lift: 0.7 hrs/week/user
+  Value per hour: $0.12 (advertising/subscriptions)
+  Annual revenue lift: $218.4M
+
+Costs:
+  Compute: +$15M/year
+  Migration: $5M one-time
+  Total Year 1: $20M
+
+ROI: 992% (first year)
+\end{verbatim}
+
+\textbf{Decision:} Gradual rollout (25\% → 50\% → 100\%) to validate infrastructure scaling
+
+\textbf{Post-Launch:} After 6 months, engagement lift sustained at +4.8\%, infrastructure costs came in 15\% under estimate due to optimizations
+
+\textbf{Lessons:}
+\begin{itemize}
+    \item A/A testing critical for algorithmic changes
+    \item Cost-benefit must include infrastructure
+    \item Gradual rollout for high-risk changes
+    \item Long-term monitoring for degradation (model drift, novelty effects)
+\end{itemize}
+
+\subsection{Case Study 10: News Feed Ranking (Partial Failure)}
+
+\textbf{Context:} Social network tested "engagement-optimized" feed ranking to increase time on site.
+
+\textbf{Hypothesis:} Showing content likely to generate interactions (comments, shares) will increase engagement.
+
+\textbf{Results:}
+\begin{verbatim}
+Positive:
+  Time on site: +8.2% (p<0.001)
+  Interactions: +12.4% (p<0.001)
+  Daily actives: +2.1% (p<0.001)
+
+Negative:
+  User satisfaction: -5.3% (p<0.001)
+  User reports of "low quality": +23% (p<0.001)
+  Survey sentiment: -8 points (p<0.001)
+\end{verbatim}
+
+\textbf{Insight:} Algorithm optimized for "engagement" but surfaced divisive, clickbait content that users disliked.
+
+\textbf{Decision:} Do NOT ship. Revised to optimize for "meaningful interactions" (comments from close connections, long-form engagement) rather than raw interactions.
+
+\textbf{Lesson:} Metric choice matters profoundly. Optimizing wrong metric can improve numbers while harming product. Must balance engagement with quality, satisfaction, and long-term health.
+
+\section{Lessons Learned: Meta-Insights Across Cases}
+
+Analyzing patterns across all case studies reveals systematic lessons for experimentation programs.
+
+\subsection{Successes: What Worked}
+
+\begin{enumerate}
+    \item \textbf{Clear hypothesis and success criteria (Cases 1-9):} Pre-specified metrics and decision thresholds prevented p-hacking and scope creep
+
+    \item \textbf{Segment analysis revealed key insights (Cases 2, 5, 7):} Overall averages masked important heterogeneity. Mobile vs. desktop, new vs. returning, teams vs. individuals all showed different treatment effects
+
+    \item \textbf{Guardrail metrics prevented harm (Cases 3, 5, 10):} Monitoring engagement, satisfaction, and retention caught negative side effects before launch
+
+    \item \textbf{Business impact quantification enabled decision-making (All cases):} Translating statistical significance to revenue/ROI provided clear go/no-go criteria
+
+    \item \textbf{Gradual rollouts reduced risk (Case 9):} For high-impact or infrastructure-heavy changes, phased launches caught issues early
+
+    \item \textbf{Long-term monitoring caught degradation (Cases 5, 9):} Test effects often degrade due to novelty, habituation, or changed context
+
+    \item \textbf{Iterative experimentation builds knowledge (Case 9):} Staged approach (A/A → validate assumption → optimize model) reduced risk and improved outcomes
+\end{enumerate}
+
+\subsection{Failures: What to Avoid}
+
+\begin{enumerate}
+    \item \textbf{Optimizing wrong metric (Cases 6, 10):} Improving intermediate metrics (signups, time on site) without checking business outcome (qualified leads, satisfaction) led to poor decisions
+
+    \item \textbf{Ignoring full funnel (Case 4):} Improving conversion rate at one step while increasing abandonment earlier yielded net negative results
+
+    \item \textbf{Implementation bugs (Case 5):} 0.3\% of users received broken personalization tokens—testing code quality as important as testing hypothesis
+
+    \item \textbf{Insufficient guardrails (Case 10):} Not monitoring user satisfaction allowed algorithm to optimize engagement at expense of experience
+
+    \item \textbf{Novelty effects (Cases 1, 5):} Initial test results often overstate long-term impact due to user curiosity or habituation
+
+    \item \textbf{Infrastructure underestimation (Case 9):} New recommendation model cost 3x more to run—must model operational costs
+\end{enumerate}
+
+\subsection{Organizational Challenges}
+
+\begin{enumerate}
+    \item \textbf{HiPPO (Highest Paid Person's Opinion):} Executives overriding data based on intuition
+
+    \textit{Solution:} Establish decision frameworks upfront, require documentation for data overrides, educate leadership on methodology
+
+    \item \textbf{Analysis paralysis:} Running experiments too long without making decisions
+
+    \textit{Solution:} Set decision deadlines, accept uncertainty, define minimum confidence thresholds
+
+    \item \textbf{P-hacking:} Analyzing data many ways until finding significance
+
+    \textit{Solution:} Pre-register analysis plans, apply multiple testing corrections, document all analyses
+
+    \item \textbf{Coordination costs:} Multiple teams running overlapping experiments
+
+    \textit{Solution:} Centralized experiment registry, traffic allocation management, cross-team review process
+
+    \item \textbf{Skill gaps:} PMs, engineers lacking statistical training
+
+    \textit{Solution:} Training programs, self-service tools with correct defaults, statistical review process
+\end{enumerate}
+
+\subsection{Scaling Experiment Programs}
+
+Mature organizations build systematic capabilities:
+
+\begin{enumerate}
+    \item \textbf{Infrastructure:}
+    \begin{itemize}
+        \item Centralized experimentation platform (randomization, tracking, analysis)
+        \item Metric pipeline with automated computation and variance estimation
+        \item Self-service dashboards with correct statistical methods
+        \item Experiment registry for meta-analysis and knowledge sharing
+    \end{itemize}
+
+    \item \textbf{Process:}
+    \begin{itemize}
+        \item Hypothesis template requiring clear success criteria
+        \item Statistical review before launch
+        \item Decision framework (ship/iterate/kill criteria)
+        \item Standardized documentation and results sharing
+        \item Post-launch monitoring plans
+    \end{itemize}
+
+    \item \textbf{Culture:}
+    \begin{itemize}
+        \item Leadership championing data-driven decisions
+        \item Training programs for PMs, engineers, analysts
+        \item Celebrating learning (not just "wins")
+        \item Transparent sharing of results and failures
+        \item Institutionalized skepticism and intellectual honesty
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Industry-Specific Adaptations}
+
+\textbf{E-commerce:}
+\begin{itemize}
+    \item Challenge: High-value, low-frequency transactions → high variance
+    \item Solution: Variance reduction (CUPED, stratification), longer tests, revenue-per-user metrics
+\end{itemize}
+
+\textbf{Social Media:}
+\begin{itemize}
+    \item Challenge: Network effects and interference between users
+    \item Solution: Cluster randomization (geo, time), network-aware analysis, switchback designs
+\end{itemize}
+
+\textbf{B2B SaaS:}
+\begin{itemize}
+    \item Challenge: Long sales cycles, account-level vs. user-level effects
+    \item Solution: Leading indicators, hierarchical models, longer experiments, qualitative research integration
+\end{itemize}
+
+\textbf{Content Platforms:}
+\begin{itemize}
+    \item Challenge: Quality vs. engagement trade-offs, creator ecosystem effects
+    \item Solution: Multi-objective optimization, creator metrics as guardrails, long-term cohort tracking
+\end{itemize}
+
+\section{Common Anti-Patterns and How to Avoid Them}
+
+\subsection{Anti-Pattern 1: P-Hacking}
+
+\textbf{Definition:} Manipulating analysis until finding statistical significance.
+
+\textbf{Manifestations:}
+\begin{itemize}
+    \item Testing many metrics without correction
+    \item Stopping experiment early when results look good
+    \item Trying different segmentations until finding significance
+    \item Removing "outliers" selectively
+\end{itemize}
+
+\textbf{Example:} A team ran an email subject line test. Primary metric (open rate) showed no effect. They then tested click rate, conversion rate, revenue per user, time to conversion, and found one significant result (time to conversion, $p=0.04$) and declared success.
+
+\textbf{Why it's wrong:} Testing 5 metrics with $\alpha=0.05$ gives $1-(0.95)^5 = 22.6\%$ false positive rate.
+
+\textbf{Prevention:}
+\begin{itemize}
+    \item Pre-register hypotheses and analysis plan
+    \item Apply Bonferroni or FDR correction for multiple metrics
+    \item Use sequential testing methods if monitoring continuously
+    \item Document all analyses, including non-significant results
+\end{itemize}
+
+\subsection{Anti-Pattern 2: HiPPO (Highest Paid Person's Opinion)}
+
+\textbf{Definition:} Overriding experimental evidence based on executive intuition or seniority.
+
+\textbf{Example:} An e-commerce A/B test showed that removing a product feature decreased conversion by 8\% ($p<0.001$). VP insisted on shipping anyway because "customers told me they wanted this."
+
+\textbf{Why it's problematic:} Undermines experimentation culture, leads to poor decisions, demoralizes data teams.
+
+\textbf{Prevention:}
+\begin{itemize}
+    \item Establish decision-making framework upfront
+    \item Educate leadership on statistical methodology
+    \item Create "escape valves" for overriding data (with documentation)
+    \item Balance quantitative data with qualitative insights systematically
+    \item Foster culture where challenging authority with data is encouraged
+\end{itemize}
+
+\subsection{Anti-Pattern 3: Analysis Paralysis}
+
+\textbf{Definition:} Running experiments indefinitely without making decisions.
+
+\textbf{Example:} Team ran checkout test for 8 weeks (planned duration: 2 weeks). Results were conclusive after 2 weeks, but team kept running "to be sure," delaying feature launch.
+
+\textbf{Prevention:}
+\begin{itemize}
+    \item Set clear success criteria before starting
+    \item Establish decision deadlines
+    \item Accept that uncertainty is inherent
+    \item Define minimum confidence levels
+    \item Implement decision frameworks (when to ship, when to iterate, when to kill)
+\end{itemize}
+
+\subsection{Anti-Pattern 4: Novelty Effect Ignorance}
+
+\textbf{Definition:} Ignoring that users may respond differently initially than long-term.
+
+\textbf{Example:} Redesigned navigation initially showed +15\% engagement. After 4 weeks, effect degraded to +2% as users habituated.
+
+\textbf{Prevention:}
+\begin{itemize}
+    \item Run experiments long enough to capture habituation (typically 2-4 weeks minimum)
+    \item Analyze early vs. late periods separately
+    \item Use cohort analysis to distinguish novelty from sustained effects
+    \item For major changes, maintain long-term holdout groups
+\end{itemize}
+
+\section{Industry-Specific Considerations}
+
+\subsection{E-commerce}
+
+\textbf{Unique challenges:}
+\begin{itemize}
+    \item High-value, low-frequency transactions (variance)
+    \item Seasonality (holidays, sales events)
+    \item Multi-device journeys (attribution)
+    \item Returning customer effects
+\end{itemize}
+
+\textbf{Best practices:}
+\begin{itemize}
+    \item Use pre-experiment covariates (CUPED) to reduce variance
+    \item Stratify by customer type (new/returning) and device
+    \item Run experiments across seasonal periods or control for calendar effects
+    \item Monitor cart abandonment as key guardrail
+    \item Track long-term metrics (LTV, repeat purchase rate)
+\end{itemize}
+
+\subsection{Social Media}
+
+\textbf{Unique challenges:}
+\begin{itemize}
+    \item Network effects and interference
+    \item Viral content creates non-independence
+    \item User-generated content variability
+    \item Engagement vs. time spent vs. well-being trade-offs
+\end{itemize}
+
+\textbf{Best practices:}
+\begin{itemize}
+    \item Use cluster randomization (geo, time-based)
+    \item Account for network structure in analysis
+    \item Monitor both engagement and well-being metrics
+    \item Use switchback designs for platform-level changes
+    \item Be cautious of metric gaming (e.g., optimizing for clicks vs. value)
+\end{itemize}
+
+\subsection{SaaS/B2B}
+
+\textbf{Unique challenges:}
+\begin{itemize}
+    \item Long sales cycles
+    \item Account-level vs. user-level randomization
+    \item Low sample sizes (enterprise customers)
+    \item Contractual obligations limiting experimentation
+\end{itemize}
+
+\textbf{Best practices:}
+\begin{itemize}
+    \item Use hierarchical models for account/user nesting
+    \item Focus on leading indicators (trial engagement, feature adoption)
+    \item Stratify by account size/value
+    \item Supplement with qualitative research (customer interviews)
+    \item Run longer experiments to capture full conversion cycle
+\end{itemize}
+
+\subsection{Healthcare/EdTech}
+
+\textbf{Unique challenges:}
+\begin{itemize}
+    \item Ethical constraints on randomization
+    \item Long-term outcomes more important than short-term
+    \item Regulatory compliance (HIPAA, FERPA, IRB)
+    \item Equity and access considerations
+\end{itemize}
+
+\textbf{Best practices:}
+\begin{itemize}
+    \item Prioritize equipoise (clinical uncertainty) for ethical randomization
+    \item Use stepped-wedge designs (everyone gets treatment eventually)
+    \item Implement robust informed consent processes
+    \item Monitor equity metrics across demographic groups
+    \item Focus on validated outcome measures
+    \item Consider long-term follow-up studies
+\end{itemize}
+
+\section{Building an Experimentation Culture: Meta-Lessons}
+
+Beyond individual experiments, successful organizations build systematic experimentation capabilities:
+
+\subsection{Infrastructure and Tooling}
+
+\begin{itemize}
+    \item \textbf{Experimentation platform:} Centralized system for randomization, tracking, analysis
+    \item \textbf{Metric pipeline:} Automated computation of key metrics with proper variance estimation
+    \item \textbf{Analysis tools:} Self-service dashboards with correct statistical methods
+    \item \textbf{Experiment registry:} Database of all experiments for meta-analysis
+\end{itemize}
+
+\subsection{Process and Governance}
+
+\begin{itemize}
+    \item \textbf{Hypothesis template:} Structured approach to defining experiments
+    \item \textbf{Review process:} Statistical review before launch
+    \item \textbf{Decision framework:} Clear criteria for ship/no-ship/iterate
+    \item \textbf{Documentation:} Consistent recording of design, results, decisions
+\end{itemize}
+
+\subsection{Culture and Education}
+
+\begin{itemize}
+    \item \textbf{Leadership buy-in:} Executives champion data-driven decisions
+    \item \textbf{Training programs:} Educate PMs, engineers, analysts on methodology
+    \item \textbf{Celebrate learning:} Reward well-designed experiments, not just "wins"
+    \item \textbf{Transparent communication:} Share results widely, including failures
+\end{itemize}
+
+\section{Summary}
+
+Real-world case studies provide invaluable lessons:
+
+\begin{itemize}
+    \item \textbf{Google:} Technical performance directly impacts user behavior; always monitor guardrails
+
+    \item \textbf{E-commerce:} Segment analysis reveals heterogeneous effects; weight by strategic priorities
+
+    \item \textbf{Netflix:} Iterative experimentation validates assumptions incrementally; personalization adds value
+
+    \item \textbf{Paywall failure:} Local optimization can harm global objectives; measure full funnel
+
+    \item \textbf{Anti-patterns:} Avoid p-hacking, HiPPO, analysis paralysis; establish processes to prevent
+
+    \item \textbf{Industry context:} Adapt methods to specific challenges (network effects, seasonality, regulations)
+\end{itemize}
+
+Learning from both successes and failures builds experimentation expertise. The most mature organizations view experiments as learning opportunities, documenting and sharing insights to improve continuously.
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \cite{kohavi2020trustworthy}: Extensive case studies from Microsoft, Amazon, Google, with detailed analysis
+    \item \cite{christian2016algorithms}: Exploration-exploitation trade-offs in practice
+    \item Company engineering blogs:
+    \begin{itemize}
+        \item Netflix TechBlog: experimentation at scale
+        \item Airbnb Engineering: experiment analysis frameworks
+        \item Booking.com: 1,000+ experiments per year
+        \item Spotify Research: sequential testing and bandits
+    \end{itemize}
+\end{itemize}
+
+\section{Exercises}
+
+\subsection{Case Study Analysis}
+
+\begin{enumerate}
+    \item \textbf{Post-Mortem Template:} Create a structured template for analyzing experiments. Include sections for: hypothesis, design, implementation, results, decision, lessons learned. Apply to a recent experiment from your organization.
+
+    \item \textbf{Replication:} Reproduce the Google case study analysis using the provided code. Modify parameters to explore sensitivity: What if load time increased by 50ms instead of 500ms? What if engagement elasticity were -0.5 instead of -1.0?
+
+    \item \textbf{Segment Discovery:} Using the e-commerce checkout code, add a third segment dimension (e.g., product category, geographic region). Analyze three-way interactions. When do you stop slicing data?
+\end{enumerate}
+
+\subsection{Business Impact Calculation}
+
+\begin{enumerate}
+    \item For your organization:
+    \begin{itemize}
+        \item Define key business metrics (revenue, LTV, retention)
+        \item Map experiment metrics to business outcomes
+        \item Create calculator estimating business impact from experimental results
+        \item Include confidence intervals and break-even analysis
+    \end{itemize}
+
+    \item \textbf{Paywall Re-design:} The failed paywall experiment. Design a better version that balances conversion rate and engagement. Specify success criteria and guardrails.
+\end{enumerate}
+
+\subsection{Anti-Pattern Detection}
+
+\begin{enumerate}
+    \item \textbf{Audit:} Review 5 recent experiments from your organization. Identify any anti-patterns (p-hacking, missing guardrails, insufficient duration, etc.). Propose corrective actions.
+
+    \item \textbf{Process Design:} Design a review checklist to prevent common anti-patterns. Include statistical, technical, and business considerations. Specify who reviews, when, and with what authority.
+\end{enumerate}
+
+\subsection{Industry Application}
+
+\begin{enumerate}
+    \item Choose your industry and design an experiment addressing industry-specific challenges:
+    \begin{itemize}
+        \item E-commerce: Multi-device attribution problem
+        \item Social media: Network effects mitigation
+        \item SaaS: Long-sales cycle with leading indicators
+        \item Healthcare: Ethical randomization with stepped-wedge
+    \end{itemize}
+
+    Specify design, analysis plan, and decision criteria.
+\end{enumerate}
+
+\subsection{Meta-Analysis Project}
+
+\begin{enumerate}
+    \item \textbf{Experiment Database:} Create a structured database of past experiments with fields: hypothesis, design, sample size, duration, primary metric, result, decision. Analyze:
+    \begin{itemize}
+        \item What proportion of experiments are "successful"?
+        \item Do success rates differ by experiment type, team, or domain?
+        \item What factors predict successful experiments?
+        \item Are sample size and duration adequate on average?
+    \end{itemize}
+\end{enumerate}

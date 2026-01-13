@@ -1,0 +1,3726 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Implement Bayesian optimization using Optuna with advanced pruning and sampling strategies
+    \item Design and execute multi-objective hyperparameter optimization
+    \item Build population-based training systems for dynamic hyperparameter adaptation
+    \item Deploy distributed hyperparameter optimization across clusters
+    \item Apply AutoML techniques and neural architecture search
+    \item Integrate hyperparameter optimization with experiment tracking systems
+    \item Design cost-efficient HPO strategies for production environments
+    \item Analyze and optimize hyperparameter search spaces
+\end{itemize}
+
+\section{Introduction: The Hyperparameter Challenge}
+
+Hyperparameter optimization (HPO) is critical for achieving state-of-the-art model performance, yet remains one of the most computationally expensive aspects of machine learning workflows. Consider a transformer model with hyperparameters for:
+
+\begin{itemize}
+    \item Architecture: number of layers, hidden dimension, attention heads
+    \item Training: learning rate, batch size, warmup steps, weight decay
+    \item Optimization: optimizer type, scheduler, gradient clipping
+    \item Regularization: dropout rate, layer normalization, label smoothing
+\end{itemize}
+
+With 10 hyperparameters and 5 values each, naive grid search requires $5^{10} = 9.7$ million trials. At 1 hour per trial, this takes 1,100 years of compute time! Modern HPO addresses this through:
+
+\begin{enumerate}
+    \item \textbf{Efficient Search:} Bayesian optimization, evolutionary algorithms
+    \item \textbf{Early Stopping:} Pruning unpromising trials
+    \item \textbf{Transfer Learning:} Warm-starting from previous experiments
+    \item \textbf{Parallelization:} Distributed evaluation across GPUs/nodes
+    \item \textbf{Multi-Fidelity:} Training with reduced budgets (fewer epochs, smaller data)
+\end{enumerate}
+
+\section{Bayesian Optimization with Optuna}
+
+Bayesian optimization models the objective function as a probabilistic surrogate and uses this to guide search toward promising regions.
+
+\subsection{Fundamental Optuna Implementation}
+
+\begin{lstlisting}[style=python, caption=Advanced Optuna hyperparameter optimization]
+import optuna
+from optuna.pruners import MedianPruner, HyperbandPruner
+from optuna.samplers import TPESampler, CmaEsSampler
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+import numpy as np
+from typing import Dict, Any
+
+def create_model(trial: optuna.Trial, input_dim: int, output_dim: int) -> nn.Module:
+    """
+    Create model with trial-suggested hyperparameters.
+
+    Demonstrates nested hyperparameter spaces and conditional sampling.
+    """
+    # Architecture hyperparameters
+    n_layers = trial.suggest_int('n_layers', 2, 6)
+
+    # Hidden dimension with categorical choices
+    hidden_dim = trial.suggest_categorical(
+        'hidden_dim',
+        [64, 128, 256, 512, 1024]
+    )
+
+    # Activation function
+    activation_name = trial.suggest_categorical(
+        'activation',
+        ['relu', 'gelu', 'silu', 'tanh']
+    )
+    activation_map = {
+        'relu': nn.ReLU,
+        'gelu': nn.GELU,
+        'silu': nn.SiLU,
+        'tanh': nn.Tanh
+    }
+    activation = activation_map[activation_name]
+
+    # Dropout rate with log-uniform distribution
+    dropout_rate = trial.suggest_float('dropout', 0.0, 0.5)
+
+    # Normalization type
+    use_batch_norm = trial.suggest_categorical('use_batch_norm', [True, False])
+
+    # Build model
+    layers = []
+    current_dim = input_dim
+
+    for i in range(n_layers):
+        layers.append(nn.Linear(current_dim, hidden_dim))
+
+        if use_batch_norm:
+            layers.append(nn.BatchNorm1d(hidden_dim))
+
+        layers.append(activation())
+
+        if dropout_rate > 0:
+            layers.append(nn.Dropout(dropout_rate))
+
+        current_dim = hidden_dim
+
+    # Output layer
+    layers.append(nn.Linear(current_dim, output_dim))
+
+    return nn.Sequential(*layers)
+
+def create_optimizer(trial: optuna.Trial, model: nn.Module) -> torch.optim.Optimizer:
+    """Create optimizer with trial-suggested hyperparameters."""
+    # Optimizer type
+    optimizer_name = trial.suggest_categorical(
+        'optimizer',
+        ['adam', 'adamw', 'sgd', 'rmsprop']
+    )
+
+    # Learning rate with log-uniform sampling (recommended for LR)
+    lr = trial.suggest_float('lr', 1e-5, 1e-1, log=True)
+
+    # Weight decay
+    weight_decay = trial.suggest_float('weight_decay', 1e-6, 1e-2, log=True)
+
+    if optimizer_name == 'adam':
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=lr,
+            weight_decay=weight_decay,
+            betas=(
+                trial.suggest_float('adam_beta1', 0.8, 0.99),
+                trial.suggest_float('adam_beta2', 0.9, 0.999)
+            )
+        )
+    elif optimizer_name == 'adamw':
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=lr,
+            weight_decay=weight_decay
+        )
+    elif optimizer_name == 'sgd':
+        momentum = trial.suggest_float('sgd_momentum', 0.0, 0.99)
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=lr,
+            momentum=momentum,
+            weight_decay=weight_decay
+        )
+    else:  # rmsprop
+        optimizer = torch.optim.RMSprop(
+            model.parameters(),
+            lr=lr,
+            weight_decay=weight_decay,
+            alpha=trial.suggest_float('rmsprop_alpha', 0.9, 0.999)
+        )
+
+    return optimizer
+
+def create_scheduler(trial: optuna.Trial, optimizer: torch.optim.Optimizer,
+                     num_epochs: int) -> Any:
+    """Create learning rate scheduler."""
+    scheduler_name = trial.suggest_categorical(
+        'scheduler',
+        ['none', 'cosine', 'step', 'exponential']
+    )
+
+    if scheduler_name == 'none':
+        return None
+    elif scheduler_name == 'cosine':
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=num_epochs,
+            eta_min=trial.suggest_float('cosine_eta_min', 1e-7, 1e-4, log=True)
+        )
+    elif scheduler_name == 'step':
+        step_size = trial.suggest_int('step_size', 10, 50)
+        gamma = trial.suggest_float('step_gamma', 0.1, 0.9)
+        return torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=step_size,
+            gamma=gamma
+        )
+    else:  # exponential
+        gamma = trial.suggest_float('exp_gamma', 0.9, 0.99)
+        return torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
+
+def objective(trial: optuna.Trial) -> float:
+    """
+    Objective function for Optuna optimization.
+
+    Returns validation metric to minimize (e.g., loss) or maximize (e.g., accuracy).
+    Optuna will automatically handle maximization if direction='maximize' in study.
+    """
+    # Set device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Hyperparameters
+    batch_size = trial.suggest_categorical('batch_size', [32, 64, 128, 256])
+    num_epochs = 50  # Fixed for this example
+
+    # Create model
+    model = create_model(trial, input_dim=784, output_dim=10).to(device)
+
+    # Create optimizer and scheduler
+    optimizer = create_optimizer(trial, model)
+    scheduler = create_scheduler(trial, optimizer, num_epochs)
+
+    # Load data (example with MNIST)
+    train_loader = get_train_loader(batch_size)
+    val_loader = get_val_loader(batch_size)
+
+    # Loss function
+    criterion = nn.CrossEntropyLoss()
+
+    # Training loop with intermediate reporting for pruning
+    for epoch in range(num_epochs):
+        # Train
+        model.train()
+        train_loss = 0.0
+
+        for batch_idx, (data, target) in enumerate(train_loader):
+            data, target = data.to(device), target.to(device)
+
+            optimizer.zero_grad()
+            output = model(data.view(data.size(0), -1))
+            loss = criterion(output, target)
+            loss.backward()
+
+            # Gradient clipping (suggested by trial)
+            max_grad_norm = trial.suggest_float('max_grad_norm', 0.1, 10.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+
+            optimizer.step()
+            train_loss += loss.item()
+
+        # Validation
+        model.eval()
+        val_loss = 0.0
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for data, target in val_loader:
+                data, target = data.to(device), target.to(device)
+                output = model(data.view(data.size(0), -1))
+                loss = criterion(output, target)
+                val_loss += loss.item()
+
+                _, predicted = output.max(1)
+                total += target.size(0)
+                correct += predicted.eq(target).sum().item()
+
+        val_accuracy = correct / total
+        avg_val_loss = val_loss / len(val_loader)
+
+        # Report intermediate value for pruning
+        trial.report(val_accuracy, epoch)
+
+        # Handle pruning based on intermediate value
+        if trial.should_prune():
+            raise optuna.TrialPruned()
+
+        # Update learning rate
+        if scheduler is not None:
+            scheduler.step()
+
+    # Return final validation accuracy
+    return val_accuracy
+
+# Run optimization study
+def run_optuna_study():
+    """
+    Run comprehensive Optuna study with advanced features.
+    """
+    # Create study with advanced sampler and pruner
+    study = optuna.create_study(
+        study_name='neural_network_optimization',
+        direction='maximize',  # Maximize accuracy
+
+        # Advanced TPE sampler with multivariate search
+        sampler=TPESampler(
+            n_startup_trials=10,  # Random trials before TPE
+            n_ei_candidates=24,   # Number of candidates for EI
+            multivariate=True,    # Enable multivariate TPE
+            seed=42
+        ),
+
+        # Hyperband pruner for aggressive early stopping
+        pruner=HyperbandPruner(
+            min_resource=1,       # Minimum epochs
+            max_resource=50,      # Maximum epochs
+            reduction_factor=3    # Reduction factor for Hyperband
+        )
+    )
+
+    # Optimize
+    study.optimize(
+        objective,
+        n_trials=100,
+        timeout=3600 * 8,  # 8 hours
+        n_jobs=4,          # Parallel trials (if using SQLite storage)
+        show_progress_bar=True
+    )
+
+    # Results
+    print("Best trial:")
+    trial = study.best_trial
+    print(f"  Value (accuracy): {trial.value:.4f}")
+    print("  Params:")
+    for key, value in trial.params.items():
+        print(f"    {key}: {value}")
+
+    # Visualizations
+    try:
+        import optuna.visualization as vis
+
+        # Optimization history
+        fig = vis.plot_optimization_history(study)
+        fig.write_html('optimization_history.html')
+
+        # Parameter importances
+        fig = vis.plot_param_importances(study)
+        fig.write_html('param_importances.html')
+
+        # Parallel coordinate plot
+        fig = vis.plot_parallel_coordinate(study)
+        fig.write_html('parallel_coordinate.html')
+
+        # Hyperparameter relationships
+        fig = vis.plot_contour(study, params=['lr', 'hidden_dim'])
+        fig.write_html('param_contour.html')
+
+    except ImportError:
+        print("Install plotly for visualizations: pip install plotly")
+
+    return study
+
+if __name__ == '__main__':
+    study = run_optuna_study()
+\end{lstlisting}
+
+\subsection{Advanced Optuna Features}
+
+\begin{lstlisting}[style=python, caption=Optuna with conditional search spaces and callbacks]
+import optuna
+from optuna.study import MaxTrialsCallback
+from optuna.trial import TrialState
+import logging
+
+class CustomCallback:
+    """Custom callback for Optuna trials."""
+
+    def __init__(self, patience: int = 10):
+        self.patience = patience
+        self.best_value = None
+        self.no_improvement_count = 0
+
+    def __call__(self, study: optuna.Study, trial: optuna.Trial) -> None:
+        """Called after each trial."""
+        # Early stopping based on no improvement
+        if study.best_value is not None:
+            if self.best_value is None or study.best_value > self.best_value:
+                self.best_value = study.best_value
+                self.no_improvement_count = 0
+            else:
+                self.no_improvement_count += 1
+
+        if self.no_improvement_count >= self.patience:
+            study.stop()
+            print(f"Stopping study: no improvement for {self.patience} trials")
+
+        # Log trial results
+        if trial.state == TrialState.COMPLETE:
+            print(f"Trial {trial.number} finished with value: {trial.value:.4f}")
+        elif trial.state == TrialState.PRUNED:
+            print(f"Trial {trial.number} pruned")
+
+def conditional_search_space(trial: optuna.Trial) -> Dict[str, Any]:
+    """
+    Define conditional search space where some hyperparameters
+    depend on others.
+    """
+    config = {}
+
+    # Model architecture choice
+    model_type = trial.suggest_categorical('model_type', ['mlp', 'resnet', 'transformer'])
+    config['model_type'] = model_type
+
+    if model_type == 'mlp':
+        config['n_layers'] = trial.suggest_int('mlp_n_layers', 2, 8)
+        config['hidden_dim'] = trial.suggest_int('mlp_hidden_dim', 64, 1024, log=True)
+        config['activation'] = trial.suggest_categorical('mlp_activation', ['relu', 'gelu'])
+
+    elif model_type == 'resnet':
+        config['n_blocks'] = trial.suggest_int('resnet_n_blocks', 2, 10)
+        config['block_type'] = trial.suggest_categorical('resnet_block_type', ['basic', 'bottleneck'])
+
+        if config['block_type'] == 'bottleneck':
+            config['bottleneck_ratio'] = trial.suggest_float('resnet_bottleneck_ratio', 0.25, 0.75)
+
+    elif model_type == 'transformer':
+        config['n_layers'] = trial.suggest_int('transformer_n_layers', 2, 12)
+        config['n_heads'] = trial.suggest_categorical('transformer_n_heads', [4, 8, 16])
+        config['d_model'] = trial.suggest_categorical('transformer_d_model', [256, 512, 1024])
+
+        # Ensure d_model is divisible by n_heads
+        if config['d_model'] % config['n_heads'] != 0:
+            # Adjust d_model
+            config['d_model'] = config['d_model'] // config['n_heads'] * config['n_heads']
+
+        config['dropout'] = trial.suggest_float('transformer_dropout', 0.0, 0.3)
+
+    # Common hyperparameters
+    config['lr'] = trial.suggest_float('lr', 1e-5, 1e-1, log=True)
+    config['batch_size'] = trial.suggest_categorical('batch_size', [16, 32, 64, 128])
+
+    # Data augmentation (conditional on batch size)
+    if config['batch_size'] >= 64:
+        # Stronger augmentation for larger batches
+        config['augment_strength'] = trial.suggest_float('augment_strength', 0.5, 1.0)
+    else:
+        config['augment_strength'] = trial.suggest_float('augment_strength', 0.0, 0.5)
+
+    return config
+
+# Use with persistent storage for distributed optimization
+def create_distributed_study():
+    """
+    Create study with SQL storage for distributed optimization.
+    """
+    import optuna
+
+    # Use PostgreSQL, MySQL, or SQLite for storage
+    storage = optuna.storages.RDBStorage(
+        url="postgresql://user:password@localhost/optuna",
+        engine_kwargs={"pool_size": 20, "max_overflow": 0}
+    )
+
+    study = optuna.create_study(
+        study_name='distributed_hpo',
+        storage=storage,
+        load_if_exists=True,  # Multiple workers can use same study
+        direction='maximize',
+        sampler=TPESampler(multivariate=True),
+        pruner=HyperbandPruner()
+    )
+
+    return study
+\end{lstlisting}
+
+\section{Multi-Objective Optimization}
+
+Many real-world scenarios require optimizing multiple objectives simultaneously (e.g., accuracy vs latency, performance vs model size).
+
+\begin{lstlisting}[style=python, caption=Multi-objective optimization with Optuna]
+import optuna
+from optuna.samplers import NSGAIISampler
+import torch
+import time
+
+def multi_objective_function(trial: optuna.Trial) -> tuple:
+    """
+    Optimize multiple objectives: accuracy, inference latency, model size.
+
+    Returns:
+        Tuple of (accuracy, -latency, -model_size) where we want to:
+        - Maximize accuracy
+        - Minimize latency (hence -latency to maximize)
+        - Minimize model size (hence -model_size to maximize)
+    """
+    # Hyperparameters
+    n_layers = trial.suggest_int('n_layers', 1, 10)
+    hidden_dim = trial.suggest_categorical('hidden_dim', [64, 128, 256, 512, 1024])
+    dropout = trial.suggest_float('dropout', 0.0, 0.5)
+
+    # Build model
+    model = create_model_from_params(n_layers, hidden_dim, dropout)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = model.to(device)
+
+    # Train model (simplified)
+    accuracy = train_and_evaluate(model, epochs=10)
+
+    # Measure inference latency
+    model.eval()
+    dummy_input = torch.randn(1, 784).to(device)
+
+    # Warmup
+    for _ in range(10):
+        _ = model(dummy_input)
+
+    # Measure
+    torch.cuda.synchronize() if torch.cuda.is_available() else None
+    start = time.perf_counter()
+    for _ in range(100):
+        _ = model(dummy_input)
+    torch.cuda.synchronize() if torch.cuda.is_available() else None
+    end = time.perf_counter()
+
+    avg_latency = (end - start) / 100 * 1000  # ms
+
+    # Calculate model size (MB)
+    param_size = sum(p.numel() * p.element_size() for p in model.parameters())
+    buffer_size = sum(b.numel() * b.element_size() for b in model.buffers())
+    model_size_mb = (param_size + buffer_size) / (1024 ** 2)
+
+    # Return objectives (all to be maximized, so negate latency and size)
+    return accuracy, -avg_latency, -model_size_mb
+
+def run_multi_objective_optimization():
+    """
+    Run multi-objective optimization using NSGA-II algorithm.
+    """
+    # Create study for multi-objective optimization
+    study = optuna.create_study(
+        directions=['maximize', 'maximize', 'maximize'],  # All maximize
+        sampler=NSGAIISampler(
+            population_size=50,
+            mutation_prob=0.1,
+            crossover_prob=0.9,
+            seed=42
+        )
+    )
+
+    # Optimize
+    study.optimize(
+        multi_objective_function,
+        n_trials=200,
+        show_progress_bar=True
+    )
+
+    # Get Pareto front
+    print("Number of trials on Pareto front:", len(study.best_trials))
+    print("\nPareto-optimal solutions:")
+
+    for trial in study.best_trials:
+        accuracy, neg_latency, neg_size = trial.values
+        print(f"Trial {trial.number}:")
+        print(f"  Accuracy: {accuracy:.4f}")
+        print(f"  Latency: {-neg_latency:.2f} ms")
+        print(f"  Model size: {-neg_size:.2f} MB")
+        print(f"  Params: {trial.params}")
+        print()
+
+    # Visualize Pareto front
+    try:
+        import optuna.visualization as vis
+
+        # 3D Pareto front
+        fig = vis.plot_pareto_front(
+            study,
+            target_names=['Accuracy', 'Latency (ms)', 'Model Size (MB)']
+        )
+        fig.write_html('pareto_front.html')
+
+    except ImportError:
+        print("Install plotly for visualizations")
+
+    return study
+
+# Trade-off analysis
+def select_model_by_constraint(study: optuna.Study,
+                               max_latency_ms: float = 10.0,
+                               max_size_mb: float = 50.0) -> optuna.Trial:
+    """
+    Select best model from Pareto front that meets constraints.
+    """
+    valid_trials = []
+
+    for trial in study.best_trials:
+        accuracy, neg_latency, neg_size = trial.values
+        latency = -neg_latency
+        size = -neg_size
+
+        if latency <= max_latency_ms and size <= max_size_mb:
+            valid_trials.append((accuracy, trial))
+
+    if not valid_trials:
+        raise ValueError("No trials meet the constraints")
+
+    # Return trial with best accuracy among valid trials
+    best_trial = max(valid_trials, key=lambda x: x[0])[1]
+
+    print(f"Selected trial {best_trial.number}:")
+    accuracy, neg_latency, neg_size = best_trial.values
+    print(f"  Accuracy: {accuracy:.4f}")
+    print(f"  Latency: {-neg_latency:.2f} ms (limit: {max_latency_ms})")
+    print(f"  Size: {-neg_size:.2f} MB (limit: {max_size_mb})")
+
+    return best_trial
+\end{lstlisting}
+
+\section{Population-Based Training (PBT)}
+
+PBT dynamically adapts hyperparameters during training by exploiting and exploring a population of models.
+
+\begin{lstlisting}[style=python, caption=Population-based training implementation]
+import torch
+import torch.nn as nn
+import numpy as np
+from typing import List, Dict, Any
+from dataclasses import dataclass
+import copy
+import random
+
+@dataclass
+class Individual:
+    """Represents one member of the population."""
+    model: nn.Module
+    optimizer: torch.optim.Optimizer
+    hyperparams: Dict[str, Any]
+    score: float = 0.0
+    steps_trained: int = 0
+    age: int = 0
+
+class PopulationBasedTraining:
+    """
+    Population-Based Training (PBT) for dynamic hyperparameter optimization.
+
+    Based on "Population Based Training of Neural Networks" (Jaderberg et al., 2017)
+    """
+
+    def __init__(
+        self,
+        population_size: int = 10,
+        exploit_threshold: float = 0.2,  # Top 20% exploit bottom 20%
+        explore_factor: float = 0.8,     # Perturb hyperparams by +/- 20%
+        eval_interval: int = 100,        # Steps between evaluations
+        device: str = 'cuda'
+    ):
+        self.population_size = population_size
+        self.exploit_threshold = exploit_threshold
+        self.explore_factor = explore_factor
+        self.eval_interval = eval_interval
+        self.device = device
+
+        self.population: List[Individual] = []
+        self.history = []
+
+    def initialize_population(self, model_fn, hyperparam_space: Dict) -> None:
+        """
+        Initialize population with random hyperparameters.
+
+        Args:
+            model_fn: Function that creates a model
+            hyperparam_space: Dict defining hyperparameter ranges
+        """
+        for _ in range(self.population_size):
+            # Sample hyperparameters
+            hyperparams = self._sample_hyperparams(hyperparam_space)
+
+            # Create model and optimizer
+            model = model_fn().to(self.device)
+            optimizer = self._create_optimizer(model, hyperparams)
+
+            individual = Individual(
+                model=model,
+                optimizer=optimizer,
+                hyperparams=hyperparams,
+                score=0.0
+            )
+
+            self.population.append(individual)
+
+    def _sample_hyperparams(self, space: Dict) -> Dict[str, Any]:
+        """Sample hyperparameters from defined space."""
+        params = {}
+
+        for name, config in space.items():
+            if config['type'] == 'float':
+                if config.get('log', False):
+                    params[name] = np.exp(np.random.uniform(
+                        np.log(config['min']),
+                        np.log(config['max'])
+                    ))
+                else:
+                    params[name] = np.random.uniform(
+                        config['min'],
+                        config['max']
+                    )
+            elif config['type'] == 'int':
+                params[name] = np.random.randint(
+                    config['min'],
+                    config['max'] + 1
+                )
+            elif config['type'] == 'choice':
+                params[name] = np.random.choice(config['choices'])
+
+        return params
+
+    def _create_optimizer(self, model: nn.Module, hyperparams: Dict) -> torch.optim.Optimizer:
+        """Create optimizer with given hyperparameters."""
+        return torch.optim.Adam(
+            model.parameters(),
+            lr=hyperparams['learning_rate'],
+            weight_decay=hyperparams.get('weight_decay', 0.0)
+        )
+
+    def exploit_and_explore(self, individual: Individual,
+                           population: List[Individual]) -> None:
+        """
+        Exploit: Copy weights from better performer.
+        Explore: Perturb hyperparameters.
+        """
+        # Sort population by score
+        sorted_pop = sorted(population, key=lambda x: x.score, reverse=True)
+
+        # Determine if this individual should be replaced
+        cutoff = int(self.population_size * self.exploit_threshold)
+        bottom_performers = sorted_pop[-cutoff:]
+
+        if individual in bottom_performers:
+            # EXPLOIT: Copy from top performer
+            top_performers = sorted_pop[:cutoff]
+            champion = random.choice(top_performers)
+
+            # Copy model weights
+            individual.model.load_state_dict(champion.model.state_dict())
+
+            # EXPLORE: Perturb hyperparameters
+            for key, value in champion.hyperparams.items():
+                if isinstance(value, float):
+                    # Perturb by +/- explore_factor
+                    factor = np.random.choice([
+                        1.0 - self.explore_factor,
+                        1.0 + self.explore_factor
+                    ])
+                    individual.hyperparams[key] = value * factor
+                elif isinstance(value, int):
+                    delta = max(1, int(value * self.explore_factor))
+                    individual.hyperparams[key] = value + random.choice([-delta, delta])
+
+            # Recreate optimizer with new hyperparameters
+            individual.optimizer = self._create_optimizer(
+                individual.model,
+                individual.hyperparams
+            )
+
+            individual.age += 1
+
+    def train_step(self, individual: Individual, batch) -> float:
+        """Single training step for an individual."""
+        data, target = batch
+        data, target = data.to(self.device), target.to(self.device)
+
+        individual.model.train()
+        individual.optimizer.zero_grad()
+
+        output = individual.model(data)
+        loss = nn.CrossEntropyLoss()(output, target)
+
+        loss.backward()
+        individual.optimizer.step()
+
+        individual.steps_trained += 1
+
+        return loss.item()
+
+    def evaluate(self, individual: Individual, val_loader) -> float:
+        """Evaluate individual on validation set."""
+        individual.model.eval()
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for data, target in val_loader:
+                data, target = data.to(self.device), target.to(self.device)
+                output = individual.model(data)
+                _, predicted = output.max(1)
+                total += target.size(0)
+                correct += predicted.eq(target).sum().item()
+
+        accuracy = correct / total
+        individual.score = accuracy
+
+        return accuracy
+
+    def train(self, train_loader, val_loader, num_steps: int):
+        """
+        Main PBT training loop.
+
+        Args:
+            train_loader: Training data loader
+            val_loader: Validation data loader
+            num_steps: Total training steps
+        """
+        train_iterator = iter(train_loader)
+
+        for step in range(num_steps):
+            # Train each individual
+            for individual in self.population:
+                try:
+                    batch = next(train_iterator)
+                except StopIteration:
+                    train_iterator = iter(train_loader)
+                    batch = next(train_iterator)
+
+                loss = self.train_step(individual, batch)
+
+            # Periodic evaluation and exploitation/exploration
+            if (step + 1) % self.eval_interval == 0:
+                print(f"\nStep {step + 1}/{num_steps}")
+
+                # Evaluate all individuals
+                scores = []
+                for i, individual in enumerate(self.population):
+                    score = self.evaluate(individual, val_loader)
+                    scores.append(score)
+
+                    print(f"  Individual {i}: "
+                          f"Score={score:.4f}, "
+                          f"LR={individual.hyperparams['learning_rate']:.6f}")
+
+                # Record best score
+                best_score = max(scores)
+                avg_score = np.mean(scores)
+
+                self.history.append({
+                    'step': step + 1,
+                    'best_score': best_score,
+                    'avg_score': avg_score,
+                    'scores': scores.copy()
+                })
+
+                # Exploit and explore
+                for individual in self.population:
+                    self.exploit_and_explore(individual, self.population)
+
+        # Return best individual
+        best_individual = max(self.population, key=lambda x: x.score)
+        return best_individual
+
+    def get_best_hyperparams(self) -> Dict[str, Any]:
+        """Get hyperparameters of best individual."""
+        best = max(self.population, key=lambda x: x.score)
+        return best.hyperparams
+
+# Usage example
+def run_pbt():
+    """Run population-based training."""
+    # Define hyperparameter space
+    hyperparam_space = {
+        'learning_rate': {'type': 'float', 'min': 1e-5, 'max': 1e-1, 'log': True},
+        'weight_decay': {'type': 'float', 'min': 1e-6, 'max': 1e-2, 'log': True},
+        'dropout': {'type': 'float', 'min': 0.0, 'max': 0.5},
+    }
+
+    # Create PBT instance
+    pbt = PopulationBasedTraining(
+        population_size=10,
+        exploit_threshold=0.2,
+        eval_interval=100
+    )
+
+    # Initialize population
+    pbt.initialize_population(
+        model_fn=lambda: SimpleNet(),
+        hyperparam_space=hyperparam_space
+    )
+
+    # Train
+    train_loader = get_train_loader()
+    val_loader = get_val_loader()
+
+    best_individual = pbt.train(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        num_steps=10000
+    )
+
+    print("\nBest hyperparameters found:")
+    print(best_individual.hyperparams)
+    print(f"Best score: {best_individual.score:.4f}")
+
+    # Plot learning curves
+    import matplotlib.pyplot as plt
+
+    steps = [h['step'] for h in pbt.history]
+    best_scores = [h['best_score'] for h in pbt.history]
+    avg_scores = [h['avg_score'] for h in pbt.history]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(steps, best_scores, label='Best in Population')
+    plt.plot(steps, avg_scores, label='Population Average')
+    plt.xlabel('Training Steps')
+    plt.ylabel('Validation Accuracy')
+    plt.legend()
+    plt.title('Population-Based Training Progress')
+    plt.savefig('pbt_progress.png')
+
+    return best_individual
+\end{lstlisting}
+
+\section{Distributed Hyperparameter Optimization}
+
+Scale HPO across multiple GPUs and nodes for faster optimization.
+
+\begin{lstlisting}[style=python, caption=Distributed HPO with Ray Tune]
+import ray
+from ray import tune
+from ray.tune import CLIReporter
+from ray.tune.schedulers import ASHAScheduler, PopulationBasedTraining as RayPBT
+from ray.tune.search.optuna import OptunaSearch
+from ray.tune.search import ConcurrencyLimiter
+import torch
+import torch.nn as nn
+
+def train_model_tune(config: Dict, checkpoint_dir=None):
+    """
+    Training function for Ray Tune.
+
+    Args:
+        config: Hyperparameter configuration from Tune
+        checkpoint_dir: Directory for loading checkpoints
+    """
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Create model with config
+    model = create_model(
+        n_layers=config['n_layers'],
+        hidden_dim=config['hidden_dim'],
+        dropout=config['dropout']
+    ).to(device)
+
+    # Optimizer
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=config['lr'],
+        weight_decay=config['weight_decay']
+    )
+
+    # Load checkpoint if resuming
+    start_epoch = 0
+    if checkpoint_dir:
+        checkpoint = torch.load(f"{checkpoint_dir}/checkpoint")
+        model.load_state_dict(checkpoint['model_state'])
+        optimizer.load_state_dict(checkpoint['optimizer_state'])
+        start_epoch = checkpoint['epoch'] + 1
+
+    # Data loaders
+    train_loader = get_train_loader(config['batch_size'])
+    val_loader = get_val_loader(config['batch_size'])
+
+    criterion = nn.CrossEntropyLoss()
+
+    # Training loop
+    for epoch in range(start_epoch, config['num_epochs']):
+        # Train
+        model.train()
+        train_loss = 0.0
+
+        for batch_idx, (data, target) in enumerate(train_loader):
+            data, target = data.to(device), target.to(device)
+
+            optimizer.zero_grad()
+            output = model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
+
+        # Validate
+        model.eval()
+        val_loss = 0.0
+        correct = 0
+        total = 0
+
+        with torch.no_grad():
+            for data, target in val_loader:
+                data, target = data.to(device), target.to(device)
+                output = model(data)
+                loss = criterion(output, target)
+                val_loss += loss.item()
+
+                _, predicted = output.max(1)
+                total += target.size(0)
+                correct += predicted.eq(target).sum().item()
+
+        val_accuracy = correct / total
+        avg_val_loss = val_loss / len(val_loader)
+
+        # Report metrics to Tune
+        tune.report(
+            val_loss=avg_val_loss,
+            val_accuracy=val_accuracy,
+            train_loss=train_loss / len(train_loader)
+        )
+
+        # Save checkpoint
+        with tune.checkpoint_dir(epoch) as checkpoint_dir:
+            path = f"{checkpoint_dir}/checkpoint"
+            torch.save({
+                'epoch': epoch,
+                'model_state': model.state_dict(),
+                'optimizer_state': optimizer.state_dict(),
+            }, path)
+
+def run_ray_tune_distributed():
+    """
+    Run distributed hyperparameter optimization with Ray Tune.
+    """
+    # Initialize Ray
+    ray.init(num_gpus=4, num_cpus=16)
+
+    # Define search space
+    config = {
+        'n_layers': tune.randint(2, 8),
+        'hidden_dim': tune.choice([64, 128, 256, 512, 1024]),
+        'dropout': tune.uniform(0.0, 0.5),
+        'lr': tune.loguniform(1e-5, 1e-1),
+        'weight_decay': tune.loguniform(1e-6, 1e-2),
+        'batch_size': tune.choice([32, 64, 128, 256]),
+        'num_epochs': 50
+    }
+
+    # ASHA scheduler for early stopping
+    scheduler = ASHAScheduler(
+        metric='val_accuracy',
+        mode='max',
+        max_t=50,           # Maximum epochs
+        grace_period=5,     # Minimum epochs before stopping
+        reduction_factor=3  # Halve trials every reduction_factor epochs
+    )
+
+    # Optuna search algorithm
+    search_alg = OptunaSearch(
+        metric='val_accuracy',
+        mode='max'
+    )
+
+    # Limit concurrent trials
+    search_alg = ConcurrencyLimiter(search_alg, max_concurrent=4)
+
+    # Reporter for nice CLI output
+    reporter = CLIReporter(
+        metric_columns=['val_loss', 'val_accuracy', 'train_loss'],
+        max_report_frequency=30
+    )
+
+    # Run optimization
+    analysis = tune.run(
+        train_model_tune,
+        name='distributed_hpo',
+        config=config,
+        num_samples=100,          # Number of trials
+        scheduler=scheduler,
+        search_alg=search_alg,
+        progress_reporter=reporter,
+        resources_per_trial={
+            'cpu': 4,
+            'gpu': 1
+        },
+        local_dir='./ray_results',
+        checkpoint_freq=5,
+        checkpoint_at_end=True,
+        verbose=1
+    )
+
+    # Best trial
+    best_trial = analysis.get_best_trial('val_accuracy', 'max', 'last')
+    print(f"\nBest trial config: {best_trial.config}")
+    print(f"Best trial final validation accuracy: {best_trial.last_result['val_accuracy']:.4f}")
+
+    # Get best checkpoint
+    best_checkpoint = analysis.get_best_checkpoint(
+        trial=best_trial,
+        metric='val_accuracy',
+        mode='max'
+    )
+    print(f"Best checkpoint: {best_checkpoint}")
+
+    # Analysis
+    df = analysis.results_df
+    print("\nTop 5 configurations:")
+    print(df.sort_values('val_accuracy', ascending=False).head(5))
+
+    ray.shutdown()
+
+    return analysis
+
+# Population-Based Training with Ray
+def run_ray_pbt():
+    """Run PBT with Ray Tune."""
+    ray.init(num_gpus=4)
+
+    # PBT scheduler
+    pbt = RayPBT(
+        time_attr='training_iteration',
+        metric='val_accuracy',
+        mode='max',
+        perturbation_interval=5,  # Perturb every 5 epochs
+        hyperparam_mutations={
+            'lr': lambda: np.random.uniform(1e-5, 1e-1),
+            'weight_decay': lambda: np.random.uniform(1e-6, 1e-2),
+            'dropout': lambda: np.random.uniform(0.0, 0.5)
+        }
+    )
+
+    analysis = tune.run(
+        train_model_tune,
+        name='pbt_optimization',
+        scheduler=pbt,
+        num_samples=10,  # Population size
+        config={
+            'n_layers': 4,
+            'hidden_dim': 256,
+            'dropout': tune.uniform(0.0, 0.5),
+            'lr': tune.loguniform(1e-5, 1e-1),
+            'weight_decay': tune.loguniform(1e-6, 1e-2),
+            'batch_size': 64,
+            'num_epochs': 100
+        },
+        resources_per_trial={'cpu': 4, 'gpu': 1}
+    )
+
+    ray.shutdown()
+    return analysis
+\end{lstlisting}
+
+\section{AutoML and Neural Architecture Search}
+
+Automated architecture search finds optimal model structures without manual design.
+
+\begin{lstlisting}[style=python, caption=Neural Architecture Search with DARTS]
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import List, Tuple
+import numpy as np
+
+class MixedOp(nn.Module):
+    """
+    Mixed operation for DARTS (Differentiable Architecture Search).
+    Combines multiple operations with learnable weights.
+    """
+
+    def __init__(self, in_channels: int, out_channels: int, stride: int = 1):
+        super().__init__()
+
+        # Define candidate operations
+        self.ops = nn.ModuleList([
+            nn.Identity() if stride == 1 and in_channels == out_channels else
+                nn.Conv2d(in_channels, out_channels, 1, stride, 0, bias=False),
+            nn.Conv2d(in_channels, out_channels, 3, stride, 1, bias=False),
+            nn.Conv2d(in_channels, out_channels, 5, stride, 2, bias=False),
+            nn.Sequential(
+                nn.AvgPool2d(3, stride, 1),
+                nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False)
+            ),
+            nn.Sequential(
+                nn.MaxPool2d(3, stride, 1),
+                nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False)
+            ),
+            self._make_sep_conv(in_channels, out_channels, 3, stride, 1),
+            self._make_sep_conv(in_channels, out_channels, 5, stride, 2),
+        ])
+
+        # Architecture parameters (alpha)
+        self.alpha = nn.Parameter(torch.randn(len(self.ops)))
+
+    def _make_sep_conv(self, in_c, out_c, kernel, stride, padding):
+        """Separable convolution."""
+        return nn.Sequential(
+            nn.Conv2d(in_c, in_c, kernel, stride, padding, groups=in_c, bias=False),
+            nn.Conv2d(in_c, out_c, 1, 1, 0, bias=False)
+        )
+
+    def forward(self, x):
+        """Forward with softmax over operations."""
+        weights = F.softmax(self.alpha, dim=0)
+        return sum(w * op(x) for w, op in zip(weights, self.ops))
+
+class SearchCell(nn.Module):
+    """Searchable cell for NAS."""
+
+    def __init__(self, in_channels: int, out_channels: int, n_nodes: int = 4):
+        super().__init__()
+        self.n_nodes = n_nodes
+
+        # Mixed operations for each node
+        self.ops = nn.ModuleList()
+        for i in range(n_nodes):
+            for j in range(i + 2):  # Connect to all previous nodes
+                self.ops.append(
+                    MixedOp(in_channels if j < 2 else out_channels, out_channels)
+                )
+
+    def forward(self, s0, s1):
+        """
+        Forward pass through cell.
+        s0, s1: outputs from previous two cells
+        """
+        states = [s0, s1]
+        offset = 0
+
+        for i in range(self.n_nodes):
+            # Aggregate all incoming edges to this node
+            s = sum(self.ops[offset + j](h) for j, h in enumerate(states))
+            offset += len(states)
+            states.append(s)
+
+        # Concatenate outputs of all intermediate nodes
+        return torch.cat(states[2:], dim=1)
+
+class DARTSNetwork(nn.Module):
+    """
+    DARTS: Differentiable Architecture Search.
+
+    Jointly optimizes network weights and architecture parameters.
+    """
+
+    def __init__(self, in_channels: int = 3, num_classes: int = 10,
+                 channels: int = 16, n_cells: int = 8):
+        super().__init__()
+
+        self.stem = nn.Sequential(
+            nn.Conv2d(in_channels, channels, 3, 1, 1, bias=False),
+            nn.BatchNorm2d(channels)
+        )
+
+        # Build cells
+        self.cells = nn.ModuleList()
+        for i in range(n_cells):
+            # Reduction cell every 1/3 of network
+            is_reduction = i in [n_cells // 3, 2 * n_cells // 3]
+            cell = SearchCell(
+                in_channels=channels,
+                out_channels=channels * 2 if is_reduction else channels
+            )
+            self.cells.append(cell)
+
+            if is_reduction:
+                channels *= 2
+
+        self.global_pooling = nn.AdaptiveAvgPool2d(1)
+        self.classifier = nn.Linear(channels * 4, num_classes)  # *4 for concatenation
+
+    def forward(self, x):
+        s0 = s1 = self.stem(x)
+
+        for cell in self.cells:
+            s0, s1 = s1, cell(s0, s1)
+
+        out = self.global_pooling(s1)
+        out = out.view(out.size(0), -1)
+        logits = self.classifier(out)
+
+        return logits
+
+    def get_architecture_parameters(self):
+        """Get architecture parameters (alphas) for optimization."""
+        for name, param in self.named_parameters():
+            if 'alpha' in name:
+                yield param
+
+    def get_weight_parameters(self):
+        """Get network weight parameters."""
+        for name, param in self.named_parameters():
+            if 'alpha' not in name:
+                yield param
+
+def train_darts(model: DARTSNetwork, train_loader, val_loader,
+                epochs: int = 50, device='cuda'):
+    """
+    Train DARTS with bi-level optimization.
+
+    Alternates between:
+    1. Optimizing architecture parameters (alpha) on validation set
+    2. Optimizing network weights (w) on training set
+    """
+    model = model.to(device)
+
+    # Separate optimizers for weights and architecture
+    optimizer_w = torch.optim.SGD(
+        model.get_weight_parameters(),
+        lr=0.025,
+        momentum=0.9,
+        weight_decay=3e-4
+    )
+
+    optimizer_alpha = torch.optim.Adam(
+        model.get_architecture_parameters(),
+        lr=3e-4,
+        betas=(0.5, 0.999),
+        weight_decay=1e-3
+    )
+
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer_w, epochs
+    )
+
+    criterion = nn.CrossEntropyLoss()
+
+    for epoch in range(epochs):
+        # Phase 1: Update architecture parameters on validation set
+        model.train()
+        for data, target in val_loader:
+            data, target = data.to(device), target.to(device)
+
+            optimizer_alpha.zero_grad()
+            output = model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer_alpha.step()
+
+        # Phase 2: Update network weights on training set
+        for data, target in train_loader:
+            data, target = data.to(device), target.to(device)
+
+            optimizer_w.zero_grad()
+            output = model(data)
+            loss = criterion(output, target)
+            loss.backward()
+            optimizer_w.step()
+
+        scheduler.step()
+
+        if (epoch + 1) % 10 == 0:
+            print(f"Epoch {epoch + 1}/{epochs}")
+            print_architecture(model)
+
+    return model
+
+def print_architecture(model: DARTSNetwork):
+    """Print discovered architecture."""
+    print("\nDiscovered Architecture:")
+
+    for cell_idx, cell in enumerate(model.cells):
+        print(f"\nCell {cell_idx}:")
+        for op_idx, op in enumerate(cell.ops):
+            if isinstance(op, MixedOp):
+                # Get operation with highest weight
+                weights = F.softmax(op.alpha, dim=0)
+                best_op_idx = weights.argmax().item()
+                best_weight = weights[best_op_idx].item()
+
+                op_names = ['identity', 'conv1x1', 'conv3x3', 'conv5x5',
+                           'avgpool', 'maxpool', 'sepconv3x3', 'sepconv5x5']
+
+                print(f"  Op {op_idx}: {op_names[best_op_idx]} "
+                      f"(weight: {best_weight:.3f})")
+
+def derive_final_architecture(model: DARTSNetwork) -> nn.Module:
+    """
+    Derive final discrete architecture from searched model.
+    Keeps only the operation with highest alpha for each mixed op.
+    """
+    # Extract architecture decisions
+    architecture = []
+
+    for cell in model.cells:
+        cell_arch = []
+        for op in cell.ops:
+            if isinstance(op, MixedOp):
+                best_op_idx = F.softmax(op.alpha, dim=0).argmax().item()
+                cell_arch.append(best_op_idx)
+        architecture.append(cell_arch)
+
+    # Build final model with selected operations
+    # (Implementation would create fixed network based on architecture)
+
+    return architecture
+\end{lstlisting}
+
+\section{Integration with Experiment Tracking}
+
+Track hyperparameter experiments with MLflow, Weights \& Biases, or TensorBoard.
+
+\begin{lstlisting}[style=python, caption=HPO with MLflow tracking]
+import mlflow
+import mlflow.pytorch
+from mlflow.tracking import MlflowClient
+import optuna
+from optuna.integration.mlflow import MLflowCallback
+
+def objective_with_mlflow(trial: optuna.Trial) -> float:
+    """Optuna objective with MLflow logging."""
+
+    # Suggest hyperparameters
+    params = {
+        'n_layers': trial.suggest_int('n_layers', 2, 8),
+        'hidden_dim': trial.suggest_categorical('hidden_dim', [64, 128, 256, 512]),
+        'dropout': trial.suggest_float('dropout', 0.0, 0.5),
+        'lr': trial.suggest_float('lr', 1e-5, 1e-1, log=True),
+        'batch_size': trial.suggest_categorical('batch_size', [32, 64, 128]),
+    }
+
+    # Start MLflow run for this trial
+    with mlflow.start_run(nested=True):
+        # Log parameters
+        mlflow.log_params(params)
+        mlflow.set_tag('trial_number', trial.number)
+
+        # Train model
+        model = create_and_train_model(params)
+
+        # Evaluate
+        accuracy = evaluate_model(model)
+
+        # Log metrics
+        mlflow.log_metric('accuracy', accuracy)
+
+        # Log model
+        mlflow.pytorch.log_model(model, 'model')
+
+        # Log artifacts (plots, etc.)
+        save_training_plot(model, 'training_plot.png')
+        mlflow.log_artifact('training_plot.png')
+
+    return accuracy
+
+def run_hpo_with_mlflow():
+    """Run HPO with full MLflow integration."""
+    mlflow.set_experiment('hyperparameter_optimization')
+
+    # Create parent run for the study
+    with mlflow.start_run(run_name='optuna_study'):
+        # Create study
+        study = optuna.create_study(
+            study_name='mlp_optimization',
+            direction='maximize',
+            sampler=TPESampler(),
+            pruner=HyperbandPruner()
+        )
+
+        # Create MLflow callback
+        mlflow_callback = MLflowCallback(
+            tracking_uri=mlflow.get_tracking_uri(),
+            metric_name='accuracy'
+        )
+
+        # Optimize
+        study.optimize(
+            objective_with_mlflow,
+            n_trials=50,
+            callbacks=[mlflow_callback]
+        )
+
+        # Log best parameters to parent run
+        mlflow.log_params(study.best_params)
+        mlflow.log_metric('best_accuracy', study.best_value)
+
+        # Log study visualizations
+        try:
+            import optuna.visualization as vis
+
+            fig = vis.plot_optimization_history(study)
+            fig.write_html('optimization_history.html')
+            mlflow.log_artifact('optimization_history.html')
+
+            fig = vis.plot_param_importances(study)
+            fig.write_html('param_importances.html')
+            mlflow.log_artifact('param_importances.html')
+
+        except ImportError:
+            pass
+
+    return study
+
+# Weights & Biases integration
+def run_hpo_with_wandb():
+    """Run HPO with Weights & Biases tracking."""
+    import wandb
+    from optuna.integration.wandb import WeightsAndBiasesCallback
+
+    # Initialize wandb
+    wandb.init(project='hyperparameter-optimization', entity='ml-team')
+
+    # Create study with wandb callback
+    wandb_callback = WeightsAndBiasesCallback(
+        metric_name='accuracy',
+        wandb_kwargs={'project': 'hyperparameter-optimization'}
+    )
+
+    study = optuna.create_study(direction='maximize')
+    study.optimize(
+        objective_with_mlflow,  # Can use same objective
+        n_trials=50,
+        callbacks=[wandb_callback]
+    )
+
+    # Log best config to wandb
+    wandb.config.update(study.best_params)
+    wandb.log({'best_accuracy': study.best_value})
+
+    wandb.finish()
+
+    return study
+\end{lstlisting}
+
+\section{Cost-Efficient HPO Strategies}
+
+Reduce computational costs while maintaining optimization quality.
+
+\begin{lstlisting}[style=python, caption=Cost-efficient hyperparameter optimization]
+import optuna
+from optuna.pruners import SuccessiveHalvingPruner
+import numpy as np
+from typing import Dict, Any
+
+class CostAwareOptimizer:
+    """
+    Cost-aware hyperparameter optimization.
+
+    Strategies:
+    1. Multi-fidelity optimization (train with reduced budgets)
+    2. Early stopping of unpromising trials
+    3. Transfer learning from previous experiments
+    4. Cheap-to-evaluate surrogates
+    """
+
+    def __init__(self, budget_hours: float = 24.0):
+        self.budget_hours = budget_hours
+        self.total_cost = 0.0
+        self.cost_history = []
+
+    def estimate_trial_cost(self, config: Dict[str, Any]) -> float:
+        """
+        Estimate computational cost of a trial.
+
+        Cost factors:
+        - Model size (parameters)
+        - Batch size (memory)
+        - Number of epochs
+        """
+        # Estimate parameters
+        n_params = self._estimate_parameters(config)
+
+        # Base cost (minutes)
+        base_cost = 1.0
+
+        # Scale by model size
+        size_factor = np.log10(n_params / 1e6 + 1) + 1
+
+        # Scale by training length
+        epoch_factor = config.get('num_epochs', 10) / 10
+
+        # Scale by batch size (inverse - smaller batch = more iterations)
+        batch_factor = 128 / config.get('batch_size', 128)
+
+        total_cost = base_cost * size_factor * epoch_factor * batch_factor
+
+        return total_cost / 60  # Convert to hours
+
+    def _estimate_parameters(self, config: Dict[str, Any]) -> int:
+        """Estimate number of model parameters."""
+        n_layers = config.get('n_layers', 4)
+        hidden_dim = config.get('hidden_dim', 256)
+
+        # Rough estimate
+        params = hidden_dim * hidden_dim * n_layers
+        return params
+
+    def multi_fidelity_objective(self, trial: optuna.Trial) -> float:
+        """
+        Objective with progressive resource allocation.
+
+        Start with small budget, increase for promising trials.
+        """
+        config = suggest_config(trial)
+
+        # Progressive fidelity levels
+        fidelity_levels = [
+            {'epochs': 5, 'data_fraction': 0.1},
+            {'epochs': 10, 'data_fraction': 0.3},
+            {'epochs': 20, 'data_fraction': 0.7},
+            {'epochs': 50, 'data_fraction': 1.0},
+        ]
+
+        best_score = 0.0
+
+        for level_idx, fidelity in enumerate(fidelity_levels):
+            # Train with current fidelity
+            score = train_with_budget(
+                config,
+                epochs=fidelity['epochs'],
+                data_fraction=fidelity['data_fraction']
+            )
+
+            # Report intermediate value
+            trial.report(score, level_idx)
+
+            # Check if should prune
+            if trial.should_prune():
+                # Save cost
+                estimated_cost = self.estimate_trial_cost(config)
+                saved_cost = estimated_cost * (1 - (level_idx + 1) / len(fidelity_levels))
+                self.cost_history.append({
+                    'trial': trial.number,
+                    'pruned_at_level': level_idx,
+                    'cost_saved': saved_cost
+                })
+                raise optuna.TrialPruned()
+
+            best_score = score
+
+            # Check budget
+            trial_cost = self.estimate_trial_cost(config)
+            if self.total_cost + trial_cost > self.budget_hours:
+                print(f"Budget exhausted at trial {trial.number}")
+                trial.study.stop()
+                break
+
+        # Update total cost
+        self.total_cost += self.estimate_trial_cost(config)
+
+        return best_score
+
+    def run_budget_aware_study(self):
+        """Run optimization with budget constraints."""
+        study = optuna.create_study(
+            direction='maximize',
+            sampler=optuna.samplers.TPESampler(),
+            pruner=SuccessiveHalvingPruner(
+                min_resource=1,
+                reduction_factor=3,
+                min_early_stopping_rate=0
+            )
+        )
+
+        # Optimize until budget exhausted
+        while self.total_cost < self.budget_hours:
+            study.optimize(
+                self.multi_fidelity_objective,
+                n_trials=1,
+                show_progress_bar=True
+            )
+
+        print(f"\nOptimization complete")
+        print(f"Total cost: {self.total_cost:.2f} hours")
+        print(f"Number of trials: {len(study.trials)}")
+        print(f"Pruned trials: {len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED])}")
+
+        return study
+
+# Transfer learning from previous studies
+class TransferLearningOptimizer:
+    """Use previous optimization results to warm-start new studies."""
+
+    def __init__(self, previous_study: optuna.Study = None):
+        self.previous_study = previous_study
+
+    def suggest_initial_configs(self, n: int = 10) -> List[Dict]:
+        """
+        Suggest initial configurations based on previous study.
+
+        Returns top-k configurations from previous study.
+        """
+        if self.previous_study is None:
+            return []
+
+        # Get top trials from previous study
+        trials = sorted(
+            self.previous_study.trials,
+            key=lambda t: t.value if t.value is not None else float('-inf'),
+            reverse=True
+        )[:n]
+
+        return [trial.params for trial in trials]
+
+    def create_warm_started_study(self) -> optuna.Study:
+        """Create new study warm-started from previous results."""
+        study = optuna.create_study(direction='maximize')
+
+        # Add previous best configurations as initial trials
+        initial_configs = self.suggest_initial_configs()
+
+        for config in initial_configs:
+            # Enqueue configuration for evaluation
+            study.enqueue_trial(config)
+
+        return study
+
+# Surrogate model for cheap evaluation
+class SurrogateModel:
+    """
+    Cheap-to-evaluate surrogate for expensive objective.
+
+    Train lightweight model to predict performance.
+    """
+
+    def __init__(self):
+        self.trials = []
+        self.model = None
+
+    def add_trial(self, config: Dict, score: float):
+        """Add trial result to training data."""
+        self.trials.append((config, score))
+
+    def train_surrogate(self):
+        """Train surrogate model on collected trials."""
+        if len(self.trials) < 10:
+            return
+
+        # Convert configs to features
+        X = []
+        y = []
+
+        for config, score in self.trials:
+            features = self._config_to_features(config)
+            X.append(features)
+            y.append(score)
+
+        X = np.array(X)
+        y = np.array(y)
+
+        # Train simple model (Random Forest)
+        from sklearn.ensemble import RandomForestRegressor
+
+        self.model = RandomForestRegressor(n_estimators=50, random_state=42)
+        self.model.fit(X, y)
+
+    def _config_to_features(self, config: Dict) -> np.ndarray:
+        """Convert configuration dict to feature vector."""
+        features = [
+            config.get('n_layers', 0),
+            config.get('hidden_dim', 0),
+            config.get('dropout', 0),
+            np.log10(config.get('lr', 1e-3)),
+            config.get('batch_size', 0),
+        ]
+        return np.array(features)
+
+    def predict(self, config: Dict) -> float:
+        """Predict performance for given configuration."""
+        if self.model is None:
+            return 0.5  # Default prediction
+
+        features = self._config_to_features(config).reshape(1, -1)
+        return self.model.predict(features)[0]
+
+    def filter_unpromising_configs(
+        self,
+        configs: List[Dict],
+        threshold: float = 0.4
+    ) -> List[Dict]:
+        """Filter out configurations predicted to perform poorly."""
+        if self.model is None:
+            return configs
+
+        promising = []
+        for config in configs:
+            predicted_score = self.predict(config)
+            if predicted_score >= threshold:
+                promising.append(config)
+
+        return promising
+\end{lstlisting}
+
+\section{Chapter Summary}
+
+This chapter covered advanced hyperparameter optimization techniques for production ML:
+
+\begin{itemize}
+    \item \textbf{Bayesian Optimization:} Optuna with advanced samplers (TPE, CMA-ES) and pruners (Hyperband, Median)
+    \item \textbf{Multi-Objective Optimization:} Pareto optimization for accuracy, latency, and model size trade-offs
+    \item \textbf{Population-Based Training:} Dynamic hyperparameter adaptation during training
+    \item \textbf{Distributed HPO:} Ray Tune for scaling across GPUs and nodes
+    \item \textbf{Neural Architecture Search:} DARTS for automated architecture discovery
+    \item \textbf{Experiment Tracking:} MLflow and Weights \& Biases integration
+    \item \textbf{Cost-Efficient Strategies:} Multi-fidelity, transfer learning, surrogate models
+\end{itemize}
+
+Key insights:
+\begin{enumerate}
+    \item Bayesian optimization drastically reduces trials compared to grid/random search
+    \item Multi-objective optimization reveals trade-offs between competing metrics
+    \item Early stopping (pruning) saves 50-90\% of computation
+    \item Distributed HPO scales linearly with available resources
+    \item Transfer learning from previous experiments accelerates new searches
+    \item Multi-fidelity optimization (train with reduced budgets) is highly cost-effective
+\end{enumerate}
+
+\section{Exercises}
+
+\begin{exercise}[Optuna Advanced Features]
+Implement comprehensive HPO with Optuna:
+\begin{enumerate}
+    \item Define conditional search space for CNN architecture
+    \item Use TPE sampler with multivariate sampling
+    \item Implement Hyperband pruner with resource = epochs
+    \item Add custom callback for early study stopping
+    \item Generate and analyze all Optuna visualizations
+    \item Compare with random search baseline
+\end{enumerate}
+\textbf{Target:} Find configuration achieving >95\% accuracy on CIFAR-10 in <50 trials.
+\end{exercise}
+
+\begin{exercise}[Multi-Objective Optimization]
+Optimize model for multiple objectives:
+\begin{enumerate}
+    \item Implement objective returning (accuracy, latency, size)
+    \item Use NSGA-II sampler for Pareto optimization
+    \item Run 200 trials to discover Pareto front
+    \item Visualize 3D Pareto front
+    \item Implement constraint-based model selection
+    \item Analyze trade-offs between objectives
+\end{enumerate}
+\textbf{Deliverable:} Report with Pareto front and trade-off analysis.
+\end{exercise}
+
+\begin{exercise}[Population-Based Training]
+Build PBT system from scratch:
+\begin{enumerate}
+    \item Implement population initialization with random hyperparameters
+    \item Add exploit (copy from best) and explore (perturb) logic
+    \item Train population on MNIST for 10K steps
+    \item Track learning curves for all population members
+    \item Compare final performance with single best configuration
+    \item Visualize hyperparameter evolution over time
+\end{enumerate}
+\textbf{Target:} Achieve >98.5\% accuracy, outperforming static best by >0.5\%.
+\end{exercise}
+
+\begin{exercise}[Distributed HPO with Ray Tune]
+Deploy distributed optimization:
+\begin{enumerate}
+    \item Set up Ray cluster (local or cloud)
+    \item Implement training function for Ray Tune
+    \item Use ASHA scheduler for early stopping
+    \item Run 100 trials across 4 GPUs
+    \item Implement checkpointing and fault tolerance
+    \item Compare wall-clock time vs sequential optimization
+\end{enumerate}
+\textbf{Target:} Achieve 3-4x speedup with 4 GPUs.
+\end{exercise}
+
+\begin{exercise}[Neural Architecture Search]
+Implement simple NAS:
+\begin{enumerate}
+    \item Define search space with 5 operations per edge
+    \item Implement DARTS bi-level optimization
+    \item Train architecture search for 50 epochs
+    \item Derive final discrete architecture
+    \item Retrain from scratch with discovered architecture
+    \item Compare with hand-designed baseline
+\end{enumerate}
+\textbf{Deliverable:} Discovered architecture visualization and performance comparison.
+\end{exercise}
+
+\begin{exercise}[Cost-Efficient HPO]
+Optimize under budget constraints:
+\begin{enumerate}
+    \item Implement multi-fidelity objective (progressive epochs)
+    \item Add trial cost estimation
+    \item Run optimization with 8-hour budget
+    \item Track cost savings from pruning
+    \item Compare trials completed vs fixed-budget approach
+    \item Analyze cost vs performance trade-off
+\end{enumerate}
+\textbf{Target:} Complete 2x more trials than fixed-budget approach.
+\end{exercise}
+
+\begin{exercise}[Transfer Learning for HPO]
+Warm-start optimization from previous studies:
+\begin{enumerate}
+    \item Run initial study on MNIST (50 trials)
+    \item Extract top-10 configurations
+    \item Create new study on Fashion-MNIST
+    \item Warm-start with transferred configurations
+    \item Compare with cold-start baseline
+    \item Measure convergence speedup
+\end{enumerate}
+\textbf{Target:} Reach target accuracy 30\% faster with warm-starting.
+\end{exercise}
+
+\section{Hyperparameter Search Space Design}
+
+Effective search space design is critical for successful hyperparameter optimization. Poorly designed spaces waste computational resources and may miss optimal configurations.
+
+\subsection{Search Space Types and Best Practices}
+
+\begin{lstlisting}[style=python, caption=Search space design patterns]
+import optuna
+from typing import Dict, List, Any
+import numpy as np
+
+class SearchSpaceDesigner:
+    """
+    Design effective hyperparameter search spaces.
+
+    Principles:
+    1. Use log-scale for learning rates and regularization
+    2. Categorical for discrete architectural choices
+    3. Conditional dependencies for hierarchical decisions
+    4. Reasonable bounds based on domain knowledge
+    """
+
+    @staticmethod
+    def learning_rate_space(trial: optuna.Trial,
+                           name: str = 'lr',
+                           min_val: float = 1e-5,
+                           max_val: float = 1e-1) -> float:
+        """
+        Learning rate should always use log-uniform distribution.
+
+        Rationale: Learning rates span multiple orders of magnitude,
+        and we want to sample uniformly in log-space.
+        """
+        return trial.suggest_float(name, min_val, max_val, log=True)
+
+    @staticmethod
+    def regularization_space(trial: optuna.Trial) -> Dict[str, float]:
+        """
+        Regularization hyperparameters (weight decay, dropout, etc.)
+        also benefit from log-scale sampling.
+        """
+        return {
+            'weight_decay': trial.suggest_float('weight_decay', 1e-6, 1e-1, log=True),
+            'dropout': trial.suggest_float('dropout', 0.0, 0.5),
+            'label_smoothing': trial.suggest_float('label_smoothing', 0.0, 0.2),
+            'gradient_clip': trial.suggest_float('gradient_clip', 0.1, 10.0)
+        }
+
+    @staticmethod
+    def architecture_space(trial: optuna.Trial,
+                          task_type: str = 'classification') -> Dict:
+        """
+        Architecture hyperparameters depend on task and model type.
+        """
+        config = {}
+
+        # Model backbone
+        model_type = trial.suggest_categorical(
+            'model_type',
+            ['resnet', 'efficientnet', 'vit', 'custom_cnn']
+        )
+        config['model_type'] = model_type
+
+        if model_type == 'resnet':
+            config['depth'] = trial.suggest_categorical('resnet_depth', [18, 34, 50, 101])
+            config['width_multiplier'] = trial.suggest_float('width_mult', 0.5, 2.0)
+
+        elif model_type == 'efficientnet':
+            config['variant'] = trial.suggest_categorical(
+                'efficientnet_variant',
+                ['b0', 'b1', 'b2', 'b3']
+            )
+
+        elif model_type == 'vit':
+            config['patch_size'] = trial.suggest_categorical('patch_size', [8, 16, 32])
+            config['n_layers'] = trial.suggest_int('vit_layers', 6, 24)
+            config['n_heads'] = trial.suggest_categorical('n_heads', [4, 8, 12, 16])
+            config['embed_dim'] = trial.suggest_categorical('embed_dim', [256, 512, 768, 1024])
+
+            # Ensure embed_dim divisible by n_heads
+            if config['embed_dim'] % config['n_heads'] != 0:
+                config['embed_dim'] = (config['embed_dim'] // config['n_heads']) * config['n_heads']
+
+        elif model_type == 'custom_cnn':
+            config['n_blocks'] = trial.suggest_int('n_blocks', 2, 8)
+            config['base_channels'] = trial.suggest_categorical('base_channels', [32, 64, 128])
+            config['block_type'] = trial.suggest_categorical('block_type', ['basic', 'residual', 'dense'])
+
+        return config
+
+    @staticmethod
+    def optimizer_space(trial: optuna.Trial) -> Dict:
+        """
+        Optimizer and scheduler configuration.
+        """
+        optimizer_name = trial.suggest_categorical(
+            'optimizer',
+            ['adam', 'adamw', 'sgd', 'rmsprop', 'lamb']
+        )
+
+        config = {
+            'optimizer': optimizer_name,
+            'lr': trial.suggest_float('lr', 1e-5, 1e-1, log=True)
+        }
+
+        # Optimizer-specific hyperparameters
+        if optimizer_name in ['adam', 'adamw']:
+            config['beta1'] = trial.suggest_float('adam_beta1', 0.8, 0.99)
+            config['beta2'] = trial.suggest_float('adam_beta2', 0.9, 0.999)
+            config['eps'] = trial.suggest_float('adam_eps', 1e-9, 1e-7, log=True)
+
+        elif optimizer_name == 'sgd':
+            config['momentum'] = trial.suggest_float('momentum', 0.0, 0.99)
+            config['nesterov'] = trial.suggest_categorical('nesterov', [True, False])
+
+        # Scheduler
+        scheduler_name = trial.suggest_categorical(
+            'scheduler',
+            ['none', 'cosine', 'step', 'exponential', 'onecycle', 'plateau']
+        )
+        config['scheduler'] = scheduler_name
+
+        if scheduler_name == 'cosine':
+            config['cosine_eta_min'] = trial.suggest_float('eta_min', 1e-7, 1e-4, log=True)
+            config['warmup_epochs'] = trial.suggest_int('warmup_epochs', 0, 10)
+
+        elif scheduler_name == 'step':
+            config['step_size'] = trial.suggest_int('step_size', 5, 50)
+            config['step_gamma'] = trial.suggest_float('step_gamma', 0.1, 0.9)
+
+        elif scheduler_name == 'onecycle':
+            config['max_lr'] = config['lr'] * trial.suggest_float('onecycle_mult', 5.0, 20.0)
+            config['pct_start'] = trial.suggest_float('pct_start', 0.1, 0.5)
+
+        elif scheduler_name == 'plateau':
+            config['plateau_patience'] = trial.suggest_int('plateau_patience', 3, 15)
+            config['plateau_factor'] = trial.suggest_float('plateau_factor', 0.1, 0.5)
+
+        return config
+
+    @staticmethod
+    def data_augmentation_space(trial: optuna.Trial) -> Dict:
+        """
+        Data augmentation hyperparameters.
+        """
+        return {
+            'use_augmentation': trial.suggest_categorical('use_aug', [True, False]),
+            'aug_strength': trial.suggest_float('aug_strength', 0.0, 1.0),
+            'mixup_alpha': trial.suggest_float('mixup_alpha', 0.0, 1.0),
+            'cutmix_alpha': trial.suggest_float('cutmix_alpha', 0.0, 1.0),
+            'random_erase_prob': trial.suggest_float('random_erase', 0.0, 0.5),
+            'color_jitter': trial.suggest_float('color_jitter', 0.0, 0.4)
+        }
+
+    @staticmethod
+    def training_space(trial: optuna.Trial) -> Dict:
+        """
+        Training hyperparameters (batch size, epochs, etc.)
+        """
+        batch_size = trial.suggest_categorical('batch_size', [16, 32, 64, 128, 256, 512])
+
+        # Gradient accumulation for effective larger batch sizes
+        grad_accum = trial.suggest_categorical('grad_accum_steps', [1, 2, 4, 8])
+        effective_batch_size = batch_size * grad_accum
+
+        return {
+            'batch_size': batch_size,
+            'grad_accum_steps': grad_accum,
+            'effective_batch_size': effective_batch_size,
+            'num_epochs': trial.suggest_int('num_epochs', 10, 200),
+            'warmup_ratio': trial.suggest_float('warmup_ratio', 0.0, 0.2),
+            'mixed_precision': trial.suggest_categorical('mixed_precision', [True, False])
+        }
+
+# Complete example: Comprehensive search space
+def comprehensive_objective(trial: optuna.Trial) -> float:
+    """
+    Comprehensive objective combining all search space components.
+    """
+    designer = SearchSpaceDesigner()
+
+    # Build complete configuration
+    config = {}
+    config.update(designer.architecture_space(trial))
+    config.update(designer.optimizer_space(trial))
+    config.update(designer.regularization_space(trial))
+    config.update(designer.data_augmentation_space(trial))
+    config.update(designer.training_space(trial))
+
+    # Train model with configuration
+    model = build_model(config)
+    accuracy = train_and_evaluate(model, config)
+
+    return accuracy
+
+\end{lstlisting}
+
+\subsection{Pruning Search Spaces Based on Prior Knowledge}
+
+\begin{lstlisting}[style=python, caption=Intelligent search space pruning]
+from dataclasses import dataclass
+from typing import Set, List, Tuple
+import json
+
+@dataclass
+class SearchSpaceConstraint:
+    """Constraint on hyperparameter combinations."""
+    parameter: str
+    condition: str  # 'min', 'max', 'equal', 'not_equal'
+    value: Any
+    dependent_param: str = None
+
+class IntelligentSearchSpace:
+    """
+    Search space with constraints based on domain knowledge.
+
+    Example constraints:
+    - Large models require smaller learning rates
+    - High dropout incompatible with batch normalization
+    - Transformer layers must have embed_dim divisible by n_heads
+    """
+
+    def __init__(self):
+        self.constraints: List[SearchSpaceConstraint] = []
+        self.incompatible_pairs: Set[Tuple[str, str]] = set()
+        self.recommended_ranges: Dict[str, Dict] = {}
+
+    def add_constraint(self, constraint: SearchSpaceConstraint):
+        """Add search space constraint."""
+        self.constraints.append(constraint)
+
+    def add_incompatibility(self, param1: str, param2: str):
+        """Mark two parameter choices as incompatible."""
+        self.incompatible_pairs.add((param1, param2))
+
+    def validate_config(self, config: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Validate configuration against constraints.
+
+        Returns:
+            (is_valid, error_message)
+        """
+        # Check basic constraints
+        for constraint in self.constraints:
+            if not self._check_constraint(config, constraint):
+                return False, f"Constraint violated: {constraint}"
+
+        # Check incompatibilities
+        for param1, param2 in self.incompatible_pairs:
+            if param1 in config and param2 in config:
+                return False, f"Incompatible parameters: {param1}, {param2}"
+
+        return True, ""
+
+    def _check_constraint(self, config: Dict, constraint: SearchSpaceConstraint) -> bool:
+        """Check if configuration satisfies constraint."""
+        if constraint.parameter not in config:
+            return True
+
+        value = config[constraint.parameter]
+
+        if constraint.condition == 'min':
+            return value >= constraint.value
+        elif constraint.condition == 'max':
+            return value <= constraint.value
+        elif constraint.condition == 'equal':
+            return value == constraint.value
+        elif constraint.condition == 'not_equal':
+            return value != constraint.value
+
+        return True
+
+    def suggest_constrained_config(self, trial: optuna.Trial) -> Dict[str, Any]:
+        """
+        Suggest configuration that satisfies all constraints.
+
+        Automatically retries if constraints are violated.
+        """
+        max_retries = 10
+
+        for _ in range(max_retries):
+            config = self._suggest_base_config(trial)
+
+            is_valid, error = self.validate_config(config)
+            if is_valid:
+                return config
+
+            # If invalid, prune this trial
+            raise optuna.TrialPruned(f"Invalid configuration: {error}")
+
+        raise ValueError("Could not find valid configuration after max retries")
+
+    def _suggest_base_config(self, trial: optuna.Trial) -> Dict[str, Any]:
+        """Suggest base configuration."""
+        config = {}
+
+        # Model size
+        n_layers = trial.suggest_int('n_layers', 2, 12)
+        hidden_dim = trial.suggest_categorical('hidden_dim', [64, 128, 256, 512, 1024])
+
+        config['n_layers'] = n_layers
+        config['hidden_dim'] = hidden_dim
+
+        # Estimate model size
+        model_params = n_layers * hidden_dim * hidden_dim
+
+        # Adapt learning rate based on model size
+        if model_params > 1e7:  # Large model
+            lr_min, lr_max = 1e-5, 1e-3
+        elif model_params > 1e6:  # Medium model
+            lr_min, lr_max = 1e-4, 1e-2
+        else:  # Small model
+            lr_min, lr_max = 1e-4, 1e-1
+
+        config['lr'] = trial.suggest_float('lr', lr_min, lr_max, log=True)
+
+        # Batch size based on model size (larger models need smaller batches)
+        if model_params > 1e7:
+            config['batch_size'] = trial.suggest_categorical('batch_size', [16, 32, 64])
+        else:
+            config['batch_size'] = trial.suggest_categorical('batch_size', [32, 64, 128, 256])
+
+        # Dropout and batch norm are somewhat incompatible
+        use_batch_norm = trial.suggest_categorical('use_batch_norm', [True, False])
+        config['use_batch_norm'] = use_batch_norm
+
+        if use_batch_norm:
+            # Lower dropout when using batch norm
+            config['dropout'] = trial.suggest_float('dropout', 0.0, 0.3)
+        else:
+            # Can use higher dropout without batch norm
+            config['dropout'] = trial.suggest_float('dropout', 0.0, 0.5)
+
+        return config
+
+# Example usage with constraints
+def create_constrained_study():
+    """Create study with intelligent search space."""
+
+    space = IntelligentSearchSpace()
+
+    # Add constraints
+    space.add_constraint(SearchSpaceConstraint(
+        parameter='n_layers',
+        condition='max',
+        value=12
+    ))
+
+    space.add_constraint(SearchSpaceConstraint(
+        parameter='dropout',
+        condition='max',
+        value=0.5
+    ))
+
+    # Create study
+    study = optuna.create_study(direction='maximize')
+
+    def constrained_objective(trial):
+        config = space.suggest_constrained_config(trial)
+        model = build_model(config)
+        return train_and_evaluate(model, config)
+
+    study.optimize(constrained_objective, n_trials=100)
+
+    return study
+\end{lstlisting}
+
+\section{Advanced Pruning Strategies}
+
+Early stopping of unpromising trials is crucial for efficient HPO. Advanced pruning strategies can save 50-90\% of computational cost.
+
+\begin{lstlisting}[style=python, caption=Custom pruning strategies]
+import optuna
+from optuna.pruners import BasePruner
+from optuna.trial import TrialState
+import numpy as np
+from typing import Optional
+
+class PerformanceBasedPruner(BasePruner):
+    """
+    Custom pruner based on performance trajectory.
+
+    Prunes trials that:
+    1. Show no improvement for N steps
+    2. Have poor learning curve characteristics
+    3. Diverge (loss increases significantly)
+    """
+
+    def __init__(self,
+                 patience: int = 5,
+                 min_trials: int = 10,
+                 percentile: float = 50.0):
+        self.patience = patience
+        self.min_trials = min_trials
+        self.percentile = percentile
+
+    def prune(self,
+              study: optuna.Study,
+              trial: optuna.trial.FrozenTrial) -> bool:
+        """
+        Determine if trial should be pruned.
+
+        Returns:
+            True if trial should be pruned
+        """
+        # Get intermediate values for this trial
+        intermediate_values = trial.intermediate_values
+
+        if len(intermediate_values) == 0:
+            return False
+
+        # Get current step and value
+        current_step = max(intermediate_values.keys())
+        current_value = intermediate_values[current_step]
+
+        # Check for divergence
+        if self._is_diverging(intermediate_values):
+            return True
+
+        # Check for no improvement
+        if self._no_improvement(intermediate_values):
+            return True
+
+        # Compare with other trials at same step
+        completed_trials = [
+            t for t in study.trials
+            if t.state == TrialState.COMPLETE or t.state == TrialState.RUNNING
+        ]
+
+        if len(completed_trials) < self.min_trials:
+            return False
+
+        # Get values from other trials at current step
+        other_values = []
+        for t in completed_trials:
+            if t.number == trial.number:
+                continue
+            if current_step in t.intermediate_values:
+                other_values.append(t.intermediate_values[current_step])
+
+        if len(other_values) < self.min_trials:
+            return False
+
+        # Prune if below percentile
+        threshold = np.percentile(other_values, self.percentile)
+
+        # Assuming higher is better (e.g., accuracy)
+        return current_value < threshold
+
+    def _is_diverging(self, values: Dict[int, float]) -> bool:
+        """Check if values are diverging (getting worse)."""
+        if len(values) < 3:
+            return False
+
+        steps = sorted(values.keys())
+        recent_steps = steps[-3:]
+        recent_values = [values[s] for s in recent_steps]
+
+        # Check if consistently decreasing (assuming higher is better)
+        is_decreasing = all(
+            recent_values[i] > recent_values[i+1]
+            for i in range(len(recent_values)-1)
+        )
+
+        # Check if decrease is significant
+        total_decrease = recent_values[0] - recent_values[-1]
+        relative_decrease = total_decrease / (abs(recent_values[0]) + 1e-8)
+
+        return is_decreasing and relative_decrease > 0.1  # 10% decrease
+
+    def _no_improvement(self, values: Dict[int, float]) -> bool:
+        """Check if no improvement for patience steps."""
+        if len(values) < self.patience:
+            return False
+
+        steps = sorted(values.keys())
+        recent_steps = steps[-self.patience:]
+        recent_values = [values[s] for s in recent_steps]
+
+        best_recent = max(recent_values)
+
+        # Check if best value was at the beginning (no improvement since)
+        return recent_values[0] >= best_recent
+
+class LearningCurveExtrapolator(BasePruner):
+    """
+    Prune based on learning curve extrapolation.
+
+    Fits power law to learning curve and predicts final performance.
+    Prunes if predicted performance is below threshold.
+    """
+
+    def __init__(self, min_trials: int = 10, min_steps: int = 5):
+        self.min_trials = min_trials
+        self.min_steps = min_steps
+
+    def prune(self, study: optuna.Study, trial: optuna.trial.FrozenTrial) -> bool:
+        """Prune based on extrapolated performance."""
+        intermediate_values = trial.intermediate_values
+
+        if len(intermediate_values) < self.min_steps:
+            return False
+
+        # Fit learning curve model
+        predicted_final = self._extrapolate_performance(intermediate_values)
+
+        if predicted_final is None:
+            return False
+
+        # Compare with best completed trial
+        completed_trials = [
+            t for t in study.trials
+            if t.state == TrialState.COMPLETE
+        ]
+
+        if len(completed_trials) < self.min_trials:
+            return False
+
+        best_value = max(t.value for t in completed_trials if t.value is not None)
+
+        # Prune if predicted to be significantly worse than best
+        return predicted_final < best_value * 0.95
+
+    def _extrapolate_performance(self, values: Dict[int, float]) -> Optional[float]:
+        """
+        Extrapolate final performance using power law fit.
+
+        Model: performance = a - b * step^(-c)
+        """
+        if len(values) < self.min_steps:
+            return None
+
+        try:
+            from scipy.optimize import curve_fit
+
+            steps = np.array(sorted(values.keys()))
+            perfs = np.array([values[s] for s in steps])
+
+            # Power law model
+            def power_law(x, a, b, c):
+                return a - b * np.power(x, -c)
+
+            # Fit
+            params, _ = curve_fit(
+                power_law,
+                steps,
+                perfs,
+                p0=[perfs[-1] * 1.1, 0.1, 0.5],
+                maxfev=1000
+            )
+
+            # Predict at final step (e.g., 50 epochs)
+            final_step = 50
+            predicted = power_law(final_step, *params)
+
+            return predicted
+
+        except Exception:
+            return None
+
+# Combine multiple pruners
+class CombinedPruner(BasePruner):
+    """
+    Combine multiple pruning strategies.
+
+    Prunes if ANY pruner suggests pruning.
+    """
+
+    def __init__(self, pruners: List[BasePruner]):
+        self.pruners = pruners
+
+    def prune(self, study: optuna.Study, trial: optuna.trial.FrozenTrial) -> bool:
+        """Prune if any sub-pruner suggests pruning."""
+        return any(pruner.prune(study, trial) for pruner in self.pruners)
+
+# Usage example
+def create_study_with_advanced_pruning():
+    """Create study with sophisticated pruning."""
+
+    # Combine multiple pruning strategies
+    combined_pruner = CombinedPruner([
+        PerformanceBasedPruner(patience=5, percentile=30),
+        LearningCurveExtrapolator(min_steps=5),
+        optuna.pruners.HyperbandPruner(min_resource=1, max_resource=50, reduction_factor=3)
+    ])
+
+    study = optuna.create_study(
+        direction='maximize',
+        sampler=optuna.samplers.TPESampler(multivariate=True),
+        pruner=combined_pruner
+    )
+
+    return study
+\end{lstlisting}
+
+\section{Performance Analysis and Visualization}
+
+Effective visualization of HPO results helps identify patterns, understand hyperparameter importance, and guide future optimization efforts.
+
+\begin{lstlisting}[style=python, caption=Comprehensive HPO analysis and visualization]
+import optuna
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from typing import List, Dict
+from scipy import stats
+
+class HPOAnalyzer:
+    """
+    Comprehensive analysis of hyperparameter optimization results.
+
+    Features:
+    1. Parameter importance analysis
+    2. Correlation analysis
+    3. Learning curve analysis
+    4. Optimization history visualization
+    5. Hyperparameter interaction analysis
+    """
+
+    def __init__(self, study: optuna.Study):
+        self.study = study
+        self.df = study.trials_dataframe()
+
+    def analyze_all(self, output_dir: str = './hpo_analysis'):
+        """Run complete analysis pipeline."""
+        import os
+        os.makedirs(output_dir, exist_ok=True)
+
+        print("Running comprehensive HPO analysis...")
+
+        # 1. Parameter importance
+        self.plot_param_importance(f'{output_dir}/param_importance.png')
+
+        # 2. Optimization history
+        self.plot_optimization_history(f'{output_dir}/opt_history.png')
+
+        # 3. Parameter distributions
+        self.plot_param_distributions(f'{output_dir}/param_distributions.png')
+
+        # 4. Correlation matrix
+        self.plot_correlation_matrix(f'{output_dir}/correlation.png')
+
+        # 5. Parallel coordinates
+        self.plot_parallel_coordinates(f'{output_dir}/parallel_coords.png')
+
+        # 6. Learning curves
+        self.plot_learning_curves(f'{output_dir}/learning_curves.png')
+
+        # 7. Hyperparameter interactions
+        self.analyze_interactions(f'{output_dir}/interactions.png')
+
+        # 8. Statistical summary
+        summary = self.generate_statistical_summary()
+        with open(f'{output_dir}/summary.txt', 'w') as f:
+            f.write(summary)
+
+        print(f"Analysis complete. Results saved to {output_dir}")
+
+    def plot_param_importance(self, filepath: str):
+        """
+        Plot hyperparameter importance using fANOVA.
+
+        Importance quantifies how much each hyperparameter affects the objective.
+        """
+        try:
+            from optuna.importance import get_param_importances
+
+            importance = get_param_importances(self.study)
+
+            # Sort by importance
+            params = list(importance.keys())
+            values = [importance[p] for p in params]
+
+            # Create horizontal bar plot
+            plt.figure(figsize=(10, max(6, len(params) * 0.3)))
+            plt.barh(params, values)
+            plt.xlabel('Importance')
+            plt.ylabel('Parameter')
+            plt.title('Hyperparameter Importance (fANOVA)')
+            plt.tight_layout()
+            plt.savefig(filepath, dpi=300, bbox_inches='tight')
+            plt.close()
+
+            print(f"Parameter importance plot saved to {filepath}")
+            print("\nTop 5 most important parameters:")
+            for param, imp in sorted(importance.items(), key=lambda x: x[1], reverse=True)[:5]:
+                print(f"  {param}: {imp:.4f}")
+
+        except ImportError:
+            print("Install scikit-learn for parameter importance: pip install scikit-learn")
+
+    def plot_optimization_history(self, filepath: str):
+        """
+        Plot optimization history showing improvement over time.
+        """
+        # Get completed trials
+        completed_trials = [t for t in self.study.trials
+                          if t.value is not None]
+
+        if len(completed_trials) == 0:
+            print("No completed trials to plot")
+            return
+
+        trial_numbers = [t.number for t in completed_trials]
+        values = [t.value for t in completed_trials]
+
+        # Calculate best value so far
+        if self.study.direction == optuna.study.StudyDirection.MAXIMIZE:
+            best_so_far = np.maximum.accumulate(values)
+        else:
+            best_so_far = np.minimum.accumulate(values)
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+
+        # Plot 1: All trial values
+        ax1.scatter(trial_numbers, values, alpha=0.5, s=20, label='Trial value')
+        ax1.plot(trial_numbers, best_so_far, 'r-', linewidth=2, label='Best value')
+        ax1.set_xlabel('Trial Number')
+        ax1.set_ylabel('Objective Value')
+        ax1.set_title('Optimization History')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Plot 2: Improvement rate
+        improvements = np.diff(best_so_far)
+        ax2.plot(trial_numbers[1:], improvements, 'g-', alpha=0.7)
+        ax2.axhline(y=0, color='r', linestyle='--', alpha=0.5)
+        ax2.set_xlabel('Trial Number')
+        ax2.set_ylabel('Improvement')
+        ax2.set_title('Improvement Rate')
+        ax2.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print(f"Optimization history plot saved to {filepath}")
+
+    def plot_param_distributions(self, filepath: str):
+        """
+        Plot distribution of hyperparameter values for top-performing trials.
+        """
+        # Get param columns
+        param_cols = [col for col in self.df.columns if col.startswith('params_')]
+
+        if len(param_cols) == 0:
+            print("No parameters to plot")
+            return
+
+        # Filter top 20% trials
+        if self.study.direction == optuna.study.StudyDirection.MAXIMIZE:
+            top_trials = self.df.nlargest(max(1, len(self.df) // 5), 'value')
+        else:
+            top_trials = self.df.nsmallest(max(1, len(self.df) // 5), 'value')
+
+        # Create subplots
+        n_params = len(param_cols)
+        n_cols = 3
+        n_rows = (n_params + n_cols - 1) // n_cols
+
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, n_rows * 3))
+        axes = axes.flatten() if n_params > 1 else [axes]
+
+        for idx, col in enumerate(param_cols):
+            ax = axes[idx]
+            param_name = col.replace('params_', '')
+
+            # All trials
+            all_values = self.df[col].dropna()
+            top_values = top_trials[col].dropna()
+
+            if len(all_values) == 0:
+                continue
+
+            # Check if numeric
+            if pd.api.types.is_numeric_dtype(all_values):
+                # Histogram
+                ax.hist(all_values, bins=20, alpha=0.5, label='All trials', density=True)
+                ax.hist(top_values, bins=20, alpha=0.5, label='Top 20%', density=True)
+                ax.set_xlabel('Value')
+                ax.set_ylabel('Density')
+            else:
+                # Bar plot for categorical
+                all_counts = all_values.value_counts()
+                top_counts = top_values.value_counts()
+
+                x = np.arange(len(all_counts))
+                width = 0.35
+
+                ax.bar(x - width/2, all_counts.values, width, label='All trials', alpha=0.5)
+                ax.bar(x + width/2, top_counts.values, width, label='Top 20%', alpha=0.5)
+                ax.set_xticks(x)
+                ax.set_xticklabels(all_counts.index, rotation=45, ha='right')
+                ax.set_ylabel('Count')
+
+            ax.set_title(param_name)
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+
+        # Hide empty subplots
+        for idx in range(len(param_cols), len(axes)):
+            axes[idx].set_visible(False)
+
+        plt.tight_layout()
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print(f"Parameter distributions plot saved to {filepath}")
+
+    def plot_correlation_matrix(self, filepath: str):
+        """
+        Plot correlation between hyperparameters and objective value.
+        """
+        # Get numeric param columns
+        param_cols = [col for col in self.df.columns if col.startswith('params_')]
+        numeric_cols = [col for col in param_cols if pd.api.types.is_numeric_dtype(self.df[col])]
+
+        if len(numeric_cols) == 0:
+            print("No numeric parameters for correlation analysis")
+            return
+
+        # Include objective value
+        cols_to_analyze = numeric_cols + ['value']
+
+        # Compute correlation matrix
+        corr_data = self.df[cols_to_analyze].dropna()
+
+        if len(corr_data) < 2:
+            print("Not enough data for correlation analysis")
+            return
+
+        corr_matrix = corr_data.corr()
+
+        # Plot heatmap
+        plt.figure(figsize=(max(10, len(cols_to_analyze) * 0.8),
+                           max(8, len(cols_to_analyze) * 0.7)))
+
+        # Shorten column names
+        short_names = [col.replace('params_', '') for col in cols_to_analyze]
+        corr_matrix.columns = short_names
+        corr_matrix.index = short_names
+
+        sns.heatmap(corr_matrix, annot=True, fmt='.2f', cmap='RdBu_r',
+                   center=0, vmin=-1, vmax=1, square=True,
+                   linewidths=0.5, cbar_kws={"shrink": 0.8})
+
+        plt.title('Hyperparameter Correlation Matrix')
+        plt.tight_layout()
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print(f"Correlation matrix saved to {filepath}")
+
+        # Print strongest correlations with objective
+        value_corr = corr_matrix['value'].drop('value').abs().sort_values(ascending=False)
+        print("\nStrongest correlations with objective:")
+        for param, corr in value_corr.head(5).items():
+            print(f"  {param}: {corr:.4f}")
+
+    def plot_parallel_coordinates(self, filepath: str):
+        """
+        Parallel coordinates plot for top trials.
+        """
+        # Get top 20 trials
+        if self.study.direction == optuna.study.StudyDirection.MAXIMIZE:
+            top_df = self.df.nlargest(20, 'value')
+        else:
+            top_df = self.df.nsmallest(20, 'value')
+
+        # Get numeric param columns
+        param_cols = [col for col in top_df.columns if col.startswith('params_')]
+        numeric_cols = [col for col in param_cols if pd.api.types.is_numeric_dtype(top_df[col])]
+
+        if len(numeric_cols) == 0:
+            print("No numeric parameters for parallel coordinates")
+            return
+
+        # Normalize parameters to [0, 1]
+        plot_data = top_df[numeric_cols + ['value']].copy()
+
+        for col in plot_data.columns:
+            min_val = plot_data[col].min()
+            max_val = plot_data[col].max()
+            if max_val > min_val:
+                plot_data[col] = (plot_data[col] - min_val) / (max_val - min_val)
+
+        # Plot
+        fig, ax = plt.subplots(figsize=(14, 6))
+
+        # Shorten names
+        short_names = [col.replace('params_', '') if col != 'value' else 'objective'
+                      for col in plot_data.columns]
+        plot_data.columns = short_names
+
+        # Plot lines
+        for idx, row in plot_data.iterrows():
+            alpha = 0.6
+            color = plt.cm.viridis(row['objective'])
+            ax.plot(range(len(short_names)), row.values, alpha=alpha, color=color)
+
+        # Set labels
+        ax.set_xticks(range(len(short_names)))
+        ax.set_xticklabels(short_names, rotation=45, ha='right')
+        ax.set_ylabel('Normalized Value')
+        ax.set_title('Parallel Coordinates Plot (Top 20 Trials)')
+        ax.grid(True, alpha=0.3, axis='x')
+
+        plt.tight_layout()
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print(f"Parallel coordinates plot saved to {filepath}")
+
+    def plot_learning_curves(self, filepath: str):
+        """
+        Plot learning curves for top trials.
+        """
+        # Get trials with intermediate values
+        trials_with_curves = [t for t in self.study.trials
+                             if len(t.intermediate_values) > 0]
+
+        if len(trials_with_curves) == 0:
+            print("No trials with intermediate values for learning curves")
+            return
+
+        # Sort by final value
+        if self.study.direction == optuna.study.StudyDirection.MAXIMIZE:
+            trials_with_curves.sort(key=lambda t: t.value if t.value is not None else float('-inf'),
+                                  reverse=True)
+        else:
+            trials_with_curves.sort(key=lambda t: t.value if t.value is not None else float('inf'))
+
+        # Plot top 10
+        top_trials = trials_with_curves[:10]
+
+        plt.figure(figsize=(12, 6))
+
+        for idx, trial in enumerate(top_trials):
+            steps = sorted(trial.intermediate_values.keys())
+            values = [trial.intermediate_values[s] for s in steps]
+
+            label = f"Trial {trial.number} (final: {trial.value:.4f})"
+            plt.plot(steps, values, marker='o', label=label, alpha=0.7)
+
+        plt.xlabel('Step (Epoch)')
+        plt.ylabel('Intermediate Value')
+        plt.title('Learning Curves (Top 10 Trials)')
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print(f"Learning curves plot saved to {filepath}")
+
+    def analyze_interactions(self, filepath: str):
+        """
+        Analyze and visualize hyperparameter interactions.
+        """
+        # Get numeric param columns
+        param_cols = [col for col in self.df.columns if col.startswith('params_')]
+        numeric_cols = [col for col in param_cols if pd.api.types.is_numeric_dtype(self.df[col])]
+
+        if len(numeric_cols) < 2:
+            print("Need at least 2 numeric parameters for interaction analysis")
+            return
+
+        # Plot pairwise scatter plots for top parameters
+        n_params = min(4, len(numeric_cols))
+        top_params = numeric_cols[:n_params]
+
+        fig, axes = plt.subplots(n_params, n_params, figsize=(15, 15))
+
+        for i, param1 in enumerate(top_params):
+            for j, param2 in enumerate(top_params):
+                ax = axes[i, j]
+
+                if i == j:
+                    # Diagonal: histogram
+                    ax.hist(self.df[param1].dropna(), bins=20, alpha=0.7)
+                    ax.set_ylabel('Count')
+                else:
+                    # Off-diagonal: scatter plot colored by objective
+                    data = self.df[[param1, param2, 'value']].dropna()
+
+                    scatter = ax.scatter(data[param2], data[param1],
+                                       c=data['value'], cmap='viridis',
+                                       alpha=0.6, s=30)
+
+                # Labels
+                if j == 0:
+                    ax.set_ylabel(param1.replace('params_', ''))
+                if i == n_params - 1:
+                    ax.set_xlabel(param2.replace('params_', ''))
+
+                ax.grid(True, alpha=0.3)
+
+        # Add colorbar
+        cbar = plt.colorbar(scatter, ax=axes, orientation='vertical',
+                          fraction=0.046, pad=0.04)
+        cbar.set_label('Objective Value')
+
+        plt.suptitle('Hyperparameter Interaction Analysis', y=0.995)
+        plt.tight_layout()
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print(f"Interaction analysis plot saved to {filepath}")
+
+    def generate_statistical_summary(self) -> str:
+        """Generate comprehensive statistical summary."""
+        summary = []
+        summary.append("=" * 60)
+        summary.append("Hyperparameter Optimization Summary")
+        summary.append("=" * 60)
+        summary.append(f"\nStudy name: {self.study.study_name}")
+        summary.append(f"Direction: {self.study.direction.name}")
+        summary.append(f"\nTotal trials: {len(self.study.trials)}")
+
+        # Count trial states
+        from optuna.trial import TrialState
+        states = {}
+        for trial in self.study.trials:
+            state = trial.state.name
+            states[state] = states.get(state, 0) + 1
+
+        summary.append("\nTrial states:")
+        for state, count in states.items():
+            summary.append(f"  {state}: {count}")
+
+        # Best trial
+        if self.study.best_trial is not None:
+            summary.append(f"\nBest trial: {self.study.best_trial.number}")
+            summary.append(f"Best value: {self.study.best_value:.6f}")
+            summary.append("\nBest hyperparameters:")
+            for key, value in self.study.best_params.items():
+                summary.append(f"  {key}: {value}")
+
+        # Value statistics
+        completed_values = [t.value for t in self.study.trials if t.value is not None]
+        if len(completed_values) > 0:
+            summary.append(f"\nObjective value statistics:")
+            summary.append(f"  Mean: {np.mean(completed_values):.6f}")
+            summary.append(f"  Std: {np.std(completed_values):.6f}")
+            summary.append(f"  Min: {np.min(completed_values):.6f}")
+            summary.append(f"  Max: {np.max(completed_values):.6f}")
+            summary.append(f"  Median: {np.median(completed_values):.6f}")
+
+        # Pruning statistics
+        pruned_count = len([t for t in self.study.trials
+                          if t.state == TrialState.PRUNED])
+        if pruned_count > 0:
+            summary.append(f"\nPruning statistics:")
+            summary.append(f"  Pruned trials: {pruned_count}")
+            summary.append(f"  Pruning rate: {pruned_count / len(self.study.trials) * 100:.1f}%")
+
+            # Estimate compute saved
+            total_complete = len([t for t in self.study.trials
+                                if t.state == TrialState.COMPLETE])
+            if total_complete > 0:
+                avg_steps_complete = np.mean([
+                    max(t.intermediate_values.keys()) if len(t.intermediate_values) > 0 else 0
+                    for t in self.study.trials if t.state == TrialState.COMPLETE
+                ])
+
+                avg_steps_pruned = np.mean([
+                    max(t.intermediate_values.keys()) if len(t.intermediate_values) > 0 else 0
+                    for t in self.study.trials if t.state == TrialState.PRUNED
+                ])
+
+                if avg_steps_complete > 0:
+                    compute_saved = (1 - avg_steps_pruned / avg_steps_complete) * 100
+                    summary.append(f"  Estimated compute saved: {compute_saved:.1f}%")
+
+        summary.append("\n" + "=" * 60)
+
+        return "\n".join(summary)
+
+# Usage example
+def analyze_study_results(study: optuna.Study):
+    """Comprehensive analysis of HPO study."""
+    analyzer = HPOAnalyzer(study)
+    analyzer.analyze_all(output_dir='./hpo_analysis')
+
+    # Print summary to console
+    print("\n" + analyzer.generate_statistical_summary())
+\end{lstlisting}
+
+\section{HPO in Production Environments}
+
+Deploying hyperparameter optimization in production requires additional considerations beyond research settings: automation, monitoring, cost management, and integration with existing ML pipelines.
+
+\subsection{Automated HPO Pipelines}
+
+\begin{lstlisting}[style=python, caption=Production-grade automated HPO pipeline]
+import optuna
+from pathlib import Path
+import json
+import logging
+from typing import Dict, Any, Optional
+from dataclasses import dataclass, asdict
+import yaml
+from datetime import datetime
+
+@dataclass
+class HPOConfig:
+    """Configuration for HPO pipeline."""
+    study_name: str
+    direction: str  # 'maximize' or 'minimize'
+    n_trials: int
+    timeout_hours: Optional[float] = None
+    n_jobs: int = 1
+    storage_url: str = "sqlite:///hpo_studies.db"
+
+    # Sampler config
+    sampler_name: str = "TPE"
+    sampler_params: Dict = None
+
+    # Pruner config
+    pruner_name: str = "Hyperband"
+    pruner_params: Dict = None
+
+    # Resource allocation
+    gpu_per_trial: int = 1
+    cpu_per_trial: int = 4
+    memory_per_trial_gb: int = 16
+
+    # Logging
+    log_level: str = "INFO"
+    save_frequency: int = 5  # Save checkpoint every N trials
+
+    def __post_init__(self):
+        if self.sampler_params is None:
+            self.sampler_params = {}
+        if self.pruner_params is None:
+            self.pruner_params = {}
+
+class ProductionHPOPipeline:
+    """
+    Production-grade HPO pipeline with comprehensive features.
+
+    Features:
+    - Persistent storage
+    - Automatic checkpointing
+    - Resource management
+    - Failure handling and recovery
+    - Performance monitoring
+    - Result archiving
+    """
+
+    def __init__(self, config: HPOConfig):
+        self.config = config
+        self.setup_logging()
+        self.study = None
+
+    def setup_logging(self):
+        """Configure logging."""
+        logging.basicConfig(
+            level=getattr(logging, self.config.log_level),
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(f'hpo_{self.config.study_name}.log'),
+                logging.StreamHandler()
+            ]
+        )
+        self.logger = logging.getLogger(__name__)
+
+    def create_study(self) -> optuna.Study:
+        """Create or load existing study."""
+        self.logger.info(f"Creating/loading study: {self.config.study_name}")
+
+        # Create sampler
+        sampler = self._create_sampler()
+
+        # Create pruner
+        pruner = self._create_pruner()
+
+        # Create storage
+        storage = optuna.storages.RDBStorage(
+            url=self.config.storage_url,
+            engine_kwargs={"pool_pre_ping": True}  # Verify connections
+        )
+
+        # Create or load study
+        study = optuna.create_study(
+            study_name=self.config.study_name,
+            storage=storage,
+            load_if_exists=True,
+            direction=self.config.direction,
+            sampler=sampler,
+            pruner=pruner
+        )
+
+        self.logger.info(f"Study created/loaded. Existing trials: {len(study.trials)}")
+
+        return study
+
+    def _create_sampler(self):
+        """Create sampler from config."""
+        if self.config.sampler_name.lower() == "tpe":
+            from optuna.samplers import TPESampler
+            return TPESampler(**self.config.sampler_params)
+        elif self.config.sampler_name.lower() == "cmaes":
+            from optuna.samplers import CmaEsSampler
+            return TPESampler(**self.config.sampler_params)
+        elif self.config.sampler_name.lower() == "random":
+            from optuna.samplers import RandomSampler
+            return RandomSampler(**self.config.sampler_params)
+        else:
+            raise ValueError(f"Unknown sampler: {self.config.sampler_name}")
+
+    def _create_pruner(self):
+        """Create pruner from config."""
+        if self.config.pruner_name.lower() == "hyperband":
+            from optuna.pruners import HyperbandPruner
+            return HyperbandPruner(**self.config.pruner_params)
+        elif self.config.pruner_name.lower() == "median":
+            from optuna.pruners import MedianPruner
+            return MedianPruner(**self.config.pruner_params)
+        elif self.config.pruner_name.lower() == "none":
+            return optuna.pruners.NopPruner()
+        else:
+            raise ValueError(f"Unknown pruner: {self.config.pruner_name}")
+
+    def run(self, objective_func, callbacks: list = None):
+        """
+        Run HPO pipeline.
+
+        Args:
+            objective_func: Objective function to optimize
+            callbacks: List of callbacks for monitoring
+        """
+        self.study = self.create_study()
+
+        # Add default callbacks
+        if callbacks is None:
+            callbacks = []
+
+        callbacks.extend([
+            self._create_checkpoint_callback(),
+            self._create_monitoring_callback()
+        ])
+
+        # Calculate timeout
+        timeout = None
+        if self.config.timeout_hours is not None:
+            timeout = self.config.timeout_hours * 3600
+
+        try:
+            self.logger.info(f"Starting optimization: {self.config.n_trials} trials")
+            self.logger.info(f"Timeout: {self.config.timeout_hours} hours" if timeout else "No timeout")
+
+            self.study.optimize(
+                objective_func,
+                n_trials=self.config.n_trials,
+                timeout=timeout,
+                n_jobs=self.config.n_jobs,
+                callbacks=callbacks,
+                show_progress_bar=True
+            )
+
+            self.logger.info("Optimization completed successfully")
+
+        except KeyboardInterrupt:
+            self.logger.warning("Optimization interrupted by user")
+        except Exception as e:
+            self.logger.error(f"Optimization failed with error: {e}", exc_info=True)
+            raise
+        finally:
+            # Always save final results
+            self.save_results()
+
+    def _create_checkpoint_callback(self):
+        """Create callback for periodic checkpointing."""
+        def checkpoint_callback(study, trial):
+            if trial.number % self.config.save_frequency == 0:
+                self.logger.info(f"Checkpoint at trial {trial.number}")
+                self.save_results()
+
+        return checkpoint_callback
+
+    def _create_monitoring_callback(self):
+        """Create callback for monitoring progress."""
+        def monitoring_callback(study, trial):
+            if trial.state == optuna.trial.TrialState.COMPLETE:
+                self.logger.info(
+                    f"Trial {trial.number} completed: "
+                    f"value={trial.value:.6f}, "
+                    f"params={trial.params}"
+                )
+
+                # Log best so far
+                best_value = study.best_value
+                self.logger.info(f"Best value so far: {best_value:.6f}")
+
+            elif trial.state == optuna.trial.TrialState.PRUNED:
+                self.logger.info(f"Trial {trial.number} pruned")
+
+            elif trial.state == optuna.trial.TrialState.FAIL:
+                self.logger.error(f"Trial {trial.number} failed")
+
+        return monitoring_callback
+
+    def save_results(self):
+        """Save study results to disk."""
+        if self.study is None:
+            return
+
+        output_dir = Path(f"results_{self.config.study_name}")
+        output_dir.mkdir(exist_ok=True)
+
+        # Save best parameters
+        best_params_file = output_dir / "best_params.json"
+        with open(best_params_file, 'w') as f:
+            json.dump(self.study.best_params, f, indent=2)
+
+        self.logger.info(f"Best parameters saved to {best_params_file}")
+
+        # Save full study results
+        df = self.study.trials_dataframe()
+        results_file = output_dir / "all_trials.csv"
+        df.to_csv(results_file, index=False)
+
+        self.logger.info(f"All trials saved to {results_file}")
+
+        # Save study summary
+        summary = {
+            'study_name': self.config.study_name,
+            'n_trials': len(self.study.trials),
+            'best_value': self.study.best_value,
+            'best_params': self.study.best_params,
+            'direction': self.config.direction,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        summary_file = output_dir / "summary.json"
+        with open(summary_file, 'w') as f:
+            json.dump(summary, f, indent=2)
+
+        self.logger.info(f"Summary saved to {summary_file}")
+
+        # Generate visualizations
+        try:
+            analyzer = HPOAnalyzer(self.study)
+            analyzer.analyze_all(output_dir=str(output_dir / "analysis"))
+        except Exception as e:
+            self.logger.warning(f"Could not generate analysis: {e}")
+
+# Configuration management
+class HPOConfigManager:
+    """Manage HPO configurations."""
+
+    @staticmethod
+    def load_from_yaml(filepath: str) -> HPOConfig:
+        """Load configuration from YAML file."""
+        with open(filepath, 'r') as f:
+            config_dict = yaml.safe_load(f)
+
+        return HPOConfig(**config_dict)
+
+    @staticmethod
+    def save_to_yaml(config: HPOConfig, filepath: str):
+        """Save configuration to YAML file."""
+        with open(filepath, 'w') as f:
+            yaml.dump(asdict(config), f, default_flow_style=False)
+
+    @staticmethod
+    def create_default_config(study_name: str) -> HPOConfig:
+        """Create default configuration."""
+        return HPOConfig(
+            study_name=study_name,
+            direction="maximize",
+            n_trials=100,
+            timeout_hours=24,
+            n_jobs=4,
+            sampler_name="TPE",
+            sampler_params={
+                "n_startup_trials": 10,
+                "multivariate": True
+            },
+            pruner_name="Hyperband",
+            pruner_params={
+                "min_resource": 1,
+                "max_resource": 50,
+                "reduction_factor": 3
+            }
+        )
+
+# Usage example
+def run_production_hpo():
+    """
+    Run production HPO pipeline.
+
+    This example shows how to:
+    1. Load configuration from file
+    2. Define objective function
+    3. Run HPO with monitoring
+    4. Save and analyze results
+    """
+    # Option 1: Load config from YAML
+    config = HPOConfigManager.load_from_yaml('hpo_config.yaml')
+
+    # Option 2: Create programmatically
+    # config = HPOConfigManager.create_default_config("my_study")
+
+    # Create pipeline
+    pipeline = ProductionHPOPipeline(config)
+
+    # Define objective
+    def objective(trial):
+        # Your model training code here
+        config = {
+            'lr': trial.suggest_float('lr', 1e-5, 1e-1, log=True),
+            'hidden_dim': trial.suggest_categorical('hidden_dim', [128, 256, 512]),
+            'dropout': trial.suggest_float('dropout', 0.0, 0.5)
+        }
+
+        model = train_model(config)
+        accuracy = evaluate_model(model)
+
+        return accuracy
+
+    # Run optimization
+    pipeline.run(objective)
+
+    # Access results
+    print(f"Best value: {pipeline.study.best_value}")
+    print(f"Best params: {pipeline.study.best_params}")
+
+\end{lstlisting}
+
+\subsection{HPO Monitoring and Alerting}
+
+\begin{lstlisting}[style=python, caption=Monitoring and alerting for production HPO]
+import optuna
+from typing import Callable, Dict, Any
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import requests
+from datetime import datetime, timedelta
+import numpy as np
+
+class HPOMonitor:
+    """
+    Monitor HPO progress and send alerts.
+
+    Alerts for:
+    - Optimization stalling (no improvement)
+    - High failure rate
+    - Resource exhaustion
+    - Completion or significant milestones
+    """
+
+    def __init__(self,
+                 study: optuna.Study,
+                 email_config: Dict[str, str] = None,
+                 slack_webhook: str = None):
+        self.study = study
+        self.email_config = email_config
+        self.slack_webhook = slack_webhook
+
+        self.last_improvement = datetime.now()
+        self.failure_count = 0
+        self.total_trials = 0
+
+    def check_progress(self) -> Dict[str, Any]:
+        """Check optimization progress."""
+        status = {
+            'n_trials': len(self.study.trials),
+            'best_value': self.study.best_value if self.study.best_trial else None,
+            'n_complete': len([t for t in self.study.trials
+                             if t.state == optuna.trial.TrialState.COMPLETE]),
+            'n_pruned': len([t for t in self.study.trials
+                           if t.state == optuna.trial.TrialState.PRUNED]),
+            'n_failed': len([t for t in self.study.trials
+                           if t.state == optuna.trial.TrialState.FAIL]),
+        }
+
+        # Calculate improvement rate
+        if status['n_complete'] > 0:
+            recent_trials = sorted(
+                [t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE],
+                key=lambda t: t.datetime_complete
+            )
+
+            if len(recent_trials) >= 10:
+                recent_10_best = max(t.value for t in recent_trials[-10:])
+                older_best = max(t.value for t in recent_trials[:-10]) if len(recent_trials) > 10 else 0
+
+                status['improvement_rate'] = (recent_10_best - older_best) / older_best if older_best > 0 else 0
+            else:
+                status['improvement_rate'] = None
+
+        return status
+
+    def check_stalling(self, patience_hours: float = 4.0) -> bool:
+        """Check if optimization is stalling (no improvement)."""
+        if self.study.best_trial is None:
+            return False
+
+        # Time since last improvement
+        last_best_time = self.study.best_trial.datetime_complete
+        if last_best_time is None:
+            return False
+
+        time_since_improvement = datetime.now() - last_best_time
+        is_stalling = time_since_improvement > timedelta(hours=patience_hours)
+
+        return is_stalling
+
+    def check_high_failure_rate(self, threshold: float = 0.3) -> bool:
+        """Check if failure rate is too high."""
+        total_trials = len(self.study.trials)
+        if total_trials < 10:
+            return False
+
+        failed_trials = len([t for t in self.study.trials
+                           if t.state == optuna.trial.TrialState.FAIL])
+
+        failure_rate = failed_trials / total_trials
+        return failure_rate > threshold
+
+    def send_alert(self, subject: str, message: str):
+        """Send alert via configured channels."""
+        # Email alert
+        if self.email_config:
+            self._send_email_alert(subject, message)
+
+        # Slack alert
+        if self.slack_webhook:
+            self._send_slack_alert(subject, message)
+
+    def _send_email_alert(self, subject: str, message: str):
+        """Send email alert."""
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = self.email_config['from']
+            msg['To'] = self.email_config['to']
+            msg['Subject'] = f"[HPO Alert] {subject}"
+
+            msg.attach(MIMEText(message, 'plain'))
+
+            server = smtplib.SMTP(self.email_config['smtp_server'],
+                                 self.email_config['smtp_port'])
+            server.starttls()
+            server.login(self.email_config['username'],
+                        self.email_config['password'])
+            server.send_message(msg)
+            server.quit()
+
+            print(f"Email alert sent: {subject}")
+
+        except Exception as e:
+            print(f"Failed to send email alert: {e}")
+
+    def _send_slack_alert(self, subject: str, message: str):
+        """Send Slack alert."""
+        try:
+            payload = {
+                'text': f"*{subject}*\n{message}"
+            }
+
+            response = requests.post(self.slack_webhook, json=payload)
+            response.raise_for_status()
+
+            print(f"Slack alert sent: {subject}")
+
+        except Exception as e:
+            print(f"Failed to send Slack alert: {e}")
+
+    def create_monitoring_callback(self,
+                                   check_interval: int = 10,
+                                   stalling_patience_hours: float = 4.0) -> Callable:
+        """Create callback for continuous monitoring."""
+
+        def callback(study, trial):
+            # Check every N trials
+            if trial.number % check_interval != 0:
+                return
+
+            # Check for stalling
+            if self.check_stalling(patience_hours=stalling_patience_hours):
+                self.send_alert(
+                    "Optimization Stalling",
+                    f"No improvement in {stalling_patience_hours} hours.\n"
+                    f"Current best value: {study.best_value:.6f}\n"
+                    f"Trials completed: {len(study.trials)}"
+                )
+
+            # Check failure rate
+            if self.check_high_failure_rate():
+                status = self.check_progress()
+                self.send_alert(
+                    "High Failure Rate",
+                    f"Failure rate above threshold.\n"
+                    f"Failed trials: {status['n_failed']}/{status['n_trials']}\n"
+                    f"Check logs for error patterns."
+                )
+
+            # Milestone alerts
+            if trial.number in [10, 50, 100, 200]:
+                status = self.check_progress()
+                self.send_alert(
+                    f"Milestone: {trial.number} Trials",
+                    f"Current best value: {study.best_value:.6f}\n"
+                    f"Complete: {status['n_complete']}\n"
+                    f"Pruned: {status['n_pruned']}\n"
+                    f"Failed: {status['n_failed']}"
+                )
+
+        return callback
+
+# Usage with production pipeline
+def run_monitored_hpo():
+    """Run HPO with monitoring and alerting."""
+
+    # Email configuration
+    email_config = {
+        'from': 'hpo@company.com',
+        'to': 'ml-team@company.com',
+        'smtp_server': 'smtp.gmail.com',
+        'smtp_port': 587,
+        'username': 'your_email@company.com',
+        'password': 'your_password'
+    }
+
+    # Slack webhook
+    slack_webhook = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+    # Create study
+    study = optuna.create_study(direction='maximize')
+
+    # Create monitor
+    monitor = HPOMonitor(
+        study=study,
+        email_config=email_config,
+        slack_webhook=slack_webhook
+    )
+
+    # Create monitoring callback
+    monitoring_callback = monitor.create_monitoring_callback(
+        check_interval=5,
+        stalling_patience_hours=2.0
+    )
+
+    # Run optimization with monitoring
+    study.optimize(
+        objective_function,
+        n_trials=100,
+        callbacks=[monitoring_callback]
+    )
+
+    # Send completion alert
+    monitor.send_alert(
+        "Optimization Complete",
+        f"Study completed.\n"
+        f"Best value: {study.best_value:.6f}\n"
+        f"Best params: {study.best_params}"
+    )
+\end{lstlisting}
+
+\subsection{Resource Management and Cost Optimization}
+
+\begin{lstlisting}[style=python, caption=Resource management for cost-effective HPO]
+import optuna
+from typing import Dict, List
+import time
+from dataclasses import dataclass
+
+@dataclass
+class ResourceBudget:
+    """Resource budget for HPO."""
+    max_compute_hours: float
+    max_cost_usd: float
+    max_trials: int
+    gpu_cost_per_hour: float = 2.50  # AWS p3.2xlarge approximate cost
+    cpu_cost_per_hour: float = 0.10  # AWS c5.xlarge approximate cost
+
+class ResourceManager:
+    """
+    Manage computational resources and costs for HPO.
+
+    Features:
+    - Track resource consumption
+    - Enforce budget constraints
+    - Optimize resource allocation
+    - Predict completion time and cost
+    """
+
+    def __init__(self, budget: ResourceBudget):
+        self.budget = budget
+        self.total_compute_hours = 0.0
+        self.total_cost = 0.0
+        self.trial_times: List[float] = []
+        self.start_time = time.time()
+
+    def record_trial(self, trial_duration_sec: float, used_gpu: bool = True):
+        """Record trial resource usage."""
+        hours = trial_duration_sec / 3600
+        self.total_compute_hours += hours
+
+        cost_per_hour = self.budget.gpu_cost_per_hour if used_gpu else self.budget.cpu_cost_per_hour
+        self.total_cost += hours * cost_per_hour
+
+        self.trial_times.append(trial_duration_sec)
+
+    def check_budget(self) -> Dict[str, Any]:
+        """Check current budget status."""
+        return {
+            'compute_hours_used': self.total_compute_hours,
+            'compute_hours_remaining': self.budget.max_compute_hours - self.total_compute_hours,
+            'cost_used': self.total_cost,
+            'cost_remaining': self.budget.max_cost_usd - self.total_cost,
+            'budget_exhausted': (
+                self.total_compute_hours >= self.budget.max_compute_hours or
+                self.total_cost >= self.budget.max_cost_usd
+            )
+        }
+
+    def estimate_remaining_trials(self) -> int:
+        """Estimate how many more trials can be run."""
+        if len(self.trial_times) == 0:
+            return self.budget.max_trials
+
+        avg_trial_time_hours = np.mean(self.trial_times) / 3600
+
+        # Based on compute budget
+        trials_by_compute = int(
+            (self.budget.max_compute_hours - self.total_compute_hours) / avg_trial_time_hours
+        )
+
+        # Based on cost budget
+        avg_cost_per_trial = self.total_cost / len(self.trial_times)
+        trials_by_cost = int(
+            (self.budget.max_cost_usd - self.total_cost) / avg_cost_per_trial
+        )
+
+        # Based on trial limit
+        trials_by_limit = self.budget.max_trials - len(self.trial_times)
+
+        return max(0, min(trials_by_compute, trials_by_cost, trials_by_limit))
+
+    def create_budget_callback(self) -> Callable:
+        """Create callback to enforce budget constraints."""
+
+        def callback(study, trial):
+            # Record trial duration
+            if trial.duration is not None:
+                self.record_trial(trial.duration.total_seconds())
+
+            # Check budget
+            status = self.check_budget()
+
+            if status['budget_exhausted']:
+                print(f"\nBudget exhausted:")
+                print(f"  Compute hours: {self.total_compute_hours:.2f}/{self.budget.max_compute_hours}")
+                print(f"  Cost: ${self.total_cost:.2f}/${self.budget.max_cost_usd}")
+                print(f"  Trials: {len(self.trial_times)}/{self.budget.max_trials}")
+                study.stop()
+
+            # Print status periodically
+            if trial.number % 10 == 0:
+                remaining = self.estimate_remaining_trials()
+                print(f"\nResource Status (Trial {trial.number}):")
+                print(f"  Compute used: {self.total_compute_hours:.2f}h / {self.budget.max_compute_hours}h")
+                print(f"  Cost: ${self.total_cost:.2f} / ${self.budget.max_cost_usd}")
+                print(f"  Estimated remaining trials: {remaining}")
+
+        return callback
+
+# Dynamic resource allocation
+class DynamicResourceAllocator:
+    """
+    Dynamically allocate resources based on trial performance.
+
+    Strategy:
+    - Start with small resource allocation
+    - Increase resources for promising trials
+    - Decrease resources for unpromising trials
+    """
+
+    def __init__(self, min_epochs: int = 5, max_epochs: int = 50):
+        self.min_epochs = min_epochs
+        self.max_epochs = max_epochs
+        self.trial_history = []
+
+    def suggest_resources(self, trial: optuna.Trial, current_step: int) -> Dict[str, int]:
+        """
+        Suggest resource allocation for trial.
+
+        Returns:
+            Dict with 'epochs', 'batch_size', etc.
+        """
+        # Start with minimum resources
+        if current_step == 0:
+            return {'epochs': self.min_epochs}
+
+        # Get performance at current step
+        if current_step not in trial.intermediate_values:
+            return {'epochs': self.min_epochs}
+
+        current_performance = trial.intermediate_values[current_step]
+
+        # Compare with historical performance at same step
+        historical_performance = [
+            t['performance'][current_step]
+            for t in self.trial_history
+            if current_step in t['performance']
+        ]
+
+        if len(historical_performance) < 5:
+            # Not enough history, use default
+            return {'epochs': self.min_epochs * 2}
+
+        # Calculate percentile
+        percentile = stats.percentileofscore(historical_performance, current_performance)
+
+        # Allocate more epochs if performing well
+        if percentile >= 75:
+            suggested_epochs = self.max_epochs
+        elif percentile >= 50:
+            suggested_epochs = (self.max_epochs + self.min_epochs) // 2
+        else:
+            suggested_epochs = self.min_epochs
+
+        return {'epochs': suggested_epochs}
+
+# Usage example
+def run_budget_constrained_hpo():
+    """Run HPO with budget constraints."""
+
+    # Define budget
+    budget = ResourceBudget(
+        max_compute_hours=24.0,
+        max_cost_usd=60.0,
+        max_trials=100,
+        gpu_cost_per_hour=2.50
+    )
+
+    # Create resource manager
+    resource_manager = ResourceManager(budget)
+
+    # Create study
+    study = optuna.create_study(direction='maximize')
+
+    # Run with budget callback
+    study.optimize(
+        objective_function,
+        n_trials=budget.max_trials,
+        callbacks=[resource_manager.create_budget_callback()]
+    )
+
+    # Print final report
+    status = resource_manager.check_budget()
+    print("\nFinal Resource Usage:")
+    print(f"  Total compute hours: {status['compute_hours_used']:.2f}")
+    print(f"  Total cost: ${status['cost_used']:.2f}")
+    print(f"  Trials completed: {len(resource_manager.trial_times)}")
+    print(f"  Avg time per trial: {np.mean(resource_manager.trial_times):.1f}s")
+\end{lstlisting}

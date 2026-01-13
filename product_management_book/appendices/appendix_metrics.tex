@@ -1,0 +1,64 @@
+\chapter{Requirement Quality Metric Checklists}
+\label{appendix:metrics-checklists}
+
+This appendix extends Chapter~\ref{ch:quantifying-quality} with ready-to-use checklists and scorecards. Each table pairs the qualitative guidance from the main text with concrete review prompts, measurement methods, and suggested guardrails so teams can operationalize their quality program.
+
+\section{Completeness and Context Scorecard}
+\begin{longtable}{p{0.23\textwidth}p{0.35\textwidth}p{0.3\textwidth}}
+\toprule
+\textbf{Completeness Element} & \textbf{Review Questions} & \textbf{Measurement / Guardrail}\\
+\midrule
+Problem Statement & Does the ticket restate the user/business problem in one sentence? & Binary check. Missing problem statement drops score by 15 points.\\
+Hypothesis & Are expected outcomes or behavioral changes articulated? & Require explicit ``We expect...'' statement. Missing hypothesis triggers rewrite.\\
+Stakeholders & Which personas or systems consume the change? & List all impacted personas; require sign-off from each owner for critical work.\\
+Scenarios & Are happy path, failure, and recovery flows described? & Track percentage of tickets covering all three flows; target $\geq80\%$.\\
+Data Contracts & Are input/output data tables or schemas referenced? & Capture table or API names. Unreferenced data assets block estimation.\\
+Assumptions & Are hidden assumptions and constraints called out? & Require at least one ``Assumptions'' bullet; unanswered item reduces completeness by 10 points.\\
+Acceptance Criteria & Is there a numbered list of verifiable outcomes? & Minimum of three acceptance tests or metrics; fewer requires reviewer approval.\\
+Risks and Mitigations & Are risks prioritized with mitigation steps? & Require probability/impact tags; unresolved high risk escalated before sprint commit.\\
+Metrics / SLO Impact & Which KPIs or \glspl{slo} shift? & Capture baseline and target values. Missing baseline blocks deployment.\\
+\bottomrule
+\end{longtable}
+
+\section{Clarity and Consistency Checklist}
+\begin{longtable}{p{0.26\textwidth}p{0.32\textwidth}p{0.27\textwidth}}
+\toprule
+\textbf{Dimension} & \textbf{Checklist Prompts} & \textbf{Recommended Tooling}\\
+\midrule
+Terminology & Are glossary terms (e.g., \gls{slo}, \gls{wape}, \gls{psi}) used consistently? & Glossary lint that flags synonyms or undefined acronyms.\\
+Readability & Are sentences $<25$ words and paragraphs $<6$ lines? & Automated readability score with warning below Grade 8 or above Grade 14.\\
+Ambiguity & Does the ticket avoid vague qualifiers (``fast,'' ``optimize'')? & Regex/NLP scan producing ``ambiguous term'' count shown in dashboards.\\
+Visual Aids & Are diagrams/tables used when prose becomes dense? & Require at least one diagram when readability score exceeds threshold.\\
+Dependency Mapping & Are upstream/downstream components explicitly referenced? & Graph view showing each ticket node; gaps trigger review comments.\\
+Cross-Doc Consistency & Do linked documents (designs, runbooks) use matching IDs? & Link checker verifying shared IDs, ensuring traceable references.\\
+\bottomrule
+\end{longtable}
+
+\section{Testability and Predictive Indicators}
+\begin{longtable}{p{0.24\textwidth}p{0.35\textwidth}p{0.28\textwidth}}
+\toprule
+\textbf{Metric} & \textbf{Checklist Items} & \textbf{Threshold / Alert}\\
+\midrule
+Acceptance-Test Mapping & Does every criterion map to a test case, metric, or alert? & $100\%$ mapping required; flag gaps directly in issue tracker.\\
+Instrumentation Plan & Are dashboards, logs, or synthetic tests defined pre-build? & Require named dashboards or log queries before code freeze.\\
+Defect Prediction Signal & Does historical data classify the ticket as high risk? & If predicted risk $>0.65$, schedule additional peer review.\\
+Rework Probability & Have similar tickets churned mid-sprint due to unclear data? & If rework probability $>0.4$, enforce ``pre-sprint clinic'' session.\\
+Cycle-Time Forecast & How does quality score correlate with lead time? & Block sprint entry if forecast indicates delay $>6$ days beyond baseline.\\
+Traceability Links & Are OKRs, epics, and test suites linked? & Require at least one upstream OKR and two downstream references.\\
+\bottomrule
+\end{longtable}
+
+\section{Reviewer Roles and Cadence}
+\begin{longtable}{p{0.2\textwidth}p{0.34\textwidth}p{0.34\textwidth}}
+\toprule
+\textbf{Role} & \textbf{Primary Checklist Focus} & \textbf{Cadence / SLA}\\
+\midrule
+Product Manager & Completeness, stakeholder coverage, hypothesis clarity. & Submit scorecard before estimation; respond to comments within 1 business day.\\
+Engineering Lead & Technical feasibility, dependency graph, instrumentation. & Review within 2 business days of ticket submission.\\
+Data Scientist & Metric definitions, \glspl{wape}/\glspl{psi}, data contracts. & Attend weekly quality clinic; log findings in analytics backlog.\\
+QA / SDET & Acceptance-test mapping, automation readiness. & Validate checklists before sprint planning; block tickets lacking tests.\\
+Program / Portfolio & Traceability, risk register alignment, quality gate compliance. & Run monthly audit sampling 10\% of tickets per product line.\\
+\bottomrule
+\end{longtable}
+
+Teams can copy these tables into their issue tracker, collaborative docs, or BI dashboards. Update weights, guardrails, and SLAs as quality maturity evolves so the scorecards remain actionable and relevant.

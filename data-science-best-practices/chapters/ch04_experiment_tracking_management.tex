@@ -459,7 +459,7 @@ class MLflowTracker:
     @staticmethod
     def _flatten_dict(
         d: Dict[str, Any],
-        parent_key: str = '',
+        parent_key: str = ",
         sep: str = '.'
     ) -> Dict[str, Any]:
         """Flatten nested dictionary."""
@@ -2233,7 +2233,7 @@ if __name__ == "__main__":
 
 \textbf{The Approach}:
 
-CloudML's engineering team, led by VP of Engineering Sarah Chen, implemented a "brute-force" hyper parameter tuning system in Q3 2023:
+CloudML's engineering team, led by VP of Engineering Sarah Chen, implemented a ``brute-force`` hyper parameter tuning system in Q3 2023:
 \begin{itemize}
     \item Random search with 500-1000 trials per customer project
     \item No early stopping or intelligent search strategies
@@ -2253,7 +2253,7 @@ By November 2023, CloudML was serving 45 enterprise customers. Monthly compute c
     \item \textbf{Wastage}: 40\% of compute spent on dominated solutions
 \end{itemize}
 
-The CFO flagged this during Q4 financial review: "We're spending \$826K/month on compute that we can't bill back to customers at this rate. Our gross margins are negative."
+The CFO flagged this during Q4 financial review: ``We're spending \$826K/month on compute that we can't bill back to customers at this rate. Our gross margins are negative.``
 
 \textbf{The Investigation}:
 
@@ -2349,7 +2349,7 @@ Sarah's team implemented a comprehensive optimization strategy:
 
 \textbf{The Achievement}:
 
-In March 2024, PhD student Lisa Huang submitted a paper to CVPR (top computer vision conference): "NovelNet: 96.8\% Accuracy in Rare Disease Detection from X-rays"---a 4.2\% improvement over state-of-the-art.
+In March 2024, PhD student Lisa Huang submitted a paper to CVPR (top computer vision conference): ``NovelNet: 96.8\% Accuracy in Rare Disease Detection from X-rays``---a 4.2\% improvement over state-of-the-art.
 
 The paper was accepted in May 2024. Major achievement for the lab. Lisa graduated and joined Google Research.
 
@@ -2362,7 +2362,7 @@ In July 2024, three independent research groups attempted to reproduce Lisa's re
     \item ETH Zurich group: 91.2\% accuracy (5.6 points lower)
 \end{itemize}
 
-All groups contacted Prof. Zhang: "We can't reproduce your results. Can you share your exact setup?"
+All groups contacted Prof. Zhang: ``We can't reproduce your results. Can you share your exact setup?``
 
 \textbf{The Investigation}:
 
@@ -2423,7 +2423,7 @@ After extensive code archaeology, they discovered:
 \begin{itemize}
     \item \textbf{Paper retraction}: CVPR required paper withdrawal (September 2024)
     \item \textbf{Reputational damage}: Prof. Zhang's lab credibility severely damaged
-    \item \textbf{Funding impact}: \$2.4M NIH grant renewal rejected citing "concerns about research rigor"
+    \item \textbf{Funding impact}: \$2.4M NIH grant renewal rejected citing ``concerns about research rigor``
     \item \textbf{Career impact}: Lisa's Google onboarding questioned; she had to redo her work
     \item \textbf{Wasted effort}: 5+ research groups wasted 100+ person-hours trying to reproduce
 \end{itemize}
@@ -2471,7 +2471,7 @@ Prof. Zhang mandated strict experiment tracking protocols:
     \item \textbf{Data leakage is subtle}: Even experienced researchers make mistakes
     \item \textbf{Random seed sensitivity matters}: Must report across multiple seeds
     \item \textbf{External validation is essential}: Independent reproduction before publication
-    \item \textbf{Automation over discipline}: Don't rely on researchers to "remember" to log---make it automatic
+    \item \textbf{Automation over discipline}: Don't rely on researchers to ``remember`` to log---make it automatic
 \end{enumerate}
 
 \subsection{Scenario 3: The Resource Wars - Crashing Shared GPU Clusters}
@@ -2521,10 +2521,10 @@ Total: 1,900 concurrent jobs competing for 40 GPUs.
 \textbf{The Escalation}:
 
 \begin{itemize}
-    \item Trading team VP to CTO: "Fraud team is hogging GPUs!"
-    \item Fraud team director: "We have regulatory deadline---we get priority!"
-    \item Risk team manager: "We've been waiting for GPUs for 3 days!"
-    \item DevOps team: "Cluster is unstable, we're shutting it down for maintenance"
+    \item Trading team VP to CTO: ``Fraud team is hogging GPUs!``
+    \item Fraud team director: ``We have regulatory deadline---we get priority!``
+    \item Risk team manager: ``We've been waiting for GPUs for 3 days!``
+    \item DevOps team: ``Cluster is unstable, we're shutting it down for maintenance``
 \end{itemize}
 
 \textbf{The Cost}:
@@ -2648,7 +2648,7 @@ Their documentation:
     \item Inconsistent parameter naming
     \item No git commit associations
     \item Missing dates for 18 experiments
-    \item Final model parameters: "We think these are right..."
+    \item Final model parameters: ``We think these are right...``
     \item No systematic experiment tracking
 \end{itemize}
 
@@ -2686,7 +2686,7 @@ Reconstruction process:
 
 \begin{itemize}
     \item Reconstructed 1,203 of 2,340 experiments (51\%)
-    \item Remaining 1,137 experiments: "best effort" documentation
+    \item Remaining 1,137 experiments: ``best effort`` documentation
     \item FDA accepted submission with 34 follow-up questions
     \item Approval delayed by 4 months (July 2024 vs. March 2024)
     \item Competitive disadvantage: Competitor approved 2 months earlier
@@ -2699,7 +2699,7 @@ Reconstruction process:
     \item \textbf{FDA consultant}: \$500/hr $\times$ 120 hours = \$60K
     \item \textbf{Delay cost}: 4 months $\times$ \$2M/month projected revenue = \$8M opportunity cost
     \item \textbf{Competitive loss}: Competitor gained market share during delay
-    \item \textbf{Reputation}: FDA flagged HealthAI for "enhanced scrutiny" on future submissions
+    \item \textbf{Reputation}: FDA flagged HealthAI for ``enhanced scrutiny`` on future submissions
 \end{itemize}
 
 \textbf{The Prevention}:
@@ -2818,7 +2818,7 @@ The chapter presented five real-world scenarios demonstrating the business impac
     \item Statistical validation ensures improvements are not due to chance
     \item Visualization aids understanding and stakeholder communication
     \item Lifecycle management ensures quality gates are met before deployment
-    \item Automation over discipline: don't rely on humans to "remember" to log
+    \item Automation over discipline: don't rely on humans to ``remember`` to log
     \item Measure everything: can't optimize what you don't measure
 \end{itemize}
 

@@ -1,0 +1,3275 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Design and implement scalable model serving architectures for production
+    \item Build high-performance REST APIs with FastAPI and gRPC services
+    \item Deploy models using TensorFlow Serving, TorchServe, and custom serving solutions
+    \item Choose appropriate serving patterns: batch vs online vs streaming inference
+    \item Optimize models for serving with ONNX, TensorRT, and quantization techniques
+    \item Implement caching strategies and load balancing for high-throughput systems
+    \item Configure autoscaling and resource management for cost-effective serving
+    \item Profile and optimize serving performance to meet latency and throughput requirements
+    \item Monitor serving systems and implement fault tolerance patterns
+\end{itemize}
+
+\section{Introduction: Model Serving Architecture}
+
+Model serving is the process of deploying machine learning models to production where they can accept requests and return predictions. Unlike training, which is typically a batch process, serving must handle:
+
+\begin{itemize}
+    \item \textbf{Real-time requirements}: Predictions often needed in milliseconds
+    \item \textbf{High availability}: 99.9\%+ uptime requirements
+    \item \textbf{Variable load}: Traffic can spike unpredictably
+    \item \textbf{Cost efficiency}: Minimize infrastructure costs at scale
+    \item \textbf{Multiple models}: Version management and A/B testing
+\end{itemize}
+
+A production serving system typically includes:
+
+\begin{enumerate}
+    \item \textbf{API Layer}: REST or gRPC endpoints for client requests
+    \item \textbf{Model Server}: Loads models and executes inference
+    \item \textbf{Preprocessing}: Feature transformation and validation
+    \item \textbf{Postprocessing}: Result formatting and business logic
+    \item \textbf{Caching}: Reduce redundant computations
+    \item \textbf{Load Balancer}: Distribute traffic across instances
+    \item \textbf{Monitoring}: Track latency, throughput, and errors
+\end{enumerate}
+
+\section{FastAPI Model Serving}
+
+FastAPI provides a modern, high-performance framework for building production-ready ML APIs.
+
+\subsection{Basic FastAPI Implementation}
+
+\begin{lstlisting}[style=python, caption=Production-ready FastAPI model serving]
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from pydantic import BaseModel, Field, validator
+import torch
+import torch.nn as nn
+import numpy as np
+from typing import List, Dict, Optional
+import logging
+from datetime import datetime
+import time
+from functools import lru_cache
+import asyncio
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Pydantic models for request/response validation
+class PredictionRequest(BaseModel):
+    """Request schema for predictions."""
+    features: List[float] = Field(..., min_items=1, max_items=1000)
+    model_version: Optional[str] = Field(default="v1", description="Model version to use")
+
+    @validator('features')
+    def validate_features(cls, v):
+        """Validate feature values."""
+        if any(np.isnan(x) or np.isinf(x) for x in v):
+            raise ValueError("Features contain NaN or Inf values")
+        return v
+
+class PredictionResponse(BaseModel):
+    """Response schema for predictions."""
+    prediction: float
+    probabilities: Optional[List[float]] = None
+    model_version: str
+    latency_ms: float
+    timestamp: str
+
+class BatchPredictionRequest(BaseModel):
+    """Request schema for batch predictions."""
+    batch: List[List[float]] = Field(..., min_items=1, max_items=100)
+    model_version: Optional[str] = "v1"
+
+class BatchPredictionResponse(BaseModel):
+    """Response schema for batch predictions."""
+    predictions: List[float]
+    model_version: str
+    batch_size: int
+    latency_ms: float
+
+# Model wrapper with caching and lazy loading
+class ModelManager:
+    """
+    Manage model lifecycle: loading, caching, and inference.
+
+    Features:
+    - Lazy loading (load on first request)
+    - Model versioning
+    - GPU/CPU support
+    - Warmup for consistent latency
+    """
+
+    def __init__(self, model_path: str, device: str = "cuda"):
+        self.model_path = model_path
+        self.device = device if torch.cuda.is_available() else "cpu"
+        self.model = None
+        self.model_version = "v1"
+        self.load_time = None
+
+    def load_model(self):
+        """Load model from disk."""
+        if self.model is not None:
+            return
+
+        logger.info(f"Loading model from {self.model_path}")
+        start_time = time.time()
+
+        try:
+            # Load model checkpoint
+            checkpoint = torch.load(self.model_path, map_location=self.device)
+
+            # Reconstruct model
+            self.model = self._create_model_architecture(checkpoint)
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            self.model.to(self.device)
+            self.model.eval()
+
+            self.load_time = time.time() - start_time
+            logger.info(f"Model loaded in {self.load_time:.2f}s on {self.device}")
+
+            # Warmup inference
+            self._warmup()
+
+        except Exception as e:
+            logger.error(f"Failed to load model: {e}")
+            raise
+
+    def _create_model_architecture(self, checkpoint: Dict) -> nn.Module:
+        """Create model architecture from checkpoint."""
+        # Example: Simple feedforward network
+        input_dim = checkpoint.get('input_dim', 784)
+        hidden_dim = checkpoint.get('hidden_dim', 256)
+        output_dim = checkpoint.get('output_dim', 10)
+
+        model = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim)
+        )
+        return model
+
+    def _warmup(self, n_iterations: int = 10):
+        """Warmup model with dummy inputs."""
+        logger.info("Warming up model...")
+        dummy_input = torch.randn(1, 784).to(self.device)
+
+        with torch.no_grad():
+            for _ in range(n_iterations):
+                _ = self.model(dummy_input)
+
+        logger.info("Warmup complete")
+
+    @torch.no_grad()
+    def predict(self, features: np.ndarray) -> Dict:
+        """
+        Run inference on input features.
+
+        Args:
+            features: Input features (numpy array)
+
+        Returns:
+            Dict with prediction, probabilities, and metadata
+        """
+        if self.model is None:
+            self.load_model()
+
+        start_time = time.time()
+
+        # Convert to tensor
+        x = torch.from_numpy(features).float().unsqueeze(0).to(self.device)
+
+        # Inference
+        logits = self.model(x)
+        probabilities = torch.softmax(logits, dim=1)
+        prediction = torch.argmax(probabilities, dim=1)
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        return {
+            'prediction': prediction.item(),
+            'probabilities': probabilities.cpu().numpy().tolist()[0],
+            'latency_ms': latency_ms
+        }
+
+    @torch.no_grad()
+    def predict_batch(self, batch: np.ndarray) -> Dict:
+        """Run batch inference."""
+        if self.model is None:
+            self.load_model()
+
+        start_time = time.time()
+
+        # Convert to tensor
+        x = torch.from_numpy(batch).float().to(self.device)
+
+        # Batch inference
+        logits = self.model(x)
+        predictions = torch.argmax(logits, dim=1)
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        return {
+            'predictions': predictions.cpu().numpy().tolist(),
+            'latency_ms': latency_ms
+        }
+
+# Create FastAPI app
+app = FastAPI(
+    title="ML Model Serving API",
+    description="Production-ready model serving with FastAPI",
+    version="1.0.0"
+)
+
+# Add middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Initialize model manager (lazy loading)
+model_manager = ModelManager(model_path="model.pth")
+
+# Metrics tracking
+class MetricsTracker:
+    """Track API metrics."""
+    def __init__(self):
+        self.request_count = 0
+        self.total_latency = 0.0
+        self.error_count = 0
+
+    def record_request(self, latency_ms: float, error: bool = False):
+        self.request_count += 1
+        self.total_latency += latency_ms
+        if error:
+            self.error_count += 1
+
+    def get_metrics(self) -> Dict:
+        avg_latency = self.total_latency / self.request_count if self.request_count > 0 else 0
+        error_rate = self.error_count / self.request_count if self.request_count > 0 else 0
+
+        return {
+            'total_requests': self.request_count,
+            'avg_latency_ms': avg_latency,
+            'error_count': self.error_count,
+            'error_rate': error_rate
+        }
+
+metrics = MetricsTracker()
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize on startup."""
+    logger.info("Starting ML Serving API...")
+    # Optionally preload model
+    # model_manager.load_model()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown."""
+    logger.info("Shutting down ML Serving API...")
+
+@app.get("/")
+async def root():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "service": "ml-serving-api",
+        "version": "1.0.0"
+    }
+
+@app.get("/health")
+async def health():
+    """Detailed health check."""
+    return {
+        "status": "healthy",
+        "model_loaded": model_manager.model is not None,
+        "device": model_manager.device,
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/metrics")
+async def get_metrics():
+    """Get API metrics."""
+    return metrics.get_metrics()
+
+@app.post("/predict", response_model=PredictionResponse)
+async def predict(request: PredictionRequest, background_tasks: BackgroundTasks):
+    """
+    Single prediction endpoint.
+
+    Example request:
+    {
+        "features": [0.1, 0.2, ..., 0.9],
+        "model_version": "v1"
+    }
+    """
+    start_time = time.time()
+
+    try:
+        # Convert features to numpy array
+        features = np.array(request.features, dtype=np.float32)
+
+        # Run prediction
+        result = model_manager.predict(features)
+
+        # Record metrics in background
+        latency_ms = (time.time() - start_time) * 1000
+        background_tasks.add_task(metrics.record_request, latency_ms, error=False)
+
+        return PredictionResponse(
+            prediction=result['prediction'],
+            probabilities=result['probabilities'],
+            model_version=request.model_version,
+            latency_ms=latency_ms,
+            timestamp=datetime.now().isoformat()
+        )
+
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        background_tasks.add_task(metrics.record_request, 0.0, error=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/predict/batch", response_model=BatchPredictionResponse)
+async def predict_batch(request: BatchPredictionRequest, background_tasks: BackgroundTasks):
+    """
+    Batch prediction endpoint.
+
+    Example request:
+    {
+        "batch": [[0.1, 0.2, ...], [0.3, 0.4, ...]]
+    }
+    """
+    start_time = time.time()
+
+    try:
+        # Convert to numpy array
+        batch = np.array(request.batch, dtype=np.float32)
+
+        # Run batch prediction
+        result = model_manager.predict_batch(batch)
+
+        latency_ms = (time.time() - start_time) * 1000
+        background_tasks.add_task(metrics.record_request, latency_ms, error=False)
+
+        return BatchPredictionResponse(
+            predictions=result['predictions'],
+            model_version=request.model_version,
+            batch_size=len(request.batch),
+            latency_ms=latency_ms
+        )
+
+    except Exception as e:
+        logger.error(f"Batch prediction error: {e}")
+        background_tasks.add_task(metrics.record_request, 0.0, error=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Run with: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+\end{lstlisting}
+
+\subsection{Advanced FastAPI Features}
+
+\begin{lstlisting}[style=python, caption=Advanced serving features with caching and rate limiting]
+from fastapi import FastAPI, Request, Depends
+from fastapi.responses import JSONResponse
+from fastapi_limiter import FastAPILimiter
+from fastapi_limiter.depends import RateLimiter
+import redis.asyncio as redis
+from functools import wraps
+import hashlib
+import json
+import pickle
+from typing import Callable
+
+# Redis cache for predictions
+class PredictionCache:
+    """
+    Cache predictions to avoid redundant inference.
+
+    Use cases:
+    - Repeated requests for same input
+    - Expensive model inference
+    - High QPS scenarios
+    """
+
+    def __init__(self, redis_url: str = "redis://localhost:6379"):
+        self.redis_client = None
+        self.redis_url = redis_url
+        self.ttl = 3600  # Cache TTL in seconds
+
+    async def connect(self):
+        """Connect to Redis."""
+        self.redis_client = await redis.from_url(
+            self.redis_url,
+            encoding="utf-8",
+            decode_responses=True
+        )
+
+    async def close(self):
+        """Close Redis connection."""
+        if self.redis_client:
+            await self.redis_client.close()
+
+    def _generate_cache_key(self, features: List[float], model_version: str) -> str:
+        """Generate cache key from input features."""
+        # Hash features for cache key
+        features_str = json.dumps(features, sort_keys=True)
+        feature_hash = hashlib.md5(features_str.encode()).hexdigest()
+        return f"prediction:{model_version}:{feature_hash}"
+
+    async def get(self, features: List[float], model_version: str) -> Optional[Dict]:
+        """Get cached prediction."""
+        if not self.redis_client:
+            return None
+
+        cache_key = self._generate_cache_key(features, model_version)
+        cached = await self.redis_client.get(cache_key)
+
+        if cached:
+            return json.loads(cached)
+
+        return None
+
+    async def set(self, features: List[float], model_version: str, result: Dict):
+        """Cache prediction result."""
+        if not self.redis_client:
+            return
+
+        cache_key = self._generate_cache_key(features, model_version)
+        await self.redis_client.setex(
+            cache_key,
+            self.ttl,
+            json.dumps(result)
+        )
+
+# Initialize cache
+cache = PredictionCache()
+
+# Update FastAPI app with caching
+app = FastAPI(title="ML Serving API with Caching")
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize cache on startup."""
+    await cache.connect()
+    # Initialize rate limiter
+    redis_client = await redis.from_url("redis://localhost:6379")
+    await FastAPILimiter.init(redis_client)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Close cache on shutdown."""
+    await cache.close()
+
+@app.post("/predict/cached", dependencies=[Depends(RateLimiter(times=100, seconds=60))])
+async def predict_with_cache(request: PredictionRequest):
+    """
+    Prediction endpoint with caching and rate limiting.
+
+    - Rate limit: 100 requests per minute
+    - Cache hit: ~1ms latency
+    - Cache miss: run inference and cache result
+    """
+    start_time = time.time()
+
+    # Check cache
+    cached_result = await cache.get(request.features, request.model_version)
+
+    if cached_result is not None:
+        logger.info("Cache hit")
+        cached_result['cache_hit'] = True
+        cached_result['latency_ms'] = (time.time() - start_time) * 1000
+        return cached_result
+
+    # Cache miss - run inference
+    logger.info("Cache miss - running inference")
+    features = np.array(request.features, dtype=np.float32)
+    result = model_manager.predict(features)
+
+    # Prepare response
+    response = {
+        'prediction': result['prediction'],
+        'probabilities': result['probabilities'],
+        'model_version': request.model_version,
+        'latency_ms': (time.time() - start_time) * 1000,
+        'cache_hit': False,
+        'timestamp': datetime.now().isoformat()
+    }
+
+    # Cache result
+    await cache.set(request.features, request.model_version, response)
+
+    return response
+
+# Request validation and preprocessing
+class RequestValidator:
+    """Validate and preprocess requests."""
+
+    @staticmethod
+    def validate_features(features: List[float], expected_dim: int = 784) -> np.ndarray:
+        """Validate feature dimensions and values."""
+        if len(features) != expected_dim:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Expected {expected_dim} features, got {len(features)}"
+            )
+
+        # Check for invalid values
+        features_array = np.array(features, dtype=np.float32)
+
+        if np.any(np.isnan(features_array)):
+            raise HTTPException(status_code=400, detail="Features contain NaN values")
+
+        if np.any(np.isinf(features_array)):
+            raise HTTPException(status_code=400, detail="Features contain Inf values")
+
+        return features_array
+
+    @staticmethod
+    def normalize_features(features: np.ndarray) -> np.ndarray:
+        """Normalize features to [0, 1] range."""
+        min_val = features.min()
+        max_val = features.max()
+
+        if max_val - min_val < 1e-8:
+            return features
+
+        return (features - min_val) / (max_val - min_val)
+
+validator = RequestValidator()
+
+@app.post("/predict/validated")
+async def predict_with_validation(request: PredictionRequest):
+    """Prediction with input validation and preprocessing."""
+    try:
+        # Validate features
+        features = validator.validate_features(request.features)
+
+        # Normalize if needed
+        features = validator.normalize_features(features)
+
+        # Run prediction
+        result = model_manager.predict(features)
+
+        return {
+            'prediction': result['prediction'],
+            'probabilities': result['probabilities'],
+            'model_version': request.model_version
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+\end{lstlisting}
+
+\section{gRPC Model Serving}
+
+gRPC provides high-performance RPC for low-latency serving scenarios.
+
+\begin{lstlisting}[language=C, caption=gRPC service definition (prediction.proto)]
+syntax = "proto3";
+
+package prediction;
+
+// Prediction service definition
+service PredictionService {
+    // Single prediction
+    rpc Predict (PredictRequest) returns (PredictResponse);
+
+    // Batch prediction
+    rpc PredictBatch (BatchPredictRequest) returns (BatchPredictResponse);
+
+    // Streaming predictions
+    rpc PredictStream (stream PredictRequest) returns (stream PredictResponse);
+
+    // Health check
+    rpc HealthCheck (HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// Request messages
+message PredictRequest {
+    repeated float features = 1;
+    string model_version = 2;
+}
+
+message BatchPredictRequest {
+    repeated Features batch = 1;
+    string model_version = 2;
+}
+
+message Features {
+    repeated float values = 1;
+}
+
+message HealthCheckRequest {}
+
+// Response messages
+message PredictResponse {
+    int32 prediction = 1;
+    repeated float probabilities = 2;
+    string model_version = 3;
+    float latency_ms = 4;
+}
+
+message BatchPredictResponse {
+    repeated int32 predictions = 1;
+    string model_version = 2;
+    int32 batch_size = 3;
+    float latency_ms = 4;
+}
+
+message HealthCheckResponse {
+    enum ServingStatus {
+        UNKNOWN = 0;
+        SERVING = 1;
+        NOT_SERVING = 2;
+    }
+    ServingStatus status = 1;
+}
+\end{lstlisting}
+
+\begin{lstlisting}[style=python, caption=gRPC server implementation]
+import grpc
+from concurrent import futures
+import time
+import numpy as np
+import torch
+import logging
+
+# Generated from prediction.proto
+import prediction_pb2
+import prediction_pb2_grpc
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class PredictionServicer(prediction_pb2_grpc.PredictionServiceServicer):
+    """
+    gRPC service for model predictions.
+
+    Features:
+    - High-performance binary protocol
+    - Streaming support
+    - Built-in load balancing
+    - Type-safe requests/responses
+    """
+
+    def __init__(self, model_manager: ModelManager):
+        self.model_manager = model_manager
+        self.model_manager.load_model()
+
+    def Predict(self, request, context):
+        """Handle single prediction request."""
+        start_time = time.time()
+
+        try:
+            # Extract features
+            features = np.array(request.features, dtype=np.float32)
+
+            # Run inference
+            result = self.model_manager.predict(features)
+
+            latency_ms = (time.time() - start_time) * 1000
+
+            # Build response
+            response = prediction_pb2.PredictResponse(
+                prediction=int(result['prediction']),
+                probabilities=result['probabilities'],
+                model_version=request.model_version,
+                latency_ms=latency_ms
+            )
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Prediction error: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return prediction_pb2.PredictResponse()
+
+    def PredictBatch(self, request, context):
+        """Handle batch prediction request."""
+        start_time = time.time()
+
+        try:
+            # Extract batch
+            batch = np.array([list(f.values) for f in request.batch], dtype=np.float32)
+
+            # Run batch inference
+            result = self.model_manager.predict_batch(batch)
+
+            latency_ms = (time.time() - start_time) * 1000
+
+            response = prediction_pb2.BatchPredictResponse(
+                predictions=result['predictions'],
+                model_version=request.model_version,
+                batch_size=len(request.batch),
+                latency_ms=latency_ms
+            )
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Batch prediction error: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return prediction_pb2.BatchPredictResponse()
+
+    def PredictStream(self, request_iterator, context):
+        """Handle streaming predictions."""
+        for request in request_iterator:
+            try:
+                features = np.array(request.features, dtype=np.float32)
+                result = self.model_manager.predict(features)
+
+                response = prediction_pb2.PredictResponse(
+                    prediction=int(result['prediction']),
+                    probabilities=result['probabilities'],
+                    model_version=request.model_version,
+                    latency_ms=result['latency_ms']
+                )
+
+                yield response
+
+            except Exception as e:
+                logger.error(f"Streaming prediction error: {e}")
+                context.set_code(grpc.StatusCode.INTERNAL)
+                context.set_details(str(e))
+                return
+
+    def HealthCheck(self, request, context):
+        """Health check endpoint."""
+        if self.model_manager.model is not None:
+            status = prediction_pb2.HealthCheckResponse.SERVING
+        else:
+            status = prediction_pb2.HealthCheckResponse.NOT_SERVING
+
+        return prediction_pb2.HealthCheckResponse(status=status)
+
+def serve(model_path: str, port: int = 50051, max_workers: int = 10):
+    """
+    Start gRPC server.
+
+    Args:
+        model_path: Path to model checkpoint
+        port: Server port
+        max_workers: Maximum concurrent workers
+    """
+    # Create server
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=max_workers),
+        options=[
+            ('grpc.max_send_message_length', 50 * 1024 * 1024),  # 50MB
+            ('grpc.max_receive_message_length', 50 * 1024 * 1024),
+            ('grpc.so_reuseport', 1),
+            ('grpc.use_local_subchannel_pool', 1)
+        ]
+    )
+
+    # Initialize model manager
+    model_manager = ModelManager(model_path=model_path)
+
+    # Add servicer to server
+    prediction_pb2_grpc.add_PredictionServiceServicer_to_server(
+        PredictionServicer(model_manager), server
+    )
+
+    # Start server
+    server.add_insecure_port(f'[::]:{port}')
+    server.start()
+
+    logger.info(f"gRPC server started on port {port}")
+    logger.info(f"Max workers: {max_workers}")
+
+    try:
+        server.wait_for_termination()
+    except KeyboardInterrupt:
+        logger.info("Shutting down gRPC server...")
+        server.stop(0)
+
+if __name__ == '__main__':
+    serve(model_path='model.pth', port=50051, max_workers=10)
+\end{lstlisting}
+
+\begin{lstlisting}[style=python, caption=gRPC client implementation]
+import grpc
+import prediction_pb2
+import prediction_pb2_grpc
+import numpy as np
+import time
+
+class PredictionClient:
+    """
+    gRPC client for predictions.
+
+    Features:
+    - Connection pooling
+    - Automatic retry
+    - Load balancing
+    - Timeout handling
+    """
+
+    def __init__(self, host: str = 'localhost', port: int = 50051):
+        self.address = f'{host}:{port}'
+
+        # Create channel with keepalive
+        self.channel = grpc.insecure_channel(
+            self.address,
+            options=[
+                ('grpc.keepalive_time_ms', 10000),
+                ('grpc.keepalive_timeout_ms', 5000),
+                ('grpc.keepalive_permit_without_calls', True),
+                ('grpc.http2.max_pings_without_data', 0),
+            ]
+        )
+
+        self.stub = prediction_pb2_grpc.PredictionServiceStub(self.channel)
+
+    def predict(self, features: np.ndarray, model_version: str = "v1", timeout: float = 5.0):
+        """
+        Make single prediction.
+
+        Args:
+            features: Input features
+            model_version: Model version to use
+            timeout: Request timeout in seconds
+
+        Returns:
+            Prediction response
+        """
+        request = prediction_pb2.PredictRequest(
+            features=features.tolist(),
+            model_version=model_version
+        )
+
+        try:
+            response = self.stub.Predict(request, timeout=timeout)
+            return {
+                'prediction': response.prediction,
+                'probabilities': list(response.probabilities),
+                'model_version': response.model_version,
+                'latency_ms': response.latency_ms
+            }
+
+        except grpc.RpcError as e:
+            print(f"RPC error: {e.code()}: {e.details()}")
+            raise
+
+    def predict_batch(self, batch: np.ndarray, model_version: str = "v1", timeout: float = 10.0):
+        """Make batch prediction."""
+        # Build batch request
+        features_list = [
+            prediction_pb2.Features(values=row.tolist())
+            for row in batch
+        ]
+
+        request = prediction_pb2.BatchPredictRequest(
+            batch=features_list,
+            model_version=model_version
+        )
+
+        try:
+            response = self.stub.PredictBatch(request, timeout=timeout)
+            return {
+                'predictions': list(response.predictions),
+                'batch_size': response.batch_size,
+                'latency_ms': response.latency_ms
+            }
+
+        except grpc.RpcError as e:
+            print(f"RPC error: {e.code()}: {e.details()}")
+            raise
+
+    def predict_stream(self, features_iterator, model_version: str = "v1"):
+        """
+        Make streaming predictions.
+
+        Args:
+            features_iterator: Iterator of feature arrays
+            model_version: Model version
+
+        Yields:
+            Prediction responses
+        """
+        def request_generator():
+            for features in features_iterator:
+                yield prediction_pb2.PredictRequest(
+                    features=features.tolist(),
+                    model_version=model_version
+                )
+
+        try:
+            for response in self.stub.PredictStream(request_generator()):
+                yield {
+                    'prediction': response.prediction,
+                    'probabilities': list(response.probabilities),
+                    'latency_ms': response.latency_ms
+                }
+
+        except grpc.RpcError as e:
+            print(f"Streaming RPC error: {e.code()}: {e.details()}")
+            raise
+
+    def health_check(self):
+        """Check server health."""
+        request = prediction_pb2.HealthCheckRequest()
+        try:
+            response = self.stub.HealthCheck(request, timeout=2.0)
+            return response.status == prediction_pb2.HealthCheckResponse.SERVING
+        except grpc.RpcError:
+            return False
+
+    def close(self):
+        """Close channel."""
+        self.channel.close()
+
+# Usage example
+if __name__ == '__main__':
+    client = PredictionClient(host='localhost', port=50051)
+
+    # Health check
+    if not client.health_check():
+        print("Server not healthy")
+        exit(1)
+
+    # Single prediction
+    features = np.random.randn(784).astype(np.float32)
+    result = client.predict(features)
+    print(f"Prediction: {result['prediction']}")
+    print(f"Latency: {result['latency_ms']:.2f}ms")
+
+    # Batch prediction
+    batch = np.random.randn(10, 784).astype(np.float32)
+    batch_result = client.predict_batch(batch)
+    print(f"Batch predictions: {batch_result['predictions']}")
+    print(f"Batch latency: {batch_result['latency_ms']:.2f}ms")
+
+    # Streaming predictions
+    def feature_generator():
+        for _ in range(5):
+            yield np.random.randn(784).astype(np.float32)
+            time.sleep(0.1)
+
+    print("\nStreaming predictions:")
+    for result in client.predict_stream(feature_generator()):
+        print(f"  Prediction: {result['prediction']}, Latency: {result['latency_ms']:.2f}ms")
+
+    client.close()
+\end{lstlisting}
+
+\section{TensorFlow Serving and TorchServe}
+
+Production-grade serving frameworks provide optimized inference and model management.
+
+\subsection{TensorFlow Serving Setup}
+
+\begin{lstlisting}[style=python, caption=Prepare model for TensorFlow Serving]
+import tensorflow as tf
+import os
+from typing import Dict
+
+class ModelExporter:
+    """Export TensorFlow models for TF Serving."""
+
+    @staticmethod
+    def export_saved_model(model: tf.keras.Model,
+                          export_dir: str,
+                          version: int = 1):
+        """
+        Export model in SavedModel format.
+
+        TF Serving expects models in:
+        /model_base_path/
+            /1/  # version 1
+                /saved_model.pb
+                /variables/
+            /2/  # version 2
+                ...
+        """
+        model_path = os.path.join(export_dir, str(version))
+
+        # Save model with signature
+        tf.saved_model.save(
+            model,
+            model_path,
+            signatures={
+                'serving_default': model.call.get_concrete_function(
+                    tf.TensorSpec(shape=[None, 784], dtype=tf.float32, name='input')
+                )
+            }
+        )
+
+        print(f"Model exported to {model_path}")
+
+    @staticmethod
+    def export_with_preprocessing(model: tf.keras.Model,
+                                  export_dir: str,
+                                  version: int = 1):
+        """
+        Export model with preprocessing layer.
+
+        Benefits:
+        - Preprocessing happens on server (GPU accelerated)
+        - Clients send raw data, not preprocessed features
+        - Consistent preprocessing between training and serving
+        """
+        @tf.function(input_signature=[tf.TensorSpec(shape=[None, 28, 28], dtype=tf.uint8)])
+        def preprocess_and_predict(images):
+            # Normalize to [0, 1]
+            images = tf.cast(images, tf.float32) / 255.0
+
+            # Flatten
+            images = tf.reshape(images, [-1, 784])
+
+            # Run model
+            return model(images)
+
+        # Create wrapper module
+        class ServingModule(tf.Module):
+            def __init__(self, model):
+                super().__init__()
+                self.model = model
+
+            @tf.function(input_signature=[tf.TensorSpec(shape=[None, 28, 28], dtype=tf.uint8)])
+            def __call__(self, images):
+                return preprocess_and_predict(images)
+
+        serving_module = ServingModule(model)
+
+        model_path = os.path.join(export_dir, str(version))
+        tf.saved_model.save(serving_module, model_path)
+
+        print(f"Model with preprocessing exported to {model_path}")
+
+# Export example
+def export_for_serving():
+    """Complete export example."""
+    # Load trained model
+    model = tf.keras.models.load_model('trained_model.h5')
+
+    # Export for serving
+    exporter = ModelExporter()
+    exporter.export_saved_model(
+        model,
+        export_dir='/models/my_model',
+        version=1
+    )
+
+    # Export with preprocessing
+    exporter.export_with_preprocessing(
+        model,
+        export_dir='/models/my_model_with_preprocessing',
+        version=1
+    )
+\end{lstlisting}
+
+\begin{lstlisting}[style=shell, caption=TensorFlow Serving deployment with Docker]
+# Start TensorFlow Serving with Docker
+docker run -p 8501:8501 \
+  --name=tf_serving \
+  --mount type=bind,source=/path/to/models/my_model,target=/models/my_model \
+  -e MODEL_NAME=my_model \
+  -t tensorflow/serving
+
+# Start with GPU support
+docker run --gpus all -p 8501:8501 \
+  --name=tf_serving_gpu \
+  --mount type=bind,source=/path/to/models/my_model,target=/models/my_model \
+  -e MODEL_NAME=my_model \
+  -t tensorflow/serving:latest-gpu
+
+# Start with custom configuration
+docker run -p 8501:8501 -p 8500:8500 \
+  --name=tf_serving_custom \
+  --mount type=bind,source=/path/to/models,target=/models \
+  --mount type=bind,source=/path/to/config,target=/config \
+  -t tensorflow/serving \
+  --model_config_file=/config/models.config \
+  --model_config_file_poll_wait_seconds=60
+\end{lstlisting}
+
+\begin{lstlisting}[style=python, caption=TensorFlow Serving client]
+import requests
+import json
+import numpy as np
+
+class TensorFlowServingClient:
+    """
+    Client for TensorFlow Serving REST API.
+
+    TF Serving provides:
+    - REST API on port 8501
+    - gRPC API on port 8500
+    - Model versioning
+    - Batching
+    """
+
+    def __init__(self, host: str = 'localhost', port: int = 8501, model_name: str = 'my_model'):
+        self.base_url = f'http://{host}:{port}/v1/models/{model_name}'
+
+    def predict(self, instances: np.ndarray, version: int = None):
+        """
+        Make prediction request.
+
+        Args:
+            instances: Input data (numpy array)
+            version: Specific model version (optional)
+
+        Returns:
+            Prediction results
+        """
+        # Build URL
+        if version:
+            url = f'{self.base_url}/versions/{version}:predict'
+        else:
+            url = f'{self.base_url}:predict'
+
+        # Prepare request
+        data = {
+            'instances': instances.tolist()
+        }
+
+        # Send request
+        response = requests.post(url, json=data)
+        response.raise_for_status()
+
+        return response.json()
+
+    def get_model_metadata(self, version: int = None):
+        """Get model metadata."""
+        if version:
+            url = f'{self.base_url}/versions/{version}/metadata'
+        else:
+            url = f'{self.base_url}/metadata'
+
+        response = requests.get(url)
+        response.raise_for_status()
+
+        return response.json()
+
+    def get_model_status(self):
+        """Get model status."""
+        url = f'{self.base_url}'
+        response = requests.get(url)
+        response.raise_for_status()
+
+        return response.json()
+
+# Usage
+client = TensorFlowServingClient(host='localhost', port=8501, model_name='my_model')
+
+# Get model metadata
+metadata = client.get_model_metadata()
+print("Model metadata:", json.dumps(metadata, indent=2))
+
+# Make prediction
+test_input = np.random.randn(1, 784).astype(np.float32)
+result = client.predict(test_input)
+print("Prediction:", result['predictions'])
+
+# Use specific version
+result_v2 = client.predict(test_input, version=2)
+print("Prediction (v2):", result_v2['predictions'])
+\end{lstlisting}
+
+\subsection{TorchServe Setup}
+
+\begin{lstlisting}[style=python, caption=Prepare PyTorch model for TorchServe]
+import torch
+import torch.nn as nn
+from torchvision import models
+import json
+
+# Create model archive for TorchServe
+class TorchServeExporter:
+    """Export PyTorch models for TorchServe."""
+
+    @staticmethod
+    def save_model(model: nn.Module, model_path: str):
+        """Save model for TorchServe."""
+        # Save state dict
+        torch.save(model.state_dict(), model_path)
+        print(f"Model saved to {model_path}")
+
+    @staticmethod
+    def create_handler(handler_path: str):
+        """
+        Create custom handler for TorchServe.
+
+        Handler defines:
+        - Preprocessing
+        - Inference
+        - Postprocessing
+        """
+        handler_code = """
+import torch
+import torch.nn.functional as F
+from torchvision import transforms
+from ts.torch_handler.base_handler import BaseHandler
+import io
+from PIL import Image
+import numpy as np
+
+class CustomHandler(BaseHandler):
+    '''Custom handler for image classification.'''
+
+    def initialize(self, context):
+        '''Initialize model and preprocessing.'''
+        super().initialize(context)
+
+        # Define preprocessing
+        self.transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+
+    def preprocess(self, data):
+        '''
+        Preprocess input data.
+
+        Args:
+            data: List of input data (raw bytes or JSON)
+
+        Returns:
+            Preprocessed tensors
+        '''
+        images = []
+
+        for row in data:
+            # Get image from request
+            image = row.get("data") or row.get("body")
+
+            if isinstance(image, dict):
+                # JSON input
+                image = image.get("image")
+
+            # Load image
+            if isinstance(image, (bytes, bytearray)):
+                image = Image.open(io.BytesIO(image))
+
+            # Preprocess
+            image = self.transform(image)
+            images.append(image)
+
+        # Stack into batch
+        return torch.stack(images).to(self.device)
+
+    def inference(self, data):
+        '''Run inference.'''
+        with torch.no_grad():
+            outputs = self.model(data)
+            probabilities = F.softmax(outputs, dim=1)
+
+        return probabilities
+
+    def postprocess(self, data):
+        '''
+        Postprocess model output.
+
+        Returns:
+            List of predictions
+        '''
+        # Get top-5 predictions
+        probs, classes = torch.topk(data, k=5, dim=1)
+
+        results = []
+        for prob, cls in zip(probs, classes):
+            result = {
+                'predictions': [
+                    {
+                        'class': int(c),
+                        'probability': float(p)
+                    }
+                    for c, p in zip(cls, prob)
+                ]
+            }
+            results.append(result)
+
+        return results
+"""
+
+        with open(handler_path, 'w') as f:
+            f.write(handler_code)
+
+        print(f"Handler saved to {handler_path}")
+
+# Create model archive
+def create_torchserve_archive():
+    """
+    Create .mar file for TorchServe.
+
+    Steps:
+    1. Save model
+    2. Create handler (optional)
+    3. Package with torch-model-archiver
+    """
+    # Load and save model
+    model = models.resnet50(pretrained=True)
+    model.eval()
+
+    torch.save(model.state_dict(), 'resnet50.pth')
+
+    # Create handler
+    exporter = TorchServeExporter()
+    exporter.create_handler('custom_handler.py')
+
+    # Create index_to_name.json for class mapping
+    class_mapping = {str(i): f"class_{i}" for i in range(1000)}
+    with open('index_to_name.json', 'w') as f:
+        json.dump(class_mapping, f)
+
+    print("Files ready for archiving. Run:")
+    print("""
+torch-model-archiver \\
+  --model-name resnet50 \\
+  --version 1.0 \\
+  --model-file model.py \\
+  --serialized-file resnet50.pth \\
+  --handler custom_handler.py \\
+  --extra-files index_to_name.json \\
+  --export-path model-store/
+    """)
+\end{lstlisting}
+
+\begin{lstlisting}[style=shell, caption=TorchServe deployment]
+# Install TorchServe
+pip install torchserve torch-model-archiver torch-workflow-archiver
+
+# Create model archive
+torch-model-archiver \
+  --model-name resnet50 \
+  --version 1.0 \
+  --model-file model.py \
+  --serialized-file resnet50.pth \
+  --handler image_classifier \
+  --extra-files index_to_name.json \
+  --export-path model-store/
+
+# Start TorchServe
+torchserve --start \
+  --ncs \
+  --model-store model-store \
+  --models resnet50.mar
+
+# Start with configuration
+torchserve --start \
+  --ncs \
+  --model-store model-store \
+  --models resnet50.mar \
+  --ts-config config.properties
+
+# config.properties example:
+# inference_address=http://0.0.0.0:8080
+# management_address=http://0.0.0.0:8081
+# metrics_address=http://0.0.0.0:8082
+# number_of_netty_threads=32
+# job_queue_size=1000
+# number_of_gpu=1
+# batch_size=8
+# max_batch_delay=100
+# default_workers_per_model=4
+
+# Register model via Management API
+curl -X POST "http://localhost:8081/models?url=resnet50.mar&initial_workers=4&batch_size=8"
+
+# Scale workers
+curl -X PUT "http://localhost:8081/models/resnet50?min_worker=2&max_worker=8"
+
+# Unregister model
+curl -X DELETE "http://localhost:8081/models/resnet50"
+\end{lstlisting}
+
+\begin{lstlisting}[style=python, caption=TorchServe client]
+import requests
+import json
+from PIL import Image
+import io
+
+class TorchServeClient:
+    """Client for TorchServe REST API."""
+
+    def __init__(self, host: str = 'localhost', port: int = 8080):
+        self.inference_url = f'http://{host}:{port}/predictions'
+        self.management_url = f'http://{host}:{port + 1}'
+
+    def predict(self, model_name: str, image_path: str):
+        """
+        Make prediction request.
+
+        Args:
+            model_name: Name of registered model
+            image_path: Path to input image
+
+        Returns:
+            Prediction results
+        """
+        url = f'{self.inference_url}/{model_name}'
+
+        # Read image
+        with open(image_path, 'rb') as f:
+            files = {'data': f}
+            response = requests.post(url, files=files)
+
+        response.raise_for_status()
+        return response.json()
+
+    def predict_batch(self, model_name: str, image_paths: list):
+        """Make batch prediction."""
+        url = f'{self.inference_url}/{model_name}'
+
+        # Prepare batch
+        files = []
+        for i, path in enumerate(image_paths):
+            with open(path, 'rb') as f:
+                files.append(('data', f.read()))
+
+        response = requests.post(url, files=files)
+        response.raise_for_status()
+
+        return response.json()
+
+    def get_models(self):
+        """List registered models."""
+        url = f'{self.management_url}/models'
+        response = requests.get(url)
+        response.raise_for_status()
+
+        return response.json()
+
+    def describe_model(self, model_name: str):
+        """Get model details."""
+        url = f'{self.management_url}/models/{model_name}'
+        response = requests.get(url)
+        response.raise_for_status()
+
+        return response.json()
+
+    def scale_workers(self, model_name: str, min_workers: int, max_workers: int):
+        """Scale model workers."""
+        url = f'{self.management_url}/models/{model_name}'
+        params = {
+            'min_worker': min_workers,
+            'max_worker': max_workers
+        }
+
+        response = requests.put(url, params=params)
+        response.raise_for_status()
+
+        return response.json()
+
+# Usage
+client = TorchServeClient(host='localhost', port=8080)
+
+# List models
+models = client.get_models()
+print("Registered models:", models)
+
+# Describe model
+model_info = client.describe_model('resnet50')
+print("Model info:", json.dumps(model_info, indent=2))
+
+# Make prediction
+result = client.predict('resnet50', 'test_image.jpg')
+print("Prediction:", result)
+
+# Scale workers
+client.scale_workers('resnet50', min_workers=2, max_workers=8)
+print("Workers scaled")
+\end{lstlisting}
+
+\section{Batch vs Online vs Streaming Serving Patterns}
+
+Different serving patterns suit different use cases and latency requirements.
+
+\subsection{Online Serving (Real-time)}
+
+\begin{lstlisting}[style=python, caption=Online serving with low-latency optimization]
+import torch
+import torch.nn as nn
+from typing import Dict
+import time
+from collections import deque
+import threading
+
+class OnlineServingOptimizer:
+    """
+    Optimize model for low-latency online serving.
+
+    Techniques:
+    - Model warmup
+    - Batch size 1 optimization
+    - GPU memory pre-allocation
+    - TorchScript compilation
+    """
+
+    def __init__(self, model: nn.Module, device: str = "cuda"):
+        self.model = model
+        self.device = device
+        self.optimized_model = None
+
+    def optimize_for_online(self) -> nn.Module:
+        """Optimize model for single-instance inference."""
+        # Move to device
+        self.model = self.model.to(self.device)
+        self.model.eval()
+
+        # TorchScript compilation for faster inference
+        dummy_input = torch.randn(1, 784).to(self.device)
+
+        with torch.no_grad():
+            traced_model = torch.jit.trace(self.model, dummy_input)
+            traced_model = torch.jit.optimize_for_inference(traced_model)
+
+        self.optimized_model = traced_model
+
+        # Warmup
+        self._warmup()
+
+        return self.optimized_model
+
+    def _warmup(self, n_iterations: int = 100):
+        """Warmup to eliminate first-request latency."""
+        dummy_input = torch.randn(1, 784).to(self.device)
+
+        with torch.no_grad():
+            for _ in range(n_iterations):
+                _ = self.optimized_model(dummy_input)
+
+        # Synchronize GPU
+        if self.device == "cuda":
+            torch.cuda.synchronize()
+
+    @torch.no_grad()
+    def predict_online(self, features: torch.Tensor) -> Dict:
+        """
+        Low-latency single prediction.
+
+        Target: <10ms p99 latency
+        """
+        start = time.perf_counter()
+
+        # Ensure batch size of 1
+        if features.dim() == 1:
+            features = features.unsqueeze(0)
+
+        features = features.to(self.device)
+
+        # Inference
+        output = self.optimized_model(features)
+
+        # Synchronize for accurate timing
+        if self.device == "cuda":
+            torch.cuda.synchronize()
+
+        latency_ms = (time.perf_counter() - start) * 1000
+
+        return {
+            'prediction': output.argmax(dim=1).item(),
+            'probabilities': output.softmax(dim=1).cpu().numpy().tolist()[0],
+            'latency_ms': latency_ms
+        }
+
+\end{lstlisting}
+
+\subsection{Batch Serving}
+
+\begin{lstlisting}[style=python, caption=Dynamic batch serving for throughput optimization]
+import torch
+import asyncio
+from dataclasses import dataclass
+from typing import List, Any
+import time
+
+@dataclass
+class PendingRequest:
+    """Request waiting in batch queue."""
+    features: torch.Tensor
+    future: asyncio.Future
+    arrival_time: float
+
+class DynamicBatchServer:
+    """
+    Dynamic batching for high-throughput serving.
+
+    Strategy:
+    - Accumulate requests up to max_batch_size
+    - Process when batch full or timeout reached
+    - Balance latency vs throughput
+
+    Benefits:
+    - 10-50x higher throughput than online serving
+    - Better GPU utilization
+    - Amortized inference cost
+    """
+
+    def __init__(self,
+                 model: nn.Module,
+                 max_batch_size: int = 32,
+                 max_wait_ms: float = 10.0,
+                 device: str = "cuda"):
+        self.model = model.to(device).eval()
+        self.device = device
+        self.max_batch_size = max_batch_size
+        self.max_wait_ms = max_wait_ms / 1000  # Convert to seconds
+
+        self.pending_requests: List[PendingRequest] = []
+        self.lock = asyncio.Lock()
+        self.batch_event = asyncio.Event()
+
+        # Start batch processor
+        self.processing_task = None
+
+    async def start(self):
+        """Start batch processing loop."""
+        self.processing_task = asyncio.create_task(self._process_batches())
+
+    async def stop(self):
+        """Stop batch processing."""
+        if self.processing_task:
+            self.processing_task.cancel()
+
+    async def predict(self, features: torch.Tensor) -> Dict:
+        """
+        Add request to batch queue and wait for result.
+
+        Args:
+            features: Input tensor
+
+        Returns:
+            Prediction result
+        """
+        # Create future for this request
+        future = asyncio.Future()
+
+        request = PendingRequest(
+            features=features,
+            future=future,
+            arrival_time=time.time()
+        )
+
+        # Add to queue
+        async with self.lock:
+            self.pending_requests.append(request)
+
+            # Trigger batch processing if queue full
+            if len(self.pending_requests) >= self.max_batch_size:
+                self.batch_event.set()
+
+        # Wait for result
+        return await future
+
+    async def _process_batches(self):
+        """Background task to process batches."""
+        while True:
+            try:
+                # Wait for batch to be ready
+                await asyncio.wait_for(
+                    self.batch_event.wait(),
+                    timeout=self.max_wait_ms
+                )
+            except asyncio.TimeoutError:
+                # Timeout reached - process whatever we have
+                pass
+
+            # Get batch
+            async with self.lock:
+                if len(self.pending_requests) == 0:
+                    self.batch_event.clear()
+                    continue
+
+                # Take up to max_batch_size requests
+                batch_requests = self.pending_requests[:self.max_batch_size]
+                self.pending_requests = self.pending_requests[self.max_batch_size:]
+
+                # Clear event if queue empty
+                if len(self.pending_requests) < self.max_batch_size:
+                    self.batch_event.clear()
+
+            # Process batch
+            await self._execute_batch(batch_requests)
+
+    async def _execute_batch(self, requests: List[PendingRequest]):
+        """Execute inference on batch."""
+        if len(requests) == 0:
+            return
+
+        start_time = time.time()
+
+        try:
+            # Stack features into batch
+            features_batch = torch.stack([r.features for r in requests]).to(self.device)
+
+            # Run batch inference
+            with torch.no_grad():
+                outputs = self.model(features_batch)
+                probabilities = torch.softmax(outputs, dim=1)
+                predictions = torch.argmax(outputs, dim=1)
+
+            # Synchronize
+            if self.device == "cuda":
+                torch.cuda.synchronize()
+
+            latency_ms = (time.time() - start_time) * 1000
+
+            # Return results to futures
+            for idx, request in enumerate(requests):
+                result = {
+                    'prediction': predictions[idx].item(),
+                    'probabilities': probabilities[idx].cpu().numpy().tolist(),
+                    'latency_ms': latency_ms,
+                    'batch_size': len(requests),
+                    'wait_time_ms': (start_time - request.arrival_time) * 1000
+                }
+                request.future.set_result(result)
+
+        except Exception as e:
+            # Set exception on all futures
+            for request in requests:
+                request.future.set_exception(e)
+
+# FastAPI integration with dynamic batching
+@app.post("/predict/batch-optimized")
+async def predict_with_dynamic_batching(request: PredictionRequest):
+    """
+    Prediction endpoint with dynamic batching.
+
+    - High throughput: 1000+ QPS
+    - Acceptable latency: 10-50ms p99
+    - Automatic batching transparent to client
+    """
+    features = torch.tensor(request.features, dtype=torch.float32)
+
+    # Use global batch server
+    result = await batch_server.predict(features)
+
+    return {
+        'prediction': result['prediction'],
+        'probabilities': result['probabilities'],
+        'latency_ms': result['latency_ms'],
+        'batch_size': result['batch_size'],
+        'wait_time_ms': result['wait_time_ms']
+    }
+
+# Initialize batch server on startup
+batch_server = None
+
+@app.on_event("startup")
+async def startup_batch_server():
+    global batch_server
+    model = ModelManager(model_path="model.pth")
+    model.load_model()
+
+    batch_server = DynamicBatchServer(
+        model=model.model,
+        max_batch_size=32,
+        max_wait_ms=10.0
+    )
+    await batch_server.start()
+\end{lstlisting}
+
+\subsection{Streaming Serving}
+
+\begin{lstlisting}[style=python, caption=Streaming inference for continuous data]
+from fastapi import WebSocket, WebSocketDisconnect
+import json
+import asyncio
+
+class StreamingPredictor:
+    """
+    Handle streaming predictions over WebSocket.
+
+    Use cases:
+    - Real-time video analysis
+    - Live audio transcription
+    - Time-series forecasting
+    """
+
+    def __init__(self, model: nn.Module, device: str = "cuda"):
+        self.model = model.to(device).eval()
+        self.device = device
+
+    @torch.no_grad()
+    async def predict_stream(self, features: torch.Tensor) -> Dict:
+        """Single prediction in stream."""
+        features = features.to(self.device).unsqueeze(0)
+
+        output = self.model(features)
+        prediction = output.argmax(dim=1).item()
+        probabilities = torch.softmax(output, dim=1).cpu().numpy().tolist()[0]
+
+        return {
+            'prediction': prediction,
+            'probabilities': probabilities,
+            'timestamp': time.time()
+        }
+
+streaming_predictor = None
+
+@app.on_event("startup")
+async def init_streaming():
+    global streaming_predictor
+    model = load_model("model.pth")
+    streaming_predictor = StreamingPredictor(model)
+
+@app.websocket("/ws/predict")
+async def websocket_predict(websocket: WebSocket):
+    """
+    WebSocket endpoint for streaming predictions.
+
+    Client sends:
+    {"features": [0.1, 0.2, ...]}
+
+    Server responds:
+    {"prediction": 5, "probabilities": [...], "timestamp": 1234567890.123}
+    """
+    await websocket.accept()
+
+    try:
+        while True:
+            # Receive data
+            data = await websocket.receive_text()
+            request_data = json.loads(data)
+
+            # Extract features
+            features = torch.tensor(request_data['features'], dtype=torch.float32)
+
+            # Predict
+            result = await streaming_predictor.predict_stream(features)
+
+            # Send response
+            await websocket.send_json(result)
+
+    except WebSocketDisconnect:
+        print("Client disconnected")
+    except Exception as e:
+        print(f"Error: {e}")
+        await websocket.close()
+\end{lstlisting}
+
+\section{Model Optimization for Serving}
+
+Model optimization reduces latency and memory usage for production serving.
+
+\subsection{ONNX Conversion and Optimization}
+
+\begin{lstlisting}[style=python, caption=Convert PyTorch model to ONNX]
+import torch
+import torch.onnx
+import onnx
+import onnxruntime as ort
+from onnxruntime.quantization import quantize_dynamic, QuantType
+import numpy as np
+
+class ONNXOptimizer:
+    """
+    Convert and optimize models with ONNX.
+
+    Benefits:
+    - 2-3x faster inference
+    - Smaller model size
+    - Cross-framework compatibility
+    - Hardware-specific optimizations
+    """
+
+    @staticmethod
+    def export_to_onnx(model: nn.Module,
+                       dummy_input: torch.Tensor,
+                       output_path: str,
+                       opset_version: int = 13):
+        """
+        Export PyTorch model to ONNX format.
+
+        Args:
+            model: PyTorch model
+            dummy_input: Example input for tracing
+            output_path: Path to save ONNX model
+            opset_version: ONNX opset version
+        """
+        model.eval()
+
+        # Export model
+        torch.onnx.export(
+            model,
+            dummy_input,
+            output_path,
+            export_params=True,
+            opset_version=opset_version,
+            do_constant_folding=True,  # Optimize constants
+            input_names=['input'],
+            output_names=['output'],
+            dynamic_axes={
+                'input': {0: 'batch_size'},
+                'output': {0: 'batch_size'}
+            }
+        )
+
+        print(f"Model exported to {output_path}")
+
+        # Verify model
+        onnx_model = onnx.load(output_path)
+        onnx.checker.check_model(onnx_model)
+        print("ONNX model verified")
+
+    @staticmethod
+    def optimize_onnx(input_path: str, output_path: str):
+        """
+        Optimize ONNX model.
+
+        Optimizations:
+        - Constant folding
+        - Operator fusion
+        - Redundant node elimination
+        """
+        import onnxoptimizer
+
+        # Load model
+        model = onnx.load(input_path)
+
+        # Apply optimizations
+        passes = onnxoptimizer.get_available_passes()
+        optimized_model = onnxoptimizer.optimize(model, passes)
+
+        # Save optimized model
+        onnx.save(optimized_model, output_path)
+        print(f"Optimized model saved to {output_path}")
+
+    @staticmethod
+    def quantize_onnx(input_path: str, output_path: str):
+        """
+        Quantize ONNX model to INT8.
+
+        Benefits:
+        - 4x smaller model size
+        - 2-4x faster inference
+        - Minimal accuracy loss (<1%)
+        """
+        quantize_dynamic(
+            input_path,
+            output_path,
+            weight_type=QuantType.QInt8
+        )
+
+        print(f"Quantized model saved to {output_path}")
+
+class ONNXRuntimePredictor:
+    """
+    High-performance inference with ONNX Runtime.
+
+    ONNX Runtime provides:
+    - Optimized kernels for CPU/GPU
+    - Automatic batching
+    - Multi-threading
+    """
+
+    def __init__(self, model_path: str, device: str = "cuda"):
+        self.device = device
+
+        # Create session
+        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if device == "cuda" else ['CPUExecutionProvider']
+
+        self.session = ort.InferenceSession(
+            model_path,
+            providers=providers
+        )
+
+        # Get input/output names
+        self.input_name = self.session.get_inputs()[0].name
+        self.output_name = self.session.get_outputs()[0].name
+
+        print(f"ONNX Runtime session created")
+        print(f"Device: {self.session.get_providers()}")
+
+    def predict(self, features: np.ndarray) -> Dict:
+        """
+        Run inference with ONNX Runtime.
+
+        Args:
+            features: Input features (numpy array)
+
+        Returns:
+            Prediction results
+        """
+        start_time = time.time()
+
+        # Ensure correct shape
+        if features.ndim == 1:
+            features = features.reshape(1, -1)
+
+        features = features.astype(np.float32)
+
+        # Run inference
+        outputs = self.session.run(
+            [self.output_name],
+            {self.input_name: features}
+        )[0]
+
+        # Post-process
+        probabilities = self._softmax(outputs)
+        prediction = probabilities.argmax(axis=1)[0]
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        return {
+            'prediction': int(prediction),
+            'probabilities': probabilities[0].tolist(),
+            'latency_ms': latency_ms
+        }
+
+    @staticmethod
+    def _softmax(x: np.ndarray) -> np.ndarray:
+        """Compute softmax."""
+        exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
+        return exp_x / exp_x.sum(axis=1, keepdims=True)
+
+# Usage example
+def optimize_model_with_onnx():
+    """Complete ONNX optimization pipeline."""
+    # Load PyTorch model
+    model = torch.load('model.pth')
+    model.eval()
+
+    # Export to ONNX
+    dummy_input = torch.randn(1, 784)
+    ONNXOptimizer.export_to_onnx(
+        model,
+        dummy_input,
+        'model.onnx'
+    )
+
+    # Optimize ONNX model
+    ONNXOptimizer.optimize_onnx(
+        'model.onnx',
+        'model_optimized.onnx'
+    )
+
+    # Quantize model
+    ONNXOptimizer.quantize_onnx(
+        'model_optimized.onnx',
+        'model_quantized.onnx'
+    )
+
+    # Test inference
+    predictor = ONNXRuntimePredictor('model_quantized.onnx')
+
+    test_input = np.random.randn(1, 784).astype(np.float32)
+    result = predictor.predict(test_input)
+
+    print(f"Prediction: {result['prediction']}")
+    print(f"Latency: {result['latency_ms']:.2f}ms")
+\end{lstlisting}
+
+\subsection{TensorRT Optimization}
+
+\begin{lstlisting}[style=python, caption=TensorRT optimization for NVIDIA GPUs]
+import tensorrt as trt
+import pycuda.driver as cuda
+import pycuda.autoinit
+import numpy as np
+
+class TensorRTOptimizer:
+    """
+    Optimize models with TensorRT for NVIDIA GPUs.
+
+    Benefits:
+    - 5-10x faster inference on NVIDIA GPUs
+    - Automatic kernel fusion
+    - Mixed precision (FP16/INT8)
+    - Layer-level optimizations
+    """
+
+    def __init__(self):
+        self.logger = trt.Logger(trt.Logger.WARNING)
+        self.builder = trt.Builder(self.logger)
+        self.network = None
+        self.config = None
+        self.engine = None
+
+    def build_engine_from_onnx(self,
+                               onnx_path: str,
+                               fp16_mode: bool = True,
+                               int8_mode: bool = False,
+                               max_batch_size: int = 32) -> trt.ICudaEngine:
+        """
+        Build TensorRT engine from ONNX model.
+
+        Args:
+            onnx_path: Path to ONNX model
+            fp16_mode: Enable FP16 precision
+            int8_mode: Enable INT8 precision (requires calibration)
+            max_batch_size: Maximum batch size
+
+        Returns:
+            TensorRT engine
+        """
+        # Create network
+        network_flags = 1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+        self.network = self.builder.create_network(network_flags)
+
+        # Parse ONNX
+        parser = trt.OnnxParser(self.network, self.logger)
+
+        with open(onnx_path, 'rb') as f:
+            if not parser.parse(f.read()):
+                print("ERROR: Failed to parse ONNX model")
+                for error in range(parser.num_errors):
+                    print(parser.get_error(error))
+                return None
+
+        # Create builder config
+        self.config = self.builder.create_builder_config()
+
+        # Set max workspace size (4GB)
+        self.config.max_workspace_size = 4 * (1 << 30)
+
+        # Enable optimizations
+        if fp16_mode and self.builder.platform_has_fast_fp16:
+            self.config.set_flag(trt.BuilderFlag.FP16)
+            print("FP16 mode enabled")
+
+        if int8_mode and self.builder.platform_has_fast_int8:
+            self.config.set_flag(trt.BuilderFlag.INT8)
+            # Note: INT8 requires calibration dataset
+            print("INT8 mode enabled (calibration required)")
+
+        # Set optimization profile
+        profile = self.builder.create_optimization_profile()
+
+        # Set dynamic shape range
+        input_name = self.network.get_input(0).name
+        profile.set_shape(
+            input_name,
+            min=(1, 784),      # Min batch size
+            opt=(8, 784),      # Optimal batch size
+            max=(max_batch_size, 784)  # Max batch size
+        )
+
+        self.config.add_optimization_profile(profile)
+
+        # Build engine
+        print("Building TensorRT engine... This may take a few minutes.")
+        self.engine = self.builder.build_engine(self.network, self.config)
+
+        if self.engine is None:
+            print("ERROR: Failed to build engine")
+            return None
+
+        print("TensorRT engine built successfully")
+        return self.engine
+
+    def save_engine(self, engine: trt.ICudaEngine, output_path: str):
+        """Save TensorRT engine to file."""
+        with open(output_path, 'wb') as f:
+            f.write(engine.serialize())
+        print(f"Engine saved to {output_path}")
+
+    def load_engine(self, engine_path: str) -> trt.ICudaEngine:
+        """Load TensorRT engine from file."""
+        runtime = trt.Runtime(self.logger)
+
+        with open(engine_path, 'rb') as f:
+            engine = runtime.deserialize_cuda_engine(f.read())
+
+        print(f"Engine loaded from {engine_path}")
+        return engine
+
+class TensorRTPredictor:
+    """
+    High-performance inference with TensorRT.
+
+    Performance:
+    - FP32: 2-3x faster than PyTorch
+    - FP16: 5-7x faster than PyTorch
+    - INT8: 8-10x faster than PyTorch
+    """
+
+    def __init__(self, engine: trt.ICudaEngine):
+        self.engine = engine
+        self.context = engine.create_execution_context()
+
+        # Allocate buffers
+        self.inputs = []
+        self.outputs = []
+        self.bindings = []
+        self.stream = cuda.Stream()
+
+        for binding in engine:
+            size = trt.volume(engine.get_binding_shape(binding))
+            dtype = trt.nptype(engine.get_binding_dtype(binding))
+
+            # Allocate host and device buffers
+            host_mem = cuda.pagelocked_empty(size, dtype)
+            device_mem = cuda.mem_alloc(host_mem.nbytes)
+
+            self.bindings.append(int(device_mem))
+
+            if engine.binding_is_input(binding):
+                self.inputs.append({'host': host_mem, 'device': device_mem})
+            else:
+                self.outputs.append({'host': host_mem, 'device': device_mem})
+
+    def predict(self, features: np.ndarray) -> Dict:
+        """
+        Run inference with TensorRT.
+
+        Args:
+            features: Input features
+
+        Returns:
+            Prediction results
+        """
+        start_time = time.time()
+
+        # Ensure correct shape
+        if features.ndim == 1:
+            features = features.reshape(1, -1)
+
+        features = features.astype(np.float32)
+
+        # Copy input to device
+        np.copyto(self.inputs[0]['host'], features.ravel())
+        cuda.memcpy_htod_async(
+            self.inputs[0]['device'],
+            self.inputs[0]['host'],
+            self.stream
+        )
+
+        # Run inference
+        self.context.execute_async_v2(
+            bindings=self.bindings,
+            stream_handle=self.stream.handle
+        )
+
+        # Copy output to host
+        cuda.memcpy_dtoh_async(
+            self.outputs[0]['host'],
+            self.outputs[0]['device'],
+            self.stream
+        )
+
+        # Synchronize
+        self.stream.synchronize()
+
+        # Get output
+        output = self.outputs[0]['host'].reshape(features.shape[0], -1)
+
+        # Post-process
+        probabilities = self._softmax(output)
+        prediction = probabilities.argmax(axis=1)[0]
+
+        latency_ms = (time.time() - start_time) * 1000
+
+        return {
+            'prediction': int(prediction),
+            'probabilities': probabilities[0].tolist(),
+            'latency_ms': latency_ms
+        }
+
+    @staticmethod
+    def _softmax(x: np.ndarray) -> np.ndarray:
+        """Compute softmax."""
+        exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
+        return exp_x / exp_x.sum(axis=1, keepdims=True)
+
+# Usage example
+def optimize_with_tensorrt():
+    """Complete TensorRT optimization pipeline."""
+    # Step 1: Convert PyTorch to ONNX (from previous section)
+    # ...
+
+    # Step 2: Build TensorRT engine
+    optimizer = TensorRTOptimizer()
+
+    engine = optimizer.build_engine_from_onnx(
+        onnx_path='model.onnx',
+        fp16_mode=True,  # Use FP16 for faster inference
+        max_batch_size=32
+    )
+
+    # Save engine
+    optimizer.save_engine(engine, 'model.trt')
+
+    # Step 3: Run inference
+    predictor = TensorRTPredictor(engine)
+
+    test_input = np.random.randn(1, 784).astype(np.float32)
+    result = predictor.predict(test_input)
+
+    print(f"Prediction: {result['prediction']}")
+    print(f"Latency: {result['latency_ms']:.2f}ms")
+    print("Expected speedup: 5-7x vs PyTorch FP32")
+\end{lstlisting}
+
+\section{Load Balancing and Scaling Strategies}
+
+Effective load balancing and autoscaling ensure reliable, cost-effective serving at scale.
+
+\subsection{Load Balancing with NGINX}
+
+\begin{lstlisting}[style=shell, caption=NGINX configuration for model serving]
+# nginx.conf for ML model serving
+
+upstream model_servers {
+    # Load balancing method
+    least_conn;  # Route to server with fewest active connections
+
+    # Backend servers
+    server 192.168.1.10:8000 weight=1 max_fails=3 fail_timeout=30s;
+    server 192.168.1.11:8000 weight=1 max_fails=3 fail_timeout=30s;
+    server 192.168.1.12:8000 weight=2 max_fails=3 fail_timeout=30s;  # More powerful
+
+    # Health check backend
+    server 192.168.1.13:8000 backup;  # Only used if others fail
+
+    # Connection pooling
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name api.ml-serving.com;
+
+    # Access logging
+    access_log /var/log/nginx/ml_serving_access.log;
+    error_log /var/log/nginx/ml_serving_error.log;
+
+    # Timeouts
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+
+    # Buffer settings
+    client_body_buffer_size 10M;
+    client_max_body_size 10M;
+
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/s;
+    limit_req zone=api_limit burst=20 nodelay;
+
+    # Prediction endpoint
+    location /predict {
+        proxy_pass http://model_servers;
+
+        # Headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # Connection pooling
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+
+        # Response caching (optional)
+        proxy_cache ml_cache;
+        proxy_cache_valid 200 10m;
+        proxy_cache_key "$request_uri|$request_body";
+    }
+
+    # Health check endpoint
+    location /health {
+        proxy_pass http://model_servers;
+        access_log off;
+    }
+
+    # Metrics endpoint (internal only)
+    location /metrics {
+        proxy_pass http://model_servers;
+        allow 192.168.1.0/24;
+        deny all;
+    }
+}
+
+# Cache configuration
+proxy_cache_path /var/cache/nginx/ml_cache levels=1:2 keys_zone=ml_cache:100m max_size=1g inactive=60m;
+\end{lstlisting}
+
+\subsection{Kubernetes Deployment and Autoscaling}
+
+\begin{lstlisting}[style=yaml, caption=Kubernetes deployment for model serving]
+# deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-serving
+  labels:
+    app: ml-serving
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ml-serving
+  template:
+    metadata:
+      labels:
+        app: ml-serving
+    spec:
+      containers:
+      - name: ml-serving
+        image: ml-serving:v1.0.0
+        ports:
+        - containerPort: 8000
+          name: http
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+            nvidia.com/gpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+            nvidia.com/gpu: "1"
+        env:
+        - name: MODEL_PATH
+          value: "/models/model.pth"
+        - name: WORKERS
+          value: "4"
+        - name: BATCH_SIZE
+          value: "32"
+        volumeMounts:
+        - name: model-storage
+          mountPath: /models
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+      volumes:
+      - name: model-storage
+        persistentVolumeClaim:
+          claimName: model-pvc
+
+---
+# service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-serving-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: ml-serving
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+
+---
+# hpa.yaml - Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ml-serving-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ml-serving
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: http_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "1000"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+      - type: Pods
+        value: 4
+        periodSeconds: 15
+      selectPolicy: Max
+
+---
+# PodDisruptionBudget for high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ml-serving-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: ml-serving
+\end{lstlisting}
+
+\subsection{Auto-scaling Based on Custom Metrics}
+
+\begin{lstlisting}[style=python, caption=Custom metrics for autoscaling]
+from prometheus_client import Counter, Histogram, Gauge, start_http_server
+import time
+
+# Prometheus metrics
+REQUEST_COUNT = Counter(
+    'ml_serving_requests_total',
+    'Total number of prediction requests',
+    ['method', 'endpoint', 'status']
+)
+
+REQUEST_LATENCY = Histogram(
+    'ml_serving_request_latency_seconds',
+    'Request latency in seconds',
+    ['endpoint'],
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]
+)
+
+ACTIVE_REQUESTS = Gauge(
+    'ml_serving_active_requests',
+    'Number of requests currently being processed'
+)
+
+BATCH_SIZE = Histogram(
+    'ml_serving_batch_size',
+    'Size of prediction batches',
+    buckets=[1, 2, 4, 8, 16, 32, 64, 128]
+)
+
+GPU_UTILIZATION = Gauge(
+    'ml_serving_gpu_utilization_percent',
+    'GPU utilization percentage'
+)
+
+MODEL_LOAD_TIME = Gauge(
+    'ml_serving_model_load_time_seconds',
+    'Time taken to load model'
+)
+
+class MetricsMiddleware:
+    """
+    Middleware to track serving metrics.
+
+    Metrics exposed on /metrics endpoint for Prometheus scraping.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+        # Start Prometheus metrics server
+        start_http_server(9090)  # Metrics on port 9090
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'http':
+            return await self.app(scope, receive, send)
+
+        # Track active requests
+        ACTIVE_REQUESTS.inc()
+
+        # Measure latency
+        start_time = time.time()
+
+        try:
+            await self.app(scope, receive, send)
+            status = 200  # Simplified
+
+        except Exception as e:
+            status = 500
+            raise
+
+        finally:
+            # Record metrics
+            latency = time.time() - start_time
+            endpoint = scope['path']
+
+            REQUEST_LATENCY.labels(endpoint=endpoint).observe(latency)
+            REQUEST_COUNT.labels(
+                method=scope['method'],
+                endpoint=endpoint,
+                status=status
+            ).inc()
+            ACTIVE_REQUESTS.dec()
+
+# Add to FastAPI app
+app.add_middleware(MetricsMiddleware)
+
+# GPU monitoring
+def monitor_gpu_utilization():
+    """Background task to monitor GPU utilization."""
+    import pynvml
+
+    pynvml.nvmlInit()
+    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+
+    while True:
+        try:
+            utilization = pynvml.nvmlDeviceGetUtilizationRates(handle)
+            GPU_UTILIZATION.set(utilization.gpu)
+
+        except Exception as e:
+            print(f"Error monitoring GPU: {e}")
+
+        time.sleep(5)  # Update every 5 seconds
+
+# Start GPU monitoring
+import threading
+gpu_monitor_thread = threading.Thread(target=monitor_gpu_utilization, daemon=True)
+gpu_monitor_thread.start()
+\end{lstlisting}
+
+\section{Performance Optimization and Profiling}
+
+Systematic profiling identifies bottlenecks and guides optimization efforts.
+
+\subsection{Latency Profiling}
+
+\begin{lstlisting}[style=python, caption=Detailed latency profiling]
+import time
+from contextlib import contextmanager
+from typing import Dict, List
+import statistics
+
+class LatencyProfiler:
+    """
+    Profile latency breakdown for serving pipeline.
+
+    Tracks:
+    - Preprocessing time
+    - Model inference time
+    - Postprocessing time
+    - Total end-to-end latency
+    """
+
+    def __init__(self):
+        self.measurements: Dict[str, List[float]] = {
+            'preprocessing': [],
+            'inference': [],
+            'postprocessing': [],
+            'total': []
+        }
+
+    @contextmanager
+    def measure(self, stage: str):
+        """Context manager to measure stage latency."""
+        start = time.perf_counter()
+        try:
+            yield
+        finally:
+            elapsed = (time.perf_counter() - start) * 1000  # ms
+            self.measurements[stage].append(elapsed)
+
+    def get_stats(self) -> Dict:
+        """Get latency statistics."""
+        stats = {}
+
+        for stage, measurements in self.measurements.items():
+            if len(measurements) == 0:
+                continue
+
+            stats[stage] = {
+                'mean': statistics.mean(measurements),
+                'median': statistics.median(measurements),
+                'p95': self._percentile(measurements, 95),
+                'p99': self._percentile(measurements, 99),
+                'min': min(measurements),
+                'max': max(measurements),
+                'count': len(measurements)
+            }
+
+        return stats
+
+    @staticmethod
+    def _percentile(data: List[float], percentile: float) -> float:
+        """Calculate percentile."""
+        sorted_data = sorted(data)
+        index = int(len(sorted_data) * percentile / 100)
+        return sorted_data[min(index, len(sorted_data) - 1)]
+
+    def print_report(self):
+        """Print profiling report."""
+        stats = self.get_stats()
+
+        print("\n" + "=" * 80)
+        print("LATENCY PROFILING REPORT")
+        print("=" * 80)
+
+        for stage, metrics in stats.items():
+            print(f"\n{stage.upper()}:")
+            print(f"  Mean:     {metrics['mean']:.2f} ms")
+            print(f"  Median:   {metrics['median']:.2f} ms")
+            print(f"  P95:      {metrics['p95']:.2f} ms")
+            print(f"  P99:      {metrics['p99']:.2f} ms")
+            print(f"  Min:      {metrics['min']:.2f} ms")
+            print(f"  Max:      {metrics['max']:.2f} ms")
+            print(f"  Samples:  {metrics['count']}")
+
+        print("\n" + "=" * 80)
+
+# Usage in serving pipeline
+profiler = LatencyProfiler()
+
+async def predict_with_profiling(features: np.ndarray) -> Dict:
+    """Prediction with latency profiling."""
+
+    with profiler.measure('total'):
+        # Preprocessing
+        with profiler.measure('preprocessing'):
+            features = preprocess(features)
+
+        # Inference
+        with profiler.measure('inference'):
+            output = model(features)
+
+        # Postprocessing
+        with profiler.measure('postprocessing'):
+            result = postprocess(output)
+
+    return result
+
+# After processing 1000 requests
+profiler.print_report()
+\end{lstlisting}
+
+\subsection{Throughput Optimization}
+
+\begin{lstlisting}[style=python, caption=Throughput optimization techniques]
+import torch
+import torch.nn as nn
+from typing import List
+import numpy as np
+
+class ThroughputOptimizer:
+    """
+    Optimize serving throughput.
+
+    Techniques:
+    - Optimal batch size selection
+    - Multi-GPU serving
+    - Model parallelism
+    - Request queueing
+    """
+
+    @staticmethod
+    def find_optimal_batch_size(model: nn.Module,
+                                input_shape: tuple,
+                                device: str = "cuda",
+                                max_batch_size: int = 128) -> int:
+        """
+        Find optimal batch size for maximum throughput.
+
+        Strategy:
+        - Test increasing batch sizes
+        - Measure throughput (samples/sec)
+        - Return batch size with highest throughput
+        """
+        model = model.to(device).eval()
+        results = []
+
+        batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128]
+        batch_sizes = [bs for bs in batch_sizes if bs <= max_batch_size]
+
+        print("Finding optimal batch size...")
+
+        for batch_size in batch_sizes:
+            try:
+                # Create dummy batch
+                dummy_input = torch.randn(batch_size, *input_shape).to(device)
+
+                # Warmup
+                with torch.no_grad():
+                    for _ in range(10):
+                        _ = model(dummy_input)
+
+                # Measure throughput
+                n_iterations = 100
+                start_time = time.time()
+
+                with torch.no_grad():
+                    for _ in range(n_iterations):
+                        _ = model(dummy_input)
+
+                # Synchronize
+                if device == "cuda":
+                    torch.cuda.synchronize()
+
+                elapsed = time.time() - start_time
+                throughput = (n_iterations * batch_size) / elapsed
+
+                results.append({
+                    'batch_size': batch_size,
+                    'throughput': throughput,
+                    'latency': elapsed / n_iterations * 1000
+                })
+
+                print(f"  Batch size {batch_size:3d}: {throughput:8.1f} samples/sec, "
+                      f"{elapsed / n_iterations * 1000:.2f} ms/batch")
+
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    print(f"  Batch size {batch_size:3d}: OOM")
+                    break
+                raise
+
+        # Find optimal
+        if len(results) == 0:
+            return 1
+
+        optimal = max(results, key=lambda x: x['throughput'])
+        print(f"\nOptimal batch size: {optimal['batch_size']}")
+        print(f"Max throughput: {optimal['throughput']:.1f} samples/sec")
+
+        return optimal['batch_size']
+
+class MultiGPUServing:
+    """
+    Serve model across multiple GPUs for higher throughput.
+
+    Strategy:
+    - Replicate model on each GPU
+    - Round-robin request distribution
+    - Independent inference on each GPU
+    """
+
+    def __init__(self, model: nn.Module, n_gpus: int = None):
+        if n_gpus is None:
+            n_gpus = torch.cuda.device_count()
+
+        self.n_gpus = n_gpus
+        self.models = []
+
+        # Create model replica on each GPU
+        for gpu_id in range(n_gpus):
+            model_replica = model.to(f'cuda:{gpu_id}')
+            model_replica.eval()
+            self.models.append(model_replica)
+
+        self.current_gpu = 0
+        print(f"MultiGPU serving initialized with {n_gpus} GPUs")
+
+    @torch.no_grad()
+    def predict(self, features: np.ndarray) -> Dict:
+        """
+        Predict using next available GPU (round-robin).
+
+        Args:
+            features: Input features
+
+        Returns:
+            Prediction result
+        """
+        # Select GPU
+        gpu_id = self.current_gpu
+        self.current_gpu = (self.current_gpu + 1) % self.n_gpus
+
+        # Move to GPU and run inference
+        device = f'cuda:{gpu_id}'
+        x = torch.from_numpy(features).float().unsqueeze(0).to(device)
+
+        output = self.models[gpu_id](x)
+        prediction = output.argmax(dim=1).item()
+        probabilities = torch.softmax(output, dim=1).cpu().numpy().tolist()[0]
+
+        return {
+            'prediction': prediction,
+            'probabilities': probabilities,
+            'gpu_id': gpu_id
+        }
+
+# Usage
+optimizer = ThroughputOptimizer()
+optimal_bs = optimizer.find_optimal_batch_size(
+    model=my_model,
+    input_shape=(784,),
+    device='cuda'
+)
+
+# Multi-GPU setup
+multi_gpu_server = MultiGPUServing(model=my_model, n_gpus=4)
+\end{lstlisting}
+
+\subsection{Memory Optimization}
+
+\begin{lstlisting}[style=python, caption=Memory optimization for serving]
+import torch
+import gc
+
+class MemoryOptimizer:
+    """
+    Optimize memory usage in serving.
+
+    Techniques:
+    - Model quantization
+    - Gradient disabled
+    - Memory pooling
+    - Periodic garbage collection
+    """
+
+    @staticmethod
+    def optimize_model_memory(model: nn.Module) -> nn.Module:
+        """Optimize model for minimal memory footprint."""
+
+        # Ensure eval mode (no gradients)
+        model.eval()
+
+        # Disable gradient computation globally
+        for param in model.parameters():
+            param.requires_grad = False
+
+        # Use inference mode for better performance
+        model = torch.jit.optimize_for_inference(
+            torch.jit.script(model)
+        )
+
+        return model
+
+    @staticmethod
+    def monitor_memory():
+        """Monitor GPU memory usage."""
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated() / 1024**3  # GB
+            reserved = torch.cuda.memory_reserved() / 1024**3
+            max_allocated = torch.cuda.max_memory_allocated() / 1024**3
+
+            print(f"GPU Memory:")
+            print(f"  Allocated: {allocated:.2f} GB")
+            print(f"  Reserved:  {reserved:.2f} GB")
+            print(f"  Peak:      {max_allocated:.2f} GB")
+
+    @staticmethod
+    def clear_memory():
+        """Clear unused memory."""
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+
+    @staticmethod
+    def setup_memory_pooling():
+        """Configure memory allocator for better reuse."""
+        if torch.cuda.is_available():
+            # Use caching allocator
+            torch.cuda.set_per_process_memory_fraction(0.9, device=0)
+
+            # Pre-allocate memory pool
+            torch.cuda.empty_cache()
+
+# Periodic memory cleanup
+import threading
+
+def periodic_memory_cleanup(interval: int = 300):
+    """Clean up memory every interval seconds."""
+    while True:
+        time.sleep(interval)
+        MemoryOptimizer.clear_memory()
+        print("Memory cleanup completed")
+
+cleanup_thread = threading.Thread(target=periodic_memory_cleanup, daemon=True)
+cleanup_thread.start()
+\end{lstlisting}
+
+\section{Chapter Summary}
+
+This chapter covered production model serving architecture and implementation:
+
+\textbf{Serving Frameworks:}
+\begin{itemize}
+    \item FastAPI provides flexible REST APIs with async support, request validation, and middleware
+    \item gRPC offers high-performance binary protocol for low-latency serving
+    \item TensorFlow Serving and TorchServe provide production-grade frameworks with batching and versioning
+\end{itemize}
+
+\textbf{Serving Patterns:}
+\begin{itemize}
+    \item Online serving optimized for low latency (<10ms p99) with model warmup and TorchScript compilation
+    \item Batch serving maximizes throughput (10-50x vs online) with dynamic batching and optimal wait times
+    \item Streaming serving handles continuous data with WebSocket connections for real-time applications
+\end{itemize}
+
+\textbf{Model Optimization:}
+\begin{itemize}
+    \item ONNX conversion provides 2-3x speedup with cross-framework compatibility
+    \item TensorRT delivers 5-10x speedup on NVIDIA GPUs with FP16/INT8 precision
+    \item Quantization reduces model size by 4x with minimal accuracy loss
+\end{itemize}
+
+\textbf{Infrastructure:}
+\begin{itemize}
+    \item Load balancing with NGINX distributes traffic and provides health checks
+    \item Kubernetes enables horizontal autoscaling based on CPU, memory, and custom metrics
+    \item Prometheus metrics track latency, throughput, and resource utilization
+\end{itemize}
+
+\textbf{Performance Optimization:}
+\begin{itemize}
+    \item Profiling identifies bottlenecks in preprocessing, inference, and postprocessing
+    \item Optimal batch size selection maximizes throughput for given hardware
+    \item Multi-GPU serving increases capacity with model replication
+    \item Memory optimization reduces footprint through quantization and efficient allocation
+\end{itemize}
+
+\textbf{Key Takeaways:}
+\begin{enumerate}
+    \item Choose serving pattern based on latency requirements: online for <10ms, batch for throughput
+    \item Optimize models with ONNX/TensorRT before deployment for 2-10x speedup
+    \item Implement caching for repeated requests to reduce inference cost
+    \item Use dynamic batching to balance latency and throughput automatically
+    \item Monitor metrics continuously and autoscale based on load patterns
+    \item Profile systematically to identify and eliminate bottlenecks
+    \item Design for high availability with health checks, load balancing, and redundancy
+\end{enumerate}
+
+\section{Exercises}
+
+\begin{exercise}
+\textbf{FastAPI Model Serving}
+
+Build a production-ready FastAPI service for image classification:
+
+\begin{enumerate}
+    \item Create endpoints for single and batch predictions
+    \item Implement request validation with Pydantic schemas
+    \item Add Redis caching for predictions
+    \item Configure rate limiting (100 req/min per IP)
+    \item Add health check and metrics endpoints
+    \item Implement graceful shutdown and model warmup
+    \item Write Docker configuration with multi-stage build
+    \item Test with locust for 1000 QPS
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item FastAPI application code
+    \item Dockerfile and docker-compose.yml
+    \item Load test results showing p50/p95/p99 latency
+    \item Prometheus metrics dashboard configuration
+\end{itemize}
+
+\textbf{Success Criteria:}
+\begin{itemize}
+    \item P99 latency <50ms for single predictions
+    \item Throughput >500 QPS on single GPU
+    \item Cache hit rate >30\% on repeated requests
+    \item Zero downtime during graceful shutdown
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{gRPC High-Performance Serving}
+
+Implement gRPC service with streaming support:
+
+\begin{enumerate}
+    \item Define protocol buffers for prediction service
+    \item Implement server with single, batch, and streaming RPCs
+    \item Add interceptors for logging and metrics
+    \item Configure connection pooling and keepalive
+    \item Implement client with automatic retry and circuit breaking
+    \item Compare latency vs REST API
+    \item Test streaming with 1000 concurrent connections
+\end{enumerate}
+
+\textbf{Expected Results:}
+\begin{itemize}
+    \item gRPC 30-50\% lower latency than REST
+    \item Streaming handles 1000+ concurrent connections
+    \item Automatic reconnection on failures
+    \item Request/response compression reduces bandwidth by 60\%
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Model Optimization Pipeline}
+
+Create complete optimization pipeline from PyTorch to TensorRT:
+
+\begin{enumerate}
+    \item Train baseline PyTorch model on CIFAR-10
+    \item Export to ONNX with dynamic axes
+    \item Apply ONNX optimizations (fusion, folding)
+    \item Quantize model to INT8 with calibration data
+    \item Build TensorRT engine with FP16 and INT8
+    \item Compare accuracy, latency, and throughput
+    \item Measure memory usage for each variant
+    \item Document speedup and accuracy trade-offs
+\end{enumerate}
+
+\textbf{Target Metrics:}
+\begin{itemize}
+    \item ONNX FP32: 2-3x faster than PyTorch
+    \item TensorRT FP16: 5-7x faster than PyTorch
+    \item TensorRT INT8: 8-10x faster, <1\% accuracy loss
+    \item Memory reduction: 4x with INT8 quantization
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Dynamic Batch Serving}
+
+Implement dynamic batching for optimal throughput:
+
+\begin{enumerate}
+    \item Create async batch server with configurable parameters
+    \item Implement queue with max size and timeout
+    \item Add metrics for batch sizes and wait times
+    \item Tune max\_batch\_size and max\_wait\_ms for optimal latency/throughput
+    \item Test with variable load patterns
+    \item Compare vs non-batched serving
+    \item Measure GPU utilization improvement
+\end{enumerate}
+
+\textbf{Optimization Goals:}
+\begin{itemize}
+    \item 10x throughput increase vs online serving
+    \item P99 latency <50ms with batching
+    \item GPU utilization >80\%
+    \item Handle traffic spikes smoothly
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Kubernetes Deployment with Autoscaling}
+
+Deploy model serving on Kubernetes with HPA:
+
+\begin{enumerate}
+    \item Create Deployment with resource requests/limits
+    \item Configure HorizontalPodAutoscaler with CPU and custom metrics
+    \item Set up Prometheus for metrics collection
+    \item Implement PodDisruptionBudget for availability
+    \item Add liveness and readiness probes
+    \item Test autoscaling under load
+    \item Configure cluster autoscaling
+    \item Implement blue-green deployment strategy
+\end{enumerate}
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Scale from 2 to 20 pods based on load
+    \item Average CPU utilization 60-70\%
+    \item Zero-downtime deployments
+    \item Handle 10x traffic spikes within 2 minutes
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Multi-Model Serving System}
+
+Build system serving multiple models with routing:
+
+\begin{enumerate}
+    \item Implement ModelRegistry to manage multiple models
+    \item Add version-based routing (/predict/v1, /predict/v2)
+    \item Implement A/B testing with traffic splitting
+    \item Add canary deployments (5\% traffic to new version)
+    \item Monitor per-model metrics separately
+    \item Implement automatic rollback on errors
+    \item Support model hot-swapping without downtime
+\end{enumerate}
+
+\textbf{Features to Implement:}
+\begin{itemize}
+    \item Concurrent serving of 5+ model versions
+    \item Traffic splitting: 90\% v1, 10\% v2
+    \item Automatic rollback if v2 error rate >1\%
+    \item Model loading/unloading without service restart
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Performance Profiling and Optimization}
+
+Systematically profile and optimize serving pipeline:
+
+\begin{enumerate}
+    \item Instrument code with detailed latency measurements
+    \item Profile preprocessing, inference, and postprocessing
+    \item Identify bottlenecks using flamegraphs
+    \item Optimize top 3 bottlenecks
+    \item Find optimal batch size experimentally
+    \item Configure multi-GPU serving
+    \item Implement memory optimizations
+    \item Document before/after metrics
+\end{enumerate}
+
+\textbf{Optimization Targets:}
+\begin{itemize}
+    \item 50\% reduction in p99 latency
+    \item 2x throughput improvement
+    \item 30\% memory reduction
+    \item Detailed performance report with flamegraphs
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Production Monitoring and Alerting}
+
+Build comprehensive monitoring for serving system:
+
+\begin{enumerate}
+    \item Export Prometheus metrics (latency, throughput, errors)
+    \item Create Grafana dashboards for key metrics
+    \item Set up alerts for SLO violations
+    \item Implement distributed tracing with Jaeger
+    \item Add structured logging with correlation IDs
+    \item Monitor model drift and data quality
+    \item Set up on-call runbooks
+    \item Test incident response procedures
+\end{enumerate}
+
+\textbf{Monitoring Requirements:}
+\begin{itemize}
+    \item Alert on p99 latency >100ms
+    \item Alert on error rate >0.1\%
+    \item Alert on throughput drop >50\%
+    \item Track model prediction distribution drift
+    \item End-to-end request tracing
+\end{itemize}
+\end{exercise}

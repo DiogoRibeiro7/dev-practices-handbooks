@@ -1,0 +1,1832 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Understand and apply the fundamental principles of experimental design
+    \item Implement various randomization techniques for different experimental contexts
+    \item Identify and mitigate common sources of bias and confounding
+    \item Assess experimental validity across multiple dimensions
+    \item Make informed design decisions for online A/B tests
+    \item Implement randomization schemes and bias detection in Python
+\end{itemize}
+
+\section{Introduction}
+
+Experimental design is the architecture underlying A/B testing. Poor design invalidates even the most sophisticated statistical analysis—garbage in, garbage out. Conversely, thoughtful design can dramatically increase the efficiency and reliability of experiments, enabling faster learning and better decisions.
+
+This chapter explores the principles that separate rigorous experiments from flawed ones. We'll see how randomization protects against bias, how stratification increases power, how confounding variables mislead, and how validity considerations constrain generalization. These aren't merely theoretical concerns—they directly impact whether your experiment provides trustworthy guidance or leads you astray.
+
+The history of experimental design offers sobering lessons. Fisher's agricultural experiments in the 1920s established randomization as essential. Medical trials in the 1940s demonstrated the necessity of control groups and blinding. The digital era has introduced new challenges: network effects, novelty effects, and implementation bugs that invalidate traditional assumptions. Modern A/B testing requires both classical wisdom and contemporary adaptations.
+
+\section{Fundamental Principles of Experimental Design}
+
+Four core principles underpin sound experimental design. Violate any of them, and your experiment's validity is threatened.
+
+\subsection{Randomization}
+
+Randomization is the cornerstone of causal inference. By randomly assigning units to treatment and control, we ensure that—in expectation—groups differ only in the treatment received, not in other characteristics that might affect outcomes.
+
+\begin{definition}[Randomization]
+Random assignment is the process of allocating experimental units to treatment conditions using a random mechanism, ensuring each unit has a known, non-zero probability of assignment to each condition.
+\end{definition}
+
+\textbf{Why randomization matters:}
+
+\begin{enumerate}
+    \item \textbf{Eliminates selection bias:} Without randomization, systematic differences between groups confound treatment effects. Users who self-select into groups differ in unmeasured ways.
+
+    \item \textbf{Balances confounders:} Randomization balances both measured and \textit{unmeasured} confounding variables across groups. This is crucial—we can't control for variables we don't know about or can't measure.
+
+    \item \textbf{Justifies statistical inference:} Probability theory underlying hypothesis tests and confidence intervals assumes random sampling or random assignment. Without randomization, these tools lack foundation.
+
+    \item \textbf{Enables causal interpretation:} Observational studies can establish association; randomized experiments establish causation. The difference is randomization.
+\end{enumerate}
+
+\begin{example}[Randomization vs. Self-Selection]
+Consider testing a new premium subscription tier:
+
+\textbf{Flawed approach (self-selection):} Offer the new tier to all users, compare adopters vs. non-adopters. Problem: Adopters likely differ systematically—higher engagement, more resources, different needs. Observed differences confound tier effect with user characteristics.
+
+\textbf{Correct approach (randomization):} Randomly assign users to see new tier vs. old tier. Now groups are balanced in expectation. Observed differences are attributable to tier design, not pre-existing user differences.
+\end{example}
+
+\textbf{Common randomization mistakes:}
+
+\begin{itemize}
+    \item \textbf{Alternating assignment:} "Every other user gets treatment" is NOT random. Predictability enables gaming; time-based patterns confound results.
+
+    \item \textbf{Assignment by characteristics:} "Users in California get treatment" introduces geographic confounding.
+
+    \item \textbf{Insufficient randomness:} Using low-quality random number generators or seeding incorrectly can introduce patterns.
+
+    \item \textbf{Post-hoc selection:} Assigning users randomly but then filtering or selecting subsets for analysis reintroduces bias.
+\end{itemize}
+
+\subsection{Control Groups}
+
+A control group provides the counterfactual: what would have happened without treatment? Without controls, we can't distinguish treatment effects from natural variation, seasonal trends, or external factors.
+
+\begin{definition}[Control Group]
+The control group receives no treatment (or the current standard treatment), providing a baseline for comparison. The treatment group receives the intervention being tested.
+\end{definition}
+
+\begin{example}[The Necessity of Controls]
+A company launches a new website design and observes a 10\% increase in conversions over the next week. Success? Not necessarily:
+
+\begin{itemize}
+    \item Was there a marketing campaign that week?
+    \item Is it a seasonal peak (e.g., holiday shopping)?
+    \item Did competitors change their offerings?
+    \item Was there a temporary bug in the old design that was fixed?
+\end{itemize}
+
+Without a control group maintaining the old design, these confounds are inseparable from the design effect. With proper randomization and controls, we isolate the causal impact of the design change.
+\end{example}
+
+\textbf{Types of controls:}
+
+\begin{itemize}
+    \item \textbf{No-treatment control:} Users receive no intervention. Appropriate when testing entirely new features.
+
+    \item \textbf{Placebo control:} Users receive a neutral intervention that mimics treatment exposure without active ingredients. Less common in digital contexts but relevant for psychological effects.
+
+    \item \textbf{Active control:} Users receive current standard treatment. Essential when testing improvements to existing features.
+
+    \item \textbf{Multiple controls:} Sometimes multiple baseline conditions are needed to isolate specific mechanisms.
+\end{itemize}
+
+\subsection{Blocking and Stratification}
+
+While randomization ensures balance in expectation, chance can produce imbalanced groups in any single experiment. Blocking and stratification improve balance on known covariates, increasing precision.
+
+\begin{definition}[Blocking]
+Blocking divides experimental units into homogeneous groups (blocks) based on covariates, then randomizes separately within each block. This ensures balance on the blocking variables.
+\end{definition}
+
+\begin{definition}[Stratification]
+Stratification is similar to blocking but typically refers to analysis rather than design. Units are divided into strata post-randomization, and stratum-specific effects are estimated.
+\end{definition}
+
+\textbf{When to use blocking:}
+
+\begin{itemize}
+    \item \textbf{Known important covariates:} If user type, geographic region, or device strongly affects outcomes, blocking ensures balance and increases power.
+
+    \item \textbf{Small sample sizes:} With few units, chance imbalance is more likely. Blocking provides insurance.
+
+    \item \textbf{Heterogeneous treatment effects:} If effects vary across subgroups, blocking enables subgroup-specific analysis.
+\end{itemize}
+
+\begin{example}[Blocking in Practice]
+Testing a mobile app redesign where behavior differs dramatically between iOS and Android:
+
+\textbf{Simple randomization:} 50\% iOS users to treatment, 50\% Android users to treatment. By chance, treatment might get 52\% iOS, control 48\% iOS—introducing imbalance.
+
+\textbf{Blocked randomization:} Within iOS users, randomize 50\% to each group. Within Android users, randomize 50\% to each group. Now platform is perfectly balanced.
+
+If iOS users have 15\% conversion rate and Android users 10\%, blocking eliminates this source of variance, increasing power to detect the treatment effect.
+\end{example}
+
+\textbf{Practical considerations:}
+
+\begin{itemize}
+    \item \textbf{Number of blocks:} Too many small blocks reduce efficiency. Aim for substantial units per block.
+
+    \item \textbf{Blocking variables:} Choose strong predictors of outcomes. Blocking on weak predictors adds complexity without benefit.
+
+    \item \textbf{Crossover:} Can block on multiple variables (e.g., platform × country), but beware exponentially growing strata.
+\end{itemize}
+
+\subsection{Blinding}
+
+Blinding conceals treatment assignment from participants, experimenters, or both, preventing knowledge of assignment from influencing behavior or assessment.
+
+\begin{definition}[Blinding]
+\begin{itemize}
+    \item \textbf{Single-blind:} Participants don't know their treatment assignment
+    \item \textbf{Double-blind:} Neither participants nor experimenters know assignment
+    \item \textbf{Triple-blind:} Participants, experimenters, and analysts all remain blind
+\end{itemize}
+\end{definition}
+
+\textbf{Why blinding matters:}
+
+\begin{enumerate}
+    \item \textbf{Placebo effects:} Participants' knowledge of treatment can affect outcomes independent of treatment's direct effects.
+
+    \item \textbf{Experimenter bias:} Researchers who know assignment may unconsciously influence participants or assess outcomes differently.
+
+    \item \textbf{Demand characteristics:} Participants may alter behavior to confirm experimenters' hypotheses.
+
+    \item \textbf{Differential attrition:} If users realize they're in control, they may drop out at different rates than treatment.
+\end{enumerate}
+
+\begin{example}[Blinding in Digital Experiments]
+In A/B testing online, blinding is often implicit:
+
+\textbf{Naturally blinded:} Users typically don't know they're in an experiment or which group they're in. A new button color appears to some users; they don't realize others see something different.
+
+\textbf{Not blinded:} If treatment is a new feature prominently labeled "BETA" or "NEW!", users know they're in treatment. Their behavior may reflect curiosity, novelty-seeking, or frustration with bugs rather than the feature's inherent value.
+
+\textbf{Experimenter blinding:} Data analysts should ideally remain blind to which variant is A vs. B until analysis completion, preventing p-hacking or selective reporting.
+\end{example}
+
+\textbf{Limitations in online testing:}
+
+\begin{itemize}
+    \item Complete blinding is often impossible—users see different interfaces
+    \item Product teams must know which variant is which to iterate
+    \item The goal: minimize systematic bias from knowledge of assignment
+\end{itemize}
+
+\section{Randomization Techniques}
+
+Different contexts demand different randomization approaches. We examine four primary techniques with implementation details.
+
+\subsection{Simple Randomization}
+
+Simple randomization assigns each unit independently to treatment or control with fixed probability, typically 50\%.
+
+\textbf{Advantages:}
+\begin{itemize}
+    \item Conceptually simple
+    \item Easy to implement
+    \item Provably unbiased
+    \item No memory or coordination needed
+\end{itemize}
+
+\textbf{Disadvantages:}
+\begin{itemize}
+    \item Can produce imbalanced group sizes
+    \item No guarantee of balance on covariates
+    \item Variance in group sizes reduces power
+\end{itemize}
+
+\textbf{When to use:} Large experiments (thousands of units) where chance imbalance is negligible.
+
+\lstset{language=Python, caption=Simple Randomization Implementation, label=lst:simple_random}
+\begin{lstlisting}
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from typing import List, Dict, Tuple
+
+sns.set_style("whitegrid")
+np.random.seed(42)
+
+def simple_randomization(n_units: int, p_treatment: float = 0.5,
+                        seed: int = None) -> np.ndarray:
+    """
+    Simple randomization: each unit independently assigned.
+
+    Parameters:
+    -----------
+    n_units : int
+        Number of units to randomize
+    p_treatment : float
+        Probability of treatment assignment (default 0.5)
+    seed : int
+        Random seed for reproducibility
+
+    Returns:
+    --------
+    np.ndarray : Binary array (0=control, 1=treatment)
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    assignments = np.random.binomial(1, p_treatment, n_units)
+
+    return assignments
+
+
+def evaluate_randomization(assignments: np.ndarray,
+                          covariates: pd.DataFrame = None,
+                          covariate_names: List[str] = None) -> Dict:
+    """
+    Evaluate quality of randomization.
+
+    Parameters:
+    -----------
+    assignments : np.ndarray
+        Treatment assignments (0/1)
+    covariates : pd.DataFrame, optional
+        Covariates to check balance on
+    covariate_names : List[str], optional
+        Names of covariates to check
+
+    Returns:
+    --------
+    dict : Evaluation metrics
+    """
+    n_total = len(assignments)
+    n_treatment = assignments.sum()
+    n_control = n_total - n_treatment
+
+    results = {
+        'n_total': n_total,
+        'n_treatment': n_treatment,
+        'n_control': n_control,
+        'prop_treatment': n_treatment / n_total,
+        'balance_score': abs(n_treatment - n_control) / n_total
+    }
+
+    # Check covariate balance if provided
+    if covariates is not None:
+        from scipy import stats as sp_stats
+        balance_tests = {}
+
+        for col in covariate_names or covariates.columns:
+            treatment_vals = covariates.loc[assignments == 1, col]
+            control_vals = covariates.loc[assignments == 0, col]
+
+            # t-test for continuous, chi-square for categorical
+            if covariates[col].dtype in [np.float64, np.int64]:
+                t_stat, p_val = sp_stats.ttest_ind(treatment_vals, control_vals)
+                balance_tests[col] = {
+                    'mean_treatment': treatment_vals.mean(),
+                    'mean_control': control_vals.mean(),
+                    'diff': treatment_vals.mean() - control_vals.mean(),
+                    'p_value': p_val
+                }
+
+        results['covariate_balance'] = balance_tests
+
+    return results
+
+
+# Example: Simple randomization with evaluation
+print("="*80)
+print("Simple Randomization Example")
+print("="*80)
+
+n_users = 1000
+assignments = simple_randomization(n_users, p_treatment=0.5, seed=42)
+
+# Create synthetic covariates
+np.random.seed(42)
+covariates = pd.DataFrame({
+    'age': np.random.normal(35, 10, n_users),
+    'prior_purchases': np.random.poisson(3, n_users),
+    'engagement_score': np.random.normal(50, 15, n_users)
+})
+
+# Evaluate
+results = evaluate_randomization(assignments, covariates)
+
+print(f"\nTotal units: {results['n_total']}")
+print(f"Treatment: {results['n_treatment']} ({results['prop_treatment']:.2%})")
+print(f"Control: {results['n_control']} ({1-results['prop_treatment']:.2%})")
+print(f"Balance score: {results['balance_score']:.4f}")
+
+if 'covariate_balance' in results:
+    print("\nCovariate Balance:")
+    print("-" * 80)
+    print(f"{'Covariate':<20} {'Treatment Mean':<15} {'Control Mean':<15} {'Difference':<12} {'p-value':<10}")
+    print("-" * 80)
+    for cov, stats in results['covariate_balance'].items():
+        print(f"{cov:<20} {stats['mean_treatment']:<15.2f} {stats['mean_control']:<15.2f} "
+              f"{stats['diff']:<12.2f} {stats['p_value']:<10.4f}")
+
+# Simulate multiple randomizations to show variability
+n_sims = 1000
+treatment_props = []
+for i in range(n_sims):
+    sim_assign = simple_randomization(1000, p_treatment=0.5, seed=i)
+    treatment_props.append(sim_assign.sum() / 1000)
+
+# Visualize
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Distribution of treatment proportions
+axes[0].hist(treatment_props, bins=30, edgecolor='black', alpha=0.7, color='steelblue')
+axes[0].axvline(0.5, color='red', linestyle='--', linewidth=2, label='Target (50%)')
+axes[0].axvline(np.mean(treatment_props), color='green', linestyle='-',
+               linewidth=2, label=f'Mean ({np.mean(treatment_props):.3f})')
+axes[0].set_xlabel('Treatment Proportion', fontsize=12)
+axes[0].set_ylabel('Frequency', fontsize=12)
+axes[0].set_title(f'Distribution of Treatment Proportions\n({n_sims} simulations, n=1000)',
+                 fontsize=12, fontweight='bold')
+axes[0].legend()
+axes[0].grid(alpha=0.3)
+
+# Covariate balance check for one randomization
+treatment_mask = assignments == 1
+axes[1].scatter(covariates.loc[treatment_mask, 'age'],
+               covariates.loc[treatment_mask, 'engagement_score'],
+               alpha=0.5, label='Treatment', color='coral', s=20)
+axes[1].scatter(covariates.loc[~treatment_mask, 'age'],
+               covariates.loc[~treatment_mask, 'engagement_score'],
+               alpha=0.5, label='Control', color='steelblue', s=20)
+axes[1].set_xlabel('Age', fontsize=12)
+axes[1].set_ylabel('Engagement Score', fontsize=12)
+axes[1].set_title('Covariate Balance: Age vs Engagement', fontsize=12, fontweight='bold')
+axes[1].legend()
+axes[1].grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('simple_randomization.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+\end{lstlisting}
+
+\subsection{Block Randomization}
+
+Block randomization ensures exactly balanced group sizes by randomizing in small blocks rather than one unit at a time.
+
+\textbf{Mechanism:}
+\begin{enumerate}
+    \item Define block size (e.g., 4 or 6)
+    \item Within each block, assign equal numbers to treatment and control
+    \item Randomize the order within block
+\end{enumerate}
+
+\textbf{Advantages:}
+\begin{itemize}
+    \item Guarantees balanced group sizes
+    \item Protects against temporal trends
+    \item Reduces variance in treatment effect estimates
+\end{itemize}
+
+\textbf{Disadvantages:}
+\begin{itemize}
+    \item If block size is known and assignments observable, late assignments in a block are predictable
+    \item Requires coordination/memory across units
+    \item Slightly more complex implementation
+\end{itemize}
+
+\lstset{language=Python, caption=Block Randomization Implementation, label=lst:block_random}
+\begin{lstlisting}
+def block_randomization(n_units: int, block_size: int = 4,
+                       p_treatment: float = 0.5, seed: int = None) -> np.ndarray:
+    """
+    Block randomization: guarantees balance within blocks.
+
+    Parameters:
+    -----------
+    n_units : int
+        Number of units to randomize
+    block_size : int
+        Size of each block (should be even for 50-50 split)
+    p_treatment : float
+        Proportion assigned to treatment within each block
+    seed : int
+        Random seed for reproducibility
+
+    Returns:
+    --------
+    np.ndarray : Binary array (0=control, 1=treatment)
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    # Calculate number of treatment assignments per block
+    n_treatment_per_block = int(block_size * p_treatment)
+
+    # Create full blocks
+    n_full_blocks = n_units // block_size
+    assignments = []
+
+    for _ in range(n_full_blocks):
+        # Create block with correct proportions
+        block = np.array([1] * n_treatment_per_block +
+                        [0] * (block_size - n_treatment_per_block))
+        # Shuffle within block
+        np.random.shuffle(block)
+        assignments.extend(block)
+
+    # Handle remaining units
+    remainder = n_units % block_size
+    if remainder > 0:
+        n_treatment_remainder = int(remainder * p_treatment)
+        remainder_block = np.array([1] * n_treatment_remainder +
+                                  [0] * (remainder - n_treatment_remainder))
+        np.random.shuffle(remainder_block)
+        assignments.extend(remainder_block)
+
+    return np.array(assignments)
+
+
+# Example: Compare simple vs block randomization
+print("\n" + "="*80)
+print("Block Randomization vs Simple Randomization")
+print("="*80)
+
+n_users = 1000
+n_sims = 1000
+
+simple_balances = []
+block_balances = []
+
+for i in range(n_sims):
+    # Simple randomization
+    simple_assign = simple_randomization(n_users, seed=i)
+    simple_balances.append(abs(simple_assign.sum() - n_users/2))
+
+    # Block randomization
+    block_assign = block_randomization(n_users, block_size=10, seed=i)
+    block_balances.append(abs(block_assign.sum() - n_users/2))
+
+print(f"\nBalance (deviation from 50-50 split):")
+print(f"{'Method':<20} {'Mean':<12} {'Std Dev':<12} {'Max':<12}")
+print("-" * 60)
+print(f"{'Simple':<20} {np.mean(simple_balances):<12.2f} "
+      f"{np.std(simple_balances):<12.2f} {np.max(simple_balances):<12.0f}")
+print(f"{'Block (size=10)':<20} {np.mean(block_balances):<12.2f} "
+      f"{np.std(block_balances):<12.2f} {np.max(block_balances):<12.0f}")
+
+# Visualize comparison
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+axes[0].hist(simple_balances, bins=30, alpha=0.6, label='Simple',
+            color='steelblue', edgecolor='black')
+axes[0].hist(block_balances, bins=30, alpha=0.6, label='Block (size=10)',
+            color='coral', edgecolor='black')
+axes[0].set_xlabel('Absolute Deviation from Perfect Balance', fontsize=12)
+axes[0].set_ylabel('Frequency', fontsize=12)
+axes[0].set_title('Randomization Balance Comparison', fontsize=12, fontweight='bold')
+axes[0].legend()
+axes[0].grid(alpha=0.3)
+
+# Cumulative assignments over time
+np.random.seed(42)
+simple_cumsum = np.cumsum(simple_randomization(1000, seed=42))
+block_cumsum = np.cumsum(block_randomization(1000, block_size=10, seed=42))
+perfect = np.arange(1, 1001) * 0.5
+
+axes[1].plot(simple_cumsum, label='Simple randomization', linewidth=2, alpha=0.7)
+axes[1].plot(block_cumsum, label='Block randomization', linewidth=2, alpha=0.7)
+axes[1].plot(perfect, 'k--', label='Perfect balance', linewidth=2)
+axes[1].set_xlabel('User Number', fontsize=12)
+axes[1].set_ylabel('Cumulative Treatment Assignments', fontsize=12)
+axes[1].set_title('Balance Over Time', fontsize=12, fontweight='bold')
+axes[1].legend()
+axes[1].grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('block_randomization_comparison.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+\end{lstlisting}
+
+\subsection{Stratified Randomization}
+
+Stratified randomization divides units into strata based on important covariates, then randomizes separately within each stratum.
+
+\textbf{Difference from blocking:} Blocking typically refers to small, homogeneous groups. Stratification involves larger groups defined by key characteristics (e.g., country, user segment).
+
+\textbf{Advantages:}
+\begin{itemize}
+    \item Guarantees balance on stratifying variables
+    \item Increases power by reducing between-stratum variance
+    \item Enables stratified analysis
+    \item Protects against chance imbalances on important covariates
+\end{itemize}
+
+\textbf{Disadvantages:}
+\begin{itemize}
+    \item Requires knowing stratifying variables before randomization
+    \item Can create many small strata if stratifying by multiple variables
+    \item Complicates analysis (must account for stratification)
+\end{itemize}
+
+\lstset{language=Python, caption=Stratified Randomization Implementation, label=lst:stratified_random}
+\begin{lstlisting}
+def stratified_randomization(strata: np.ndarray, p_treatment: float = 0.5,
+                            block_size: int = None, seed: int = None) -> np.ndarray:
+    """
+    Stratified randomization: randomize within strata.
+
+    Parameters:
+    -----------
+    strata : np.ndarray
+        Array indicating stratum membership for each unit
+    p_treatment : float
+        Proportion assigned to treatment within each stratum
+    block_size : int, optional
+        If provided, use block randomization within strata
+    seed : int
+        Random seed for reproducibility
+
+    Returns:
+    --------
+    np.ndarray : Binary array (0=control, 1=treatment)
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    n_units = len(strata)
+    assignments = np.zeros(n_units, dtype=int)
+
+    # Get unique strata
+    unique_strata = np.unique(strata)
+
+    for stratum in unique_strata:
+        stratum_mask = strata == stratum
+        stratum_size = stratum_mask.sum()
+
+        # Randomize within stratum
+        if block_size is not None:
+            stratum_assignments = block_randomization(
+                stratum_size, block_size, p_treatment
+            )
+        else:
+            stratum_assignments = simple_randomization(
+                stratum_size, p_treatment
+            )
+
+        assignments[stratum_mask] = stratum_assignments
+
+    return assignments
+
+
+def analyze_stratified_experiment(outcomes: np.ndarray,
+                                  assignments: np.ndarray,
+                                  strata: np.ndarray) -> Dict:
+    """
+    Analyze stratified experiment with proper variance estimation.
+
+    Parameters:
+    -----------
+    outcomes : np.ndarray
+        Outcome values
+    assignments : np.ndarray
+        Treatment assignments (0/1)
+    strata : np.ndarray
+        Stratum indicators
+
+    Returns:
+    --------
+    dict : Analysis results including stratum-specific effects
+    """
+    from scipy import stats as sp_stats
+
+    results = {
+        'strata_effects': {},
+        'overall_effect': None
+    }
+
+    unique_strata = np.unique(strata)
+    n_strata = len(unique_strata)
+
+    stratum_effects = []
+    stratum_vars = []
+    stratum_weights = []
+
+    for stratum in unique_strata:
+        stratum_mask = strata == stratum
+        stratum_outcomes = outcomes[stratum_mask]
+        stratum_assignments = assignments[stratum_mask]
+
+        # Calculate stratum-specific effect
+        treatment_outcomes = stratum_outcomes[stratum_assignments == 1]
+        control_outcomes = stratum_outcomes[stratum_assignments == 0]
+
+        if len(treatment_outcomes) > 0 and len(control_outcomes) > 0:
+            effect = treatment_outcomes.mean() - control_outcomes.mean()
+
+            # Variance of difference
+            var_treatment = treatment_outcomes.var() / len(treatment_outcomes)
+            var_control = control_outcomes.var() / len(control_outcomes)
+            var_effect = var_treatment + var_control
+
+            stratum_effects.append(effect)
+            stratum_vars.append(var_effect)
+            stratum_weights.append(stratum_mask.sum())
+
+            results['strata_effects'][stratum] = {
+                'effect': effect,
+                'se': np.sqrt(var_effect),
+                'n': stratum_mask.sum(),
+                'n_treatment': (stratum_assignments == 1).sum(),
+                'n_control': (stratum_assignments == 0).sum(),
+                'mean_treatment': treatment_outcomes.mean(),
+                'mean_control': control_outcomes.mean()
+            }
+
+    # Calculate overall weighted effect
+    stratum_effects = np.array(stratum_effects)
+    stratum_vars = np.array(stratum_vars)
+    stratum_weights = np.array(stratum_weights) / sum(stratum_weights)
+
+    overall_effect = np.sum(stratum_weights * stratum_effects)
+    overall_var = np.sum(stratum_weights**2 * stratum_vars)
+    overall_se = np.sqrt(overall_var)
+
+    # Test statistic
+    z_stat = overall_effect / overall_se
+    p_value = 2 * (1 - sp_stats.norm.cdf(abs(z_stat)))
+
+    results['overall_effect'] = {
+        'effect': overall_effect,
+        'se': overall_se,
+        'z_statistic': z_stat,
+        'p_value': p_value,
+        'ci_lower': overall_effect - 1.96 * overall_se,
+        'ci_upper': overall_effect + 1.96 * overall_se
+    }
+
+    return results
+
+
+# Example: Stratified randomization with heterogeneous effects
+print("\n" + "="*80)
+print("Stratified Randomization Example")
+print("="*80)
+
+n_users = 2000
+np.random.seed(42)
+
+# Create strata (e.g., user segments)
+segments = np.random.choice(['New', 'Casual', 'Power'], n_users,
+                           p=[0.3, 0.5, 0.2])
+
+# Stratified randomization
+assignments = stratified_randomization(segments, p_treatment=0.5, seed=42)
+
+# Simulate outcomes with heterogeneous treatment effects
+baseline_conversions = {
+    'New': 0.05,
+    'Casual': 0.10,
+    'Power': 0.20
+}
+treatment_effects = {
+    'New': 0.02,     # 40% relative lift for new users
+    'Casual': 0.01,  # 10% relative lift for casual
+    'Power': 0.01    # 5% relative lift for power users
+}
+
+outcomes = np.zeros(n_users)
+for i in range(n_users):
+    segment = segments[i]
+    baseline = baseline_conversions[segment]
+    effect = treatment_effects[segment] if assignments[i] == 1 else 0
+    outcomes[i] = np.random.binomial(1, baseline + effect)
+
+# Analyze
+results = analyze_stratified_experiment(outcomes, assignments, segments)
+
+print("\nStratum-Specific Effects:")
+print("-" * 90)
+print(f"{'Stratum':<12} {'Treatment Mean':<15} {'Control Mean':<15} {'Effect':<12} {'SE':<10} {'n':<8}")
+print("-" * 90)
+for stratum, stats in results['strata_effects'].items():
+    print(f"{stratum:<12} {stats['mean_treatment']:<15.4f} {stats['mean_control']:<15.4f} "
+          f"{stats['effect']:<12.4f} {stats['se']:<10.4f} {stats['n']:<8}")
+
+print("\nOverall Effect (Weighted):")
+print("-" * 90)
+overall = results['overall_effect']
+print(f"Effect: {overall['effect']:.4f}")
+print(f"SE: {overall['se']:.4f}")
+print(f"95% CI: [{overall['ci_lower']:.4f}, {overall['ci_upper']:.4f}]")
+print(f"z-statistic: {overall['z_statistic']:.4f}")
+print(f"p-value: {overall['p_value']:.6f}")
+
+# Visualize stratum-specific effects
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Effect sizes by stratum
+strata_names = list(results['strata_effects'].keys())
+effects = [results['strata_effects'][s]['effect'] for s in strata_names]
+ses = [results['strata_effects'][s]['se'] for s in strata_names]
+
+axes[0].barh(strata_names, effects, xerr=[1.96*se for se in ses],
+            alpha=0.7, color='steelblue', capsize=5)
+axes[0].axvline(0, color='red', linestyle='--', linewidth=2)
+axes[0].axvline(overall['effect'], color='green', linestyle='-', linewidth=2,
+               label=f"Overall: {overall['effect']:.4f}")
+axes[0].set_xlabel('Treatment Effect', fontsize=12)
+axes[0].set_ylabel('Stratum', fontsize=12)
+axes[0].set_title('Stratum-Specific Treatment Effects', fontsize=12, fontweight='bold')
+axes[0].legend()
+axes[0].grid(alpha=0.3)
+
+# Conversion rates by group and stratum
+x = np.arange(len(strata_names))
+width = 0.35
+control_means = [results['strata_effects'][s]['mean_control'] for s in strata_names]
+treatment_means = [results['strata_effects'][s]['mean_treatment'] for s in strata_names]
+
+axes[1].bar(x - width/2, control_means, width, label='Control',
+           alpha=0.7, color='steelblue')
+axes[1].bar(x + width/2, treatment_means, width, label='Treatment',
+           alpha=0.7, color='coral')
+axes[1].set_xlabel('Stratum', fontsize=12)
+axes[1].set_ylabel('Conversion Rate', fontsize=12)
+axes[1].set_title('Conversion Rates by Stratum and Group', fontsize=12, fontweight='bold')
+axes[1].set_xticks(x)
+axes[1].set_xticklabels(strata_names)
+axes[1].legend()
+axes[1].grid(alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.savefig('stratified_randomization.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+\end{lstlisting}
+
+\subsection{Cluster Randomization}
+
+Cluster randomization assigns groups of units rather than individual units. Essential when treatment naturally applies to groups or when individual-level randomization is infeasible.
+
+\textbf{When to use:}
+\begin{itemize}
+    \item Treatment inherently group-level (e.g., teacher training affects entire classrooms)
+    \item Individual contamination likely (users in same household interact)
+    \item Technical constraints prevent individual randomization
+    \item Network effects mean individual outcomes are not independent
+\end{itemize}
+
+\textbf{Key challenge:} Outcomes within clusters are correlated, inflating standard errors. Effective sample size is reduced.
+
+\begin{definition}[Intracluster Correlation (ICC)]
+The ICC measures correlation of outcomes within clusters:
+\begin{equation}
+\rho = \frac{\sigma_{\text{between}}^2}{\sigma_{\text{between}}^2 + \sigma_{\text{within}}^2}
+\end{equation}
+
+where $\sigma_{\text{between}}^2$ is variance between cluster means and $\sigma_{\text{within}}^2$ is variance within clusters.
+\end{definition}
+
+\textbf{Design effect:} Cluster randomization increases required sample size by the design effect:
+\begin{equation}
+\text{DE} = 1 + (m - 1)\rho
+\end{equation}
+
+where $m$ is average cluster size and $\rho$ is ICC. Higher ICC or larger clusters require proportionally more total units.
+
+\begin{example}[Cluster Randomization Penalty]
+Testing a feature where users in same household interact:
+\begin{itemize}
+    \item ICC = 0.2 (moderate correlation within households)
+    \item Average household size = 3
+    \item Design effect: $1 + (3-1) \times 0.2 = 1.4$
+\end{itemize}
+
+Must collect 40\% more households (or equivalently, more total users) compared to individual randomization to achieve same power.
+\end{example}
+
+\lstset{language=Python, caption=Cluster Randomization Implementation, label=lst:cluster_random}
+\begin{lstlisting}
+def cluster_randomization(cluster_ids: np.ndarray, p_treatment: float = 0.5,
+                         seed: int = None) -> np.ndarray:
+    """
+    Cluster randomization: randomize at cluster level.
+
+    Parameters:
+    -----------
+    cluster_ids : np.ndarray
+        Array indicating cluster membership for each unit
+    p_treatment : float
+        Proportion of clusters assigned to treatment
+    seed : int
+        Random seed for reproducibility
+
+    Returns:
+    --------
+    np.ndarray : Binary array (0=control, 1=treatment)
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    # Get unique clusters
+    unique_clusters = np.unique(cluster_ids)
+    n_clusters = len(unique_clusters)
+
+    # Randomize clusters
+    n_treatment_clusters = int(n_clusters * p_treatment)
+    treatment_clusters = np.random.choice(unique_clusters, n_treatment_clusters,
+                                         replace=False)
+
+    # Assign all units in treatment clusters
+    assignments = np.isin(cluster_ids, treatment_clusters).astype(int)
+
+    return assignments
+
+
+def calculate_icc(outcomes: np.ndarray, cluster_ids: np.ndarray) -> float:
+    """
+    Calculate intracluster correlation coefficient.
+
+    Parameters:
+    -----------
+    outcomes : np.ndarray
+        Outcome values
+    cluster_ids : np.ndarray
+        Cluster identifiers
+
+    Returns:
+    --------
+    float : ICC
+    """
+    unique_clusters = np.unique(cluster_ids)
+    n_clusters = len(unique_clusters)
+
+    # Grand mean
+    grand_mean = outcomes.mean()
+
+    # Calculate between and within variance
+    cluster_means = []
+    cluster_sizes = []
+    within_ss = 0
+
+    for cluster in unique_clusters:
+        cluster_mask = cluster_ids == cluster
+        cluster_outcomes = outcomes[cluster_mask]
+        cluster_mean = cluster_outcomes.mean()
+        cluster_size = len(cluster_outcomes)
+
+        cluster_means.append(cluster_mean)
+        cluster_sizes.append(cluster_size)
+
+        # Within-cluster sum of squares
+        within_ss += np.sum((cluster_outcomes - cluster_mean)**2)
+
+    # Between-cluster sum of squares
+    cluster_means = np.array(cluster_means)
+    cluster_sizes = np.array(cluster_sizes)
+    between_ss = np.sum(cluster_sizes * (cluster_means - grand_mean)**2)
+
+    # Mean squares
+    df_between = n_clusters - 1
+    df_within = len(outcomes) - n_clusters
+    ms_between = between_ss / df_between
+    ms_within = within_ss / df_within
+
+    # ICC calculation
+    mean_cluster_size = np.mean(cluster_sizes)
+    icc = (ms_between - ms_within) / (ms_between + (mean_cluster_size - 1) * ms_within)
+    icc = max(0, icc)  # ICC should be non-negative
+
+    return icc
+
+
+def analyze_cluster_experiment(outcomes: np.ndarray,
+                               assignments: np.ndarray,
+                               cluster_ids: np.ndarray) -> Dict:
+    """
+    Analyze cluster-randomized experiment with cluster-robust SEs.
+
+    Parameters:
+    -----------
+    outcomes : np.ndarray
+        Outcome values
+    assignments : np.ndarray
+        Treatment assignments (0/1)
+    cluster_ids : np.ndarray
+        Cluster identifiers
+
+    Returns:
+    --------
+    dict : Analysis results accounting for clustering
+    """
+    from scipy import stats as sp_stats
+
+    # Calculate ICC
+    icc = calculate_icc(outcomes, cluster_ids)
+
+    # Get cluster-level summaries
+    unique_clusters = np.unique(cluster_ids)
+    cluster_means = []
+    cluster_assignments = []
+    cluster_sizes = []
+
+    for cluster in unique_clusters:
+        cluster_mask = cluster_ids == cluster
+        cluster_means.append(outcomes[cluster_mask].mean())
+        cluster_assignments.append(assignments[cluster_mask][0])  # All same
+        cluster_sizes.append(cluster_mask.sum())
+
+    cluster_means = np.array(cluster_means)
+    cluster_assignments = np.array(cluster_assignments)
+    cluster_sizes = np.array(cluster_sizes)
+
+    # Cluster-level analysis
+    treatment_cluster_means = cluster_means[cluster_assignments == 1]
+    control_cluster_means = cluster_means[cluster_assignments == 0]
+
+    effect = treatment_cluster_means.mean() - control_cluster_means.mean()
+
+    # Cluster-robust standard error
+    var_treatment = treatment_cluster_means.var() / len(treatment_cluster_means)
+    var_control = control_cluster_means.var() / len(control_cluster_means)
+    se_cluster = np.sqrt(var_treatment + var_control)
+
+    # Naive individual-level SE (for comparison)
+    treatment_outcomes = outcomes[assignments == 1]
+    control_outcomes = outcomes[assignments == 0]
+    var_treatment_naive = treatment_outcomes.var() / len(treatment_outcomes)
+    var_control_naive = control_outcomes.var() / len(control_outcomes)
+    se_naive = np.sqrt(var_treatment_naive + var_control_naive)
+
+    # Design effect
+    mean_cluster_size = np.mean(cluster_sizes)
+    design_effect = 1 + (mean_cluster_size - 1) * icc
+
+    # Test statistic
+    z_stat = effect / se_cluster
+    p_value = 2 * (1 - sp_stats.norm.cdf(abs(z_stat)))
+
+    return {
+        'effect': effect,
+        'se_cluster_robust': se_cluster,
+        'se_naive': se_naive,
+        'inflation_factor': se_cluster / se_naive,
+        'icc': icc,
+        'design_effect': design_effect,
+        'mean_cluster_size': mean_cluster_size,
+        'n_clusters': len(unique_clusters),
+        'n_treatment_clusters': (cluster_assignments == 1).sum(),
+        'n_control_clusters': (cluster_assignments == 0).sum(),
+        'z_statistic': z_stat,
+        'p_value': p_value,
+        'ci_lower': effect - 1.96 * se_cluster,
+        'ci_upper': effect + 1.96 * se_cluster
+    }
+
+
+# Example: Cluster randomization
+print("\n" + "="*80)
+print("Cluster Randomization Example")
+print("="*80)
+
+n_clusters = 200
+cluster_sizes = np.random.poisson(10, n_clusters) + 1  # Vary cluster sizes
+n_users = cluster_sizes.sum()
+
+# Create cluster IDs
+cluster_ids = np.repeat(np.arange(n_clusters), cluster_sizes)
+
+# Randomize at cluster level
+np.random.seed(42)
+assignments = cluster_randomization(cluster_ids, p_treatment=0.5, seed=42)
+
+# Simulate outcomes with ICC
+icc_true = 0.3
+treatment_effect = 0.05
+
+# Generate cluster-level random effects
+cluster_effects = np.random.normal(0, np.sqrt(icc_true), n_clusters)
+
+# Generate outcomes
+baseline_prob = 0.10
+outcomes = np.zeros(n_users)
+
+for i in range(n_users):
+    cluster_id = cluster_ids[i]
+    cluster_effect = cluster_effects[cluster_id]
+    treatment_contrib = treatment_effect if assignments[i] == 1 else 0
+
+    # Probability for this user
+    prob = baseline_prob + cluster_effect + treatment_contrib
+    prob = np.clip(prob, 0, 1)
+    outcomes[i] = np.random.binomial(1, prob)
+
+# Analyze
+results = analyze_cluster_experiment(outcomes, assignments, cluster_ids)
+
+print(f"\nCluster Design:")
+print(f"  Number of clusters: {results['n_clusters']}")
+print(f"  Treatment clusters: {results['n_treatment_clusters']}")
+print(f"  Control clusters: {results['n_control_clusters']}")
+print(f"  Mean cluster size: {results['mean_cluster_size']:.1f}")
+print(f"  Total units: {n_users}")
+
+print(f"\nIntracluster Correlation:")
+print(f"  ICC: {results['icc']:.4f} (true: {icc_true:.4f})")
+print(f"  Design effect: {results['design_effect']:.4f}")
+
+print(f"\nTreatment Effect:")
+print(f"  Effect: {results['effect']:.4f} (true: {treatment_effect:.4f})")
+print(f"  SE (cluster-robust): {results['se_cluster_robust']:.4f}")
+print(f"  SE (naive): {results['se_naive']:.4f}")
+print(f"  Inflation factor: {results['inflation_factor']:.4f}")
+print(f"  95% CI: [{results['ci_lower']:.4f}, {results['ci_upper']:.4f}]")
+print(f"  z-statistic: {results['z_statistic']:.4f}")
+print(f"  p-value: {results['p_value']:.6f}")
+
+# Visualize clustering effect
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Distribution of cluster means
+cluster_means_by_group = {
+    'Control': [],
+    'Treatment': []
+}
+for cluster in np.unique(cluster_ids):
+    cluster_mask = cluster_ids == cluster
+    cluster_mean = outcomes[cluster_mask].mean()
+    cluster_assignment = assignments[cluster_mask][0]
+
+    if cluster_assignment == 1:
+        cluster_means_by_group['Treatment'].append(cluster_mean)
+    else:
+        cluster_means_by_group['Control'].append(cluster_mean)
+
+axes[0].hist(cluster_means_by_group['Control'], bins=20, alpha=0.6,
+            label='Control clusters', color='steelblue', edgecolor='black')
+axes[0].hist(cluster_means_by_group['Treatment'], bins=20, alpha=0.6,
+            label='Treatment clusters', color='coral', edgecolor='black')
+axes[0].set_xlabel('Cluster Mean Outcome', fontsize=12)
+axes[0].set_ylabel('Frequency', fontsize=12)
+axes[0].set_title('Distribution of Cluster Means', fontsize=12, fontweight='bold')
+axes[0].legend()
+axes[0].grid(alpha=0.3)
+
+# SE inflation as function of ICC
+icc_range = np.linspace(0, 0.5, 50)
+cluster_size = results['mean_cluster_size']
+inflation = np.sqrt(1 + (cluster_size - 1) * icc_range)
+
+axes[1].plot(icc_range, inflation, linewidth=2.5, color='steelblue')
+axes[1].axvline(results['icc'], color='red', linestyle='--', linewidth=2,
+               label=f"Observed ICC = {results['icc']:.3f}")
+axes[1].axhline(results['inflation_factor'], color='green', linestyle='--', linewidth=2,
+               label=f"Inflation = {results['inflation_factor']:.3f}")
+axes[1].set_xlabel('Intracluster Correlation (ICC)', fontsize=12)
+axes[1].set_ylabel('SE Inflation Factor', fontsize=12)
+axes[1].set_title(f'SE Inflation (cluster size = {cluster_size:.0f})',
+                 fontsize=12, fontweight='bold')
+axes[1].legend()
+axes[1].grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('cluster_randomization.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+\end{lstlisting}
+
+\section{Confounding Variables and Bias}
+
+Even with randomization, various biases can threaten experimental validity. Recognizing and addressing them is crucial.
+
+\subsection{Selection Bias}
+
+Selection bias occurs when treatment and control groups differ systematically due to the selection mechanism.
+
+\textbf{Common sources:}
+
+\begin{enumerate}
+    \item \textbf{Self-selection:} Users choose their group rather than being randomly assigned
+
+    \item \textbf{Non-random attrition:} Differential dropout between groups
+
+    \item \textbf{Survivorship bias:} Analyzing only users who complete the experiment
+
+    \item \textbf{Sample restriction:} Post-randomization filtering creates imbalance
+\end{enumerate}
+
+\begin{example}[Selection Bias in Practice]
+Testing a premium feature:
+
+\textbf{Biased approach:} "Offer to all users, compare those who adopt vs. don't adopt"
+
+Adopters likely have:
+\begin{itemize}
+    \item Higher income / willingness to pay
+    \item Different needs
+    \item More engagement
+    \item Different demographics
+\end{itemize}
+
+Observed differences confound adoption decision with feature effect.
+
+\textbf{Correct approach:} Randomly offer feature to 50\%, don't offer to other 50\% (regardless of interest). Compare outcomes between groups.
+\end{example}
+
+\subsection{Survivorship Bias}
+
+Survivorship bias arises when analysis excludes units that drop out, especially if dropout is differential across groups.
+
+\begin{example}[Survivorship Bias]
+Testing a complex new interface:
+
+\begin{itemize}
+    \item Treatment (new interface): 30\% of users abandon immediately due to confusion
+    \item Control (old interface): 10\% abandon
+    \item Analysis of remaining users shows treatment has higher engagement
+\end{itemize}
+
+Conclusion: New interface is better?
+
+\textbf{Problem:} You're comparing the 70\% who persevered through treatment (highly engaged, patient users) with 90\% of control users (more representative). The selection creates bias.
+
+\textbf{Solution:} Analyze all randomized users using intention-to-treat principle, not just those who completed.
+\end{example}
+
+\subsection{Simpson's Paradox}
+
+Simpson's paradox occurs when a trend appears in different groups but reverses when groups are combined—or vice versa.
+
+\begin{example}[Simpson's Paradox in A/B Testing]
+Testing checkout redesign across mobile and desktop:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lccc}
+\hline
+\textbf{Platform} & \textbf{Control Conv.} & \textbf{Treatment Conv.} & \textbf{Winner} \\
+\hline
+Mobile & 5\% (100/2000) & 6\% (120/2000) & Treatment \\
+Desktop & 15\% (1500/10000) & 16\% (1600/10000) & Treatment \\
+\textbf{Combined} & \textbf{13.3\%} (1600/12000) & \textbf{14.3\%} (1720/12000) & Treatment \\
+\hline
+\end{tabular}
+\end{table}
+
+Treatment wins on both platforms and overall—straightforward.
+
+Now consider a different allocation:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lccc}
+\hline
+\textbf{Platform} & \textbf{Control Conv.} & \textbf{Treatment Conv.} & \textbf{Winner} \\
+\hline
+Mobile & 5\% (50/1000) & 6\% (180/3000) & Treatment \\
+Desktop & 15\% (1650/11000) & 14\% (1260/9000) & Control \\
+\textbf{Combined} & \textbf{14.2\%} (1700/12000) & \textbf{12.0\%} (1440/12000) & \textbf{Control} \\
+\hline
+\end{tabular}
+\end{table}
+
+Treatment wins on mobile but loses on desktop and overall! The reversal occurs because:
+\begin{itemize}
+    \item Treatment got more mobile users (low conversion)
+    \item Control got more desktop users (high conversion)
+    \item Platform composition confounds treatment effect
+\end{itemize}
+
+\textbf{Resolution:} Proper randomization prevents such confounding by balancing group composition. Post-stratification or regression adjustment can account for it in analysis.
+\end{example}
+
+\lstset{language=Python, caption=Detecting Simpson's Paradox, label=lst:simpsons_paradox}
+\begin{lstlisting}
+def detect_simpsons_paradox(outcomes: np.ndarray,
+                           assignments: np.ndarray,
+                           strata: np.ndarray) -> Dict:
+    """
+    Detect Simpson's paradox in stratified data.
+
+    Parameters:
+    -----------
+    outcomes : np.ndarray
+        Binary outcomes
+    assignments : np.ndarray
+        Treatment assignments (0/1)
+    strata : np.ndarray
+        Stratum indicators
+
+    Returns:
+    --------
+    dict : Analysis showing overall and stratum-specific effects
+    """
+    results = {
+        'overall': {},
+        'strata': {},
+        'paradox_detected': False
+    }
+
+    # Overall effect
+    overall_treatment_rate = outcomes[assignments == 1].mean()
+    overall_control_rate = outcomes[assignments == 0].mean()
+    overall_effect = overall_treatment_rate - overall_control_rate
+
+    results['overall'] = {
+        'treatment_rate': overall_treatment_rate,
+        'control_rate': overall_control_rate,
+        'effect': overall_effect,
+        'treatment_wins': overall_effect > 0
+    }
+
+    # Stratum-specific effects
+    unique_strata = np.unique(strata)
+    stratum_treatment_wins = []
+
+    for stratum in unique_strata:
+        stratum_mask = strata == stratum
+        stratum_outcomes = outcomes[stratum_mask]
+        stratum_assignments = assignments[stratum_mask]
+
+        treatment_rate = stratum_outcomes[stratum_assignments == 1].mean()
+        control_rate = stratum_outcomes[stratum_assignments == 0].mean()
+        effect = treatment_rate - control_rate
+
+        results['strata'][stratum] = {
+            'treatment_rate': treatment_rate,
+            'control_rate': control_rate,
+            'effect': effect,
+            'treatment_wins': effect > 0,
+            'n_treatment': (stratum_assignments == 1).sum(),
+            'n_control': (stratum_assignments == 0).sum()
+        }
+
+        stratum_treatment_wins.append(effect > 0)
+
+    # Check for paradox
+    all_strata_agree = len(set(stratum_treatment_wins)) == 1
+    overall_agrees = results['overall']['treatment_wins'] == stratum_treatment_wins[0]
+
+    if all_strata_agree and not overall_agrees:
+        results['paradox_detected'] = True
+        results['paradox_type'] = 'reversal'
+    elif not all_strata_agree:
+        results['paradox_detected'] = True
+        results['paradox_type'] = 'inconsistent'
+
+    return results
+
+
+# Example: Simpson's Paradox simulation
+print("\n" + "="*80)
+print("Simpson's Paradox Detection")
+print("="*80)
+
+# Scenario 1: No paradox
+np.random.seed(42)
+n_mobile = 4000
+n_desktop = 20000
+
+platform = np.array(['Mobile'] * n_mobile + ['Desktop'] * n_desktop)
+assignments_balanced = simple_randomization(len(platform), seed=42)
+
+# Generate outcomes (treatment helps on both platforms)
+outcomes_no_paradox = np.zeros(len(platform))
+for i in range(len(platform)):
+    if platform[i] == 'Mobile':
+        base_rate = 0.05
+        treatment_lift = 0.01
+    else:
+        base_rate = 0.15
+        treatment_lift = 0.01
+
+    prob = base_rate + (treatment_lift if assignments_balanced[i] == 1 else 0)
+    outcomes_no_paradox[i] = np.random.binomial(1, prob)
+
+results_no_paradox = detect_simpsons_paradox(outcomes_no_paradox,
+                                             assignments_balanced, platform)
+
+print("\nScenario 1: Balanced Randomization (No Paradox)")
+print("-" * 80)
+print(f"Overall: Treatment = {results_no_paradox['overall']['treatment_rate']:.4f}, "
+      f"Control = {results_no_paradox['overall']['control_rate']:.4f}, "
+      f"Winner = {'Treatment' if results_no_paradox['overall']['treatment_wins'] else 'Control'}")
+
+for stratum, stats in results_no_paradox['strata'].items():
+    print(f"{stratum}: Treatment = {stats['treatment_rate']:.4f}, "
+          f"Control = {stats['control_rate']:.4f}, "
+          f"Winner = {'Treatment' if stats['treatment_wins'] else 'Control'}")
+
+print(f"Simpson's Paradox: {results_no_paradox['paradox_detected']}")
+
+# Scenario 2: Simpson's Paradox due to imbalanced allocation
+# Artificially create imbalance
+assignments_imbalanced = np.zeros(len(platform), dtype=int)
+# More treatment in mobile (low conversion)
+assignments_imbalanced[platform == 'Mobile'] = np.random.binomial(
+    1, 0.75, n_mobile
+)
+# Less treatment in desktop (high conversion)
+assignments_imbalanced[platform == 'Desktop'] = np.random.binomial(
+    1, 0.25, n_desktop
+)
+
+outcomes_paradox = outcomes_no_paradox.copy()  # Same true effects
+
+results_paradox = detect_simpsons_paradox(outcomes_paradox,
+                                         assignments_imbalanced, platform)
+
+print("\nScenario 2: Imbalanced Allocation (Potential Paradox)")
+print("-" * 80)
+print(f"Overall: Treatment = {results_paradox['overall']['treatment_rate']:.4f}, "
+      f"Control = {results_paradox['overall']['control_rate']:.4f}, "
+      f"Winner = {'Treatment' if results_paradox['overall']['treatment_wins'] else 'Control'}")
+
+for stratum, stats in results_paradox['strata'].items():
+    print(f"{stratum}: Treatment = {stats['treatment_rate']:.4f}, "
+          f"Control = {stats['control_rate']:.4f}, "
+          f"Winner = {'Treatment' if stats['treatment_wins'] else 'Control'}, "
+          f"n_treat = {stats['n_treatment']}, n_ctrl = {stats['n_control']}")
+
+print(f"Simpson's Paradox: {results_paradox['paradox_detected']}")
+if results_paradox['paradox_detected']:
+    print(f"Type: {results_paradox['paradox_type']}")
+
+# Visualize
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Scenario 1
+strata_names = list(results_no_paradox['strata'].keys())
+x = np.arange(len(strata_names) + 1)
+treatment_rates = [results_no_paradox['overall']['treatment_rate']] + \
+                  [results_no_paradox['strata'][s]['treatment_rate'] for s in strata_names]
+control_rates = [results_no_paradox['overall']['control_rate']] + \
+                [results_no_paradox['strata'][s]['control_rate'] for s in strata_names]
+labels = ['Overall'] + strata_names
+
+width = 0.35
+axes[0].bar(x - width/2, control_rates, width, label='Control',
+           alpha=0.7, color='steelblue')
+axes[0].bar(x + width/2, treatment_rates, width, label='Treatment',
+           alpha=0.7, color='coral')
+axes[0].set_ylabel('Conversion Rate', fontsize=12)
+axes[0].set_title('Balanced Allocation (No Paradox)', fontsize=12, fontweight='bold')
+axes[0].set_xticks(x)
+axes[0].set_xticklabels(labels, rotation=15)
+axes[0].legend()
+axes[0].grid(alpha=0.3, axis='y')
+
+# Scenario 2
+treatment_rates_p = [results_paradox['overall']['treatment_rate']] + \
+                    [results_paradox['strata'][s]['treatment_rate'] for s in strata_names]
+control_rates_p = [results_paradox['overall']['control_rate']] + \
+                  [results_paradox['strata'][s]['control_rate'] for s in strata_names]
+
+axes[1].bar(x - width/2, control_rates_p, width, label='Control',
+           alpha=0.7, color='steelblue')
+axes[1].bar(x + width/2, treatment_rates_p, width, label='Treatment',
+           alpha=0.7, color='coral')
+axes[1].set_ylabel('Conversion Rate', fontsize=12)
+axes[1].set_title("Imbalanced Allocation (Simpson's Paradox)",
+                 fontsize=12, fontweight='bold')
+axes[1].set_xticks(x)
+axes[1].set_xticklabels(labels, rotation=15)
+axes[1].legend()
+axes[1].grid(alpha=0.3, axis='y')
+
+plt.tight_layout()
+plt.savefig('simpsons_paradox.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+\end{lstlisting}
+
+\subsection{Network Effects}
+
+Network effects occur when one user's treatment affects another user's outcomes, violating the Stable Unit Treatment Value Assumption (SUTVA).
+
+\begin{definition}[SUTVA]
+The Stable Unit Treatment Value Assumption states that:
+\begin{enumerate}
+    \item Each unit has only one potential outcome under each treatment (no hidden variations)
+    \item One unit's treatment does not affect another's outcome (no interference)
+\end{enumerate}
+\end{definition}
+
+\textbf{Common network effects in digital experiments:}
+
+\begin{itemize}
+    \item \textbf{Direct interaction:} Social features where treated users interact with control users (messaging, sharing, tagging)
+
+    \item \textbf{Marketplace effects:} Two-sided platforms where treatment affecting buyers impacts sellers, and vice versa
+
+    \item \textbf{Capacity constraints:} Limited resources (e.g., customer support) where treatment increasing demand affects all users
+
+    \item \textbf{Competitive dynamics:} Treatment improving one seller's visibility reduces others' (zero-sum outcomes)
+\end{itemize}
+
+\textbf{Consequences of network effects:}
+
+\begin{itemize}
+    \item Biased treatment effect estimates (usually toward zero)
+    \item Invalid confidence intervals
+    \item Spillover effects confound results
+    \item May underestimate global impact
+\end{itemize}
+
+\textbf{Solutions:}
+
+\begin{enumerate}
+    \item \textbf{Cluster randomization:} Randomize social networks, households, or geographic regions rather than individuals
+
+    \item \textbf{Geo-based experiments:} Randomize by city or region when network effects are geographically bounded
+
+    \item \textbf{Temporal rollouts:} Full rollout with before/after comparison (weaker causal inference but avoids contamination)
+
+    \item \textbf{Model-based adjustment:} Estimate and adjust for spillover effects (advanced, requires modeling assumptions)
+\end{enumerate}
+
+\section{Validity Considerations}
+
+Experimental validity assesses whether an experiment tests what it purports to test and whether conclusions generalize appropriately.
+
+\subsection{Internal Validity}
+
+Internal validity asks: Does the experiment actually measure the causal effect of treatment on outcomes, or are results confounded?
+
+\textbf{Threats to internal validity:}
+
+\begin{enumerate}
+    \item \textbf{Selection bias:} Non-random assignment or differential attrition
+
+    \item \textbf{History effects:} External events occurring during experiment affecting one group more than another
+
+    \item \textbf{Maturation effects:} Natural changes over time (learning, fatigue) affecting groups differently
+
+    \item \textbf{Instrumentation:} Measurement changes during experiment (e.g., bug fixes, metric definition changes)
+
+    \item \textbf{Testing effects:} Awareness of being tested affects behavior (Hawthorne effect)
+
+    \item \textbf{Regression to the mean:} Extreme values naturally regress toward average on retesting
+\end{enumerate}
+
+\textbf{Ensuring internal validity:}
+
+\begin{itemize}
+    \item Proper randomization
+    \item Adequate sample size
+    \item Blinding where feasible
+    \item Consistent measurement
+    \item Intention-to-treat analysis
+    \item Pre-registration of hypotheses
+\end{itemize}
+
+\subsection{External Validity}
+
+External validity asks: Do results generalize beyond the specific experimental context to other populations, settings, and times?
+
+\textbf{Threats to external validity:}
+
+\begin{enumerate}
+    \item \textbf{Sample non-representativeness:} Experimental sample differs from target population
+
+    \item \textbf{Setting artificiality:} Experimental conditions differ from real-world deployment
+
+    \item \textbf{Temporal specificity:} Results hold only at specific times (seasonality, trends)
+
+    \item \textbf{Treatment variation:} Experimental treatment differs from how it would be deployed at scale
+\end{enumerate}
+
+\begin{example}[External Validity Challenges]
+Testing a new mobile app design:
+
+\begin{itemize}
+    \item \textbf{Sample:} Only iOS users, English language, US residents
+    \item \textbf{Setting:} Short 1-week test during holiday season
+    \item \textbf{Treatment:} Prototype with potential bugs, incomplete features
+\end{itemize}
+
+Questions:
+\begin{itemize}
+    \item Will effects hold for Android users? Non-English speakers? Other countries?
+    \item Are holiday patterns representative of typical usage?
+    \item Will polished version perform differently than prototype?
+\end{itemize}
+
+These questions concern external validity—whether specific experimental findings generalize.
+\end{example}
+
+\textbf{Improving external validity:}
+
+\begin{itemize}
+    \item Representative sampling
+    \item Realistic treatment implementation
+    \item Sufficient duration to capture normal patterns
+    \item Multiple experiments across contexts
+    \item Replication studies
+\end{itemize}
+
+\subsection{Construct Validity}
+
+Construct validity asks: Do we measure the theoretical construct we intend to measure?
+
+\textbf{Common construct validity issues:}
+
+\begin{enumerate}
+    \item \textbf{Metric doesn't capture intent:} Using clicks as proxy for user satisfaction
+
+    \item \textbf{Metric captures unintended constructs:} Revenue increase might reflect price increase, not value increase
+
+    \item \textbf{Missing important dimensions:} Focusing on engagement while ignoring user well-being
+
+    \item \textbf{Confounded metrics:} Single metric conflates multiple constructs
+\end{enumerate}
+
+\begin{example}[Construct Validity]
+Goal: Improve user satisfaction with search results
+
+\textbf{Weak construct validity:}
+\begin{itemize}
+    \item Metric: Number of search result clicks
+    \item Problem: More clicks might indicate \textit{worse} results (users can't find answer, keep clicking)
+\end{itemize}
+
+\textbf{Better construct validity:}
+\begin{itemize}
+    \item Metrics: Time to first click (faster is better), probability of return to search (lower is better), explicit satisfaction ratings
+    \item These more directly measure the intended construct (satisfaction)
+\end{itemize}
+\end{example}
+
+\subsection{Statistical Conclusion Validity}
+
+Statistical conclusion validity asks: Are statistical inferences correct? Do we properly quantify uncertainty?
+
+\textbf{Threats to statistical conclusion validity:}
+
+\begin{enumerate}
+    \item \textbf{Low statistical power:} Insufficient sample size to detect real effects
+
+    \item \textbf{Violated assumptions:} Using tests that assume normality, independence, etc. when assumptions don't hold
+
+    \item \textbf{Fishing and p-hacking:} Multiple testing, selective reporting, post-hoc hypotheses
+
+    \item \textbf{Improper error estimation:} Ignoring clustering, using wrong standard errors
+
+    \item \textbf{Unreliable measurement:} High measurement error inflates variance, reduces power
+\end{enumerate}
+
+\section{Practical Design Decisions}
+
+Translating experimental design principles into actual A/B tests requires numerous practical decisions.
+
+\subsection{Unit of Randomization}
+
+The unit of randomization is the entity assigned to treatment or control. Common choices:
+
+\begin{itemize}
+    \item \textbf{User:} Most common; tracks individual across sessions
+    \item \textbf{Session:} Each visit randomized independently (rarely appropriate)
+    \item \textbf{Device:} When user identity is unavailable or unreliable
+    \item \textbf{Household/Account:} When multiple users share accounts
+    \item \textbf{Geographic unit:} City, region, or country for market-level interventions
+    \item \textbf{Temporal unit:} Time periods (week, day) for platform-wide changes
+\end{itemize}
+
+\textbf{Considerations:}
+
+\begin{enumerate}
+    \item \textbf{Treatment application level:} Unit must be at least as coarse as treatment application
+
+    \item \textbf{Outcome measurement level:} Ideally aligned with measurement
+
+    \item \textbf{Network effects:} Cluster at level that contains interference
+
+    \item \textbf{Sample size:} More granular units provide larger samples but risk contamination
+\end{enumerate}
+
+\subsection{Temporal Considerations}
+
+Time affects experiments in multiple ways:
+
+\begin{enumerate}
+    \item \textbf{Duration:}
+    \begin{itemize}
+        \item Too short: Miss delayed effects, affected by day-of-week patterns
+        \item Too long: External events confound results, delayed decisions
+        \item Typical: 1-4 weeks, capturing full weekly cycles
+    \end{itemize}
+
+    \item \textbf{Seasonality:}
+    \begin{itemize}
+        \item Holiday periods atypical
+        \item Back-to-school, tax season, etc. for relevant domains
+        \item Consider running in representative periods
+    \end{itemize}
+
+    \item \textbf{Novelty effects:}
+    \begin{itemize}
+        \item Initial curiosity inflates treatment metrics
+        \item May fade after days/weeks
+        \item Distinguish short-term from long-term effects
+    \end{itemize}
+
+    \item \textbf{Learning effects:}
+    \begin{itemize}
+        \item Users adapt to new interfaces
+        \item Performance may improve over time
+        \item Consider learning curves in duration decisions
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Geographic Considerations}
+
+Geographic variation affects experimental design:
+
+\begin{enumerate}
+    \item \textbf{Regulatory constraints:} Some features unavailable in certain regions
+
+    \item \textbf{Market maturity:} Effects may differ between mature and emerging markets
+
+    \item \textbf{Cultural differences:} UI conventions, color meanings, interaction patterns vary
+
+    \item \textbf{Infrastructure:} Network speed, device types affect experience
+
+    \item \textbf{Time zones:} Usage patterns differ; ensure balanced sampling across times
+\end{enumerate}
+
+\textbf{Approaches:}
+
+\begin{itemize}
+    \item \textbf{Stratify by region:} Ensure balance across key markets
+    \item \textbf{Run region-specific tests:} Estimate heterogeneous effects
+    \item \textbf{Stage rollouts geographically:} Test in one market before expanding
+\end{itemize}
+
+\subsection{Platform-Specific Issues}
+
+Different platforms present unique challenges:
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lll}
+\hline
+\textbf{Platform} & \textbf{Issues} & \textbf{Considerations} \\
+\hline
+Web & Session continuity, cookie deletion & Use server-side randomization \\
+Mobile apps & App store delays, version fragmentation & Staged rollouts, feature flags \\
+Desktop software & Infrequent updates, offline usage & Long experiment duration \\
+APIs & Rate limiting, caching & Cache invalidation, proper logging \\
+Email & Spam filters, client rendering & Check deliverability, test across clients \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Summary}
+
+Experimental design principles form the foundation for trustworthy A/B testing:
+
+\begin{itemize}
+    \item \textbf{Randomization} eliminates selection bias and enables causal inference. It's non-negotiable for valid experiments.
+
+    \item \textbf{Control groups} provide the counterfactual, distinguishing treatment effects from background variation.
+
+    \item \textbf{Blocking and stratification} improve precision by ensuring balance on important covariates.
+
+    \item \textbf{Different randomization techniques}—simple, block, stratified, cluster—suit different contexts. Choose based on sample size, covariate importance, and interference patterns.
+
+    \item \textbf{Biases}—selection, survivorship, confounding—threaten validity even with randomization. Recognize and mitigate them through design and analysis choices.
+
+    \item \textbf{Validity} encompasses internal (causal correctness), external (generalizability), construct (measurement appropriateness), and statistical conclusion (inference correctness) dimensions. Strong experiments excel on all four.
+
+    \item \textbf{Practical decisions}—unit of randomization, duration, geographic scope, platform specifics—require balancing statistical ideals with operational constraints.
+\end{itemize}
+
+Sound experimental design precedes and enables sound statistical analysis. Invest time in design; it pays dividends in reliable insights and confident decisions.
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \citet{fisher1935design}: Fisher's foundational work on experimental design and randomization
+    \item \citet{box2005statistics}: Comprehensive modern treatment of experimental design
+    \item \citet{imbens2015causal}: Causal inference framework for experimental and observational studies
+    \item \citet{kohavi2020trustworthy}: Practical guide to online controlled experiments
+    \item \citet{hayes2017cluster}: Detailed treatment of cluster randomized trials
+    \item \citet{eckles2016design}: Network interference in experiments
+\end{itemize}
+
+\section{Exercises}
+
+\subsection{Conceptual Questions}
+
+\begin{enumerate}
+    \item Explain why randomization is essential for causal inference. What assumptions does randomization satisfy that observational studies typically violate?
+
+    \item A colleague proposes assigning even-numbered user IDs to treatment and odd-numbered to control. What's wrong with this approach?
+
+    \item When would you prefer stratified randomization over simple randomization? What are the costs and benefits?
+
+    \item Describe three scenarios where cluster randomization is necessary despite its statistical efficiency loss.
+
+    \item Explain Simpson's paradox in your own words. Provide an original example from a domain you're familiar with.
+
+    \item Distinguish between internal and external validity. Can an experiment have high internal validity but low external validity? Provide an example.
+\end{enumerate}
+
+\subsection{Design Exercises}
+
+\begin{enumerate}
+    \item Design an A/B test for a two-sided marketplace (e.g., Airbnb, Uber) where treatment affects one side but you care about both sides' outcomes. What design challenges arise? How would you address them?
+
+    \item You're testing a social feature where users can tag friends. Describe the network effects you'd expect. How would you design the randomization to account for these?
+
+    \item Design a long-duration experiment (6+ months) for a subscription service. What temporal factors would you consider? How would you handle seasonality?
+
+    \item Compare designs for testing the same feature on web, iOS app, and Android app. What platform-specific challenges arise? Would you run separate experiments or one combined experiment?
+
+    \item You want to test a pricing change but worry about fairness (charging different prices to different users). Design an experiment that balances statistical validity with ethical concerns.
+\end{enumerate}
+
+\subsection{Implementation Exercises}
+
+\begin{enumerate}
+    \item Implement a hash-based randomization function that:
+    \begin{itemize}
+        \item Takes user ID and experiment name as input
+        \item Returns deterministic assignment (same user always gets same variant)
+        \item Supports arbitrary split ratios
+        \item Allows easy "salting" for independent experiments
+    \end{itemize}
+
+    \item Create a stratified randomization system that:
+    \begin{itemize}
+        \item Accepts multiple stratifying variables
+        \item Handles continuous and categorical variables
+        \item Ensures balance within strata
+        \item Provides diagnostic plots and balance tests
+    \end{itemize}
+
+    \item Write a bias detection tool that:
+    \begin{itemize}
+        \item Checks for selection bias via covariate balance tests
+        \item Detects potential Simpson's paradox across strata
+        \item Identifies temporal trends suggesting history effects
+        \item Generates report with visualizations and recommendations
+    \end{itemize}
+
+    \item Implement cluster randomization with ICC estimation:
+    \begin{itemize}
+        \item Randomize at cluster level
+        \item Estimate ICC from pilot data
+        \item Calculate design effect and required sample size
+        \item Perform cluster-robust inference
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Analysis Exercises}
+
+\begin{enumerate}
+    \item Given experimental data with known selection bias (provided dataset), use multiple methods to detect and quantify the bias. How would you correct for it in analysis?
+
+    \item Simulate a scenario with network effects. Compare results from individual randomization (ignoring interference) vs. cluster randomization. Quantify the bias introduced by ignoring network effects.
+
+    \item Create synthetic data exhibiting Simpson's paradox. Show reversal of treatment effect sign when aggregating vs. stratifying. Explain which analysis is correct and why.
+
+    \item Analyze a multi-platform experiment (web + mobile) where treatment was randomly assigned but platform composition differs between groups. Demonstrate stratified analysis accounting for this imbalance.
+
+    \item Given survival data (time-to-conversion) with differential attrition, compare intention-to-treat analysis vs. per-protocol analysis vs. survivor analysis. Discuss when each is appropriate.
+\end{enumerate}
+
+\subsection{Simulation Projects}
+
+\begin{enumerate}
+    \item \textbf{Randomization comparison:} Simulate 10,000 experiments comparing simple, block, and stratified randomization. Compare:
+    \begin{itemize}
+        \item Group size balance
+        \item Covariate balance
+        \item Power to detect effects
+        \item Type I error rates
+    \end{itemize}
+    Write report with visualizations and recommendations.
+
+    \item \textbf{Network effects impact:} Simulate social network with varying levels of connectivity. Compare:
+    \begin{itemize}
+        \item Individual randomization (ignoring network)
+        \item Cluster randomization by network communities
+        \item Bias as function of network density and treatment effect strength
+    \end{itemize}
+
+    \item \textbf{Validity threats:} Implement experiments with various validity threats:
+    \begin{itemize}
+        \item Selection bias (non-random attrition)
+        \item History effects (external shock during experiment)
+        \item Instrumentation (metric definition change mid-experiment)
+        \item Regression to mean (selecting extreme performers)
+    \end{itemize}
+    Quantify how each threat affects conclusions. Demonstrate mitigation strategies.
+
+    \item \textbf{Optimal stratification:} Simulate experiments with multiple potential stratifying variables. Investigate:
+    \begin{itemize}
+        \item How many strata provide optimal power?
+        \item Which variables are worth stratifying on?
+        \item Trade-off between stratification benefit and complexity
+    \end{itemize}
+\end{enumerate}

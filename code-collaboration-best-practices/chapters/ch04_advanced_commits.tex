@@ -1,0 +1,86 @@
+\chapter{Advanced Commit Craft and History Stewardship}
+
+\section{Chapter Overview}
+The previous chapters established the fundamentals: keep commits atomic, document intent, and use messages that survive incident response. This chapter explores advanced techniques for planning, reshaping, and safeguarding history. You will learn how to build story arcs across multiple commits, rewrite history safely, collaborate on stacked work, and use tooling to keep long-lived branches healthy without sacrificing traceability.
+
+\section{Designing Commit Story Arcs}
+Complex features rarely fit into a single commit. Advanced practitioners outline the commit sequence before typing code, treating the branch like a serialized narrative. Start with scaffolding commits that set up feature flags or shared infrastructure, follow with incremental behavior changes, and end with cleanup once new code is stable. Thinking in arcs prevents ``grab bag'' commits because every diff has a defined chapter in the story.
+
+\begin{notebox}
+When planning a story arc, write provisional subject lines for each future commit. If a subject feels vague, split or rethink the scope before any code is written.
+\end{notebox}
+
+\section{Rewriting History Safely}
+Interactive rebases, amendments, and fixups refine local history before sharing it. These tools are powerful but require discipline.
+
+\subsection{Amend Versus Fixup}
+\texttt{git commit --amend} is ideal when the previous commit needs minor edits or message tweaks. For longer sequences, use \texttt{git commit --fixup <sha>} to mark corrections without losing context. Later, \texttt{git rebase -i --autosquash} folds fixups into their targets automatically, producing clean history with minimal manual editing.
+
+\begin{lstlisting}[style=shell,caption={Autosquash keeps history clean without manual editing}]
+$ git commit --fixup 4b7f2a1
+$ git rebase -i --autosquash origin/main
+# Editor opens with fixup commits arranged next to their targets
+\end{lstlisting}
+
+\subsection{Interactive Rebase Patterns}
+Interactive rebase (\texttt{git rebase -i}) does more than squashing. Use it to reorder commits for logical flow, split a commit into smaller pieces (\texttt{edit} action), or drop experimental work that should never reach the shared branch. After editing, run the full test suite before pushing to ensure the rewritten history still compiles and passes.
+
+\begin{warningbox}
+Never rewrite history that teammates have already pulled unless you coordinate closely. Force-pushing rewritten commits without notice is a fast path to merge conflicts and lost work.
+\end{warningbox}
+
+\section{Splitting and Merging Commits}
+Advanced commit craft hinges on the ability to split and merge diffs after the fact.
+
+\subsection{Splitting with \texttt{git reset} and \texttt{git add -p}}
+When a commit accidentally blends multiple concerns, reset to the previous commit while keeping changes staged with \texttt{git reset HEAD\textasciicircum}. Then use \texttt{git add -p} or GUI staging tools to piece the changes into focused commits. This approach preserves work without forcing a full redo.
+
+\subsection{Merging with \texttt{fixup} and \texttt{squash}}
+Sometimes the best narrative is fewer commits. During rebase, mark intermediate commits as \texttt{fixup} or \texttt{squash} to merge them with adjacent commits. Prefer \texttt{fixup} when you want to discard the smaller commit's message, and \texttt{squash} when both messages contain useful context.
+
+\section{Guarding Large Commit Sequences}
+Long-running branches accumulate dozens of commits. Protect them with checklists:
+
+\begin{enumerate}
+  \item Keep the branch rebased on mainline at least daily to minimize integration surprises.
+  \item Run smoke tests after each rebase to catch subtle conflicts that compile but fail at runtime.
+  \item Tag ``milestone'' commits locally (\texttt{git tag wip/api-phase1}) so you can recover quickly if an experimental rebase goes wrong.
+\end{enumerate}
+
+For especially risky work, push the branch to a remote backup before massive rewrites. Even if the branch is private, the remote copy acts as a safety net when experimenting with history rewriting commands.
+
+\section{Commit Hygiene in Collaborative Stacks}
+Stacked diffs let teams review incremental work before the base branch lands. Maintaining such stacks requires strict hygiene:
+
+\begin{itemize}
+  \item Every commit must build independently because downstream stacks rely on upstream artifacts.
+  \item Rebase or restack as soon as the base commit changes; otherwise, reviewers chase phantom diffs.
+  \item Communicate ownership: label stacked branches clearly (e.g., \texttt{feat/search-stack/03-parser}) so teammates understand ordering.
+\end{itemize}
+
+Some platforms (GitHub, Graphite, Gerrit) automate stacked workflows. Regardless of tooling, authors must be ready to collapse the stack into fewer commits when merging into trunk to avoid flooding history with tiny diffs that make little sense outside the stack context.
+
+\section{Advanced Tooling}
+\subsection{Cherry-Picking with Care}
+\texttt{git cherry-pick} applies specific commits onto another branch. Use it sparingly and always follow with a new commit message clarifying why the change was ported. Record the original SHA in the body so future maintainers can trace the lineage.
+
+\subsection{Bisect-Friendly Hooks}
+Large teams add \texttt{prepare-commit-msg} or \texttt{commit-msg} hooks that inject metadata (build IDs, ticket numbers) automatically. Others configure \texttt{bisect} run scripts that execute targeted tests for the component under investigation. Investing in these hooks ensures advanced history operations (rebases, splits, cherry-picks) keep enough breadcrumbs for automation to function.
+
+\subsection{Worktrees and Sparse Checkouts}
+Worktrees enable multiple working directories attached to the same repository. Advanced users maintain dedicated worktrees per feature to avoid mixing changes. Combined with sparse checkout, worktrees keep focus on the subset of files relevant to each commit series, reducing the chance of accidental edits leaking into unrelated commits.
+
+\section{Operationalizing History Policies}
+Advanced commit practices stick when teams codify them. Document expectations such as ``never merge a branch with fixup commits still visible,'' ``force-push only when the branch has zero reviewers assigned,'' or ``cherry-pick hotfixes into release branches within four hours.'' Automate enforcement through pre-push hooks, CI checks that reject branches with \texttt{WIP} in their history, and dashboards that surface branches drifting too far from mainline.
+
+\section*{Exercises}
+
+\paragraph{1. Storyboard a feature} Before you write code, outline a five-commit story for your next feature. Draft subject lines and validation notes, then compare the final history against the plan to see where the story drifted.
+
+\paragraph{2. Practice safe rewrites} Create a branch with messy commits, push it to a temporary remote, and perform an interactive rebase to clean it up. Confirm you can recover by resetting to the remote copy if something goes wrong.
+
+\paragraph{3. Split a commit} Take a past commit that mingled concerns, use \texttt{git reset} and \texttt{git add -p} to split it into two commits, and document the before/after history for your team.
+
+\paragraph{4. Manage a stack} Build a three-commit stack where each commit depends on the previous one. Rebase the base commit and restack without losing reviewer comments, then summarize the workflow you used.
+
+\paragraph{5. Instrument enforcement} Add a lightweight script or CI job that fails if a branch contains commits whose messages start with ``fixup!'' or ``squash!''. Share the script and the insights gathered after a week of usage.

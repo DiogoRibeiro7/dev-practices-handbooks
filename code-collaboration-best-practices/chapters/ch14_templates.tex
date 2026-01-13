@@ -1,0 +1,94 @@
+\chapter{Templates, Checklists, and Ready-to-Use Resources}
+
+\section{Chapter Overview}
+This chapter gathers practical templates, checklists, and prompts from earlier sections so teams can adopt collaboration practices without starting from scratch. Customize each template for your context; treat them as living documents that evolve with your process.
+
+\section{Commit Message Template}
+\begin{lstlisting}[style=shell]
+type(scope): brief summary (50 chars max)
+
+Context:
+- why was this needed?
+- what alternatives were considered?
+
+Testing:
+- unit:
+- integration:
+- manual:
+
+Follow-up:
+- feature flag plan or cleanup steps
+
+Refs: ticket/incident IDs
+\end{lstlisting}
+
+\section{PR Description Template}
+\begin{lstlisting}[style=markdown]
+## Summary
+[Brief description of changes]
+
+## Motivation
+[Why this change is needed and who it impacts]
+
+## Implementation Details
+[Key technical decisions, trade-offs, and diagrams/links]
+
+## Testing
+- [ ] Unit tests
+- [ ] Integration tests
+- [ ] Manual QA (steps recorded below)
+
+### Evidence
+- screenshots/videos/logs
+- monitoring links
+
+## Rollout Plan
+- default flag values, canary plan, rollback steps
+
+## Checklist
+- [ ] Docs updated or N/A
+- [ ] Migrations reversible and tested
+- [ ] Breaking changes communicated
+- [ ] Observability (metrics/logs) in place
+\end{lstlisting}
+
+\section{Review Checklist Card}
+\begin{enumerate}
+  \item \textbf{Intent}: Does the PR description explain motivation and scope?
+  \item \textbf{Correctness}: Do tests and logic cover happy and failure paths?
+  \item \textbf{Security/Privacy}: Any injection, data leak, or compliance risk?
+  \item \textbf{Performance}: Are there obvious hot-path regressions?
+  \item \textbf{Maintainability}: Is the code readable, documented, and consistent with architecture?
+  \item \textbf{Testing Evidence}: Do screenshots/logs prove the change works?
+  \item \textbf{Rollout Safety}: Are feature flags, migrations, or rollback plans documented?
+\end{enumerate}
+
+\section{Collaboration Retro Agenda}
+\begin{enumerate}
+  \item \textbf{Warm-up}: Celebrate one collaboration win from the past sprint.
+  \item \textbf{Metrics Review}: Cycle time, review latency, automation failures.
+  \item \textbf{Start/Stop/Continue}: Collect ideas on commits, PRs, reviews.
+  \item \textbf{Experiment Selection}: Choose one experiment, assign owner/due date.
+  \item \textbf{Template/Bot Feedback}: Gather pain points for automation UX.
+\end{enumerate}
+
+\section{Feature Flag Lifecycle Checklist}
+\begin{enumerate}
+  \item Document flag purpose, owner, and default value.
+  \item Log rollout stages (internal, canary, general) with dates.
+  \item Track metrics/alerts tied to flag activation.
+  \item Schedule cleanup date; add ticket for removing stale flags.
+  \item After removal, confirm docs/tests are updated.
+\end{enumerate}
+
+\section*{Exercises}
+
+\paragraph{1. Template adoption} Pick one template above and pilot it for two weeks. Survey contributors about clarity and adjust accordingly.
+
+\paragraph{2. Checklist walk-through} Run a code review using the review checklist card. Note which items surfaced new insights versus duplicating intuition.
+
+\paragraph{3. Retro rehearsal} Facilitate the collaboration retro agenda verbatim. Capture the experiment selected and track its outcome.
+
+\paragraph{4. Flag lifecycle audit} Use the checklist to audit three existing feature flags. Log missing owners or cleanup dates.
+
+\paragraph{5. Automation UX feedback} Add a ``template/bot feedback'' section to your next retro and collect at least three improvement ideas.

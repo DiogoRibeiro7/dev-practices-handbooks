@@ -1,0 +1,2881 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Implement blue-green deployments for zero-downtime model updates
+    \item Design and execute canary deployment strategies with gradual rollout
+    \item Build A/B testing frameworks for rigorous model evaluation
+    \item Implement shadow deployments for risk-free production validation
+    \item Design traffic splitting and routing mechanisms
+    \item Handle model rollback scenarios with automated circuit breakers
+    \item Build multi-model serving architectures for complex ML systems
+    \item Monitor deployment health and make data-driven rollout decisions
+\end{itemize}
+
+\section{Introduction}
+
+Deploying machine learning models to production is fundamentally different from deploying traditional software. Models are probabilistic, their behavior changes with data drift, and their quality must be continuously monitored. A deployment strategy determines how a new model version transitions from development to production, balancing risk management with rapid iteration.
+
+Poor deployment strategies lead to production incidents, degraded user experience, and eroded trust in ML systems. A well-designed deployment strategy enables:
+
+\begin{itemize}
+    \item \textbf{Risk mitigation:} Gradual rollouts detect issues before full deployment
+    \item \textbf{Fast rollback:} Quick recovery when problems arise
+    \item \textbf{Experimentation:} A/B testing validates improvements rigorously
+    \item \textbf{Zero downtime:} Seamless transitions between model versions
+    \item \textbf{Validation:} Shadow deployments test models without user impact
+\end{itemize}
+
+This chapter covers production-grade deployment strategies with complete implementations, from basic blue-green deployments to sophisticated multi-armed bandit allocation systems.
+
+\section{Blue-Green Deployment}
+
+\subsection{Overview and Architecture}
+
+Blue-green deployment maintains two identical production environments: blue (currently serving traffic) and green (new version). Traffic switches atomically from blue to green after validation, enabling instant rollback by switching back.
+
+For ML models, blue-green deployment provides:
+\begin{itemize}
+    \item Zero-downtime updates
+    \item Instant rollback capability
+    \item Simple orchestration
+    \item Clear separation between versions
+\end{itemize}
+
+\subsection{Implementation}
+
+\begin{lstlisting}[language=Python, caption=Blue-Green Deployment Manager]
+from typing import Dict, Optional, Callable, Any
+from dataclasses import dataclass
+from enum import Enum
+from datetime import datetime
+import logging
+import requests
+import time
+
+class Environment(Enum):
+    """Deployment environment identifiers"""
+    BLUE = "blue"
+    GREEN = "green"
+
+@dataclass
+class ModelEndpoint:
+    """Model serving endpoint configuration"""
+    name: str
+    url: str
+    version: str
+    environment: Environment
+    health_check_url: str
+    metrics_url: Optional[str] = None
+
+@dataclass
+class DeploymentHealth:
+    """Health check results for a deployment"""
+    is_healthy: bool
+    latency_p50: float
+    latency_p95: float
+    latency_p99: float
+    error_rate: float
+    throughput: float
+    timestamp: datetime
+
+class BlueGreenDeployment:
+    """
+    Blue-Green deployment manager for ML models
+
+    Manages two parallel environments and atomic traffic switching
+    """
+
+    def __init__(self,
+                 model_name: str,
+                 load_balancer_url: str,
+                 health_check_interval: int = 30):
+        """
+        Initialize blue-green deployment manager
+
+        Args:
+            model_name: Name of the model being deployed
+            load_balancer_url: URL of the load balancer
+            health_check_interval: Seconds between health checks
+        """
+        self.model_name = model_name
+        self.load_balancer_url = load_balancer_url
+        self.health_check_interval = health_check_interval
+        self.logger = logging.getLogger(f"BlueGreen_{model_name}")
+
+        self.blue_endpoint: Optional[ModelEndpoint] = None
+        self.green_endpoint: Optional[ModelEndpoint] = None
+        self.active_environment = Environment.BLUE
+
+    def deploy_to_inactive(self,
+                          version: str,
+                          endpoint_url: str,
+                          health_check_url: str) -> bool:
+        """
+        Deploy new model version to inactive environment
+
+        Args:
+            version: Model version identifier
+            endpoint_url: URL where model is serving
+            health_check_url: Health check endpoint
+
+        Returns:
+            True if deployment successful
+        """
+        inactive_env = self._get_inactive_environment()
+
+        self.logger.info(f"Deploying version {version} to {inactive_env.value}")
+
+        # Create endpoint configuration
+        endpoint = ModelEndpoint(
+            name=self.model_name,
+            url=endpoint_url,
+            version=version,
+            environment=inactive_env,
+            health_check_url=health_check_url
+        )
+
+        # Set the inactive endpoint
+        if inactive_env == Environment.BLUE:
+            self.blue_endpoint = endpoint
+        else:
+            self.green_endpoint = endpoint
+
+        # Verify deployment health
+        if not self._wait_for_healthy(endpoint):
+            self.logger.error(f"Deployment to {inactive_env.value} failed health check")
+            return False
+
+        self.logger.info(f"Successfully deployed to {inactive_env.value}")
+        return True
+
+    def _get_inactive_environment(self) -> Environment:
+        """Get the currently inactive environment"""
+        return (Environment.GREEN if self.active_environment == Environment.BLUE
+                else Environment.BLUE)
+
+    def _get_active_endpoint(self) -> Optional[ModelEndpoint]:
+        """Get currently active endpoint"""
+        return (self.blue_endpoint if self.active_environment == Environment.BLUE
+                else self.green_endpoint)
+
+    def _get_inactive_endpoint(self) -> Optional[ModelEndpoint]:
+        """Get currently inactive endpoint"""
+        return (self.green_endpoint if self.active_environment == Environment.BLUE
+                else self.blue_endpoint)
+
+    def _wait_for_healthy(self,
+                         endpoint: ModelEndpoint,
+                         timeout: int = 300,
+                         required_successful_checks: int = 3) -> bool:
+        """
+        Wait for endpoint to become healthy
+
+        Args:
+            endpoint: Endpoint to check
+            timeout: Maximum wait time in seconds
+            required_successful_checks: Consecutive successful checks needed
+
+        Returns:
+            True if endpoint becomes healthy
+        """
+        start_time = time.time()
+        successful_checks = 0
+
+        while time.time() - start_time < timeout:
+            health = self._check_health(endpoint)
+
+            if health.is_healthy:
+                successful_checks += 1
+                self.logger.info(
+                    f"{endpoint.environment.value} health check passed "
+                    f"({successful_checks}/{required_successful_checks})"
+                )
+
+                if successful_checks >= required_successful_checks:
+                    return True
+            else:
+                successful_checks = 0
+                self.logger.warning(
+                    f"{endpoint.environment.value} health check failed: "
+                    f"error_rate={health.error_rate:.2%}"
+                )
+
+            time.sleep(self.health_check_interval)
+
+        return False
+
+    def _check_health(self, endpoint: ModelEndpoint) -> DeploymentHealth:
+        """
+        Perform health check on endpoint
+
+        Args:
+            endpoint: Endpoint to check
+
+        Returns:
+            Health check results
+        """
+        try:
+            # Health check request
+            response = requests.get(
+                endpoint.health_check_url,
+                timeout=10
+            )
+
+            if response.status_code != 200:
+                return DeploymentHealth(
+                    is_healthy=False,
+                    latency_p50=0,
+                    latency_p95=0,
+                    latency_p99=0,
+                    error_rate=1.0,
+                    throughput=0,
+                    timestamp=datetime.now()
+                )
+
+            # Parse metrics from response
+            metrics = response.json()
+
+            # Determine health based on metrics
+            is_healthy = (
+                metrics.get('error_rate', 1.0) < 0.01 and  # < 1% errors
+                metrics.get('latency_p99', float('inf')) < 1000  # < 1s p99
+            )
+
+            return DeploymentHealth(
+                is_healthy=is_healthy,
+                latency_p50=metrics.get('latency_p50', 0),
+                latency_p95=metrics.get('latency_p95', 0),
+                latency_p99=metrics.get('latency_p99', 0),
+                error_rate=metrics.get('error_rate', 0),
+                throughput=metrics.get('throughput', 0),
+                timestamp=datetime.now()
+            )
+
+        except Exception as e:
+            self.logger.error(f"Health check failed: {str(e)}")
+            return DeploymentHealth(
+                is_healthy=False,
+                latency_p50=0,
+                latency_p95=0,
+                latency_p99=0,
+                error_rate=1.0,
+                throughput=0,
+                timestamp=datetime.now()
+            )
+
+    def switch_traffic(self,
+                      validation_checks: Optional[Callable] = None) -> bool:
+        """
+        Switch traffic from active to inactive environment
+
+        Args:
+            validation_checks: Optional function to perform final validation
+
+        Returns:
+            True if switch successful
+        """
+        inactive_endpoint = self._get_inactive_endpoint()
+
+        if not inactive_endpoint:
+            self.logger.error("No inactive endpoint available")
+            return False
+
+        # Final health check
+        if not self._wait_for_healthy(inactive_endpoint, timeout=60):
+            self.logger.error("Inactive environment not healthy, aborting switch")
+            return False
+
+        # Run custom validation if provided
+        if validation_checks and not validation_checks(inactive_endpoint):
+            self.logger.error("Custom validation failed, aborting switch")
+            return False
+
+        # Perform atomic switch via load balancer
+        old_env = self.active_environment
+        new_env = self._get_inactive_environment()
+
+        self.logger.info(f"Switching traffic from {old_env.value} to {new_env.value}")
+
+        if self._update_load_balancer(inactive_endpoint):
+            self.active_environment = new_env
+            self.logger.info(f"Traffic switch completed. Active: {new_env.value}")
+            return True
+        else:
+            self.logger.error("Load balancer update failed")
+            return False
+
+    def _update_load_balancer(self, target_endpoint: ModelEndpoint) -> bool:
+        """
+        Update load balancer to point to target endpoint
+
+        Args:
+            target_endpoint: Endpoint to route traffic to
+
+        Returns:
+            True if update successful
+        """
+        try:
+            # Update load balancer configuration
+            response = requests.post(
+                f"{self.load_balancer_url}/update",
+                json={
+                    'model': self.model_name,
+                    'target_url': target_endpoint.url,
+                    'version': target_endpoint.version
+                },
+                timeout=30
+            )
+
+            return response.status_code == 200
+
+        except Exception as e:
+            self.logger.error(f"Load balancer update failed: {str(e)}")
+            return False
+
+    def rollback(self) -> bool:
+        """
+        Rollback to previous environment
+
+        Returns:
+            True if rollback successful
+        """
+        current_env = self.active_environment
+        previous_endpoint = self._get_inactive_endpoint()
+
+        if not previous_endpoint:
+            self.logger.error("No previous environment available for rollback")
+            return False
+
+        self.logger.warning(f"Rolling back from {current_env.value}")
+
+        # Check previous environment health
+        if not self._check_health(previous_endpoint).is_healthy:
+            self.logger.error("Previous environment is not healthy")
+            return False
+
+        # Switch back
+        if self._update_load_balancer(previous_endpoint):
+            self.active_environment = self._get_inactive_environment()
+            self.logger.info(f"Rollback completed. Active: {self.active_environment.value}")
+            return True
+        else:
+            self.logger.error("Rollback failed")
+            return False
+
+    def get_deployment_status(self) -> Dict[str, Any]:
+        """Get current deployment status"""
+        active_endpoint = self._get_active_endpoint()
+        inactive_endpoint = self._get_inactive_endpoint()
+
+        status = {
+            'model': self.model_name,
+            'active_environment': self.active_environment.value,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        if active_endpoint:
+            active_health = self._check_health(active_endpoint)
+            status['active'] = {
+                'version': active_endpoint.version,
+                'url': active_endpoint.url,
+                'healthy': active_health.is_healthy,
+                'error_rate': active_health.error_rate,
+                'latency_p99': active_health.latency_p99
+            }
+
+        if inactive_endpoint:
+            inactive_health = self._check_health(inactive_endpoint)
+            status['inactive'] = {
+                'version': inactive_endpoint.version,
+                'url': inactive_endpoint.url,
+                'healthy': inactive_health.is_healthy,
+                'error_rate': inactive_health.error_rate,
+                'latency_p99': inactive_health.latency_p99
+            }
+
+        return status
+
+# Example usage
+def example_blue_green_deployment():
+    """Example of blue-green deployment workflow"""
+
+    # Initialize deployment manager
+    deployment = BlueGreenDeployment(
+        model_name="fraud_detection",
+        load_balancer_url="http://lb.example.com",
+        health_check_interval=10
+    )
+
+    # Initial deployment to blue
+    print("Step 1: Initial deployment to blue environment")
+    deployment.blue_endpoint = ModelEndpoint(
+        name="fraud_detection",
+        url="http://blue.example.com/predict",
+        version="v1.0",
+        environment=Environment.BLUE,
+        health_check_url="http://blue.example.com/health"
+    )
+    deployment.active_environment = Environment.BLUE
+
+    # Deploy new version to green
+    print("\nStep 2: Deploy v2.0 to green environment")
+    success = deployment.deploy_to_inactive(
+        version="v2.0",
+        endpoint_url="http://green.example.com/predict",
+        health_check_url="http://green.example.com/health"
+    )
+
+    if not success:
+        print("Deployment failed!")
+        return
+
+    # Custom validation function
+    def validate_model_quality(endpoint: ModelEndpoint) -> bool:
+        """Validate model meets quality standards"""
+        print(f"Running validation on {endpoint.version}...")
+        # In practice: run test predictions, check metrics, etc.
+        return True
+
+    # Switch traffic to green
+    print("\nStep 3: Switch traffic to green")
+    if deployment.switch_traffic(validation_checks=validate_model_quality):
+        print("Traffic switch successful!")
+
+        # Monitor for issues
+        print("\nStep 4: Monitor new deployment")
+        status = deployment.get_deployment_status()
+        print(f"Active: {status['active']['version']}")
+        print(f"Error rate: {status['active']['error_rate']:.2%}")
+
+        # Simulate issue detection
+        if status['active']['error_rate'] > 0.05:
+            print("\nStep 5: Issues detected, rolling back!")
+            deployment.rollback()
+    else:
+        print("Traffic switch failed!")
+\end{lstlisting}
+
+\subsection{Kubernetes Blue-Green Deployment}
+
+\begin{lstlisting}[language=Python, caption=Kubernetes Blue-Green Deployment]
+from kubernetes import client, config
+from typing import Dict, List
+import yaml
+
+class KubernetesBlueGreenDeployment:
+    """Blue-green deployment using Kubernetes"""
+
+    def __init__(self, namespace: str = "default"):
+        """
+        Initialize Kubernetes client
+
+        Args:
+            namespace: Kubernetes namespace
+        """
+        config.load_kube_config()
+        self.apps_v1 = client.AppsV1Api()
+        self.core_v1 = client.CoreV1Api()
+        self.namespace = namespace
+
+    def create_deployment(self,
+                         name: str,
+                         image: str,
+                         replicas: int,
+                         environment: str,
+                         port: int = 8080) -> bool:
+        """
+        Create Kubernetes deployment
+
+        Args:
+            name: Deployment name
+            image: Docker image
+            replicas: Number of replicas
+            environment: blue or green
+            port: Container port
+        """
+        deployment_name = f"{name}-{environment}"
+
+        deployment = client.V1Deployment(
+            api_version="apps/v1",
+            kind="Deployment",
+            metadata=client.V1ObjectMeta(
+                name=deployment_name,
+                labels={
+                    'app': name,
+                    'environment': environment,
+                    'version': image.split(':')[-1]
+                }
+            ),
+            spec=client.V1DeploymentSpec(
+                replicas=replicas,
+                selector=client.V1LabelSelector(
+                    match_labels={
+                        'app': name,
+                        'environment': environment
+                    }
+                ),
+                template=client.V1PodTemplateSpec(
+                    metadata=client.V1ObjectMeta(
+                        labels={
+                            'app': name,
+                            'environment': environment
+                        }
+                    ),
+                    spec=client.V1PodSpec(
+                        containers=[
+                            client.V1Container(
+                                name=name,
+                                image=image,
+                                ports=[client.V1ContainerPort(container_port=port)],
+                                resources=client.V1ResourceRequirements(
+                                    requests={'cpu': '500m', 'memory': '512Mi'},
+                                    limits={'cpu': '1000m', 'memory': '1Gi'}
+                                ),
+                                liveness_probe=client.V1Probe(
+                                    http_get=client.V1HTTPGetAction(
+                                        path='/health',
+                                        port=port
+                                    ),
+                                    initial_delay_seconds=30,
+                                    period_seconds=10
+                                ),
+                                readiness_probe=client.V1Probe(
+                                    http_get=client.V1HTTPGetAction(
+                                        path='/ready',
+                                        port=port
+                                    ),
+                                    initial_delay_seconds=5,
+                                    period_seconds=5
+                                )
+                            )
+                        ]
+                    )
+                )
+            )
+        )
+
+        try:
+            self.apps_v1.create_namespaced_deployment(
+                namespace=self.namespace,
+                body=deployment
+            )
+            return True
+        except Exception as e:
+            print(f"Failed to create deployment: {str(e)}")
+            return False
+
+    def switch_service(self, service_name: str, target_environment: str) -> bool:
+        """
+        Switch service to target environment
+
+        Args:
+            service_name: Service name
+            target_environment: blue or green
+        """
+        try:
+            # Get existing service
+            service = self.core_v1.read_namespaced_service(
+                name=service_name,
+                namespace=self.namespace
+            )
+
+            # Update selector to point to target environment
+            service.spec.selector = {
+                'app': service_name,
+                'environment': target_environment
+            }
+
+            # Update service
+            self.core_v1.patch_namespaced_service(
+                name=service_name,
+                namespace=self.namespace,
+                body=service
+            )
+
+            return True
+
+        except Exception as e:
+            print(f"Failed to switch service: {str(e)}")
+            return False
+
+    def get_deployment_status(self, name: str, environment: str) -> Dict:
+        """Get deployment status"""
+        deployment_name = f"{name}-{environment}"
+
+        try:
+            deployment = self.apps_v1.read_namespaced_deployment(
+                name=deployment_name,
+                namespace=self.namespace
+            )
+
+            return {
+                'name': deployment_name,
+                'replicas': deployment.spec.replicas,
+                'ready_replicas': deployment.status.ready_replicas or 0,
+                'available_replicas': deployment.status.available_replicas or 0,
+                'image': deployment.spec.template.spec.containers[0].image
+            }
+
+        except Exception as e:
+            return {'error': str(e)}
+\end{lstlisting}
+
+\section{Canary Deployment}
+
+\subsection{Overview and Strategy}
+
+Canary deployment gradually rolls out a new model version to a small percentage of traffic, monitors performance, and incrementally increases traffic if metrics are healthy. Named after coal mine canaries used to detect dangerous gases, this strategy detects issues early with minimal user impact.
+
+Key characteristics:
+\begin{itemize}
+    \item \textbf{Gradual rollout:} Start with 1-5\% of traffic, increase slowly
+    \item \textbf{Real traffic validation:} Test with actual production workload
+    \item \textbf{Risk minimization:} Limit blast radius of potential issues
+    \item \textbf{Automated decision-making:} Progress based on metrics, not time
+    \item \textbf{Quick rollback:} Reduce traffic allocation immediately if issues arise
+\end{itemize}
+
+\subsection{Implementation}
+
+\begin{lstlisting}[language=Python, caption=Canary Deployment Manager]
+from typing import Dict, List, Optional, Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+import numpy as np
+import logging
+import time
+
+@dataclass
+class CanaryStage:
+    """Configuration for a canary rollout stage"""
+    traffic_percentage: float
+    duration_minutes: int
+    success_criteria: Dict[str, float]
+
+@dataclass
+class CanaryMetrics:
+    """Metrics collected during canary deployment"""
+    timestamp: datetime
+    traffic_percentage: float
+    requests_count: int
+    error_rate: float
+    latency_p50: float
+    latency_p95: float
+    latency_p99: float
+    prediction_quality: Optional[float] = None
+
+class CanaryDeployment:
+    """
+    Canary deployment manager with progressive traffic allocation
+
+    Implements gradual rollout with automated progression based on metrics
+    """
+
+    def __init__(self,
+                 model_name: str,
+                 baseline_endpoint: str,
+                 canary_endpoint: str,
+                 traffic_router_url: str):
+        """
+        Initialize canary deployment
+
+        Args:
+            model_name: Model being deployed
+            baseline_endpoint: Current production model
+            canary_endpoint: New canary model
+            traffic_router_url: Traffic routing service
+        """
+        self.model_name = model_name
+        self.baseline_endpoint = baseline_endpoint
+        self.canary_endpoint = canary_endpoint
+        self.traffic_router_url = traffic_router_url
+        self.logger = logging.getLogger(f"Canary_{model_name}")
+
+        self.current_traffic_percentage = 0.0
+        self.canary_metrics: List[CanaryMetrics] = []
+        self.baseline_metrics: List[CanaryMetrics] = []
+
+    def execute_rollout(self, stages: List[CanaryStage]) -> bool:
+        """
+        Execute canary rollout through defined stages
+
+        Args:
+            stages: List of rollout stages
+
+        Returns:
+            True if rollout completed successfully
+        """
+        self.logger.info(f"Starting canary rollout for {self.model_name}")
+
+        for stage_idx, stage in enumerate(stages, 1):
+            self.logger.info(
+                f"Stage {stage_idx}/{len(stages)}: "
+                f"{stage.traffic_percentage:.1f}% traffic for {stage.duration_minutes}min"
+            )
+
+            # Update traffic allocation
+            if not self._update_traffic_split(stage.traffic_percentage):
+                self.logger.error("Failed to update traffic split")
+                self._rollback()
+                return False
+
+            # Monitor stage
+            stage_start = datetime.now()
+            stage_end = stage_start + timedelta(minutes=stage.duration_minutes)
+
+            while datetime.now() < stage_end:
+                # Collect metrics
+                canary_metrics = self._collect_metrics(self.canary_endpoint, "canary")
+                baseline_metrics = self._collect_metrics(self.baseline_endpoint, "baseline")
+
+                self.canary_metrics.append(canary_metrics)
+                self.baseline_metrics.append(baseline_metrics)
+
+                # Evaluate success criteria
+                if not self._evaluate_stage(stage, canary_metrics, baseline_metrics):
+                    self.logger.error(
+                        f"Stage {stage_idx} failed success criteria"
+                    )
+                    self._rollback()
+                    return False
+
+                # Wait before next check
+                time.sleep(30)
+
+            self.logger.info(f"Stage {stage_idx} completed successfully")
+
+        # Rollout completed - promote canary to 100%
+        self.logger.info("Canary rollout successful, promoting to 100%")
+        return self._update_traffic_split(100.0)
+
+    def _update_traffic_split(self, canary_percentage: float) -> bool:
+        """
+        Update traffic split between baseline and canary
+
+        Args:
+            canary_percentage: Percentage of traffic to canary (0-100)
+
+        Returns:
+            True if update successful
+        """
+        try:
+            import requests
+
+            response = requests.post(
+                f"{self.traffic_router_url}/split",
+                json={
+                    'model': self.model_name,
+                    'routes': [
+                        {
+                            'endpoint': self.baseline_endpoint,
+                            'weight': 100 - canary_percentage
+                        },
+                        {
+                            'endpoint': self.canary_endpoint,
+                            'weight': canary_percentage
+                        }
+                    ]
+                },
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                self.current_traffic_percentage = canary_percentage
+                self.logger.info(
+                    f"Traffic split updated: {canary_percentage:.1f}% to canary"
+                )
+                return True
+
+            return False
+
+        except Exception as e:
+            self.logger.error(f"Traffic split update failed: {str(e)}")
+            return False
+
+    def _collect_metrics(self, endpoint: str, label: str) -> CanaryMetrics:
+        """
+        Collect metrics from endpoint
+
+        Args:
+            endpoint: Model endpoint
+            label: Metric label (canary or baseline)
+
+        Returns:
+            Collected metrics
+        """
+        try:
+            import requests
+
+            response = requests.get(
+                f"{endpoint}/metrics",
+                timeout=10
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+
+                return CanaryMetrics(
+                    timestamp=datetime.now(),
+                    traffic_percentage=self.current_traffic_percentage,
+                    requests_count=data.get('requests_count', 0),
+                    error_rate=data.get('error_rate', 0),
+                    latency_p50=data.get('latency_p50', 0),
+                    latency_p95=data.get('latency_p95', 0),
+                    latency_p99=data.get('latency_p99', 0),
+                    prediction_quality=data.get('prediction_quality')
+                )
+
+        except Exception as e:
+            self.logger.error(f"Metrics collection failed for {label}: {str(e)}")
+
+        # Return empty metrics on failure
+        return CanaryMetrics(
+            timestamp=datetime.now(),
+            traffic_percentage=self.current_traffic_percentage,
+            requests_count=0,
+            error_rate=1.0,
+            latency_p50=0,
+            latency_p95=0,
+            latency_p99=0
+        )
+
+    def _evaluate_stage(self,
+                       stage: CanaryStage,
+                       canary_metrics: CanaryMetrics,
+                       baseline_metrics: CanaryMetrics) -> bool:
+        """
+        Evaluate if stage meets success criteria
+
+        Args:
+            stage: Current stage configuration
+            canary_metrics: Canary metrics
+            baseline_metrics: Baseline metrics
+
+        Returns:
+            True if criteria met
+        """
+        criteria = stage.success_criteria
+
+        # Check error rate
+        if 'max_error_rate' in criteria:
+            if canary_metrics.error_rate > criteria['max_error_rate']:
+                self.logger.warning(
+                    f"Canary error rate {canary_metrics.error_rate:.2%} exceeds "
+                    f"maximum {criteria['max_error_rate']:.2%}"
+                )
+                return False
+
+        # Compare error rate with baseline
+        if 'max_error_rate_ratio' in criteria:
+            if baseline_metrics.error_rate > 0:
+                error_ratio = canary_metrics.error_rate / baseline_metrics.error_rate
+                if error_ratio > criteria['max_error_rate_ratio']:
+                    self.logger.warning(
+                        f"Canary error rate {error_ratio:.2f}x baseline"
+                    )
+                    return False
+
+        # Check latency
+        if 'max_latency_p99' in criteria:
+            if canary_metrics.latency_p99 > criteria['max_latency_p99']:
+                self.logger.warning(
+                    f"Canary p99 latency {canary_metrics.latency_p99}ms exceeds "
+                    f"maximum {criteria['max_latency_p99']}ms"
+                )
+                return False
+
+        # Compare latency with baseline
+        if 'max_latency_ratio' in criteria:
+            if baseline_metrics.latency_p99 > 0:
+                latency_ratio = canary_metrics.latency_p99 / baseline_metrics.latency_p99
+                if latency_ratio > criteria['max_latency_ratio']:
+                    self.logger.warning(
+                        f"Canary latency {latency_ratio:.2f}x baseline"
+                    )
+                    return False
+
+        # Check prediction quality if available
+        if 'min_prediction_quality' in criteria and canary_metrics.prediction_quality:
+            if canary_metrics.prediction_quality < criteria['min_prediction_quality']:
+                self.logger.warning(
+                    f"Canary prediction quality {canary_metrics.prediction_quality:.3f} "
+                    f"below minimum {criteria['min_prediction_quality']:.3f}"
+                )
+                return False
+
+        return True
+
+    def _rollback(self) -> bool:
+        """Rollback canary deployment to baseline"""
+        self.logger.warning("Rolling back canary deployment")
+        return self._update_traffic_split(0.0)
+
+    def get_rollout_report(self) -> Dict:
+        """Generate rollout report with statistics"""
+        if not self.canary_metrics:
+            return {'status': 'no_data'}
+
+        canary_errors = [m.error_rate for m in self.canary_metrics]
+        baseline_errors = [m.error_rate for m in self.baseline_metrics]
+
+        canary_latencies = [m.latency_p99 for m in self.canary_metrics]
+        baseline_latencies = [m.latency_p99 for m in self.baseline_metrics]
+
+        return {
+            'model': self.model_name,
+            'final_traffic_percentage': self.current_traffic_percentage,
+            'stages_completed': len(self.canary_metrics),
+            'canary_stats': {
+                'avg_error_rate': np.mean(canary_errors),
+                'max_error_rate': np.max(canary_errors),
+                'avg_latency_p99': np.mean(canary_latencies),
+                'max_latency_p99': np.max(canary_latencies)
+            },
+            'baseline_stats': {
+                'avg_error_rate': np.mean(baseline_errors),
+                'max_error_rate': np.max(baseline_errors),
+                'avg_latency_p99': np.mean(baseline_latencies),
+                'max_latency_p99': np.max(baseline_latencies)
+            }
+        }
+
+# Example usage
+def example_canary_deployment():
+    """Example of canary deployment workflow"""
+
+    # Initialize canary deployment
+    canary = CanaryDeployment(
+        model_name="recommendation_model",
+        baseline_endpoint="http://prod.example.com/v1",
+        canary_endpoint="http://prod.example.com/v2",
+        traffic_router_url="http://router.example.com"
+    )
+
+    # Define rollout stages
+    stages = [
+        CanaryStage(
+            traffic_percentage=5.0,
+            duration_minutes=10,
+            success_criteria={
+                'max_error_rate': 0.01,
+                'max_error_rate_ratio': 2.0,
+                'max_latency_p99': 500
+            }
+        ),
+        CanaryStage(
+            traffic_percentage=25.0,
+            duration_minutes=20,
+            success_criteria={
+                'max_error_rate': 0.01,
+                'max_error_rate_ratio': 1.5,
+                'max_latency_p99': 500
+            }
+        ),
+        CanaryStage(
+            traffic_percentage=50.0,
+            duration_minutes=30,
+            success_criteria={
+                'max_error_rate': 0.01,
+                'max_error_rate_ratio': 1.2,
+                'max_latency_p99': 500
+            }
+        )
+    ]
+
+    # Execute rollout
+    success = canary.execute_rollout(stages)
+
+    # Print report
+    report = canary.get_rollout_report()
+    print(f"\nCanary Deployment Report:")
+    print(f"Status: {'SUCCESS' if success else 'FAILED'}")
+    print(f"Final Traffic: {report['final_traffic_percentage']:.1f}%")
+    print(f"\nCanary Stats:")
+    print(f"  Avg Error Rate: {report['canary_stats']['avg_error_rate']:.2%}")
+    print(f"  Avg P99 Latency: {report['canary_stats']['avg_latency_p99']:.1f}ms")
+\end{lstlisting}
+
+\section{Shadow Deployment}
+
+\subsection{Overview and Use Cases}
+
+Shadow deployment (also called dark launching) routes production traffic to a new model version but discards its predictions, logging them for analysis instead. The current model continues serving users. This enables risk-free validation of new models with real production data.
+
+Shadow deployment is ideal for:
+\begin{itemize}
+    \item Testing models with real traffic patterns before serving predictions
+    \item Validating performance under production load
+    \item Comparing model versions on identical traffic
+    \item Detecting data drift or distribution shifts
+    \item Load testing new model infrastructure
+\end{itemize}
+
+\subsection{Implementation}
+
+\begin{lstlisting}[language=Python, caption=Shadow Deployment Manager]
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import asyncio
+import logging
+import json
+import numpy as np
+
+@dataclass
+class ShadowPrediction:
+    """Shadow model prediction for logging and analysis"""
+    request_id: str
+    timestamp: datetime
+    primary_prediction: Any
+    shadow_prediction: Any
+    primary_latency_ms: float
+    shadow_latency_ms: float
+    features: Dict
+    match: bool = None
+    divergence: Optional[float] = None
+
+class ShadowDeployment:
+    """
+    Shadow deployment manager
+
+    Mirrors traffic to shadow model without impacting users
+    """
+
+    def __init__(self,
+                 model_name: str,
+                 primary_endpoint: str,
+                 shadow_endpoint: str,
+                 comparison_fn: Optional[Callable] = None):
+        """
+        Initialize shadow deployment
+
+        Args:
+            model_name: Model name
+            primary_endpoint: Production model endpoint
+            shadow_endpoint: Shadow model endpoint
+            comparison_fn: Function to compare predictions
+        """
+        self.model_name = model_name
+        self.primary_endpoint = primary_endpoint
+        self.shadow_endpoint = shadow_endpoint
+        self.comparison_fn = comparison_fn or self._default_comparison
+        self.logger = logging.getLogger(f"Shadow_{model_name}")
+
+        self.shadow_predictions: List[ShadowPrediction] = []
+
+    async def predict(self, features: Dict, request_id: str) -> Any:
+        """
+        Make prediction with both primary and shadow models
+
+        Args:
+            features: Input features
+            request_id: Unique request identifier
+
+        Returns:
+            Primary model prediction (shadow logged but not returned)
+        """
+        # Make predictions in parallel
+        primary_task = self._call_primary(features)
+        shadow_task = self._call_shadow(features)
+
+        # Wait for primary (required for user)
+        primary_result = await primary_task
+
+        # Shadow can continue in background
+        asyncio.create_task(
+            self._process_shadow_result(
+                request_id, features, primary_result, shadow_task
+            )
+        )
+
+        return primary_result
+
+    async def _call_primary(self, features: Dict) -> Dict:
+        """Call primary model"""
+        import aiohttp
+
+        start_time = datetime.now()
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.primary_endpoint}/predict",
+                    json=features,
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as response:
+                    result = await response.json()
+
+            latency_ms = (datetime.now() - start_time).total_seconds() * 1000
+
+            return {
+                'prediction': result,
+                'latency_ms': latency_ms,
+                'error': None
+            }
+
+        except Exception as e:
+            self.logger.error(f"Primary prediction failed: {str(e)}")
+            latency_ms = (datetime.now() - start_time).total_seconds() * 1000
+            return {
+                'prediction': None,
+                'latency_ms': latency_ms,
+                'error': str(e)
+            }
+
+    async def _call_shadow(self, features: Dict) -> Dict:
+        """Call shadow model"""
+        import aiohttp
+
+        start_time = datetime.now()
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.shadow_endpoint}/predict",
+                    json=features,
+                    timeout=aiohttp.ClientTimeout(total=10)  # More lenient timeout
+                ) as response:
+                    result = await response.json()
+
+            latency_ms = (datetime.now() - start_time).total_seconds() * 1000
+
+            return {
+                'prediction': result,
+                'latency_ms': latency_ms,
+                'error': None
+            }
+
+        except Exception as e:
+            self.logger.warning(f"Shadow prediction failed: {str(e)}")
+            latency_ms = (datetime.now() - start_time).total_seconds() * 1000
+            return {
+                'prediction': None,
+                'latency_ms': latency_ms,
+                'error': str(e)
+            }
+
+    async def _process_shadow_result(self,
+                                     request_id: str,
+                                     features: Dict,
+                                     primary_result: Dict,
+                                     shadow_task: asyncio.Task):
+        """Process shadow prediction result"""
+        try:
+            shadow_result = await shadow_task
+
+            # Compare predictions
+            match, divergence = self.comparison_fn(
+                primary_result['prediction'],
+                shadow_result['prediction']
+            )
+
+            # Log shadow prediction
+            shadow_pred = ShadowPrediction(
+                request_id=request_id,
+                timestamp=datetime.now(),
+                primary_prediction=primary_result['prediction'],
+                shadow_prediction=shadow_result['prediction'],
+                primary_latency_ms=primary_result['latency_ms'],
+                shadow_latency_ms=shadow_result['latency_ms'],
+                features=features,
+                match=match,
+                divergence=divergence
+            )
+
+            self.shadow_predictions.append(shadow_pred)
+            self._log_shadow_prediction(shadow_pred)
+
+        except Exception as e:
+            self.logger.error(f"Shadow result processing failed: {str(e)}")
+
+    def _default_comparison(self,
+                           primary_pred: Any,
+                           shadow_pred: Any) -> tuple:
+        """
+        Default prediction comparison
+
+        Returns:
+            (match: bool, divergence: float)
+        """
+        if primary_pred is None or shadow_pred is None:
+            return False, None
+
+        # For classification
+        if isinstance(primary_pred, (str, int)):
+            match = primary_pred == shadow_pred
+            return match, 0.0 if match else 1.0
+
+        # For regression or probabilities
+        if isinstance(primary_pred, (float, int)):
+            divergence = abs(primary_pred - shadow_pred)
+            match = divergence < 0.01  # 1% threshold
+            return match, divergence
+
+        # For arrays/lists
+        if isinstance(primary_pred, (list, np.ndarray)):
+            primary_arr = np.array(primary_pred)
+            shadow_arr = np.array(shadow_pred)
+            divergence = np.mean(np.abs(primary_arr - shadow_arr))
+            match = divergence < 0.01
+            return match, float(divergence)
+
+        return True, 0.0
+
+    def _log_shadow_prediction(self, pred: ShadowPrediction):
+        """Log shadow prediction for analysis"""
+        log_entry = {
+            'request_id': pred.request_id,
+            'timestamp': pred.timestamp.isoformat(),
+            'model': self.model_name,
+            'primary': pred.primary_prediction,
+            'shadow': pred.shadow_prediction,
+            'match': pred.match,
+            'divergence': pred.divergence,
+            'latency_primary_ms': pred.primary_latency_ms,
+            'latency_shadow_ms': pred.shadow_latency_ms
+        }
+
+        self.logger.info(f"Shadow: {json.dumps(log_entry)}")
+
+    def get_analysis(self, window_minutes: int = 60) -> Dict:
+        """
+        Analyze shadow deployment performance
+
+        Args:
+            window_minutes: Analysis window in minutes
+
+        Returns:
+            Analysis results
+        """
+        cutoff_time = datetime.now() - timedelta(minutes=window_minutes)
+
+        # Filter to recent predictions
+        recent_preds = [
+            p for p in self.shadow_predictions
+            if p.timestamp >= cutoff_time
+        ]
+
+        if not recent_preds:
+            return {'status': 'no_data'}
+
+        # Calculate statistics
+        total = len(recent_preds)
+        matches = sum(1 for p in recent_preds if p.match)
+        match_rate = matches / total
+
+        divergences = [p.divergence for p in recent_preds if p.divergence is not None]
+        avg_divergence = np.mean(divergences) if divergences else 0
+
+        primary_latencies = [p.primary_latency_ms for p in recent_preds]
+        shadow_latencies = [p.shadow_latency_ms for p in recent_preds]
+
+        # Shadow errors
+        shadow_errors = sum(
+            1 for p in recent_preds
+            if p.shadow_prediction is None
+        )
+        shadow_error_rate = shadow_errors / total
+
+        return {
+            'model': self.model_name,
+            'window_minutes': window_minutes,
+            'total_predictions': total,
+            'match_rate': match_rate,
+            'avg_divergence': avg_divergence,
+            'shadow_error_rate': shadow_error_rate,
+            'latency_stats': {
+                'primary_p50': np.percentile(primary_latencies, 50),
+                'primary_p95': np.percentile(primary_latencies, 95),
+                'primary_p99': np.percentile(primary_latencies, 99),
+                'shadow_p50': np.percentile(shadow_latencies, 50),
+                'shadow_p95': np.percentile(shadow_latencies, 95),
+                'shadow_p99': np.percentile(shadow_latencies, 99)
+            }
+        }
+
+# Example usage
+async def example_shadow_deployment():
+    """Example of shadow deployment"""
+
+    # Custom comparison for classification model
+    def compare_predictions(primary, shadow):
+        """Compare classification predictions"""
+        if primary is None or shadow is None:
+            return False, None
+
+        # Extract predicted class
+        primary_class = primary.get('class')
+        shadow_class = shadow.get('class')
+
+        match = primary_class == shadow_class
+
+        # Calculate probability divergence
+        primary_prob = primary.get('probability', 0)
+        shadow_prob = shadow.get('probability', 0)
+        divergence = abs(primary_prob - shadow_prob)
+
+        return match, divergence
+
+    # Initialize shadow deployment
+    shadow = ShadowDeployment(
+        model_name="sentiment_classifier",
+        primary_endpoint="http://prod.example.com/v1",
+        shadow_endpoint="http://prod.example.com/v2",
+        comparison_fn=compare_predictions
+    )
+
+    # Simulate requests
+    for i in range(100):
+        features = {'text': f'Sample text {i}'}
+        prediction = await shadow.predict(features, request_id=f'req_{i}')
+        print(f"Request {i}: {prediction}")
+
+    # Analyze results
+    analysis = shadow.get_analysis(window_minutes=60)
+    print(f"\nShadow Deployment Analysis:")
+    print(f"Match Rate: {analysis['match_rate']:.2%}")
+    print(f"Avg Divergence: {analysis['avg_divergence']:.4f}")
+    print(f"Shadow Error Rate: {analysis['shadow_error_rate']:.2%}")
+    print(f"Shadow P99 Latency: {analysis['latency_stats']['shadow_p99']:.1f}ms")
+\end{lstlisting}
+
+\section{A/B Testing for Model Evaluation}
+
+\subsection{Overview and Statistical Framework}
+
+A/B testing (or split testing) compares two model versions by randomly assigning users to treatment groups and measuring performance differences with statistical rigor. Unlike canary deployment, A/B tests maintain stable traffic allocation and run until statistical significance is achieved.
+
+Key principles:
+\begin{itemize}
+    \item \textbf{Random assignment:} Users randomly allocated to variants
+    \item \textbf{Controlled experiment:} Fixed allocation during test period
+    \item \textbf{Statistical significance:} Decisions based on hypothesis testing
+    \item \textbf{Multiple metrics:} Track business metrics alongside technical metrics
+    \item \textbf{Duration planning:} Run until sufficient sample size achieved
+\end{itemize}
+
+\subsection{Implementation}
+
+\begin{lstlisting}[language=Python, caption=A/B Testing Framework for ML Models]
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from datetime import datetime
+from scipy import stats
+import numpy as np
+import hashlib
+import logging
+
+@dataclass
+class Variant:
+    """Model variant in A/B test"""
+    name: str
+    endpoint: str
+    traffic_percentage: float
+    description: str = ""
+
+@dataclass
+class ABTestMetric:
+    """Metric tracked during A/B test"""
+    name: str
+    variant: str
+    timestamp: datetime
+    value: float
+    user_id: Optional[str] = None
+
+@dataclass
+class ABTestResult:
+    """Statistical test results"""
+    metric_name: str
+    control_mean: float
+    treatment_mean: float
+    control_std: float
+    treatment_std: float
+    control_sample_size: int
+    treatment_sample_size: int
+    p_value: float
+    confidence_interval: Tuple[float, float]
+    is_significant: bool
+    relative_improvement: float
+
+class ABTest:
+    """
+    A/B testing framework for ML models
+
+    Implements rigorous statistical testing with multiple metrics
+    """
+
+    def __init__(self,
+                 test_name: str,
+                 control_variant: Variant,
+                 treatment_variant: Variant,
+                 alpha: float = 0.05,
+                 minimum_detectable_effect: float = 0.02):
+        """
+        Initialize A/B test
+
+        Args:
+            test_name: Test identifier
+            control_variant: Baseline model (variant A)
+            treatment_variant: New model (variant B)
+            alpha: Significance level (default 5%)
+            minimum_detectable_effect: Minimum effect size to detect
+        """
+        self.test_name = test_name
+        self.control_variant = control_variant
+        self.treatment_variant = treatment_variant
+        self.alpha = alpha
+        self.minimum_detectable_effect = minimum_detectable_effect
+        self.logger = logging.getLogger(f"ABTest_{test_name}")
+
+        self.metrics: List[ABTestMetric] = []
+        self.start_time: Optional[datetime] = None
+        self.end_time: Optional[datetime] = None
+
+    def assign_variant(self, user_id: str) -> Variant:
+        """
+        Assign user to variant using consistent hashing
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Assigned variant
+        """
+        # Hash user_id with test_name for consistency
+        hash_input = f"{self.test_name}:{user_id}".encode('utf-8')
+        hash_value = int(hashlib.md5(hash_input).hexdigest(), 16)
+
+        # Convert to percentage (0-100)
+        percentage = (hash_value % 100) / 100.0
+
+        # Assign based on traffic allocation
+        if percentage < self.control_variant.traffic_percentage / 100:
+            return self.control_variant
+        else:
+            return self.treatment_variant
+
+    def record_metric(self,
+                     metric_name: str,
+                     value: float,
+                     user_id: str,
+                     variant_name: str):
+        """
+        Record metric observation
+
+        Args:
+            metric_name: Name of metric
+            value: Metric value
+            user_id: User identifier
+            variant_name: Variant name
+        """
+        metric = ABTestMetric(
+            name=metric_name,
+            variant=variant_name,
+            timestamp=datetime.now(),
+            value=value,
+            user_id=user_id
+        )
+
+        self.metrics.append(metric)
+
+    def calculate_sample_size(self,
+                             baseline_mean: float,
+                             baseline_std: float,
+                             power: float = 0.8) -> int:
+        """
+        Calculate required sample size per variant
+
+        Args:
+            baseline_mean: Baseline metric mean
+            baseline_std: Baseline metric std
+            power: Statistical power (default 80%)
+
+        Returns:
+            Required sample size per variant
+        """
+        # Effect size (Cohen's d)
+        effect_size = self.minimum_detectable_effect * baseline_mean / baseline_std
+
+        # Z-scores for alpha and beta
+        z_alpha = stats.norm.ppf(1 - self.alpha / 2)
+        z_beta = stats.norm.ppf(power)
+
+        # Sample size calculation
+        n = 2 * ((z_alpha + z_beta) / effect_size) ** 2
+
+        return int(np.ceil(n))
+
+    def analyze_metric(self, metric_name: str) -> ABTestResult:
+        """
+        Perform statistical analysis for a metric
+
+        Args:
+            metric_name: Metric to analyze
+
+        Returns:
+            Statistical test results
+        """
+        # Filter metrics
+        metric_data = [m for m in self.metrics if m.name == metric_name]
+
+        if not metric_data:
+            raise ValueError(f"No data for metric: {metric_name}")
+
+        # Separate by variant
+        control_values = np.array([
+            m.value for m in metric_data
+            if m.variant == self.control_variant.name
+        ])
+
+        treatment_values = np.array([
+            m.value for m in metric_data
+            if m.variant == self.treatment_variant.name
+        ])
+
+        if len(control_values) == 0 or len(treatment_values) == 0:
+            raise ValueError(f"Insufficient data for both variants")
+
+        # Calculate statistics
+        control_mean = np.mean(control_values)
+        control_std = np.std(control_values, ddof=1)
+        treatment_mean = np.mean(treatment_values)
+        treatment_std = np.std(treatment_values, ddof=1)
+
+        # Perform t-test
+        t_stat, p_value = stats.ttest_ind(treatment_values, control_values)
+
+        # Calculate confidence interval for difference
+        pooled_std = np.sqrt(
+            (control_std ** 2 / len(control_values)) +
+            (treatment_std ** 2 / len(treatment_values))
+        )
+
+        z_critical = stats.norm.ppf(1 - self.alpha / 2)
+        mean_diff = treatment_mean - control_mean
+
+        ci_lower = mean_diff - z_critical * pooled_std
+        ci_upper = mean_diff + z_critical * pooled_std
+
+        # Determine significance
+        is_significant = p_value < self.alpha
+
+        # Relative improvement
+        if control_mean != 0:
+            relative_improvement = (treatment_mean - control_mean) / abs(control_mean)
+        else:
+            relative_improvement = 0
+
+        return ABTestResult(
+            metric_name=metric_name,
+            control_mean=control_mean,
+            treatment_mean=treatment_mean,
+            control_std=control_std,
+            treatment_std=treatment_std,
+            control_sample_size=len(control_values),
+            treatment_sample_size=len(treatment_values),
+            p_value=p_value,
+            confidence_interval=(ci_lower, ci_upper),
+            is_significant=is_significant,
+            relative_improvement=relative_improvement
+        )
+
+    def get_test_summary(self, metrics_to_analyze: List[str]) -> Dict:
+        """
+        Generate comprehensive test summary
+
+        Args:
+            metrics_to_analyze: List of metric names to analyze
+
+        Returns:
+            Test summary with results for all metrics
+        """
+        results = {}
+
+        for metric_name in metrics_to_analyze:
+            try:
+                result = self.analyze_metric(metric_name)
+                results[metric_name] = {
+                    'control_mean': result.control_mean,
+                    'treatment_mean': result.treatment_mean,
+                    'p_value': result.p_value,
+                    'is_significant': result.is_significant,
+                    'relative_improvement': result.relative_improvement,
+                    'confidence_interval': result.confidence_interval,
+                    'sample_sizes': {
+                        'control': result.control_sample_size,
+                        'treatment': result.treatment_sample_size
+                    }
+                }
+            except Exception as e:
+                self.logger.error(f"Failed to analyze {metric_name}: {str(e)}")
+                results[metric_name] = {'error': str(e)}
+
+        return {
+            'test_name': self.test_name,
+            'control': self.control_variant.name,
+            'treatment': self.treatment_variant.name,
+            'alpha': self.alpha,
+            'results': results
+        }
+
+    def print_report(self, metrics_to_analyze: List[str]):
+        """Print formatted test report"""
+        summary = self.get_test_summary(metrics_to_analyze)
+
+        print(f"\n{'='*70}")
+        print(f"A/B Test Report: {self.test_name}")
+        print(f"{'='*70}")
+        print(f"Control: {self.control_variant.name}")
+        print(f"Treatment: {self.treatment_variant.name}")
+        print(f"Significance Level (α): {self.alpha}")
+        print(f"\n{'='*70}")
+        print("Results:")
+        print(f"{'='*70}\n")
+
+        for metric_name, result in summary['results'].items():
+            if 'error' in result:
+                print(f"{metric_name}: ERROR - {result['error']}\n")
+                continue
+
+            print(f"{metric_name}:")
+            print(f"  Control:    {result['control_mean']:.4f}")
+            print(f"  Treatment:  {result['treatment_mean']:.4f}")
+            print(f"  Improvement: {result['relative_improvement']:+.2%}")
+            print(f"  P-value:    {result['p_value']:.4f}")
+            print(f"  Significant: {'YES' if result['is_significant'] else 'NO'}")
+            print(f"  95% CI:     [{result['confidence_interval'][0]:.4f}, "
+                  f"{result['confidence_interval'][1]:.4f}]")
+            print(f"  Samples:    Control={result['sample_sizes']['control']}, "
+                  f"Treatment={result['sample_sizes']['treatment']}\n")
+
+# Example usage
+def example_ab_test():
+    """Example of A/B testing workflow"""
+
+    # Define variants
+    control = Variant(
+        name="v1_baseline",
+        endpoint="http://prod.example.com/v1",
+        traffic_percentage=50.0,
+        description="Current production model"
+    )
+
+    treatment = Variant(
+        name="v2_improved",
+        endpoint="http://prod.example.com/v2",
+        traffic_percentage=50.0,
+        description="New model with additional features"
+    )
+
+    # Initialize A/B test
+    ab_test = ABTest(
+        test_name="recommendation_model_v2_test",
+        control_variant=control,
+        treatment_variant=treatment,
+        alpha=0.05,
+        minimum_detectable_effect=0.02
+    )
+
+    # Calculate required sample size
+    required_n = ab_test.calculate_sample_size(
+        baseline_mean=0.25,  # 25% baseline conversion
+        baseline_std=0.1,
+        power=0.8
+    )
+    print(f"Required sample size per variant: {required_n}")
+
+    # Simulate experiment (in practice, collect real data)
+    np.random.seed(42)
+
+    for user_idx in range(10000):
+        user_id = f"user_{user_idx}"
+
+        # Assign variant
+        variant = ab_test.assign_variant(user_id)
+
+        # Simulate metrics (treatment has slight improvement)
+        if variant.name == "v1_baseline":
+            click_rate = np.random.beta(25, 75)  # ~25% baseline
+            latency = np.random.gamma(shape=2, scale=50)  # ~100ms
+        else:
+            click_rate = np.random.beta(27, 73)  # ~27% (8% relative improvement)
+            latency = np.random.gamma(shape=2, scale=45)  # ~90ms (10% improvement)
+
+        # Record metrics
+        ab_test.record_metric("click_rate", click_rate, user_id, variant.name)
+        ab_test.record_metric("latency_ms", latency, user_id, variant.name)
+
+    # Analyze results
+    ab_test.print_report(metrics_to_analyze=["click_rate", "latency_ms"])
+\end{lstlisting}
+
+\section{Traffic Splitting and Routing}
+
+\subsection{Traffic Router Implementation}
+
+Traffic routers direct requests to different model versions based on allocation rules. A production-grade router supports weighted routing, sticky sessions, and dynamic configuration.
+
+\begin{lstlisting}[language=Python, caption=Advanced Traffic Router]
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+import random
+import hashlib
+import logging
+
+@dataclass
+class Route:
+    """Traffic routing configuration"""
+    endpoint: str
+    weight: float  # 0-100
+    version: str
+    metadata: Dict = None
+
+class TrafficRouter:
+    """
+    Advanced traffic router for ML model serving
+
+    Supports weighted routing, sticky sessions, and health-aware routing
+    """
+
+    def __init__(self, model_name: str):
+        """
+        Initialize traffic router
+
+        Args:
+            model_name: Model being routed
+        """
+        self.model_name = model_name
+        self.routes: List[Route] = []
+        self.logger = logging.getLogger(f"Router_{model_name}")
+
+        # Sticky session mapping: user_id -> route
+        self.sticky_sessions: Dict[str, Route] = {}
+
+    def add_route(self, endpoint: str, weight: float, version: str):
+        """
+        Add routing rule
+
+        Args:
+            endpoint: Model endpoint URL
+            weight: Traffic weight (0-100)
+            version: Model version
+        """
+        route = Route(
+            endpoint=endpoint,
+            weight=weight,
+            version=version
+        )
+
+        self.routes.append(route)
+        self._normalize_weights()
+
+        self.logger.info(
+            f"Added route: {version} @ {endpoint} ({weight}%)"
+        )
+
+    def remove_route(self, version: str):
+        """Remove route by version"""
+        self.routes = [r for r in self.routes if r.version != version]
+        self._normalize_weights()
+
+        self.logger.info(f"Removed route: {version}")
+
+    def update_weight(self, version: str, new_weight: float):
+        """Update route weight"""
+        for route in self.routes:
+            if route.version == version:
+                route.weight = new_weight
+                break
+
+        self._normalize_weights()
+
+    def _normalize_weights(self):
+        """Normalize weights to sum to 100"""
+        total = sum(r.weight for r in self.routes)
+
+        if total > 0:
+            for route in self.routes:
+                route.weight = (route.weight / total) * 100
+
+    def route_request(self,
+                     user_id: Optional[str] = None,
+                     sticky: bool = False) -> Route:
+        """
+        Route request to endpoint
+
+        Args:
+            user_id: Optional user identifier
+            sticky: Enable sticky sessions
+
+        Returns:
+            Selected route
+        """
+        if not self.routes:
+            raise ValueError("No routes configured")
+
+        # Sticky session handling
+        if sticky and user_id and user_id in self.sticky_sessions:
+            return self.sticky_sessions[user_id]
+
+        # Consistent hashing for user_id
+        if user_id:
+            selected = self._consistent_hash_route(user_id)
+        else:
+            selected = self._weighted_random_route()
+
+        # Store sticky session
+        if sticky and user_id:
+            self.sticky_sessions[user_id] = selected
+
+        return selected
+
+    def _consistent_hash_route(self, user_id: str) -> Route:
+        """Route using consistent hashing"""
+        # Hash user_id
+        hash_value = int(
+            hashlib.md5(user_id.encode('utf-8')).hexdigest(),
+            16
+        )
+
+        # Map to percentage
+        percentage = (hash_value % 10000) / 100.0
+
+        # Select route based on cumulative weights
+        cumulative = 0
+        for route in self.routes:
+            cumulative += route.weight
+            if percentage <= cumulative:
+                return route
+
+        return self.routes[-1]
+
+    def _weighted_random_route(self) -> Route:
+        """Select route using weighted random selection"""
+        weights = [r.weight for r in self.routes]
+        selected = random.choices(self.routes, weights=weights, k=1)[0]
+        return selected
+
+    def get_routing_stats(self) -> Dict:
+        """Get routing statistics"""
+        return {
+            'model': self.model_name,
+            'routes': [
+                {
+                    'version': r.version,
+                    'endpoint': r.endpoint,
+                    'weight': r.weight
+                }
+                for r in self.routes
+            ],
+            'sticky_sessions': len(self.sticky_sessions)
+        }
+
+# Example usage
+def example_traffic_router():
+    """Example of traffic routing"""
+
+    router = TrafficRouter(model_name="product_ranker")
+
+    # Add routes
+    router.add_route("http://prod.example.com/v1", weight=70, version="v1.0")
+    router.add_route("http://prod.example.com/v2", weight=30, version="v2.0")
+
+    # Simulate routing
+    version_counts = {'v1.0': 0, 'v2.0': 0}
+
+    for i in range(10000):
+        route = router.route_request(user_id=f"user_{i}", sticky=True)
+        version_counts[route.version] += 1
+
+    print("Routing Distribution:")
+    for version, count in version_counts.items():
+        print(f"  {version}: {count/100:.1f}%")
+
+    # Update weights (simulate canary rollout)
+    print("\nUpdating weights for canary rollout...")
+    router.update_weight("v2.0", 50)
+
+    version_counts = {'v1.0': 0, 'v2.0': 0}
+    for i in range(10000, 20000):
+        route = router.route_request(user_id=f"user_{i}", sticky=False)
+        version_counts[route.version] += 1
+
+    print("New Routing Distribution:")
+    for version, count in version_counts.items():
+        print(f"  {version}: {count/100:.1f}%")
+\end{lstlisting}
+
+\section{Rollback Mechanisms and Circuit Breakers}
+
+\subsection{Automated Rollback System}
+
+Automated rollback systems detect degradation and revert to previous versions without human intervention. Combined with circuit breakers, they prevent cascading failures.
+
+\begin{lstlisting}[language=Python, caption=Rollback Manager with Circuit Breaker]
+from typing import Dict, Optional, Callable
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from enum import Enum
+import logging
+import time
+
+class CircuitState(Enum):
+    """Circuit breaker states"""
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Failing, reject requests
+    HALF_OPEN = "half_open"  # Testing recovery
+
+@dataclass
+class HealthThreshold:
+    """Health check thresholds"""
+    max_error_rate: float = 0.05  # 5%
+    max_latency_p99: float = 1000  # 1 second
+    min_success_rate: float = 0.95  # 95%
+    window_minutes: int = 5
+
+class CircuitBreaker:
+    """
+    Circuit breaker for model endpoints
+
+    Prevents cascading failures by failing fast when errors exceed threshold
+    """
+
+    def __init__(self,
+                 name: str,
+                 failure_threshold: int = 5,
+                 recovery_timeout: int = 60,
+                 half_open_max_calls: int = 3):
+        """
+        Initialize circuit breaker
+
+        Args:
+            name: Circuit breaker identifier
+            failure_threshold: Consecutive failures to open circuit
+            recovery_timeout: Seconds before attempting recovery
+            half_open_max_calls: Test calls in half-open state
+        """
+        self.name = name
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.half_open_max_calls = half_open_max_calls
+        self.logger = logging.getLogger(f"CircuitBreaker_{name}")
+
+        self.state = CircuitState.CLOSED
+        self.failure_count = 0
+        self.last_failure_time: Optional[datetime] = None
+        self.half_open_calls = 0
+
+    def call(self, func: Callable, *args, **kwargs):
+        """
+        Execute function with circuit breaker protection
+
+        Args:
+            func: Function to call
+            *args: Function arguments
+            **kwargs: Function keyword arguments
+
+        Returns:
+            Function result
+
+        Raises:
+            Exception: If circuit is open
+        """
+        # Check circuit state
+        if self.state == CircuitState.OPEN:
+            if self._should_attempt_reset():
+                self.logger.info(f"Attempting recovery (half-open)")
+                self.state = CircuitState.HALF_OPEN
+                self.half_open_calls = 0
+            else:
+                raise Exception(f"Circuit breaker {self.name} is OPEN")
+
+        # Execute call
+        try:
+            result = func(*args, **kwargs)
+            self._on_success()
+            return result
+
+        except Exception as e:
+            self._on_failure()
+            raise e
+
+    def _should_attempt_reset(self) -> bool:
+        """Check if should attempt recovery"""
+        if self.last_failure_time is None:
+            return True
+
+        time_since_failure = (datetime.now() - self.last_failure_time).total_seconds()
+        return time_since_failure >= self.recovery_timeout
+
+    def _on_success(self):
+        """Handle successful call"""
+        if self.state == CircuitState.HALF_OPEN:
+            self.half_open_calls += 1
+
+            if self.half_open_calls >= self.half_open_max_calls:
+                self.logger.info(f"Circuit recovered (closing)")
+                self.state = CircuitState.CLOSED
+                self.failure_count = 0
+
+        elif self.state == CircuitState.CLOSED:
+            self.failure_count = max(0, self.failure_count - 1)
+
+    def _on_failure(self):
+        """Handle failed call"""
+        self.failure_count += 1
+        self.last_failure_time = datetime.now()
+
+        if self.state == CircuitState.HALF_OPEN:
+            self.logger.warning(f"Recovery failed, opening circuit")
+            self.state = CircuitState.OPEN
+
+        elif self.failure_count >= self.failure_threshold:
+            self.logger.error(
+                f"Failure threshold exceeded ({self.failure_count}), opening circuit"
+            )
+            self.state = CircuitState.OPEN
+
+class RollbackManager:
+    """
+    Automated rollback management
+
+    Monitors deployment health and triggers rollback when needed
+    """
+
+    def __init__(self,
+                 model_name: str,
+                 deployment_manager,
+                 health_threshold: HealthThreshold):
+        """
+        Initialize rollback manager
+
+        Args:
+            model_name: Model name
+            deployment_manager: Deployment manager (blue-green, canary, etc.)
+            health_threshold: Health check thresholds
+        """
+        self.model_name = model_name
+        self.deployment_manager = deployment_manager
+        self.health_threshold = health_threshold
+        self.logger = logging.getLogger(f"Rollback_{model_name}")
+
+        self.monitoring = True
+        self.circuit_breaker = CircuitBreaker(name=model_name)
+
+    def monitor_and_rollback(self, check_interval: int = 30):
+        """
+        Continuously monitor deployment and rollback if unhealthy
+
+        Args:
+            check_interval: Seconds between health checks
+        """
+        self.logger.info("Starting health monitoring")
+
+        while self.monitoring:
+            try:
+                health = self._check_health()
+
+                if not health['is_healthy']:
+                    self.logger.error(
+                        f"Deployment unhealthy: {health['reason']}"
+                    )
+
+                    # Trigger rollback
+                    if self._should_rollback(health):
+                        self.logger.warning("Triggering automated rollback")
+                        self._execute_rollback()
+                        break
+
+                time.sleep(check_interval)
+
+            except Exception as e:
+                self.logger.error(f"Monitor error: {str(e)}")
+
+    def _check_health(self) -> Dict:
+        """Check deployment health"""
+        try:
+            status = self.deployment_manager.get_deployment_status()
+
+            if 'active' not in status:
+                return {
+                    'is_healthy': False,
+                    'reason': 'No active deployment'
+                }
+
+            active = status['active']
+
+            # Check error rate
+            if active['error_rate'] > self.health_threshold.max_error_rate:
+                return {
+                    'is_healthy': False,
+                    'reason': f"Error rate {active['error_rate']:.2%} exceeds "
+                             f"threshold {self.health_threshold.max_error_rate:.2%}"
+                }
+
+            # Check latency
+            if active['latency_p99'] > self.health_threshold.max_latency_p99:
+                return {
+                    'is_healthy': False,
+                    'reason': f"P99 latency {active['latency_p99']}ms exceeds "
+                             f"threshold {self.health_threshold.max_latency_p99}ms"
+                }
+
+            return {'is_healthy': True}
+
+        except Exception as e:
+            return {
+                'is_healthy': False,
+                'reason': f"Health check failed: {str(e)}"
+            }
+
+    def _should_rollback(self, health: Dict) -> bool:
+        """Determine if should trigger rollback"""
+        # Always rollback on critical failures
+        return not health['is_healthy']
+
+    def _execute_rollback(self):
+        """Execute rollback"""
+        try:
+            success = self.deployment_manager.rollback()
+
+            if success:
+                self.logger.info("Rollback successful")
+            else:
+                self.logger.error("Rollback failed")
+
+        except Exception as e:
+            self.logger.error(f"Rollback error: {str(e)}")
+\end{lstlisting}
+
+\section{Multi-Model Serving Architectures}
+
+\subsection{Overview}
+
+Multi-model serving deploys multiple specialized models working together, either as ensembles or cascades. This architecture enables complex prediction workflows that single models cannot achieve.
+
+Use cases include:
+\begin{itemize}
+    \item \textbf{Model ensembles:} Combine predictions from multiple models
+    \item \textbf{Cascade architectures:} Fast screening model followed by expensive detailed model
+    \item \textbf{Specialized models:} Different models for different user segments
+    \item \textbf{Multi-task models:} Coordinated models for related predictions
+\end{itemize}
+
+\subsection{Implementation}
+
+\begin{lstlisting}[language=Python, caption=Multi-Model Serving Framework]
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+from enum import Enum
+import numpy as np
+import logging
+
+class AggregationStrategy(Enum):
+    """Model output aggregation strategies"""
+    AVERAGE = "average"
+    WEIGHTED_AVERAGE = "weighted_average"
+    VOTING = "voting"
+    MAX = "max"
+    CASCADE = "cascade"
+
+@dataclass
+class ModelSpec:
+    """Specification for a model in multi-model system"""
+    name: str
+    endpoint: str
+    version: str
+    weight: float = 1.0
+    metadata: Dict = None
+
+class MultiModelServer:
+    """
+    Multi-model serving with various aggregation strategies
+
+    Coordinates predictions from multiple models
+    """
+
+    def __init__(self, system_name: str):
+        """
+        Initialize multi-model server
+
+        Args:
+            system_name: System identifier
+        """
+        self.system_name = system_name
+        self.models: List[ModelSpec] = []
+        self.logger = logging.getLogger(f"MultiModel_{system_name}")
+
+    def add_model(self, model: ModelSpec):
+        """Add model to ensemble"""
+        self.models.append(model)
+        self.logger.info(f"Added model: {model.name} (weight={model.weight})")
+
+    async def predict_ensemble(self,
+                               features: Dict,
+                               strategy: AggregationStrategy) -> Dict:
+        """
+        Get ensemble prediction
+
+        Args:
+            features: Input features
+            strategy: Aggregation strategy
+
+        Returns:
+            Aggregated prediction
+        """
+        import asyncio
+        import aiohttp
+
+        # Collect predictions from all models
+        tasks = [
+            self._call_model(model, features)
+            for model in self.models
+        ]
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Filter successful predictions
+        valid_results = [
+            (model, result)
+            for model, result in zip(self.models, results)
+            if not isinstance(result, Exception)
+        ]
+
+        if not valid_results:
+            raise Exception("All model predictions failed")
+
+        # Aggregate based on strategy
+        if strategy == AggregationStrategy.AVERAGE:
+            prediction = self._aggregate_average(valid_results)
+        elif strategy == AggregationStrategy.WEIGHTED_AVERAGE:
+            prediction = self._aggregate_weighted_average(valid_results)
+        elif strategy == AggregationStrategy.VOTING:
+            prediction = self._aggregate_voting(valid_results)
+        elif strategy == AggregationStrategy.MAX:
+            prediction = self._aggregate_max(valid_results)
+        else:
+            raise ValueError(f"Unknown strategy: {strategy}")
+
+        return {
+            'prediction': prediction,
+            'num_models': len(valid_results),
+            'strategy': strategy.value
+        }
+
+    async def _call_model(self, model: ModelSpec, features: Dict) -> Any:
+        """Call individual model"""
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{model.endpoint}/predict",
+                json=features,
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as response:
+                result = await response.json()
+                return result
+
+    def _aggregate_average(self, results: List[tuple]) -> float:
+        """Simple average aggregation"""
+        predictions = [r[1] for r in results]
+        return np.mean(predictions)
+
+    def _aggregate_weighted_average(self, results: List[tuple]) -> float:
+        """Weighted average aggregation"""
+        weights = np.array([r[0].weight for r in results])
+        predictions = np.array([r[1] for r in results])
+
+        # Normalize weights
+        weights = weights / weights.sum()
+
+        return np.sum(predictions * weights)
+
+    def _aggregate_voting(self, results: List[tuple]) -> Any:
+        """Majority voting aggregation"""
+        from collections import Counter
+
+        predictions = [r[1] for r in results]
+        vote_counts = Counter(predictions)
+        winner = vote_counts.most_common(1)[0][0]
+
+        return winner
+
+    def _aggregate_max(self, results: List[tuple]) -> float:
+        """Maximum aggregation"""
+        predictions = [r[1] for r in results]
+        return max(predictions)
+
+class CascadeModelServer:
+    """
+    Cascade model serving architecture
+
+    Uses fast screening model followed by expensive detailed model
+    """
+
+    def __init__(self,
+                 screening_model: ModelSpec,
+                 detailed_model: ModelSpec,
+                 threshold: float):
+        """
+        Initialize cascade server
+
+        Args:
+            screening_model: Fast screening model
+            detailed_model: Expensive detailed model
+            threshold: Threshold for screening model to trigger detailed model
+        """
+        self.screening_model = screening_model
+        self.detailed_model = detailed_model
+        self.threshold = threshold
+        self.logger = logging.getLogger("CascadeServer")
+
+    async def predict(self, features: Dict) -> Dict:
+        """
+        Cascade prediction
+
+        Args:
+            features: Input features
+
+        Returns:
+            Prediction result
+        """
+        import aiohttp
+
+        # Step 1: Screening model
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.screening_model.endpoint}/predict",
+                json=features,
+                timeout=aiohttp.ClientTimeout(total=1)
+            ) as response:
+                screening_result = await response.json()
+
+        screening_score = screening_result.get('score', 0)
+
+        # Step 2: Check threshold
+        if screening_score < self.threshold:
+            # Low score - skip detailed model
+            return {
+                'prediction': screening_result,
+                'model_used': 'screening',
+                'screening_score': screening_score
+            }
+
+        # Step 3: Detailed model
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.detailed_model.endpoint}/predict",
+                json=features,
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as response:
+                detailed_result = await response.json()
+
+        return {
+            'prediction': detailed_result,
+            'model_used': 'detailed',
+            'screening_score': screening_score
+        }
+
+# Example usage
+async def example_multi_model():
+    """Example of multi-model serving"""
+
+    # Ensemble example
+    ensemble = MultiModelServer(system_name="fraud_ensemble")
+
+    ensemble.add_model(ModelSpec(
+        name="rf_model",
+        endpoint="http://models.example.com/rf",
+        version="v1.0",
+        weight=0.4
+    ))
+
+    ensemble.add_model(ModelSpec(
+        name="xgb_model",
+        endpoint="http://models.example.com/xgb",
+        version="v1.0",
+        weight=0.6
+    ))
+
+    # Get ensemble prediction
+    features = {'amount': 150.0, 'merchant_id': 'merch_123'}
+
+    prediction = await ensemble.predict_ensemble(
+        features,
+        strategy=AggregationStrategy.WEIGHTED_AVERAGE
+    )
+
+    print(f"Ensemble prediction: {prediction}")
+
+    # Cascade example
+    cascade = CascadeModelServer(
+        screening_model=ModelSpec(
+            name="fast_screener",
+            endpoint="http://models.example.com/screening",
+            version="v1.0"
+        ),
+        detailed_model=ModelSpec(
+            name="detailed_analyzer",
+            endpoint="http://models.example.com/detailed",
+            version="v1.0"
+        ),
+        threshold=0.7
+    )
+
+    cascade_prediction = await cascade.predict(features)
+    print(f"Cascade prediction: {cascade_prediction}")
+    print(f"Model used: {cascade_prediction['model_used']}")
+\end{lstlisting}
+
+\section{Chapter Summary}
+
+This chapter covered comprehensive deployment strategies for production ML systems. Effective deployment balances risk management with rapid iteration, enabling teams to ship improvements confidently.
+
+\textbf{Key Takeaways:}
+
+\begin{itemize}
+    \item \textbf{Blue-Green Deployment:} Provides zero-downtime updates with instant rollback capability through atomic traffic switching between identical environments.
+
+    \item \textbf{Canary Deployment:} Gradually rolls out new models with automated progression based on metrics, minimizing blast radius of potential issues.
+
+    \item \textbf{Shadow Deployment:} Enables risk-free validation by routing traffic to new models without impacting users, logging predictions for analysis.
+
+    \item \textbf{A/B Testing:} Rigorous statistical framework for comparing model versions, ensuring decisions are data-driven with proper significance testing.
+
+    \item \textbf{Traffic Routing:} Advanced routers support weighted allocation, sticky sessions, and consistent hashing for controlled experiments.
+
+    \item \textbf{Automated Rollback:} Circuit breakers and health monitoring detect degradation and trigger rollback automatically, preventing cascading failures.
+
+    \item \textbf{Multi-Model Serving:} Coordinates multiple models through ensembles or cascades for complex prediction workflows.
+\end{itemize}
+
+Choosing the right deployment strategy depends on system requirements:
+\begin{itemize}
+    \item Use \textbf{blue-green} for simple, fast deployments with instant rollback
+    \item Use \textbf{canary} for gradual rollouts with automated quality gates
+    \item Use \textbf{shadow} for risk-free production validation
+    \item Use \textbf{A/B testing} for rigorous evaluation of model improvements
+    \item Combine strategies for complex systems (e.g., shadow followed by canary)
+\end{itemize}
+
+Production ML deployment is not fire-and-forget. Continuous monitoring, automated health checks, and quick rollback mechanisms are essential for maintaining system reliability.
+
+\section{Exercises}
+
+\begin{exercise}
+\textbf{Implement Blue-Green Deployment with Health Checks}
+
+Build a complete blue-green deployment system for a classification model with comprehensive health monitoring.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Deploy model to inactive environment
+    \item Perform health checks (error rate, latency, prediction quality)
+    \item Switch traffic only if all checks pass
+    \item Implement rollback capability
+    \item Log all deployment events
+\end{itemize}
+
+\textbf{Solution:}
+
+\begin{lstlisting}[language=Python]
+import time
+import requests
+
+# See BlueGreenDeployment class implementation earlier in chapter
+
+# Example deployment workflow
+deployment = BlueGreenDeployment(
+    model_name="customer_churn",
+    load_balancer_url="http://lb.example.com",
+    health_check_interval=30
+)
+
+# Initial blue deployment
+deployment.blue_endpoint = ModelEndpoint(
+    name="customer_churn",
+    url="http://blue.prod.com/predict",
+    version="v1.0",
+    environment=Environment.BLUE,
+    health_check_url="http://blue.prod.com/health"
+)
+deployment.active_environment = Environment.BLUE
+
+# Deploy v2.0 to green
+print("Deploying v2.0 to green environment...")
+success = deployment.deploy_to_inactive(
+    version="v2.0",
+    endpoint_url="http://green.prod.com/predict",
+    health_check_url="http://green.prod.com/health"
+)
+
+if not success:
+    print("Deployment failed health checks!")
+    exit(1)
+
+# Custom validation: test predictions
+def validate_predictions(endpoint: ModelEndpoint) -> bool:
+    test_cases = [
+        {'tenure_months': 12, 'monthly_charges': 50},
+        {'tenure_months': 60, 'monthly_charges': 100}
+    ]
+
+    for test_case in test_cases:
+        response = requests.post(
+            endpoint.url,
+            json=test_case,
+            timeout=5
+        )
+
+        if response.status_code != 200:
+            return False
+
+        prediction = response.json()
+        if 'probability' not in prediction:
+            return False
+
+    return True
+
+# Switch traffic with validation
+if deployment.switch_traffic(validation_checks=validate_predictions):
+    print("Traffic switched successfully!")
+
+    # Monitor for 5 minutes
+    time.sleep(300)
+
+    status = deployment.get_deployment_status()
+    if status['active']['error_rate'] > 0.02:
+        print("High error rate detected, rolling back!")
+        deployment.rollback()
+else:
+    print("Traffic switch failed!")
+\end{lstlisting}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Design Canary Deployment with Progressive Rollout}
+
+Implement a canary deployment with three stages: 5\%, 25\%, 50\% traffic allocation.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Define success criteria for each stage
+    \item Automatically progress through stages if criteria met
+    \item Rollback if any stage fails
+    \item Generate deployment report with metrics
+\end{itemize}
+
+\textbf{Solution:}
+
+\begin{lstlisting}[language=Python]
+import numpy as np
+
+canary = CanaryDeployment(
+    model_name="product_recommender",
+    baseline_endpoint="http://prod.com/v1",
+    canary_endpoint="http://prod.com/v2",
+    traffic_router_url="http://router.com"
+)
+
+# Define progressive stages
+stages = [
+    CanaryStage(
+        traffic_percentage=5.0,
+        duration_minutes=15,
+        success_criteria={
+            'max_error_rate': 0.01,
+            'max_error_rate_ratio': 3.0,  # Allow 3x baseline
+            'max_latency_p99': 500,
+            'min_prediction_quality': 0.8
+        }
+    ),
+    CanaryStage(
+        traffic_percentage=25.0,
+        duration_minutes=30,
+        success_criteria={
+            'max_error_rate': 0.01,
+            'max_error_rate_ratio': 2.0,
+            'max_latency_p99': 500,
+            'min_prediction_quality': 0.85
+        }
+    ),
+    CanaryStage(
+        traffic_percentage=50.0,
+        duration_minutes=60,
+        success_criteria={
+            'max_error_rate': 0.01,
+            'max_error_rate_ratio': 1.5,
+            'max_latency_p99': 450,
+            'min_prediction_quality': 0.9
+        }
+    )
+]
+
+# Execute rollout
+print("Starting canary rollout...")
+success = canary.execute_rollout(stages)
+
+# Generate report
+report = canary.get_rollout_report()
+print(f"\nCanary Deployment {'SUCCEEDED' if success else 'FAILED'}")
+print(f"Final traffic: {report['final_traffic_percentage']:.1f}%")
+print(f"\nCanary Performance:")
+print(f"  Avg Error Rate: {report['canary_stats']['avg_error_rate']:.3%}")
+print(f"  Max Error Rate: {report['canary_stats']['max_error_rate']:.3%}")
+print(f"  Avg P99 Latency: {report['canary_stats']['avg_latency_p99']:.1f}ms")
+
+if success:
+    print("\nProceeding to full rollout (100%)")
+else:
+    print("\nRollout stopped, canary removed")
+\end{lstlisting}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Build A/B Test with Statistical Rigor}
+
+Design an A/B test to compare two recommendation models, tracking click-through rate and conversion rate.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Calculate required sample size for 80\% power
+    \item Implement consistent user assignment
+    \item Track multiple metrics
+    \item Perform statistical significance testing
+    \item Generate comprehensive report
+\end{itemize}
+
+\textbf{Solution:}
+
+\begin{lstlisting}[language=Python]
+import numpy as np
+
+# Define variants
+control = Variant(
+    name="baseline_recommender",
+    endpoint="http://prod.com/v1",
+    traffic_percentage=50.0,
+    description="Current collaborative filtering model"
+)
+
+treatment = Variant(
+    name="neural_recommender",
+    endpoint="http://prod.com/v2",
+    traffic_percentage=50.0,
+    description="New neural collaborative filtering model"
+)
+
+# Initialize test
+ab_test = ABTest(
+    test_name="recommender_neural_vs_baseline",
+    control_variant=control,
+    treatment_variant=treatment,
+    alpha=0.05,
+    minimum_detectable_effect=0.02  # Detect 2% improvement
+)
+
+# Calculate sample size
+required_n = ab_test.calculate_sample_size(
+    baseline_mean=0.15,  # 15% baseline CTR
+    baseline_std=0.1,
+    power=0.8
+)
+
+print(f"Required sample size: {required_n} per variant")
+print(f"Estimated days to complete: {required_n / 10000} days at 10K users/day")
+
+# Run experiment (simulated)
+for user_id in range(20000):  # 10K per variant
+    variant = ab_test.assign_variant(f"user_{user_id}")
+
+    # Simulate metrics
+    if variant.name == "baseline_recommender":
+        clicked = np.random.random() < 0.15
+        converted = clicked and np.random.random() < 0.08
+        latency = np.random.gamma(2, 40)
+    else:
+        clicked = np.random.random() < 0.16  # 6.7% improvement
+        converted = clicked and np.random.random() < 0.10  # 25% improvement
+        latency = np.random.gamma(2, 35)  # Slightly faster
+
+    ab_test.record_metric("ctr", float(clicked), f"user_{user_id}", variant.name)
+    ab_test.record_metric("cvr", float(converted), f"user_{user_id}", variant.name)
+    ab_test.record_metric("latency_ms", latency, f"user_{user_id}", variant.name)
+
+# Analyze and report
+ab_test.print_report(metrics_to_analyze=["ctr", "cvr", "latency_ms"])
+
+# Decision
+summary = ab_test.get_test_summary(["ctr", "cvr"])
+ctr_result = summary['results']['ctr']
+cvr_result = summary['results']['cvr']
+
+if ctr_result['is_significant'] and cvr_result['is_significant']:
+    if ctr_result['relative_improvement'] > 0 and cvr_result['relative_improvement'] > 0:
+        print("\n[OK] DECISION: Launch neural recommender")
+        print(f"  Expected CTR improvement: {ctr_result['relative_improvement']:+.2%}")
+        print(f"  Expected CVR improvement: {cvr_result['relative_improvement']:+.2%}")
+    else:
+        print("\n[X] DECISION: Keep baseline")
+else:
+    print("\n[!] DECISION: Results not statistically significant, continue test")
+\end{lstlisting}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Implement Shadow Deployment for Risk-Free Testing}
+
+Create a shadow deployment to validate a new fraud detection model without impacting production.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Route all traffic to both primary and shadow models
+    \item Compare predictions and calculate match rate
+    \item Track latency for both models
+    \item Generate analysis report
+    \item Do not impact user experience
+\end{itemize}
+
+\textbf{Solution:}
+
+\begin{lstlisting}[language=Python]
+import asyncio
+import numpy as np
+
+async def run_shadow_deployment():
+    # Custom comparison for fraud scores
+    def compare_fraud_scores(primary, shadow):
+        if primary is None or shadow is None:
+            return False, None
+
+        primary_score = primary.get('fraud_score', 0)
+        shadow_score = shadow.get('fraud_score', 0)
+
+        # Check if decisions match
+        primary_decision = primary_score > 0.5
+        shadow_decision = shadow_score > 0.5
+        match = primary_decision == shadow_decision
+
+        # Score divergence
+        divergence = abs(primary_score - shadow_score)
+
+        return match, divergence
+
+    # Initialize shadow deployment
+    shadow = ShadowDeployment(
+        model_name="fraud_detector",
+        primary_endpoint="http://prod.com/fraud/v1",
+        shadow_endpoint="http://prod.com/fraud/v2",
+        comparison_fn=compare_fraud_scores
+    )
+
+    # Process transactions
+    for txn_id in range(1000):
+        transaction = {
+            'amount': np.random.lognormal(4, 1),
+            'merchant_id': f"merch_{np.random.randint(1, 100)}",
+            'hour': np.random.randint(0, 24)
+        }
+
+        # Get primary prediction (returned to user)
+        prediction = await shadow.predict(transaction, request_id=f"txn_{txn_id}")
+
+        # Shadow prediction logged in background
+        await asyncio.sleep(0.01)  # Simulate processing
+
+    # Analyze shadow deployment
+    analysis = shadow.get_analysis(window_minutes=60)
+
+    print("\nShadow Deployment Analysis:")
+    print(f"{'='*60}")
+    print(f"Total Predictions: {analysis['total_predictions']}")
+    print(f"Match Rate: {analysis['match_rate']:.2%}")
+    print(f"Avg Divergence: {analysis['avg_divergence']:.4f}")
+    print(f"Shadow Error Rate: {analysis['shadow_error_rate']:.2%}")
+    print(f"\nLatency Comparison:")
+    print(f"  Primary P99: {analysis['latency_stats']['primary_p99']:.1f}ms")
+    print(f"  Shadow P99:  {analysis['latency_stats']['shadow_p99']:.1f}ms")
+
+    # Decision
+    if analysis['match_rate'] > 0.95 and analysis['shadow_error_rate'] < 0.01:
+        print("\n[OK] Shadow model performs well - proceed to canary deployment")
+    else:
+        print("\n[X] Shadow model needs improvement")
+
+# Run shadow deployment
+asyncio.run(run_shadow_deployment())
+\end{lstlisting}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Build Multi-Model Ensemble System}
+
+Implement an ensemble system combining three models for improved prediction accuracy.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Combine predictions from RandomForest, XGBoost, and LightGBM
+    \item Support weighted average and voting aggregation
+    \item Handle partial failures (continue with available models)
+    \item Track which models contributed to each prediction
+\end{itemize}
+
+\textbf{Solution:}
+
+\begin{lstlisting}[language=Python]
+import asyncio
+
+async def example_ensemble_system():
+    # Initialize ensemble
+    ensemble = MultiModelServer(system_name="credit_risk_ensemble")
+
+    # Add models with different weights
+    ensemble.add_model(ModelSpec(
+        name="random_forest",
+        endpoint="http://models.com/rf",
+        version="v1.0",
+        weight=0.3,
+        metadata={'training_date': '2024-01-01'}
+    ))
+
+    ensemble.add_model(ModelSpec(
+        name="xgboost",
+        endpoint="http://models.com/xgb",
+        version="v2.1",
+        weight=0.4,
+        metadata={'training_date': '2024-01-15'}
+    ))
+
+    ensemble.add_model(ModelSpec(
+        name="lightgbm",
+        endpoint="http://models.com/lgbm",
+        version="v1.5",
+        weight=0.3,
+        metadata={'training_date': '2024-01-10'}
+    ))
+
+    # Test case
+    features = {
+        'annual_income': 75000,
+        'debt_to_income': 0.35,
+        'credit_score': 720,
+        'loan_amount': 25000
+    }
+
+    # Get predictions with different strategies
+    weighted_pred = await ensemble.predict_ensemble(
+        features,
+        strategy=AggregationStrategy.WEIGHTED_AVERAGE
+    )
+
+    print(f"Weighted Average Prediction: {weighted_pred}")
+
+    # Test robustness: even if one model fails, ensemble continues
+    print("\nTesting with one model failure...")
+    # (Ensemble automatically handles failures)
+
+# Run ensemble
+asyncio.run(example_ensemble_system())
+\end{lstlisting}
+\end{exercise}

@@ -1,0 +1,898 @@
+\appendix
+\chapter{Statistical Tables and Reference Values}
+
+This appendix provides comprehensive statistical tables for A/B testing, including critical values, sample sizes, power calculations, and correction factors. All tables assume two-sided tests unless otherwise noted.
+
+\section{Critical Values for Common Tests}
+
+\subsection{Standard Normal Distribution (Z)}
+
+Critical values for standard normal distribution used in large-sample tests.
+
+\begin{table}[h]
+\centering
+\caption{Standard Normal Critical Values ($z_{\alpha/2}$)}
+\begin{tabular}{cccc}
+\toprule
+\textbf{Confidence Level} & \textbf{$\alpha$ (two-sided)} & \textbf{$\alpha/2$} & \textbf{$z_{\alpha/2}$} \\
+\midrule
+80\% & 0.20 & 0.10 & 1.282 \\
+85\% & 0.15 & 0.075 & 1.440 \\
+90\% & 0.10 & 0.05 & 1.645 \\
+95\% & 0.05 & 0.025 & 1.960 \\
+96\% & 0.04 & 0.02 & 2.054 \\
+98\% & 0.02 & 0.01 & 2.326 \\
+99\% & 0.01 & 0.005 & 2.576 \\
+99.5\% & 0.005 & 0.0025 & 2.807 \\
+99.9\% & 0.001 & 0.0005 & 3.291 \\
+99.99\% & 0.0001 & 0.00005 & 3.891 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Note:} For one-sided tests, use $z_\alpha$ instead of $z_{\alpha/2}$ (e.g., for one-sided 95\% test, use $z_{0.05} = 1.645$).
+
+\subsection{Student's t-Distribution}
+
+Critical values for t-tests with different degrees of freedom.
+
+\begin{table}[h]
+\centering
+\caption{t-Distribution Critical Values for Two-Sided Tests}
+\begin{tabular}{ccccc}
+\toprule
+& \multicolumn{4}{c}{\textbf{Significance Level ($\alpha$)}} \\
+\cmidrule{2-5}
+\textbf{df} & \textbf{0.10} & \textbf{0.05} & \textbf{0.02} & \textbf{0.01} \\
+\midrule
+1 & 6.314 & 12.706 & 31.821 & 63.657 \\
+2 & 2.920 & 4.303 & 6.965 & 9.925 \\
+3 & 2.353 & 3.182 & 4.541 & 5.841 \\
+4 & 2.132 & 2.776 & 3.747 & 4.604 \\
+5 & 2.015 & 2.571 & 3.365 & 4.032 \\
+6 & 1.943 & 2.447 & 3.143 & 3.707 \\
+7 & 1.895 & 2.365 & 2.998 & 3.499 \\
+8 & 1.860 & 2.306 & 2.896 & 3.355 \\
+9 & 1.833 & 2.262 & 2.821 & 3.250 \\
+10 & 1.812 & 2.228 & 2.764 & 3.169 \\
+12 & 1.782 & 2.179 & 2.681 & 3.055 \\
+15 & 1.753 & 2.131 & 2.602 & 2.947 \\
+20 & 1.725 & 2.086 & 2.528 & 2.845 \\
+25 & 1.708 & 2.060 & 2.485 & 2.787 \\
+30 & 1.697 & 2.042 & 2.457 & 2.750 \\
+40 & 1.684 & 2.021 & 2.423 & 2.704 \\
+50 & 1.676 & 2.009 & 2.403 & 2.678 \\
+60 & 1.671 & 2.000 & 2.390 & 2.660 \\
+80 & 1.664 & 1.990 & 2.374 & 2.639 \\
+100 & 1.660 & 1.984 & 2.364 & 2.626 \\
+120 & 1.658 & 1.980 & 2.358 & 2.617 \\
+$\infty$ & 1.645 & 1.960 & 2.326 & 2.576 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Note:} For A/B tests with equal sample sizes $n$ per group, degrees of freedom = $2(n-1)$.
+
+\subsection{Chi-Squared Distribution}
+
+Critical values for chi-squared tests (e.g., goodness-of-fit, independence).
+
+\begin{table}[h]
+\centering
+\caption{Chi-Squared Distribution Critical Values}
+\begin{tabular}{cccccc}
+\toprule
+& \multicolumn{5}{c}{\textbf{Significance Level ($\alpha$)}} \\
+\cmidrule{2-6}
+\textbf{df} & \textbf{0.10} & \textbf{0.05} & \textbf{0.025} & \textbf{0.01} & \textbf{0.001} \\
+\midrule
+1 & 2.706 & 3.841 & 5.024 & 6.635 & 10.828 \\
+2 & 4.605 & 5.991 & 7.378 & 9.210 & 13.816 \\
+3 & 6.251 & 7.815 & 9.348 & 11.345 & 16.266 \\
+4 & 7.779 & 9.488 & 11.143 & 13.277 & 18.467 \\
+5 & 9.236 & 11.070 & 12.833 & 15.086 & 20.515 \\
+6 & 10.645 & 12.592 & 14.449 & 16.812 & 22.458 \\
+7 & 12.017 & 14.067 & 16.013 & 18.475 & 24.322 \\
+8 & 13.362 & 15.507 & 17.535 & 20.090 & 26.125 \\
+9 & 14.684 & 16.919 & 19.023 & 21.666 & 27.877 \\
+10 & 15.987 & 18.307 & 20.483 & 23.209 & 29.588 \\
+12 & 18.549 & 21.026 & 23.337 & 26.217 & 32.909 \\
+15 & 22.307 & 24.996 & 27.488 & 30.578 & 37.697 \\
+20 & 28.412 & 31.410 & 34.170 & 37.566 & 45.315 \\
+25 & 34.382 & 37.652 & 40.646 & 44.314 & 52.620 \\
+30 & 40.256 & 43.773 & 46.979 & 50.892 & 59.703 \\
+40 & 51.805 & 55.758 & 59.342 & 63.691 & 73.402 \\
+50 & 63.167 & 67.505 & 71.420 & 76.154 & 86.661 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Usage:} For a 2×2 contingency table (A/B test with binary outcome), df = 1. Use $\chi^2_{0.05, 1} = 3.841$.
+
+\subsection{F-Distribution}
+
+Critical values for F-tests at $\alpha = 0.05$ (used in ANOVA, variance ratio tests).
+
+\begin{table}[h]
+\centering
+\caption{F-Distribution Critical Values ($\alpha = 0.05$)}
+\begin{tabular}{c|ccccccc}
+\toprule
+& \multicolumn{7}{c}{\textbf{Numerator df ($df_1$)}} \\
+\cmidrule{2-8}
+\textbf{$df_2$} & \textbf{1} & \textbf{2} & \textbf{3} & \textbf{4} & \textbf{5} & \textbf{10} & \textbf{20} \\
+\midrule
+5 & 6.61 & 5.79 & 5.41 & 5.19 & 5.05 & 4.74 & 4.56 \\
+10 & 4.96 & 4.10 & 3.71 & 3.48 & 3.33 & 2.98 & 2.77 \\
+15 & 4.54 & 3.68 & 3.29 & 3.06 & 2.90 & 2.54 & 2.33 \\
+20 & 4.35 & 3.49 & 3.10 & 2.87 & 2.71 & 2.35 & 2.12 \\
+25 & 4.24 & 3.39 & 2.99 & 2.76 & 2.60 & 2.24 & 2.01 \\
+30 & 4.17 & 3.32 & 2.92 & 2.69 & 2.53 & 2.16 & 1.93 \\
+40 & 4.08 & 3.23 & 2.84 & 2.61 & 2.45 & 2.08 & 1.84 \\
+50 & 4.03 & 3.18 & 2.79 & 2.56 & 2.40 & 2.03 & 1.78 \\
+60 & 4.00 & 3.15 & 2.76 & 2.53 & 2.37 & 1.99 & 1.75 \\
+100 & 3.94 & 3.09 & 2.70 & 2.46 & 2.31 & 1.93 & 1.68 \\
+$\infty$ & 3.84 & 3.00 & 2.60 & 2.37 & 2.21 & 1.83 & 1.57 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Note:} For comparing variances of two groups, $df_1 = n_1 - 1$ and $df_2 = n_2 - 1$.
+
+\newpage
+
+\section{Sample Size Tables}
+
+\subsection{Sample Size for Two-Proportion Test}
+
+Required sample size \textbf{per variant} for comparing two proportions with $\alpha = 0.05$ (two-sided) and power = 0.80.
+
+\begin{table}[h]
+\centering
+\caption{Sample Size per Variant (Two-Proportion Z-Test, $\alpha = 0.05$, Power = 0.80)}
+\small
+\begin{tabular}{c|ccccccc}
+\toprule
+& \multicolumn{7}{c}{\textbf{Baseline Proportion ($p_1$)}} \\
+\cmidrule{2-8}
+\textbf{Relative Lift} & \textbf{0.01} & \textbf{0.05} & \textbf{0.10} & \textbf{0.15} & \textbf{0.20} & \textbf{0.25} & \textbf{0.50} \\
+\midrule
+5\% & 790,063 & 149,672 & 72,160 & 47,272 & 35,056 & 27,671 & 10,852 \\
+10\% & 195,186 & 36,901 & 17,761 & 11,625 & 8,618 & 6,800 & 2,663 \\
+15\% & 86,042 & 16,251 & 7,818 & 5,116 & 3,793 & 2,992 & 1,172 \\
+20\% & 48,095 & 9,084 & 4,371 & 2,860 & 2,120 & 1,673 & 655 \\
+25\% & 30,541 & 5,768 & 2,776 & 1,816 & 1,346 & 1,062 & 416 \\
+30\% & 20,944 & 3,955 & 1,904 & 1,246 & 923 & 728 & 285 \\
+40\% & 11,580 & 2,187 & 1,053 & 689 & 510 & 403 & 158 \\
+50\% & 7,363 & 1,391 & 670 & 438 & 325 & 256 & 100 \\
+75\% & 3,194 & 604 & 291 & 190 & 141 & 111 & 43 \\
+100\% & 1,765 & 334 & 161 & 105 & 78 & 61 & 24 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Note:} Total sample size = $2 \times n$ (both variants combined). Values rounded to nearest integer.
+
+\vspace{0.5cm}
+
+\textbf{Example:} To detect a 10\% relative lift from baseline 10\% (i.e., 10.0\% → 11.0\%) with 80\% power and $\alpha = 0.05$, need 17,761 users per variant (35,522 total).
+
+\subsection{Sample Size for Different Power Levels}
+
+Sample size per variant for baseline $p_1 = 0.10$, $\alpha = 0.05$, varying power.
+
+\begin{table}[h]
+\centering
+\caption{Sample Size vs. Power (Baseline 10\%, $\alpha = 0.05$)}
+\begin{tabular}{c|cccccc}
+\toprule
+& \multicolumn{6}{c}{\textbf{Statistical Power}} \\
+\cmidrule{2-7}
+\textbf{Relative Lift} & \textbf{0.50} & \textbf{0.60} & \textbf{0.70} & \textbf{0.80} & \textbf{0.90} & \textbf{0.95} \\
+\midrule
+5\% & 41,922 & 51,019 & 61,632 & 72,160 & 86,870 & 101,178 \\
+10\% & 10,317 & 12,551 & 15,166 & 17,761 & 21,381 & 24,904 \\
+15\% & 4,544 & 5,530 & 6,683 & 7,818 & 9,415 & 10,965 \\
+20\% & 2,540 & 3,091 & 3,735 & 4,371 & 5,262 & 6,129 \\
+25\% & 1,612 & 1,963 & 2,372 & 2,776 & 3,342 & 3,893 \\
+30\% & 1,106 & 1,347 & 1,628 & 1,904 & 2,293 & 2,671 \\
+50\% & 389 & 474 & 573 & 670 & 807 & 940 \\
+100\% & 93 & 114 & 138 & 161 & 194 & 226 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Note:} Higher power requires larger sample sizes. Standard power is 80\%, but 90\% is recommended for important decisions.
+
+\subsection{Sample Size for Continuous Metrics}
+
+Sample size per variant for t-test with $\alpha = 0.05$, power = 0.80.
+
+\begin{table}[h]
+\centering
+\caption{Sample Size for t-Test (Effect Size = Cohen's d)}
+\begin{tabular}{cc}
+\toprule
+\textbf{Cohen's d (Effect Size)} & \textbf{Sample Size per Variant} \\
+\midrule
+0.1 (very small) & 1,571 \\
+0.2 (small) & 394 \\
+0.3 (small-medium) & 176 \\
+0.4 (medium) & 100 \\
+0.5 (medium) & 64 \\
+0.6 (medium-large) & 45 \\
+0.7 (large) & 34 \\
+0.8 (large) & 26 \\
+0.9 (large) & 21 \\
+1.0 (very large) & 17 \\
+1.5 (very large) & 8 \\
+2.0 (very large) & 5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Cohen's d:} $d = \frac{\mu_2 - \mu_1}{\sigma}$ where $\sigma$ is the common standard deviation.
+
+\textbf{Example:} If average session duration is 120 seconds (SD = 30 seconds), a 15-second improvement corresponds to $d = 15/30 = 0.5$, requiring 64 users per variant.
+
+\newpage
+
+\section{Power Tables}
+
+\subsection{Power for Two-Proportion Tests}
+
+Statistical power for different sample sizes and effect sizes ($\alpha = 0.05$, baseline $p_1 = 0.10$).
+
+\begin{table}[h]
+\centering
+\caption{Statistical Power vs. Sample Size (Baseline 10\%)}
+\begin{tabular}{c|cccccccc}
+\toprule
+\textbf{n per} & \multicolumn{8}{c}{\textbf{Absolute Effect Size ($p_2 - p_1$)}} \\
+\cmidrule{2-9}
+\textbf{Variant} & \textbf{0.005} & \textbf{0.01} & \textbf{0.015} & \textbf{0.02} & \textbf{0.025} & \textbf{0.03} & \textbf{0.04} & \textbf{0.05} \\
+\midrule
+500 & 0.06 & 0.08 & 0.10 & 0.13 & 0.16 & 0.20 & 0.29 & 0.40 \\
+1,000 & 0.07 & 0.11 & 0.15 & 0.20 & 0.26 & 0.33 & 0.48 & 0.62 \\
+2,500 & 0.10 & 0.19 & 0.30 & 0.41 & 0.53 & 0.64 & 0.81 & 0.91 \\
+5,000 & 0.15 & 0.31 & 0.49 & 0.65 & 0.77 & 0.86 & 0.96 & 0.99 \\
+7,500 & 0.19 & 0.42 & 0.63 & 0.79 & 0.89 & 0.95 & 0.99 & 1.00 \\
+10,000 & 0.24 & 0.51 & 0.72 & 0.86 & 0.94 & 0.98 & 1.00 & 1.00 \\
+15,000 & 0.33 & 0.65 & 0.85 & 0.94 & 0.98 & 0.99 & 1.00 & 1.00 \\
+20,000 & 0.42 & 0.75 & 0.91 & 0.97 & 0.99 & 1.00 & 1.00 & 1.00 \\
+25,000 & 0.50 & 0.82 & 0.95 & 0.99 & 1.00 & 1.00 & 1.00 & 1.00 \\
+50,000 & 0.75 & 0.97 & 1.00 & 1.00 & 1.00 & 1.00 & 1.00 & 1.00 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Interpretation:} Power is the probability of detecting an effect when it truly exists. 0.80 (80\%) is the standard threshold.
+
+\subsection{Power vs. Effect Size}
+
+Power for fixed sample size ($n = 5,000$ per variant) with varying baseline and effect.
+
+\begin{table}[h]
+\centering
+\caption{Power for Fixed Sample Size (n = 5,000 per variant, $\alpha = 0.05$)}
+\begin{tabular}{c|ccccc}
+\toprule
+& \multicolumn{5}{c}{\textbf{Baseline Proportion ($p_1$)}} \\
+\cmidrule{2-6}
+\textbf{Relative Lift} & \textbf{0.05} & \textbf{0.10} & \textbf{0.15} & \textbf{0.20} & \textbf{0.25} \\
+\midrule
+5\% & 0.15 & 0.14 & 0.13 & 0.12 & 0.11 \\
+10\% & 0.35 & 0.31 & 0.29 & 0.27 & 0.25 \\
+15\% & 0.58 & 0.51 & 0.47 & 0.44 & 0.41 \\
+20\% & 0.76 & 0.68 & 0.63 & 0.59 & 0.55 \\
+25\% & 0.87 & 0.80 & 0.75 & 0.71 & 0.67 \\
+30\% & 0.93 & 0.88 & 0.84 & 0.80 & 0.76 \\
+40\% & 0.99 & 0.96 & 0.94 & 0.92 & 0.89 \\
+50\% & 1.00 & 0.99 & 0.98 & 0.96 & 0.95 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Key insight:} For the same relative lift, power decreases as baseline rate increases (variance increases).
+
+\newpage
+
+\section{Minimum Detectable Effect (MDE)}
+
+\subsection{MDE for Two-Proportion Tests}
+
+Minimum detectable effect (absolute) for $\alpha = 0.05$, power = 0.80.
+
+\begin{table}[h]
+\centering
+\caption{Minimum Detectable Effect (Percentage Points, $\alpha = 0.05$, Power = 0.80)}
+\begin{tabular}{c|ccccccc}
+\toprule
+& \multicolumn{7}{c}{\textbf{Sample Size per Variant}} \\
+\cmidrule{2-8}
+\textbf{Baseline} & \textbf{500} & \textbf{1,000} & \textbf{2,500} & \textbf{5,000} & \textbf{10,000} & \textbf{25,000} & \textbf{50,000} \\
+\midrule
+1\% & 2.60\% & 1.83\% & 1.16\% & 0.82\% & 0.58\% & 0.37\% & 0.26\% \\
+5\% & 5.68\% & 4.01\% & 2.54\% & 1.79\% & 1.27\% & 0.80\% & 0.57\% \\
+10\% & 7.78\% & 5.50\% & 3.48\% & 2.46\% & 1.74\% & 1.10\% & 0.78\% \\
+15\% & 9.27\% & 6.56\% & 4.15\% & 2.94\% & 2.08\% & 1.32\% & 0.93\% \\
+20\% & 10.42\% & 7.37\% & 4.66\% & 3.30\% & 2.33\% & 1.48\% & 1.04\% \\
+25\% & 11.28\% & 7.98\% & 5.05\% & 3.57\% & 2.52\% & 1.60\% & 1.13\% \\
+30\% & 11.93\% & 8.44\% & 5.34\% & 3.77\% & 2.67\% & 1.69\% & 1.19\% \\
+50\% & 13.02\% & 9.20\% & 5.82\% & 4.12\% & 2.91\% & 1.84\% & 1.30\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Note:} MDE shown as absolute difference in percentage points (e.g., 2.60\% means difference from 1\% to 3.60\%).
+
+\subsection{MDE in Relative Terms}
+
+Same data as above, expressed as relative lift from baseline.
+
+\begin{table}[h]
+\centering
+\caption{Minimum Detectable Effect (Relative \%, $\alpha = 0.05$, Power = 0.80)}
+\begin{tabular}{c|ccccccc}
+\toprule
+& \multicolumn{7}{c}{\textbf{Sample Size per Variant}} \\
+\cmidrule{2-8}
+\textbf{Baseline} & \textbf{500} & \textbf{1,000} & \textbf{2,500} & \textbf{5,000} & \textbf{10,000} & \textbf{25,000} & \textbf{50,000} \\
+\midrule
+1\% & 260\% & 183\% & 116\% & 82\% & 58\% & 37\% & 26\% \\
+5\% & 114\% & 80\% & 51\% & 36\% & 25\% & 16\% & 11\% \\
+10\% & 78\% & 55\% & 35\% & 25\% & 17\% & 11\% & 8\% \\
+15\% & 62\% & 44\% & 28\% & 20\% & 14\% & 9\% & 6\% \\
+20\% & 52\% & 37\% & 23\% & 16\% & 12\% & 7\% & 5\% \\
+25\% & 45\% & 32\% & 20\% & 14\% & 10\% & 6\% & 5\% \\
+30\% & 40\% & 28\% & 18\% & 13\% & 9\% & 6\% & 4\% \\
+50\% & 26\% & 18\% & 12\% & 8\% & 6\% & 4\% & 3\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Example:} With 5,000 users per variant and 10\% baseline, you can detect a 25\% relative lift (10\% → 12.5\%) with 80\% power.
+
+\newpage
+
+\section{Multiple Testing Corrections}
+
+\subsection{Bonferroni Correction}
+
+Adjusted significance levels for family-wise error rate control at $\alpha = 0.05$.
+
+\begin{table}[h]
+\centering
+\caption{Bonferroni Corrected Significance Levels}
+\begin{tabular}{cccc}
+\toprule
+\textbf{Number of} & \textbf{Corrected $\alpha$} & \textbf{Critical Value} & \textbf{Required} \\
+\textbf{Tests (m)} & \textbf{($\alpha/m$)} & \textbf{($z_{\alpha/(2m)}$)} & \textbf{p-value} \\
+\midrule
+1 & 0.0500 & 1.960 & < 0.0500 \\
+2 & 0.0250 & 2.241 & < 0.0250 \\
+3 & 0.0167 & 2.394 & < 0.0167 \\
+4 & 0.0125 & 2.498 & < 0.0125 \\
+5 & 0.0100 & 2.576 & < 0.0100 \\
+6 & 0.0083 & 2.638 & < 0.0083 \\
+7 & 0.0071 & 2.690 & < 0.0071 \\
+8 & 0.0063 & 2.735 & < 0.0063 \\
+9 & 0.0056 & 2.773 & < 0.0056 \\
+10 & 0.0050 & 2.807 & < 0.0050 \\
+15 & 0.0033 & 2.935 & < 0.0033 \\
+20 & 0.0025 & 3.023 & < 0.0025 \\
+25 & 0.0020 & 3.091 & < 0.0020 \\
+50 & 0.0010 & 3.291 & < 0.0010 \\
+100 & 0.0005 & 3.481 & < 0.0005 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Note:} Bonferroni is conservative. For $m = 5$ tests, each test must have $p < 0.01$ to be significant at family-wise $\alpha = 0.05$.
+
+\subsection{Šidák Correction}
+
+Less conservative alternative to Bonferroni for independent tests.
+
+\begin{table}[h]
+\centering
+\caption{Šidák vs. Bonferroni Corrected Alpha}
+\begin{tabular}{cccc}
+\toprule
+\textbf{Number of} & \textbf{Bonferroni} & \textbf{Šidák} & \textbf{Difference} \\
+\textbf{Tests (m)} & \textbf{$\alpha/m$} & \textbf{$1-(1-\alpha)^{1/m}$} & \textbf{(Šidák - Bonf)} \\
+\midrule
+2 & 0.02500 & 0.02532 & +0.00032 \\
+3 & 0.01667 & 0.01695 & +0.00028 \\
+4 & 0.01250 & 0.01274 & +0.00024 \\
+5 & 0.01000 & 0.01020 & +0.00020 \\
+10 & 0.00500 & 0.00512 & +0.00012 \\
+20 & 0.00250 & 0.00256 & +0.00006 \\
+50 & 0.00100 & 0.00103 & +0.00003 \\
+100 & 0.00050 & 0.00051 & +0.00001 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Note:} Šidák provides slightly more power than Bonferroni when tests are independent. Differences are small in practice.
+
+\subsection{Benjamini-Hochberg FDR Thresholds}
+
+Critical values for False Discovery Rate control at $q = 0.05$.
+
+\begin{table}[h]
+\centering
+\caption{Benjamini-Hochberg Critical Values (FDR = 0.05)}
+\begin{tabular}{cccc}
+\toprule
+\textbf{Rank} & \textbf{For m=5} & \textbf{For m=10} & \textbf{For m=20} \\
+\textbf{(i)} & \textbf{tests} & \textbf{tests} & \textbf{tests} \\
+\midrule
+1 (smallest p) & 0.0100 & 0.0050 & 0.0025 \\
+2 & 0.0200 & 0.0100 & 0.0050 \\
+3 & 0.0300 & 0.0150 & 0.0075 \\
+4 & 0.0400 & 0.0200 & 0.0100 \\
+5 & 0.0500 & 0.0250 & 0.0125 \\
+6 & - & 0.0300 & 0.0150 \\
+7 & - & 0.0350 & 0.0175 \\
+8 & - & 0.0400 & 0.0200 \\
+9 & - & 0.0450 & 0.0225 \\
+10 & - & 0.0500 & 0.0250 \\
+15 & - & - & 0.0375 \\
+20 & - & - & 0.0500 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Usage:} Sort p-values from smallest to largest. Find largest $i$ where $p_{(i)} \leq \frac{i}{m} \cdot q$. Reject all $H_0$ for $i' \leq i$.
+
+\subsection{Sample Size Inflation for Multiple Testing}
+
+Factor to multiply sample size by when testing multiple metrics.
+
+\begin{table}[h]
+\centering
+\caption{Sample Size Inflation Factor (to maintain 80\% power after correction)}
+\begin{tabular}{ccc}
+\toprule
+\textbf{Number of} & \textbf{Bonferroni} & \textbf{Šidák} \\
+\textbf{Tests (m)} & \textbf{Inflation} & \textbf{Inflation} \\
+\midrule
+2 & 1.28 & 1.27 \\
+3 & 1.46 & 1.44 \\
+4 & 1.59 & 1.57 \\
+5 & 1.69 & 1.67 \\
+6 & 1.78 & 1.75 \\
+8 & 1.91 & 1.88 \\
+10 & 2.02 & 1.99 \\
+15 & 2.23 & 2.19 \\
+20 & 2.38 & 2.33 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Example:} Testing 5 metrics with Bonferroni requires $1.69 \times$ larger sample than testing one metric.
+
+\newpage
+
+\section{Sequential Testing Boundaries}
+
+\subsection{O'Brien-Fleming Boundaries}
+
+Critical values for group sequential design with equal information increments.
+
+\begin{table}[h]
+\centering
+\caption{O'Brien-Fleming Boundaries (Overall $\alpha = 0.05$, two-sided)}
+\begin{tabular}{c|ccccc}
+\toprule
+\textbf{Information} & \multicolumn{5}{c}{\textbf{Maximum Number of Looks (K)}} \\
+\cmidrule{2-6}
+\textbf{Fraction} & \textbf{2} & \textbf{3} & \textbf{4} & \textbf{5} & \textbf{10} \\
+\midrule
+0.10 & - & - & - & - & 4.333 \\
+0.20 & - & - & - & 4.333 & 3.064 \\
+0.25 & - & - & 4.049 & 3.872 & 2.734 \\
+0.33 & - & 3.471 & 3.301 & 3.159 & 2.233 \\
+0.50 & 2.797 & 2.454 & 2.337 & 2.240 & 1.584 \\
+0.67 & - & 2.127 & 2.024 & 1.940 & 1.371 \\
+0.75 & - & - & 1.985 & 1.903 & 1.345 \\
+0.80 & - & - & - & 1.875 & 1.325 \\
+1.00 & 1.977 & 1.710 & 1.651 & 1.586 & 1.122 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Note:} O'Brien-Fleming has high early boundaries (conservative early stopping) and boundaries approaching 1.96 at final look.
+
+\textbf{Example:} For 3 equally-spaced looks (33\%, 67\%, 100\% information), critical values are 3.471, 2.127, 1.710.
+
+\subsection{Pocock Boundaries}
+
+Constant critical value across all interim analyses.
+
+\begin{table}[h]
+\centering
+\caption{Pocock Constant Boundaries (Overall $\alpha = 0.05$, two-sided)}
+\begin{tabular}{cc}
+\toprule
+\textbf{Maximum Number} & \textbf{Constant Critical} \\
+\textbf{of Looks (K)} & \textbf{Value (all looks)} \\
+\midrule
+1 & 1.960 \\
+2 & 2.178 \\
+3 & 2.289 \\
+4 & 2.361 \\
+5 & 2.413 \\
+6 & 2.453 \\
+7 & 2.485 \\
+8 & 2.512 \\
+9 & 2.535 \\
+10 & 2.555 \\
+15 & 2.621 \\
+20 & 2.664 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Note:} Pocock uses same critical value at each look but inflates boundary (2.413 for 5 looks vs. 1.960 for fixed design).
+
+\subsection{Alpha Spending Function Values}
+
+Cumulative alpha spent at each look using O'Brien-Fleming spending function.
+
+\begin{table}[h]
+\centering
+\caption{O'Brien-Fleming Alpha Spending (Total $\alpha = 0.05$)}
+\begin{tabular}{c|ccccc}
+\toprule
+\textbf{Information} & \multicolumn{5}{c}{\textbf{Maximum Looks (K)}} \\
+\cmidrule{2-6}
+\textbf{Fraction} & \textbf{2} & \textbf{3} & \textbf{4} & \textbf{5} & \textbf{10} \\
+\midrule
+0.10 & - & - & - & - & 0.00001 \\
+0.20 & - & - & - & 0.00001 & 0.00013 \\
+0.25 & - & - & 0.00002 & 0.00004 & 0.00031 \\
+0.33 & - & 0.00011 & 0.00023 & 0.00041 & 0.00093 \\
+0.50 & 0.00255 & 0.00680 & 0.00985 & 0.01263 & 0.02028 \\
+0.67 & - & 0.01758 & 0.02274 & 0.02735 & 0.03817 \\
+0.75 & - & - & 0.02814 & 0.03336 & 0.04528 \\
+0.80 & - & - & - & 0.03680 & 0.04912 \\
+1.00 & 0.05000 & 0.05000 & 0.05000 & 0.05000 & 0.05000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Interpretation:} Very little alpha is spent early (conservative), with most alpha reserved for final analysis.
+
+\newpage
+
+\section{Distribution Parameters and Properties}
+
+\subsection{Common Distributions for A/B Testing}
+
+Key parameters for distributions used in experiment analysis.
+
+\begin{table}[h]
+\centering
+\caption{Distribution Parameters and Properties}
+\small
+\begin{tabular}{p{3cm}p{3cm}p{2.5cm}p{2.5cm}p{2.5cm}}
+\toprule
+\textbf{Distribution} & \textbf{Parameters} & \textbf{Mean} & \textbf{Variance} & \textbf{Use Case} \\
+\midrule
+Bernoulli & $p \in [0,1]$ & $p$ & $p(1-p)$ & Single conversion \\[0.3cm]
+Binomial & $n, p$ & $np$ & $np(1-p)$ & Count of conversions \\[0.3cm]
+Normal & $\mu, \sigma^2$ & $\mu$ & $\sigma^2$ & Continuous metrics \\[0.3cm]
+Beta & $\alpha, \beta > 0$ & $\frac{\alpha}{\alpha+\beta}$ & $\frac{\alpha\beta}{(\alpha+\beta)^2(\alpha+\beta+1)}$ & Prior/posterior for proportions \\[0.3cm]
+Gamma & $k, \theta$ & $k\theta$ & $k\theta^2$ & Time-to-event, revenue \\[0.3cm]
+Exponential & $\lambda > 0$ & $1/\lambda$ & $1/\lambda^2$ & Time between events \\[0.3cm]
+Poisson & $\lambda > 0$ & $\lambda$ & $\lambda$ & Count of events \\[0.3cm]
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Beta Distribution Quantiles}
+
+Commonly used Beta priors for Bayesian A/B testing.
+
+\begin{table}[h]
+\centering
+\caption{Beta Distribution Quantiles}
+\begin{tabular}{ccccccc}
+\toprule
+\textbf{Parameters} & \textbf{Mean} & \textbf{Mode} & \textbf{SD} & \textbf{2.5\%} & \textbf{50\%} & \textbf{97.5\%} \\
+\midrule
+Beta(1, 1) & 0.500 & * & 0.289 & 0.025 & 0.500 & 0.975 \\
+Beta(2, 2) & 0.500 & 0.500 & 0.224 & 0.082 & 0.500 & 0.918 \\
+Beta(5, 5) & 0.500 & 0.500 & 0.141 & 0.186 & 0.500 & 0.814 \\
+Beta(10, 10) & 0.500 & 0.500 & 0.100 & 0.274 & 0.500 & 0.726 \\
+Beta(1, 9) & 0.100 & 0.000 & 0.091 & 0.003 & 0.071 & 0.352 \\
+Beta(10, 90) & 0.100 & 0.099 & 0.030 & 0.050 & 0.098 & 0.165 \\
+Beta(50, 450) & 0.100 & 0.099 & 0.013 & 0.071 & 0.099 & 0.133 \\
+Beta(100, 900) & 0.100 & 0.100 & 0.009 & 0.082 & 0.100 & 0.119 \\
+Beta(0.5, 0.5) & 0.500 & ** & 0.354 & 0.001 & 0.500 & 0.999 \\
+Beta(2, 8) & 0.200 & 0.125 & 0.121 & 0.033 & 0.178 & 0.475 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Notes:}
+\begin{itemize}
+\item (*) Uniform distribution has no unique mode
+\item (**) Beta(0.5, 0.5) is U-shaped (Jeffreys prior)
+\item Larger $\alpha + \beta$ means more concentrated (smaller variance)
+\end{itemize}
+
+\subsection{Normal Distribution Probabilities}
+
+Probabilities for standard normal $Z \sim \mathcal{N}(0,1)$.
+
+\begin{table}[h]
+\centering
+\caption{Standard Normal Cumulative Probabilities}
+\begin{tabular}{cccccc}
+\toprule
+\textbf{z} & \textbf{P(Z $\leq$ z)} & \textbf{z} & \textbf{P(Z $\leq$ z)} & \textbf{z} & \textbf{P(Z $\leq$ z)} \\
+\midrule
+-3.0 & 0.0013 & 0.0 & 0.5000 & 2.0 & 0.9772 \\
+-2.5 & 0.0062 & 0.5 & 0.6915 & 2.5 & 0.9938 \\
+-2.0 & 0.0228 & 1.0 & 0.8413 & 3.0 & 0.9987 \\
+-1.96 & 0.0250 & 1.28 & 0.9000 & 3.29 & 0.9995 \\
+-1.64 & 0.0505 & 1.64 & 0.9495 & 3.5 & 0.9998 \\
+-1.5 & 0.0668 & 1.96 & 0.9750 & 4.0 & 1.0000 \\
+-1.0 & 0.1587 & & & & \\
+-0.5 & 0.3085 & & & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Usage:} For 95\% CI, use $\pm 1.96$ standard errors. $P(-1.96 < Z < 1.96) = 0.95$.
+
+\subsection{Variance Formulas for Common Metrics}
+
+\begin{table}[h]
+\centering
+\caption{Variance Formulas for A/B Test Metrics}
+\begin{tabular}{p{4cm}p{4cm}p{5cm}}
+\toprule
+\textbf{Metric} & \textbf{Variance Formula} & \textbf{Notes} \\
+\midrule
+Proportion $\hat{p}$ & $\frac{p(1-p)}{n}$ & Binary outcome \\[0.3cm]
+Mean $\bar{X}$ & $\frac{\sigma^2}{n}$ & Continuous outcome \\[0.3cm]
+Difference in proportions & $\frac{p_1(1-p_1)}{n_1} + \frac{p_2(1-p_2)}{n_2}$ & Two independent samples \\[0.3cm]
+Difference in means & $\frac{\sigma_1^2}{n_1} + \frac{\sigma_2^2}{n_2}$ & Unequal variances \\[0.3cm]
+Relative lift & $\frac{1}{p_1^2}\left[\frac{p_2(1-p_2)}{n_2} + \frac{p_2^2 p_1(1-p_1)}{n_1}\right]$ & Delta method approximation \\[0.3cm]
+Ratio estimator & $\frac{1}{\mu_Y^2}\left[\frac{\sigma_X^2}{n} + \frac{\mu_X^2\sigma_Y^2}{\mu_Y^2 n} - \frac{2\mu_X\sigma_{XY}}{\mu_Y n}\right]$ & Ratio of means \\[0.3cm]
+\bottomrule
+\end{tabular}
+\end{table}
+
+\newpage
+
+\section{Finite Population Corrections}
+
+\subsection{Finite Population Correction Factor}
+
+When sampling without replacement from finite population of size $N$.
+
+\begin{table}[h]
+\centering
+\caption{Finite Population Correction: $\sqrt{\frac{N-n}{N-1}}$}
+\begin{tabular}{c|cccccc}
+\toprule
+& \multicolumn{6}{c}{\textbf{Sample Size (n)}} \\
+\cmidrule{2-7}
+\textbf{Population (N)} & \textbf{100} & \textbf{500} & \textbf{1,000} & \textbf{5,000} & \textbf{10,000} & \textbf{50,000} \\
+\midrule
+1,000 & 0.949 & 0.707 & - & - & - & - \\
+5,000 & 0.990 & 0.975 & 0.949 & - & - & - \\
+10,000 & 0.995 & 0.987 & 0.975 & 0.707 & - & - \\
+50,000 & 0.999 & 0.997 & 0.995 & 0.949 & 0.894 & - \\
+100,000 & 1.000 & 0.999 & 0.997 & 0.975 & 0.949 & 0.707 \\
+500,000 & 1.000 & 1.000 & 0.999 & 0.990 & 0.980 & 0.900 \\
+$\infty$ & 1.000 & 1.000 & 1.000 & 1.000 & 1.000 & 1.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Usage:} Multiply standard error by FPC when sample is large relative to population ($n/N > 0.05$).
+
+\textbf{Corrected SE:} $SE_{corrected} = SE \times \sqrt{\frac{N-n}{N-1}}$
+
+\subsection{Design Effect for Cluster Randomization}
+
+Inflation factor when randomizing by clusters instead of individuals.
+
+\begin{table}[h]
+\centering
+\caption{Design Effect: DEFF = $1 + (m-1)\rho$}
+\begin{tabular}{c|cccccc}
+\toprule
+& \multicolumn{6}{c}{\textbf{Intraclass Correlation ($\rho$)}} \\
+\cmidrule{2-7}
+\textbf{Cluster Size (m)} & \textbf{0.001} & \textbf{0.01} & \textbf{0.05} & \textbf{0.10} & \textbf{0.20} & \textbf{0.50} \\
+\midrule
+2 & 1.001 & 1.01 & 1.05 & 1.10 & 1.20 & 1.50 \\
+5 & 1.004 & 1.04 & 1.20 & 1.40 & 1.80 & 3.00 \\
+10 & 1.009 & 1.09 & 1.45 & 1.90 & 2.80 & 5.50 \\
+20 & 1.019 & 1.19 & 1.95 & 2.90 & 4.80 & 10.50 \\
+50 & 1.049 & 1.49 & 3.45 & 5.90 & 10.80 & 25.50 \\
+100 & 1.099 & 1.99 & 5.95 & 10.90 & 20.80 & 50.50 \\
+200 & 1.199 & 2.99 & 10.95 & 20.90 & 40.80 & 100.50 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Required sample size:} $n_{cluster} = n_{individual} \times \text{DEFF}$
+
+\textbf{Example:} With cluster size 10 and ICC = 0.05, need 1.45× more participants than individual randomization.
+
+\newpage
+
+\section{Effect Size Benchmarks}
+
+\subsection{Cohen's d (Standardized Mean Difference)}
+
+Interpretation guidelines for continuous metrics.
+
+\begin{table}[h]
+\centering
+\caption{Cohen's d Effect Size Classification}
+\begin{tabular}{cccp{6cm}}
+\toprule
+\textbf{Cohen's d} & \textbf{Classification} & \textbf{$n$ for 80\% power} & \textbf{Example (Session Duration)} \\
+\midrule
+0.01 & Tiny & 157,098 & Mean 120s, SD 30s: 0.3s difference \\
+0.10 & Very small & 1,571 & Mean 120s, SD 30s: 3s difference \\
+0.20 & Small & 394 & Mean 120s, SD 30s: 6s difference \\
+0.30 & Small-medium & 176 & Mean 120s, SD 30s: 9s difference \\
+0.40 & Medium & 100 & Mean 120s, SD 30s: 12s difference \\
+0.50 & Medium & 64 & Mean 120s, SD 30s: 15s difference \\
+0.60 & Medium-large & 45 & Mean 120s, SD 30s: 18s difference \\
+0.70 & Large & 34 & Mean 120s, SD 30s: 21s difference \\
+0.80 & Large & 26 & Mean 120s, SD 30s: 24s difference \\
+1.00 & Very large & 17 & Mean 120s, SD 30s: 30s difference \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Cohen's h (Standardized Proportion Difference)}
+
+Effect size for comparing two proportions.
+
+\begin{table}[h]
+\centering
+\caption{Cohen's h: $h = 2[\arcsin(\sqrt{p_2}) - \arcsin(\sqrt{p_1})]$}
+\begin{tabular}{ccccc}
+\toprule
+\textbf{$p_1$} & \textbf{$p_2$} & \textbf{Absolute Diff} & \textbf{Relative Lift} & \textbf{Cohen's h} \\
+\midrule
+0.10 & 0.11 & 0.01 & 10\% & 0.067 \\
+0.10 & 0.12 & 0.02 & 20\% & 0.133 \\
+0.10 & 0.15 & 0.05 & 50\% & 0.327 \\
+0.10 & 0.20 & 0.10 & 100\% & 0.643 \\
+0.20 & 0.22 & 0.02 & 10\% & 0.101 \\
+0.20 & 0.24 & 0.04 & 20\% & 0.200 \\
+0.20 & 0.30 & 0.10 & 50\% & 0.485 \\
+0.20 & 0.40 & 0.20 & 100\% & 0.927 \\
+0.50 & 0.55 & 0.05 & 10\% & 0.200 \\
+0.50 & 0.60 & 0.10 & 20\% & 0.400 \\
+0.50 & 0.75 & 0.25 & 50\% & 1.000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Interpretation:} $h = 0.2$ is small, $h = 0.5$ is medium, $h = 0.8$ is large.
+
+\subsection{Practical Significance Thresholds}
+
+Industry-typical minimum meaningful differences.
+
+\begin{table}[h]
+\centering
+\caption{Practical Significance Guidelines by Industry}
+\begin{tabular}{p{4cm}p{5cm}p{4cm}}
+\toprule
+\textbf{Metric} & \textbf{Typical Baseline} & \textbf{Min Meaningful Lift} \\
+\midrule
+E-commerce conversion & 2-5\% & 5-10\% relative \\
+SaaS signup conversion & 5-15\% & 10-20\% relative \\
+Email click-through & 2-5\% & 10-15\% relative \\
+Landing page conversion & 1-10\% & 15-25\% relative \\
+Add-to-cart rate & 10-30\% & 5-10\% relative \\
+Session duration & 2-10 minutes & 10-20\% relative \\
+Pages per session & 2-5 pages & 10-15\% relative \\
+Mobile app retention (D7) & 20-40\% & 5-10\% relative \\
+Revenue per user & \$1-100 & 5-15\% relative \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Note:} These are guidelines. Actual thresholds depend on business context, costs, and strategic importance.
+
+\newpage
+
+\section{Quick Reference Guide}
+
+\subsection{Test Selection Decision Tree}
+
+\begin{table}[h]
+\centering
+\caption{Statistical Test Selection Guide}
+\begin{tabular}{p{4cm}p{4cm}p{5cm}}
+\toprule
+\textbf{Scenario} & \textbf{Recommended Test} & \textbf{Requirements/Notes} \\
+\midrule
+Binary outcome, large n & Two-proportion z-test & $n_1p_1, n_1(1-p_1) \geq 5$ \\
+Binary outcome, small n & Fisher's exact test & Exact, no approximation \\
+Continuous, normal & Two-sample t-test & Check normality \\
+Continuous, non-normal & Mann-Whitney U test & Robust to outliers \\
+Continuous, paired & Paired t-test & Same subjects \\
+Multiple groups & ANOVA / Kruskal-Wallis & 3+ variants \\
+Count data & Poisson or negative binomial & Events per user \\
+Time-to-event & Log-rank test / Cox model & Censored data \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Common Pitfalls and Corrections}
+
+\begin{table}[h]
+\centering
+\caption{Common Issues in A/B Testing}
+\begin{tabular}{p{5cm}p{4cm}p{4cm}}
+\toprule
+\textbf{Issue} & \textbf{Detection} & \textbf{Solution} \\
+\midrule
+Sample ratio mismatch & $\chi^2$ test, $p < 0.01$ & Investigate randomization \\
+Peeking / optional stopping & Multiple looks at data & Sequential design \\
+Multiple testing & Testing $>1$ metric & Bonferroni / FDR control \\
+Novelty effect & Temporal instability & Longer duration, cohort analysis \\
+Carryover effect & User exposed to both & Proper washout period \\
+Clustered data & High within-cluster correlation & Cluster-robust SE \\
+Outliers & Extreme values & Winsorize, robust statistics \\
+Non-independence & Network effects & Cluster randomization \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Recommended Parameters by Scenario}
+
+\begin{table}[h]
+\centering
+\caption{Standard Parameter Choices}
+\begin{tabular}{p{4cm}p{3cm}p{6cm}}
+\toprule
+\textbf{Scenario} & \textbf{Parameter} & \textbf{Standard Value} \\
+\midrule
+Significance level & $\alpha$ & 0.05 (two-sided) \\
+Statistical power & $1 - \beta$ & 0.80 (0.90 for critical tests) \\
+SRM detection threshold & $\alpha_{SRM}$ & 0.01 (more conservative) \\
+Multiple testing (few) & Correction & Bonferroni \\
+Multiple testing (many) & Correction & Benjamini-Hochberg (FDR = 0.05) \\
+Sequential testing & Boundary & O'Brien-Fleming \\
+Small sample ($n < 30$) & Test & Exact or permutation \\
+Large effect expected & Power & Can use 0.70-0.75 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Summary}
+
+This appendix provides:
+
+\begin{itemize}
+    \item \textbf{Critical values:} z, t, $\chi^2$, F distributions for hypothesis testing
+    \item \textbf{Sample size tables:} For proportions and means at various power levels
+    \item \textbf{Power tables:} Power as function of sample size and effect size
+    \item \textbf{MDE tables:} Minimum detectable effects for given sample sizes
+    \item \textbf{Multiple testing corrections:} Bonferroni, Šidák, Benjamini-Hochberg
+    \item \textbf{Sequential boundaries:} O'Brien-Fleming and Pocock critical values
+    \item \textbf{Distribution parameters:} Beta, Normal, and other common distributions
+    \item \textbf{Effect size benchmarks:} Cohen's d and h with interpretations
+    \item \textbf{Design effects:} Corrections for finite populations and clustering
+    \item \textbf{Quick reference:} Test selection and common parameter choices
+\end{itemize}
+
+All tables assume two-sided tests at $\alpha = 0.05$ and power = 0.80 unless otherwise specified.

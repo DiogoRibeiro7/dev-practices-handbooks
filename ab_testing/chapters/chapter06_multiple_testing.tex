@@ -1,0 +1,1826 @@
+% Chapter 6: Multiple Testing and False Discovery Rate
+
+\section*{Learning Objectives}
+
+By the end of this chapter, you will be able to:
+
+\begin{itemize}
+    \item Understand the multiple testing problem and its impact on false discovery rates
+    \item Calculate and control family-wise error rate (FWER) using various methods
+    \item Apply false discovery rate (FDR) control procedures appropriately
+    \item Implement advanced approaches including closed testing and gatekeeping
+    \item Apply Bayesian methods to multiple testing problems
+    \item Design hierarchical testing strategies for complex experiments
+    \item Manage platform-wide experimentation programs with multiple testing control
+    \item Choose appropriate correction methods based on experimental context
+\end{itemize}
+
+\section{The Multiple Testing Problem}
+
+In practice, A/B tests rarely involve testing a single hypothesis. Product teams typically monitor multiple metrics simultaneously—conversion rate, revenue per user, engagement time, bounce rate, and more. Similarly, multivariate tests compare multiple variants against a control. Each comparison represents a hypothesis test, and the more tests we conduct, the greater our risk of false discoveries.
+
+\subsection{The Birthday Paradox of Hypothesis Testing}
+
+Consider a seemingly simple scenario: you run an A/B test and measure 10 different metrics at $\alpha = 0.05$. If there are truly no differences between variants (all null hypotheses are true), what's the probability of finding at least one "statistically significant" result purely by chance?
+
+Many practitioners incorrectly assume the answer is 5\%, reasoning that each test has a 5\% false positive rate. But this reasoning is flawed. Let's calculate the actual probability.
+
+If each test has a 5\% chance of a Type I error, then each test has a 95\% chance of correctly not rejecting a true null hypothesis. The probability that all 10 tests correctly fail to reject is:
+\begin{equation}
+P(\text{no false positives}) = (0.95)^{10} \approx 0.599
+\end{equation}
+
+Therefore, the probability of at least one false positive is:
+\begin{equation}
+P(\text{at least one false positive}) = 1 - 0.599 = 0.401
+\end{equation}
+
+With 10 independent tests, we have a 40\% chance of finding at least one spurious "significant" result! This phenomenon—analogous to the birthday paradox—is the multiple testing problem.
+
+\subsection{Family-Wise Error Rate (FWER)}
+
+\begin{definition}[Family-Wise Error Rate]
+The family-wise error rate (FWER) is the probability of making at least one Type I error (false positive) among a family of $m$ hypothesis tests:
+\begin{equation}
+\text{FWER} = P(\text{reject at least one true null hypothesis})
+\end{equation}
+
+A procedure that controls FWER ensures:
+\begin{equation}
+\text{FWER} \leq \alpha
+\end{equation}
+for a specified significance level $\alpha$.
+\end{definition}
+
+FWER control is strict: it bounds the probability of making \textit{any} false discovery. This is appropriate when false positives are particularly costly, but it can be conservative when testing many hypotheses.
+
+\subsection{False Discovery Rate (FDR)}
+
+\begin{definition}[False Discovery Rate]
+Let $V$ denote the number of false rejections (Type I errors) and $R$ denote the total number of rejections. The false discovery rate is:
+\begin{equation}
+\text{FDR} = \mathbb{E}\left[\frac{V}{R}\right]
+\end{equation}
+where by convention $V/R = 0$ if $R = 0$.
+
+The FDR is the expected proportion of false discoveries among all discoveries.
+\end{definition}
+
+\textbf{Key Distinction:}
+\begin{itemize}
+    \item FWER controls the probability of \textit{any} false positive: $P(V \geq 1) \leq \alpha$
+    \item FDR controls the expected proportion of false positives: $\mathbb{E}[V/R] \leq \alpha$
+\end{itemize}
+
+FDR is less stringent than FWER, allowing more power to detect true effects at the cost of tolerating a small proportion of false discoveries.
+
+\subsection{Examples of Multiple Testing in A/B Contexts}
+
+\begin{enumerate}
+    \item \textbf{Multiple Metrics:} Testing conversion rate, revenue per user, engagement time, and bounce rate simultaneously
+
+    \item \textbf{Multiple Variants:} A/B/C/D test comparing 4 treatments against a control (5 comparisons)
+
+    \item \textbf{Sequential Testing:} Repeatedly checking test results (peeking) constitutes multiple testing across time
+
+    \item \textbf{Subgroup Analysis:} Testing effects across mobile vs. desktop, new vs. returning users, geographic regions
+
+    \item \textbf{Platform-Wide Programs:} Running hundreds of concurrent experiments on the same platform
+
+    \item \textbf{Exploratory Analysis:} Post-hoc investigation of unexpected patterns across multiple dimensions
+\end{enumerate}
+
+\begin{example}[E-commerce Multiple Testing Scenario]
+An e-commerce platform tests a new recommendation algorithm. They monitor:
+\begin{itemize}
+    \item Primary: Conversion rate
+    \item Secondary: Revenue per user, average order value, items per cart
+    \item Guardrails: Page load time, error rate, returns
+\end{itemize}
+
+They also analyze effects separately for:
+\begin{itemize}
+    \item New vs. returning users
+    \item Mobile vs. desktop
+    \item 3 geographic regions
+\end{itemize}
+
+Total comparisons: 7 metrics $\times$ 6 segments = 42 hypothesis tests!
+
+Without correction, the probability of at least one false positive (if all nulls are true) is:
+\begin{equation}
+P(\text{at least one FP}) = 1 - (0.95)^{42} \approx 0.899
+\end{equation}
+
+Nearly 90\% chance of finding a spurious "significant" result!
+\end{example}
+
+\section{Correction Methods}
+
+\subsection{Bonferroni Correction}
+
+The Bonferroni correction is the simplest and most conservative FWER control method.
+
+\begin{theorem}[Bonferroni Correction]
+To control FWER at level $\alpha$ when conducting $m$ hypothesis tests, reject the $i$-th null hypothesis if its p-value satisfies:
+\begin{equation}
+p_i \leq \frac{\alpha}{m}
+\end{equation}
+
+This procedure guarantees $\text{FWER} \leq \alpha$ regardless of the dependence structure among tests.
+\end{theorem}
+
+\begin{proof}
+Let $H_i$ denote the $i$-th null hypothesis, and let $\mathcal{H}_0$ be the set of true null hypotheses. By Boole's inequality (union bound):
+\begin{align}
+\text{FWER} &= P\left(\bigcup_{i \in \mathcal{H}_0} \{\text{reject } H_i\}\right) \\
+&\leq \sum_{i \in \mathcal{H}_0} P(\text{reject } H_i) \\
+&= \sum_{i \in \mathcal{H}_0} P(p_i \leq \alpha/m) \\
+&\leq \sum_{i \in \mathcal{H}_0} \frac{\alpha}{m} \\
+&\leq m \cdot \frac{\alpha}{m} = \alpha
+\end{align}
+\end{proof}
+
+\textbf{Properties:}
+\begin{itemize}
+    \item \textbf{Conservative:} Often overly strict, especially for large $m$, leading to reduced power
+    \item \textbf{Simple:} Easy to compute and explain
+    \item \textbf{Universal:} Makes no assumptions about dependence between tests
+\end{itemize}
+
+\subsection{Holm-Bonferroni Method}
+
+Holm's method improves upon Bonferroni by using a sequential testing procedure that is uniformly more powerful while still controlling FWER.
+
+\begin{theorem}[Holm's Step-Down Procedure]
+To control FWER at level $\alpha$ for $m$ tests:
+\begin{enumerate}
+    \item Order p-values: $p_{(1)} \leq p_{(2)} \leq \cdots \leq p_{(m)}$
+    \item For $i = 1, 2, \ldots, m$, reject hypothesis $(i)$ if:
+    \begin{equation}
+    p_{(i)} \leq \frac{\alpha}{m - i + 1}
+    \end{equation}
+    \item Stop at the first $p_{(i)}$ that fails this criterion; fail to reject all remaining hypotheses
+\end{enumerate}
+
+This procedure controls $\text{FWER} \leq \alpha$ under any dependence structure.
+\end{theorem}
+
+The key insight is that once we fail to reject a hypothesis, we stop testing. This sequential approach is more powerful than Bonferroni because later tests use less stringent thresholds.
+
+\begin{example}[Holm's Procedure Application]
+Consider $m = 5$ tests at $\alpha = 0.05$ with ordered p-values:
+
+\begin{center}
+\begin{tabular}{cccccc}
+\toprule
+$i$ & $p_{(i)}$ & $m - i + 1$ & Threshold & Decision & Bonferroni \\
+\midrule
+1 & 0.003 & 5 & 0.05/5 = 0.010 & Reject & Reject \\
+2 & 0.008 & 4 & 0.05/4 = 0.0125 & Reject & Reject \\
+3 & 0.015 & 3 & 0.05/3 = 0.0167 & Reject & Fail to reject \\
+4 & 0.042 & 2 & 0.05/2 = 0.025 & Fail to reject & Fail to reject \\
+5 & 0.091 & 1 & 0.05/1 = 0.050 & Fail to reject & Fail to reject \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Holm's procedure rejects 3 hypotheses, while Bonferroni rejects only 2.
+\end{example}
+
+\textbf{Properties:}
+\begin{itemize}
+    \item \textbf{Uniformly more powerful:} Always rejects at least as many hypotheses as Bonferroni
+    \item \textbf{Simple:} Easy to implement with sorted p-values
+    \item \textbf{Robust:} Controls FWER under any dependence structure
+\end{itemize}
+
+\subsection{Benjamini-Hochberg Procedure}
+
+The Benjamini-Hochberg (BH) procedure is the most widely used FDR control method.
+
+\begin{theorem}[Benjamini-Hochberg Procedure]
+To control FDR at level $\alpha$ for $m$ tests (under independence or positive dependence):
+\begin{enumerate}
+    \item Order p-values: $p_{(1)} \leq p_{(2)} \leq \cdots \leq p_{(m)}$
+    \item Find the largest $i$ such that:
+    \begin{equation}
+    p_{(i)} \leq \frac{i}{m} \alpha
+    \end{equation}
+    \item Reject hypotheses $(1), (2), \ldots, (i)$
+\end{enumerate}
+
+Under independence or positive dependence, this procedure controls $\text{FDR} \leq \alpha$.
+\end{theorem}
+
+The key difference from FWER methods is that the threshold for hypothesis $(i)$ is $i\alpha/m$ rather than $\alpha/(m-i+1)$. This makes the procedure more liberal, allowing more discoveries.
+
+\begin{example}[Benjamini-Hochberg Application]
+Consider $m = 20$ tests at $\alpha = 0.05$. The BH-adjusted thresholds increase linearly:
+
+\begin{center}
+\begin{tabular}{ccccc}
+\toprule
+$i$ & $p_{(i)}$ & BH Threshold & Bonferroni & Decision \\
+\midrule
+1 & 0.001 & 0.0025 & 0.0025 & Reject (BH \& Bonf) \\
+2 & 0.003 & 0.0050 & 0.0025 & Reject (BH), Fail (Bonf) \\
+3 & 0.004 & 0.0075 & 0.0025 & Reject (BH), Fail (Bonf) \\
+$\vdots$ & $\vdots$ & $\vdots$ & $\vdots$ & $\vdots$ \\
+10 & 0.023 & 0.0250 & 0.0025 & Reject (BH), Fail (Bonf) \\
+11 & 0.031 & 0.0275 & 0.0025 & Fail to reject (both) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+BH rejects 10 hypotheses, while Bonferroni rejects only 1. Among the 10 BH rejections, we expect fewer than $0.05 \times 10 = 0.5$ false discoveries on average.
+\end{example}
+
+\subsection{Benjamini-Yekutieli Method}
+
+The Benjamini-Yekutieli (BY) procedure extends FDR control to arbitrary dependence structures.
+
+\begin{theorem}[Benjamini-Yekutieli Procedure]
+To control FDR at level $\alpha$ for $m$ tests under arbitrary dependence:
+\begin{enumerate}
+    \item Order p-values: $p_{(1)} \leq p_{(2)} \leq \cdots \leq p_{(m)}$
+    \item Find the largest $i$ such that:
+    \begin{equation}
+    p_{(i)} \leq \frac{i}{m \cdot c(m)} \alpha
+    \end{equation}
+    where $c(m) = \sum_{j=1}^{m} \frac{1}{j} \approx \ln(m) + 0.577$ (harmonic sum)
+    \item Reject hypotheses $(1), (2), \ldots, (i)$
+\end{enumerate}
+
+This procedure controls $\text{FDR} \leq \alpha$ under arbitrary dependence.
+\end{theorem}
+
+The BY procedure is more conservative than BH due to the $c(m)$ correction, but it requires no assumptions about dependence structure.
+
+\subsection{Comparison of Basic Correction Methods}
+
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Method & Error Control & Assumptions & Power & Recommendation \\
+\midrule
+Bonferroni & FWER & None & Low & Conservative baseline \\
+Holm & FWER & None & Moderate-High & Default FWER method \\
+BH & FDR & Independence & High & Default FDR method \\
+BY & FDR & None & Moderate & Dependent tests \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{General Recommendation:} Use Holm's procedure for FWER control and Benjamini-Hochberg for FDR control. These provide good power while maintaining appropriate error control.
+
+\section{Advanced Approaches}
+
+\subsection{Closed Testing Procedures}
+
+Closed testing is a powerful framework that allows testing multiple hypotheses while controlling FWER, often with greater power than standard methods.
+
+\begin{definition}[Closed Testing Principle]
+For a family of hypotheses $\mathcal{H} = \{H_1, \ldots, H_m\}$, a closed testing procedure tests each hypothesis $H_i$ by:
+\begin{enumerate}
+    \item Testing all intersection hypotheses that include $H_i$
+    \item Rejecting $H_i$ only if all intersection hypotheses containing $H_i$ are rejected at level $\alpha$
+\end{enumerate}
+
+This procedure controls FWER at level $\alpha$ regardless of dependence among tests.
+\end{definition}
+
+\begin{theorem}[Closed Testing FWER Control]
+Any closed testing procedure controls FWER at level $\alpha$.
+\end{theorem}
+
+\begin{proof}[Sketch]
+Under the global null hypothesis (all individual nulls true), the closed testing procedure first tests the complete intersection hypothesis $H_1 \cap H_2 \cap \cdots \cap H_m$. This is true under the global null, so it will be rejected with probability at most $\alpha$. Therefore, FWER $\leq \alpha$.
+\end{proof}
+
+\textbf{Practical Implementation:}
+
+Closed testing provides a framework rather than a specific procedure. Common implementations include:
+
+\begin{enumerate}
+    \item \textbf{Hommel's Procedure:} More powerful than Holm for singly ordered hypotheses
+    \item \textbf{Fallback Procedures:} Sequential testing with power transferred from rejected hypotheses
+    \item \textbf{Graphical Approaches:} Visual representation of testing strategies (Bretz et al., 2009)
+\end{enumerate}
+
+\begin{example}[Closed Testing for 3 Hypotheses]
+Testing $H_1, H_2, H_3$ at $\alpha = 0.05$:
+
+Intersection hypotheses to test:
+\begin{itemize}
+    \item $H_{123}$: Test $H_1 \cap H_2 \cap H_3$ at level 0.05
+    \item $H_{12}$: Test $H_1 \cap H_2$ at level 0.05
+    \item $H_{13}$: Test $H_1 \cap H_3$ at level 0.05
+    \item $H_{23}$: Test $H_2 \cap H_3$ at level 0.05
+    \item $H_1, H_2, H_3$: Individual hypotheses at level 0.05
+\end{itemize}
+
+Reject $H_1$ only if all of $H_{123}, H_{12}, H_{13}, H_1$ are rejected.
+
+This can be more powerful than Bonferroni because we can use the full $\alpha$ for each intersection test.
+\end{example}
+
+\subsection{Gatekeeping Strategies}
+
+Gatekeeping procedures allow hierarchical testing where some hypotheses must be rejected before others can be tested, controlling FWER across the entire family.
+
+\begin{definition}[Gatekeeping Procedure]
+A gatekeeping procedure organizes hypotheses into ordered families $F_1, F_2, \ldots, F_K$ where:
+\begin{itemize}
+    \item Family $F_k$ can only be tested if certain conditions in families $F_1, \ldots, F_{k-1}$ are met
+    \item FWER is controlled at level $\alpha$ across all families
+\end{itemize}
+\end{definition}
+
+\textbf{Types of Gatekeeping:}
+
+\begin{enumerate}
+    \item \textbf{Serial Gatekeeping:} All hypotheses in family $F_k$ must be rejected to proceed to $F_{k+1}$
+
+    \item \textbf{Parallel Gatekeeping:} At least one hypothesis in $F_k$ must be rejected to proceed
+
+    \item \textbf{Tree-Structured Gatekeeping:} Complex hierarchical structures with multiple branches
+\end{enumerate}
+
+\begin{example}[Serial Gatekeeping for Clinical Trial]
+A pharmaceutical trial tests:
+\begin{itemize}
+    \item Family 1 (Primary): Efficacy on primary endpoint
+    \item Family 2 (Secondary): Efficacy on secondary endpoints
+    \item Family 3 (Exploratory): Safety and quality of life
+\end{itemize}
+
+Gatekeeping rules:
+\begin{enumerate}
+    \item Test Family 1 at $\alpha = 0.05$
+    \item If Family 1 is rejected, test Family 2 at $\alpha = 0.05$ using Holm's procedure
+    \item If at least one hypothesis in Family 2 is rejected, test Family 3 at $\alpha = 0.05$ using BH
+\end{enumerate}
+
+This controls overall FWER at 0.05 while allowing exploration of secondary outcomes.
+\end{example}
+
+\textbf{Application to A/B Testing:}
+
+\begin{lstlisting}[language=Python, caption={Gatekeeping Procedure Implementation}]
+import numpy as np
+from scipy import stats
+from typing import Dict, List, Tuple
+
+def serial_gatekeeping(
+    families: List[np.ndarray],
+    family_tests: List[str],
+    alpha: float = 0.05
+) -> Dict:
+    """
+    Implement serial gatekeeping procedure.
+
+    Parameters:
+    -----------
+    families : list of np.ndarray
+        List of p-value arrays, one per family
+    family_tests : list of str
+        Testing procedure for each family: 'bonferroni', 'holm', 'bh'
+    alpha : float
+        Overall FWER level
+
+    Returns:
+    --------
+    dict : Results for each family
+    """
+    results = {}
+    proceed = True
+
+    for i, (pvalues, method) in enumerate(zip(families, family_tests)):
+        family_name = f'Family_{i+1}'
+
+        if not proceed:
+            # Cannot test this family
+            results[family_name] = {
+                'tested': False,
+                'reject': np.zeros(len(pvalues), dtype=bool),
+                'message': 'Gatekeeper not satisfied'
+            }
+            continue
+
+        # Test this family
+        if method == 'bonferroni':
+            reject = pvalues <= alpha / len(pvalues)
+        elif method == 'holm':
+            from statsmodels.stats.multitest import multipletests
+            reject, pvals_adj, _, _ = multipletests(
+                pvalues, alpha=alpha, method='holm'
+            )
+        elif method == 'bh':
+            from statsmodels.stats.multitest import multipletests
+            reject, pvals_adj, _, _ = multipletests(
+                pvalues, alpha=alpha, method='fdr_bh'
+            )
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+        results[family_name] = {
+            'tested': True,
+            'reject': reject,
+            'n_rejected': np.sum(reject),
+            'method': method
+        }
+
+        # Check if we can proceed to next family (serial gatekeeping)
+        # Require all hypotheses in current family to be rejected
+        if not np.all(reject):
+            proceed = False
+
+    return results
+
+
+def parallel_gatekeeping(
+    families: List[np.ndarray],
+    family_tests: List[str],
+    alpha: float = 0.05,
+    min_rejections: int = 1
+) -> Dict:
+    """
+    Implement parallel gatekeeping procedure.
+
+    Parameters:
+    -----------
+    families : list of np.ndarray
+        List of p-value arrays, one per family
+    family_tests : list of str
+        Testing procedure for each family
+    alpha : float
+        Overall FWER level
+    min_rejections : int
+        Minimum rejections needed to open gate
+
+    Returns:
+    --------
+    dict : Results for each family
+    """
+    results = {}
+    proceed = True
+
+    for i, (pvalues, method) in enumerate(zip(families, family_tests)):
+        family_name = f'Family_{i+1}'
+
+        if not proceed:
+            results[family_name] = {
+                'tested': False,
+                'reject': np.zeros(len(pvalues), dtype=bool),
+                'message': 'Gatekeeper not satisfied'
+            }
+            continue
+
+        # Test this family
+        if method == 'bonferroni':
+            reject = pvalues <= alpha / len(pvalues)
+        elif method == 'holm':
+            from statsmodels.stats.multitest import multipletests
+            reject, pvals_adj, _, _ = multipletests(
+                pvalues, alpha=alpha, method='holm'
+            )
+        elif method == 'bh':
+            from statsmodels.stats.multitest import multipletests
+            reject, pvals_adj, _, _ = multipletests(
+                pvalues, alpha=alpha, method='fdr_bh'
+            )
+
+        results[family_name] = {
+            'tested': True,
+            'reject': reject,
+            'n_rejected': np.sum(reject),
+            'method': method
+        }
+
+        # Check if we can proceed (parallel gatekeeping)
+        # Require at least min_rejections
+        if np.sum(reject) < min_rejections:
+            proceed = False
+
+    return results
+
+
+# Example usage
+np.random.seed(42)
+
+# Simulate three families of hypotheses
+family1 = np.array([0.001, 0.003])  # Primary endpoints
+family2 = np.array([0.015, 0.025, 0.045])  # Secondary endpoints
+family3 = np.array([0.060, 0.080, 0.120, 0.150])  # Exploratory
+
+families = [family1, family2, family3]
+methods = ['holm', 'holm', 'bh']
+
+# Serial gatekeeping
+results_serial = serial_gatekeeping(families, methods, alpha=0.05)
+
+print("Serial Gatekeeping Results:")
+for family, res in results_serial.items():
+    if res['tested']:
+        print(f"{family}: {res['n_rejected']} rejections")
+    else:
+        print(f"{family}: {res['message']}")
+
+# Parallel gatekeeping
+results_parallel = parallel_gatekeeping(
+    families, methods, alpha=0.05, min_rejections=1
+)
+
+print("\nParallel Gatekeeping Results:")
+for family, res in results_parallel.items():
+    if res['tested']:
+        print(f"{family}: {res['n_rejected']} rejections")
+    else:
+        print(f"{family}: {res['message']}")
+\end{lstlisting}
+
+\subsection{Adaptive Procedures}
+
+Adaptive procedures estimate the proportion of true null hypotheses and adjust the rejection threshold accordingly, potentially gaining power.
+
+\begin{definition}[Adaptive Benjamini-Hochberg]
+Let $\hat{\pi}_0$ denote an estimate of the proportion of true null hypotheses. The adaptive BH procedure:
+\begin{enumerate}
+    \item Estimate $\pi_0$ from the p-value distribution
+    \item Find the largest $i$ such that:
+    \begin{equation}
+    p_{(i)} \leq \frac{i}{m \cdot \hat{\pi}_0} \alpha
+    \end{equation}
+    \item Reject hypotheses $(1), (2), \ldots, (i)$
+\end{enumerate}
+
+Under appropriate conditions, this controls FDR at level $\alpha \cdot \pi_0 \leq \alpha$.
+\end{definition}
+
+\textbf{Estimating $\pi_0$:}
+
+Several estimators exist:
+\begin{enumerate}
+    \item \textbf{Storey's Estimator:}
+    \begin{equation}
+    \hat{\pi}_0(\lambda) = \frac{\#\{p_i > \lambda\}}{m(1-\lambda)}
+    \end{equation}
+    for some $\lambda \in [0, 1)$ (typically 0.5)
+
+    \item \textbf{Least Slope Estimator:} Based on the slope of the p-value distribution
+
+    \item \textbf{Histogram-Based:} Estimate from the flat portion of the p-value histogram
+\end{enumerate}
+
+\begin{lstlisting}[language=Python, caption={Adaptive FDR Control}]
+def estimate_pi0(pvalues: np.ndarray, lambda_val: float = 0.5) -> float:
+    """
+    Estimate proportion of true nulls using Storey's method.
+
+    Parameters:
+    -----------
+    pvalues : np.ndarray
+        Array of p-values
+    lambda_val : float
+        Threshold for estimation (default 0.5)
+
+    Returns:
+    --------
+    float : Estimated proportion of true nulls
+    """
+    m = len(pvalues)
+    num_above = np.sum(pvalues > lambda_val)
+    pi0_hat = num_above / (m * (1 - lambda_val))
+
+    # Ensure estimate is in [0, 1]
+    return min(pi0_hat, 1.0)
+
+
+def adaptive_bh(
+    pvalues: np.ndarray,
+    alpha: float = 0.05,
+    lambda_val: float = 0.5
+) -> Dict:
+    """
+    Adaptive Benjamini-Hochberg procedure.
+
+    Parameters:
+    -----------
+    pvalues : np.ndarray
+        Array of p-values
+    alpha : float
+        FDR level
+    lambda_val : float
+        Threshold for pi0 estimation
+
+    Returns:
+    --------
+    dict : Results including pi0 estimate
+    """
+    m = len(pvalues)
+
+    # Estimate pi0
+    pi0_hat = estimate_pi0(pvalues, lambda_val)
+
+    # Sort p-values
+    sort_idx = np.argsort(pvalues)
+    pvalues_sorted = pvalues[sort_idx]
+
+    # Adaptive BH threshold
+    reject_sorted = np.zeros(m, dtype=bool)
+    rejection_idx = -1
+
+    for i in range(m - 1, -1, -1):
+        threshold = (i + 1) / (m * pi0_hat) * alpha
+        if pvalues_sorted[i] <= threshold:
+            rejection_idx = i
+            break
+
+    if rejection_idx >= 0:
+        reject_sorted[:rejection_idx + 1] = True
+
+    # Unsort
+    reject = np.zeros(m, dtype=bool)
+    reject[sort_idx] = reject_sorted
+
+    return {
+        'method': 'Adaptive BH',
+        'pi0_estimate': pi0_hat,
+        'alpha': alpha,
+        'reject': reject,
+        'n_reject': np.sum(reject),
+        'rejected_indices': np.where(reject)[0].tolist()
+    }
+
+
+# Example: Compare standard BH vs adaptive BH
+np.random.seed(123)
+
+# Simulate p-values: 80% true nulls, 20% alternatives
+m = 100
+n_true_nulls = 80
+n_alternatives = 20
+
+true_null_pvals = np.random.uniform(0, 1, n_true_nulls)
+alternative_pvals = np.random.beta(0.5, 5, n_alternatives)  # Enriched for small p-values
+
+pvalues = np.concatenate([true_null_pvals, alternative_pvals])
+np.random.shuffle(pvalues)
+
+# Standard BH
+from statsmodels.stats.multitest import multipletests
+reject_bh, _, _, _ = multipletests(pvalues, alpha=0.05, method='fdr_bh')
+
+# Adaptive BH
+results_adaptive = adaptive_bh(pvalues, alpha=0.05, lambda_val=0.5)
+
+print(f"True pi0: 0.80")
+print(f"Estimated pi0: {results_adaptive['pi0_estimate']:.3f}")
+print(f"Standard BH rejections: {np.sum(reject_bh)}")
+print(f"Adaptive BH rejections: {results_adaptive['n_reject']}")
+\end{lstlisting}
+
+\subsection{Bayesian Multiple Testing}
+
+Bayesian approaches provide a principled alternative to frequentist multiple testing, particularly useful when prior information is available.
+
+\begin{definition}[Bayesian FDR]
+The Bayesian false discovery rate for a set of rejected hypotheses $\mathcal{R}$ is:
+\begin{equation}
+\text{FDR}_{\text{Bayes}}(\mathcal{R}) = \mathbb{E}\left[\frac{|\mathcal{R} \cap \mathcal{H}_0|}{|\mathcal{R}|} \mid \text{data}\right]
+\end{equation}
+where $\mathcal{H}_0$ is the set of true null hypotheses.
+\end{definition}
+
+\textbf{Local FDR:}
+
+The local false discovery rate for hypothesis $i$ is the posterior probability that the null is true:
+\begin{equation}
+\text{lfdr}_i = P(H_i \text{ is true} \mid p_i)
+\end{equation}
+
+\textbf{Decision Rules:}
+
+Reject hypothesis $i$ if:
+\begin{equation}
+\text{lfdr}_i \leq \tau
+\end{equation}
+for some threshold $\tau$ chosen to control FDR.
+
+\begin{lstlisting}[language=Python, caption={Bayesian Multiple Testing}]
+from scipy.stats import beta, norm
+
+def compute_local_fdr(
+    pvalues: np.ndarray,
+    pi0: float = 0.5,
+    alternative_params: Tuple[float, float] = (0.5, 5.0)
+) -> np.ndarray:
+    """
+    Compute local false discovery rate.
+
+    Parameters:
+    -----------
+    pvalues : np.ndarray
+        Array of p-values
+    pi0 : float
+        Prior probability of null hypothesis
+    alternative_params : tuple
+        Beta distribution parameters for alternative
+
+    Returns:
+    --------
+    np.ndarray : Local FDR for each hypothesis
+    """
+    m = len(pvalues)
+
+    # Likelihood under null: uniform(0, 1)
+    f0 = np.ones(m)
+
+    # Likelihood under alternative: beta distribution
+    a, b = alternative_params
+    f1 = beta.pdf(pvalues, a, b)
+
+    # Marginal likelihood
+    f_marginal = pi0 * f0 + (1 - pi0) * f1
+
+    # Local FDR via Bayes' rule
+    lfdr = (pi0 * f0) / f_marginal
+
+    return lfdr
+
+
+def bayesian_fdr_control(
+    pvalues: np.ndarray,
+    alpha: float = 0.05,
+    pi0: float = None,
+    alternative_params: Tuple[float, float] = (0.5, 5.0)
+) -> Dict:
+    """
+    Bayesian FDR control using local FDR.
+
+    Parameters:
+    -----------
+    pvalues : np.ndarray
+        Array of p-values
+    alpha : float
+        FDR level
+    pi0 : float
+        Prior probability of null (estimated if None)
+    alternative_params : tuple
+        Beta parameters for alternative distribution
+
+    Returns:
+    --------
+    dict : Results including local FDR values
+    """
+    m = len(pvalues)
+
+    # Estimate pi0 if not provided
+    if pi0 is None:
+        pi0 = estimate_pi0(pvalues, lambda_val=0.5)
+
+    # Compute local FDR
+    lfdr = compute_local_fdr(pvalues, pi0, alternative_params)
+
+    # Sort by local FDR
+    sort_idx = np.argsort(lfdr)
+    lfdr_sorted = lfdr[sort_idx]
+
+    # Find rejection threshold
+    # Reject if cumulative average lfdr <= alpha
+    reject_sorted = np.zeros(m, dtype=bool)
+    rejection_idx = -1
+
+    for i in range(m):
+        avg_lfdr = np.mean(lfdr_sorted[:i+1])
+        if avg_lfdr <= alpha:
+            rejection_idx = i
+        else:
+            break
+
+    if rejection_idx >= 0:
+        reject_sorted[:rejection_idx + 1] = True
+
+    # Unsort
+    reject = np.zeros(m, dtype=bool)
+    reject[sort_idx] = reject_sorted
+
+    return {
+        'method': 'Bayesian FDR',
+        'pi0': pi0,
+        'alpha': alpha,
+        'local_fdr': lfdr,
+        'reject': reject,
+        'n_reject': np.sum(reject),
+        'rejected_indices': np.where(reject)[0].tolist(),
+        'avg_lfdr': np.mean(lfdr[reject]) if np.sum(reject) > 0 else 0.0
+    }
+
+
+# Example: Bayesian FDR control
+np.random.seed(456)
+
+# Simulate p-values
+m = 50
+n_true_nulls = 40
+n_alternatives = 10
+
+true_null_pvals = np.random.uniform(0, 1, n_true_nulls)
+alternative_pvals = np.random.beta(0.5, 5, n_alternatives)
+
+pvalues = np.concatenate([true_null_pvals, alternative_pvals])
+np.random.shuffle(pvalues)
+
+# Bayesian FDR control
+results_bayes = bayesian_fdr_control(
+    pvalues, alpha=0.05, pi0=None, alternative_params=(0.5, 5.0)
+)
+
+print(f"Estimated pi0: {results_bayes['pi0']:.3f}")
+print(f"Rejections: {results_bayes['n_reject']}")
+print(f"Average local FDR of rejections: {results_bayes['avg_lfdr']:.3f}")
+
+# Compare with standard BH
+reject_bh, _, _, _ = multipletests(pvalues, alpha=0.05, method='fdr_bh')
+print(f"Standard BH rejections: {np.sum(reject_bh)}")
+\end{lstlisting}
+
+\section{Practical Applications}
+
+\subsection{Multiple Metrics Testing}
+
+Most A/B tests monitor multiple metrics simultaneously. Proper handling requires thoughtful strategy.
+
+\textbf{Metric Hierarchy:}
+
+\begin{enumerate}
+    \item \textbf{Primary Metrics (1-2):} Decision-making metrics. Test at $\alpha = 0.05$ without correction.
+
+    \item \textbf{Secondary Metrics (3-5):} Supporting evidence. Apply FDR control (BH) at $\alpha = 0.05$.
+
+    \item \textbf{Guardrail Metrics (5-10):} Monitor for harm. Use conservative FWER control (Holm).
+
+    \item \textbf{Exploratory Metrics (unlimited):} Hypothesis generation only. Report descriptively.
+\end{enumerate}
+
+\begin{example}[Multi-Metric A/B Test Strategy]
+E-commerce checkout redesign:
+
+\textbf{Primary:}
+\begin{itemize}
+    \item Conversion rate ($p = 0.012$)
+\end{itemize}
+Decision: $p < 0.05$, so primary is significant. Proceed with secondary analysis.
+
+\textbf{Secondary:}
+\begin{itemize}
+    \item Revenue per user ($p = 0.045$)
+    \item Items per cart ($p = 0.123$)
+    \item Average order value ($p = 0.038$)
+\end{itemize}
+
+BH correction at $\alpha = 0.05$:
+\begin{itemize}
+    \item Ordered p-values: 0.038, 0.045, 0.123
+    \item Thresholds: $1/3 \times 0.05 = 0.0167$, $2/3 \times 0.05 = 0.0333$, $3/3 \times 0.05 = 0.05$
+    \item No rejections (all p-values exceed thresholds)
+\end{itemize}
+
+\textbf{Guardrails:}
+\begin{itemize}
+    \item Page load time ($p = 0.234$)
+    \item Error rate ($p = 0.456$)
+    \item Return rate ($p = 0.089$)
+\end{itemize}
+
+Holm correction: All p-values $> 0.05/3 = 0.0167$, so no harm detected.
+
+\textbf{Decision:} Launch redesign based on significant primary metric. Secondary metrics show directionally positive but non-significant effects. No harm on guardrails.
+\end{example}
+
+\subsection{Subgroup Analysis}
+
+Testing effects across multiple subgroups requires multiple testing correction to avoid false subgroup discoveries.
+
+\textbf{Pre-Planned Subgroups:}
+
+When subgroups are specified a priori, apply appropriate corrections:
+
+\begin{enumerate}
+    \item \textbf{Few Subgroups (2-4):} Use Holm's procedure for FWER control
+
+    \item \textbf{Many Subgroups (5+):} Use BH procedure for FDR control
+
+    \item \textbf{Hierarchical Subgroups:} Use gatekeeping (e.g., test overall effect, then subgroups)
+\end{enumerate}
+
+\textbf{Post-Hoc Subgroups:}
+
+Exploratory subgroup analysis after seeing results is particularly prone to false discoveries. Strategies:
+
+\begin{enumerate}
+    \item \textbf{Report Descriptively:} Don't make claims without correction
+
+    \item \textbf{Strict Correction:} Use Bonferroni or BY for strong FWER/FDR control
+
+    \item \textbf{Validation:} Plan follow-up experiment targeting identified subgroups
+\end{enumerate}
+
+\begin{lstlisting}[language=Python, caption={Subgroup Analysis with Multiple Testing}]
+def subgroup_analysis(
+    data: np.ndarray,
+    treatment: np.ndarray,
+    subgroups: np.ndarray,
+    correction: str = 'holm',
+    alpha: float = 0.05
+) -> Dict:
+    """
+    Perform subgroup analysis with multiple testing correction.
+
+    Parameters:
+    -----------
+    data : np.ndarray
+        Outcome data
+    treatment : np.ndarray
+        Treatment assignment (0=control, 1=treatment)
+    subgroups : np.ndarray
+        Subgroup labels
+    correction : str
+        Correction method: 'holm', 'bh', or 'bonferroni'
+    alpha : float
+        Significance level
+
+    Returns:
+    --------
+    dict : Results for each subgroup
+    """
+    from scipy.stats import ttest_ind
+
+    unique_subgroups = np.unique(subgroups)
+    n_subgroups = len(unique_subgroups)
+    pvalues = np.zeros(n_subgroups)
+    effects = np.zeros(n_subgroups)
+
+    # Test each subgroup
+    for i, subgroup in enumerate(unique_subgroups):
+        mask = subgroups == subgroup
+        control_data = data[mask & (treatment == 0)]
+        treatment_data = data[mask & (treatment == 1)]
+
+        # T-test for difference
+        t_stat, p_val = ttest_ind(treatment_data, control_data)
+        pvalues[i] = p_val
+        effects[i] = np.mean(treatment_data) - np.mean(control_data)
+
+    # Apply correction
+    if correction == 'bonferroni':
+        reject = pvalues <= alpha / n_subgroups
+        pvals_adj = np.minimum(pvalues * n_subgroups, 1.0)
+    elif correction == 'holm':
+        from statsmodels.stats.multitest import multipletests
+        reject, pvals_adj, _, _ = multipletests(
+            pvalues, alpha=alpha, method='holm'
+        )
+    elif correction == 'bh':
+        from statsmodels.stats.multitest import multipletests
+        reject, pvals_adj, _, _ = multipletests(
+            pvalues, alpha=alpha, method='fdr_bh'
+        )
+    else:
+        raise ValueError(f"Unknown correction: {correction}")
+
+    # Compile results
+    results = {}
+    for i, subgroup in enumerate(unique_subgroups):
+        results[str(subgroup)] = {
+            'effect': effects[i],
+            'pvalue': pvalues[i],
+            'pvalue_adj': pvals_adj[i],
+            'significant': reject[i]
+        }
+
+    return {
+        'subgroup_results': results,
+        'n_subgroups': n_subgroups,
+        'n_significant': np.sum(reject),
+        'correction': correction,
+        'alpha': alpha
+    }
+
+
+# Example: Mobile vs Desktop analysis
+np.random.seed(789)
+
+# Simulate data: 3 subgroups (mobile, desktop, tablet)
+n_per_group = 500
+n_subgroups = 3
+
+data_list = []
+treatment_list = []
+subgroup_list = []
+
+for subgroup_id in range(n_subgroups):
+    # Control group
+    control = np.random.normal(10, 2, n_per_group)
+    # Treatment group (slight effect in subgroup 0 only)
+    if subgroup_id == 0:
+        treatment = np.random.normal(10.5, 2, n_per_group)  # Real effect
+    else:
+        treatment = np.random.normal(10, 2, n_per_group)  # No effect
+
+    data_list.extend(list(control) + list(treatment))
+    treatment_list.extend([0] * n_per_group + [1] * n_per_group)
+    subgroup_list.extend([subgroup_id] * (2 * n_per_group))
+
+data = np.array(data_list)
+treatment = np.array(treatment_list)
+subgroups = np.array(subgroup_list)
+
+# Analyze with different corrections
+for method in ['bonferroni', 'holm', 'bh']:
+    results = subgroup_analysis(
+        data, treatment, subgroups, correction=method, alpha=0.05
+    )
+    print(f"\n{method.upper()} Correction:")
+    print(f"  Significant subgroups: {results['n_significant']}/{results['n_subgroups']}")
+    for subgroup, res in results['subgroup_results'].items():
+        if res['significant']:
+            print(f"  Subgroup {subgroup}: effect={res['effect']:.3f}, p={res['pvalue']:.4f}")
+\end{lstlisting}
+
+\subsection{Sequential Testing Considerations}
+
+A special case of multiple testing arises when experimenters repeatedly check test results—the "peeking" problem.
+
+\textbf{Why Peeking Inflates Type I Error:}
+
+Each peek constitutes a hypothesis test. With $k$ peeks, the overall Type I error can be approximated by:
+\begin{equation}
+\text{FWER}_{\text{peeks}} \approx 1 - (1 - \alpha)^k
+\end{equation}
+
+\begin{example}[Peeking Simulation]
+An A/B test where the null is true (no difference):
+\begin{itemize}
+    \item Look once at the end: $P(\text{false positive}) = 0.05$
+    \item Peek 5 times: $P(\text{false positive}) \approx 0.23$
+    \item Peek 10 times: $P(\text{false positive}) \approx 0.40$
+    \item Continuous monitoring: $P(\text{false positive}) \to 1$
+\end{itemize}
+\end{example}
+
+\textbf{Solutions:}
+
+\begin{enumerate}
+    \item \textbf{Pre-Plan Sample Size:} Calculate required $n$, collect data, analyze once
+
+    \item \textbf{Multiple Testing Correction:} If peeking at $k$ time points, apply Bonferroni: $\alpha/k$ per peek
+
+    \item \textbf{Sequential Testing Procedures:} Group sequential methods with optimized boundaries (Chapter 8)
+
+    \item \textbf{Always-Valid P-Values:} Modern methods that remain valid under continuous monitoring
+\end{enumerate}
+
+\subsection{Platform-Wide Experiment Programs}
+
+Large technology companies run hundreds of experiments concurrently, creating platform-level multiple testing challenges.
+
+\textbf{Challenges:}
+
+\begin{enumerate}
+    \item \textbf{Volume:} Hundreds of tests per week
+
+    \item \textbf{Independence:} Some experiments affect overlapping metrics
+
+    \item \textbf{Coordination:} Decentralized teams running experiments
+
+    \item \textbf{Standards:} Maintaining consistent statistical practices
+\end{enumerate}
+
+\textbf{Solutions:}
+
+\begin{enumerate}
+    \item \textbf{Automatic Correction:} Platform applies FDR control by default
+
+    \item \textbf{Metric Registries:} Pre-registered metrics with designated hierarchies
+
+    \item \textbf{Experiment Review:} Statistical review before launch and analysis
+
+    \item \textbf{Meta-Analysis:} Periodic review of false discovery rates empirically
+
+    \item \textbf{Education:} Training programs on multiple testing for all experimenters
+\end{enumerate}
+
+\begin{example}[Google's Approach]
+Google's experimentation platform implements:
+\begin{itemize}
+    \item Automatic FDR control using BH for secondary metrics
+    \item Pre-registered primary metrics tested without correction
+    \item Guardrail metrics with strict FWER control
+    \item Dashboards showing adjusted p-values and q-values
+    \item Annual reviews of platform-wide false discovery rates
+\end{itemize}
+\end{example}
+
+\section{Implementation Strategies}
+
+\subsection{Pre-Planned vs. Exploratory Analysis}
+
+The distinction between confirmatory (pre-planned) and exploratory analysis is crucial for appropriate multiple testing control.
+
+\textbf{Pre-Planned (Confirmatory):}
+
+\begin{itemize}
+    \item Hypotheses specified before data collection
+    \item Metrics, subgroups, and comparisons pre-registered
+    \item Standard FWER or FDR control applied
+    \item Results can support decision-making
+\end{itemize}
+
+\textbf{Exploratory:}
+
+\begin{itemize}
+    \item Hypotheses generated from data patterns
+    \item Post-hoc subgroup analyses
+    \item Requires stricter correction or validation
+    \item Results generate hypotheses for future testing
+\end{itemize}
+
+\textbf{Mixed Strategy:}
+
+\begin{enumerate}
+    \item \textbf{Primary Analysis:} Pre-specified hypotheses with standard corrections
+
+    \item \textbf{Exploratory Analysis:} Additional investigations with:
+    \begin{itemize}
+        \item Strict corrections (Bonferroni, BY)
+        \item Clear labeling as exploratory
+        \item Plan for validation experiments
+    \end{itemize}
+\end{enumerate}
+
+\begin{lstlisting}[language=Python, caption={Pre-Planned vs Exploratory Framework}]
+class ExperimentAnalysis:
+    """
+    Framework for managing pre-planned and exploratory analyses.
+    """
+
+    def __init__(self, alpha: float = 0.05):
+        self.alpha = alpha
+        self.preregistered = {
+            'primary_metrics': [],
+            'secondary_metrics': [],
+            'guardrail_metrics': [],
+            'subgroups': []
+        }
+        self.exploratory_analyses = []
+
+    def register_primary(self, metric_names: List[str]):
+        """Register primary metrics (no correction needed)."""
+        self.preregistered['primary_metrics'].extend(metric_names)
+
+    def register_secondary(self, metric_names: List[str]):
+        """Register secondary metrics (FDR control)."""
+        self.preregistered['secondary_metrics'].extend(metric_names)
+
+    def register_guardrails(self, metric_names: List[str]):
+        """Register guardrail metrics (FWER control)."""
+        self.preregistered['guardrail_metrics'].extend(metric_names)
+
+    def register_subgroups(self, subgroup_names: List[str]):
+        """Register pre-planned subgroups."""
+        self.preregistered['subgroups'].extend(subgroup_names)
+
+    def analyze_primary(self, pvalues: Dict[str, float]) -> Dict:
+        """
+        Analyze primary metrics without correction.
+
+        Parameters:
+        -----------
+        pvalues : dict
+            Metric name to p-value mapping
+
+        Returns:
+        --------
+        dict : Analysis results
+        """
+        results = {}
+        for metric in self.preregistered['primary_metrics']:
+            if metric in pvalues:
+                results[metric] = {
+                    'pvalue': pvalues[metric],
+                    'significant': pvalues[metric] < self.alpha,
+                    'correction': 'none',
+                    'type': 'primary'
+                }
+        return results
+
+    def analyze_secondary(self, pvalues: Dict[str, float]) -> Dict:
+        """
+        Analyze secondary metrics with BH correction.
+
+        Parameters:
+        -----------
+        pvalues : dict
+            Metric name to p-value mapping
+
+        Returns:
+        --------
+        dict : Analysis results
+        """
+        metric_names = self.preregistered['secondary_metrics']
+        pval_array = np.array([pvalues[m] for m in metric_names if m in pvalues])
+
+        if len(pval_array) == 0:
+            return {}
+
+        # BH correction
+        from statsmodels.stats.multitest import multipletests
+        reject, pvals_adj, _, _ = multipletests(
+            pval_array, alpha=self.alpha, method='fdr_bh'
+        )
+
+        results = {}
+        for i, metric in enumerate(metric_names):
+            if metric in pvalues:
+                results[metric] = {
+                    'pvalue': pval_array[i],
+                    'pvalue_adj': pvals_adj[i],
+                    'significant': reject[i],
+                    'correction': 'BH',
+                    'type': 'secondary'
+                }
+        return results
+
+    def analyze_guardrails(self, pvalues: Dict[str, float]) -> Dict:
+        """
+        Analyze guardrail metrics with Holm correction.
+
+        Parameters:
+        -----------
+        pvalues : dict
+            Metric name to p-value mapping
+
+        Returns:
+        --------
+        dict : Analysis results
+        """
+        metric_names = self.preregistered['guardrail_metrics']
+        pval_array = np.array([pvalues[m] for m in metric_names if m in pvalues])
+
+        if len(pval_array) == 0:
+            return {}
+
+        # Holm correction
+        from statsmodels.stats.multitest import multipletests
+        reject, pvals_adj, _, _ = multipletests(
+            pval_array, alpha=self.alpha, method='holm'
+        )
+
+        results = {}
+        for i, metric in enumerate(metric_names):
+            if metric in pvalues:
+                results[metric] = {
+                    'pvalue': pval_array[i],
+                    'pvalue_adj': pvals_adj[i],
+                    'significant': reject[i],
+                    'correction': 'Holm',
+                    'type': 'guardrail'
+                }
+        return results
+
+    def add_exploratory(
+        self,
+        analysis_name: str,
+        pvalues: Dict[str, float],
+        correction: str = 'bonferroni'
+    ) -> Dict:
+        """
+        Add exploratory analysis with strict correction.
+
+        Parameters:
+        -----------
+        analysis_name : str
+            Name for this exploratory analysis
+        pvalues : dict
+            Metric/hypothesis to p-value mapping
+        correction : str
+            Correction method ('bonferroni' or 'by')
+
+        Returns:
+        --------
+        dict : Analysis results
+        """
+        pval_array = np.array(list(pvalues.values()))
+        metric_names = list(pvalues.keys())
+
+        # Strict correction for exploratory
+        if correction == 'bonferroni':
+            m = len(pval_array)
+            reject = pval_array <= self.alpha / m
+            pvals_adj = np.minimum(pval_array * m, 1.0)
+        elif correction == 'by':
+            from statsmodels.stats.multitest import multipletests
+            reject, pvals_adj, _, _ = multipletests(
+                pval_array, alpha=self.alpha, method='fdr_by'
+            )
+        else:
+            raise ValueError(f"Unknown correction: {correction}")
+
+        results = {}
+        for i, metric in enumerate(metric_names):
+            results[metric] = {
+                'pvalue': pval_array[i],
+                'pvalue_adj': pvals_adj[i],
+                'significant': reject[i],
+                'correction': correction,
+                'type': 'exploratory',
+                'validation_needed': True
+            }
+
+        self.exploratory_analyses.append({
+            'name': analysis_name,
+            'results': results
+        })
+
+        return results
+
+    def generate_report(self, all_pvalues: Dict[str, float]) -> str:
+        """Generate comprehensive analysis report."""
+        report = []
+        report.append("=" * 60)
+        report.append("EXPERIMENT ANALYSIS REPORT")
+        report.append("=" * 60)
+
+        # Primary metrics
+        report.append("\nPRIMARY METRICS (No correction):")
+        primary_results = self.analyze_primary(all_pvalues)
+        for metric, res in primary_results.items():
+            sig_str = "SIGNIFICANT" if res['significant'] else "Not significant"
+            report.append(f"  {metric}: p={res['pvalue']:.4f} [{sig_str}]")
+
+        # Secondary metrics
+        report.append("\nSECONDARY METRICS (BH correction):")
+        secondary_results = self.analyze_secondary(all_pvalues)
+        for metric, res in secondary_results.items():
+            sig_str = "SIGNIFICANT" if res['significant'] else "Not significant"
+            report.append(
+                f"  {metric}: p={res['pvalue']:.4f}, "
+                f"q={res['pvalue_adj']:.4f} [{sig_str}]"
+            )
+
+        # Guardrails
+        report.append("\nGUARDRAIL METRICS (Holm correction):")
+        guardrail_results = self.analyze_guardrails(all_pvalues)
+        for metric, res in guardrail_results.items():
+            sig_str = "HARM DETECTED" if res['significant'] else "No harm"
+            report.append(
+                f"  {metric}: p={res['pvalue']:.4f}, "
+                f"p_adj={res['pvalue_adj']:.4f} [{sig_str}]"
+            )
+
+        # Exploratory
+        if self.exploratory_analyses:
+            report.append("\nEXPLORATORY ANALYSES:")
+            for analysis in self.exploratory_analyses:
+                report.append(f"\n  {analysis['name']}:")
+                for metric, res in analysis['results'].items():
+                    sig_str = "SIGNIFICANT*" if res['significant'] else "Not significant"
+                    report.append(
+                        f"    {metric}: p={res['pvalue']:.4f}, "
+                        f"p_adj={res['pvalue_adj']:.4f} [{sig_str}]"
+                    )
+            report.append("\n  * Exploratory findings require validation in follow-up experiments")
+
+        report.append("\n" + "=" * 60)
+        return "\n".join(report)
+
+
+# Example usage
+np.random.seed(999)
+
+# Initialize framework
+experiment = ExperimentAnalysis(alpha=0.05)
+
+# Pre-register metrics
+experiment.register_primary(['conversion_rate'])
+experiment.register_secondary(['revenue_per_user', 'session_duration', 'bounce_rate'])
+experiment.register_guardrails(['page_load_time', 'error_rate'])
+
+# Simulate p-values
+all_pvalues = {
+    'conversion_rate': 0.012,
+    'revenue_per_user': 0.045,
+    'session_duration': 0.123,
+    'bounce_rate': 0.089,
+    'page_load_time': 0.567,
+    'error_rate': 0.234
+}
+
+# Add exploratory analysis
+exploratory_pvals = {
+    'mobile_conversion': 0.023,
+    'desktop_conversion': 0.456,
+    'new_user_conversion': 0.034
+}
+
+experiment.add_exploratory(
+    'Subgroup Analysis by Device/User Type',
+    exploratory_pvals,
+    correction='bonferroni'
+)
+
+# Generate report
+report = experiment.generate_report(all_pvalues)
+print(report)
+\end{lstlisting}
+
+\subsection{Hierarchical Testing}
+
+Hierarchical testing structures hypotheses into ordered families, testing more important hypotheses first and preserving power for exploratory analysis.
+
+\textbf{Three-Level Hierarchy:}
+
+\begin{enumerate}
+    \item \textbf{Level 1 - Primary:} 1-2 key decision metrics
+    \begin{itemize}
+        \item Test at $\alpha = 0.05$ without correction
+        \item Must show significance to launch
+    \end{itemize}
+
+    \item \textbf{Level 2 - Secondary:} 3-7 supporting metrics
+    \begin{itemize}
+        \item Test only if primary shows significance
+        \item Apply FDR control (BH) at $\alpha = 0.05$
+        \item Strengthen case for launch
+    \end{itemize}
+
+    \item \textbf{Level 3 - Exploratory:} Unlimited metrics
+    \begin{itemize}
+        \item Test only if at least one secondary shows significance
+        \item Apply strict correction (Bonferroni or BY)
+        \item Generate hypotheses for future testing
+    \end{itemize}
+\end{enumerate}
+
+This hierarchical approach controls overall FWER while preserving power for the most important tests.
+
+\subsection{Primary vs. Secondary Endpoints}
+
+Clear designation of primary and secondary endpoints is essential for maintaining statistical integrity.
+
+\textbf{Primary Endpoints:}
+
+\begin{itemize}
+    \item Pre-specified before data collection
+    \item Typically 1-2 metrics maximum
+    \item Directly tied to business objectives
+    \item Tested at nominal $\alpha$ without correction
+    \item Must show significance for positive decision
+    \item Statistical power calculated for these metrics
+\end{itemize}
+
+\textbf{Secondary Endpoints:}
+
+\begin{itemize}
+    \item Pre-specified supporting metrics
+    \item Typically 3-7 metrics
+    \item Provide additional evidence
+    \item Require multiple testing correction
+    \item Non-significance doesn't preclude launch
+    \item May have lower power
+\end{itemize}
+
+\textbf{Decision Framework:}
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Primary Result & Secondary Results & Decision \\
+\midrule
+Significant & Positive (some significant) & Strong launch \\
+Significant & Mixed (some negative) & Careful launch \\
+Significant & Negative (harm detected) & Do not launch \\
+Not significant & Any & Do not launch \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{example}[Primary vs Secondary Framework]
+A streaming service tests a new recommendation algorithm:
+
+\textbf{Primary Endpoint:}
+\begin{itemize}
+    \item Monthly viewing hours per user
+\end{itemize}
+Power: 80\% to detect 5\% increase
+
+\textbf{Secondary Endpoints:}
+\begin{itemize}
+    \item Content discovery rate
+    \item User satisfaction score
+    \item Subscription retention
+    \item Revenue per user
+\end{itemize}
+
+\textbf{Results:}
+\begin{itemize}
+    \item Primary: +6.2\% viewing hours, $p = 0.008$ $\rightarrow$ Significant
+    \item Secondary (BH corrected):
+    \begin{itemize}
+        \item Discovery rate: +8.1\%, $q = 0.012$ $\rightarrow$ Significant
+        \item Satisfaction: +0.3 points, $q = 0.089$ $\rightarrow$ Not significant
+        \item Retention: +1.2\%, $q = 0.156$ $\rightarrow$ Not significant
+        \item Revenue: +2.3\%, $q = 0.067$ $\rightarrow$ Not significant
+    \end{itemize}
+\end{itemize}
+
+\textbf{Decision:} Launch. Primary endpoint shows significant improvement. Two secondary metrics (discovery and satisfaction) show positive directional effects, though only discovery is significant after correction. No negative effects detected.
+\end{example}
+
+\section{Guidelines for Experiment Programs}
+
+\subsection{Organizational Best Practices}
+
+\begin{enumerate}
+    \item \textbf{Pre-Registration:}
+    \begin{itemize}
+        \item Require pre-registration of hypotheses and metrics
+        \item Use experiment registry or design document
+        \item Distinguish primary, secondary, and exploratory analyses
+    \end{itemize}
+
+    \item \textbf{Metric Hierarchy:}
+    \begin{itemize}
+        \item Maintain organization-wide metric taxonomy
+        \item Designate standard primary metrics by product area
+        \item Define standard guardrail metrics
+    \end{itemize}
+
+    \item \textbf{Automatic Corrections:}
+    \begin{itemize}
+        \item Experimentation platform applies corrections by default
+        \item Display both raw and adjusted p-values
+        \item Show q-values for FDR-controlled metrics
+    \end{itemize}
+
+    \item \textbf{Statistical Review:}
+    \begin{itemize}
+        \item Review experiment designs before launch
+        \item Check power calculations and correction methods
+        \item Review results before major launches
+    \end{itemize}
+
+    \item \textbf{Education:}
+    \begin{itemize}
+        \item Training programs on multiple testing
+        \item Documentation of correction methods
+        \item Regular workshops on statistical best practices
+    \end{itemize}
+
+    \item \textbf{Monitoring:}
+    \begin{itemize}
+        \item Track false discovery rates empirically
+        \item Monitor ratio of significant to non-significant results
+        \item Investigate anomalies in the experimentation pipeline
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Decision-Making Framework}
+
+Use this comprehensive framework to choose appropriate multiple testing strategies:
+
+\begin{algorithm}[H]
+\caption{Multiple Testing Strategy Selection}
+\begin{algorithmic}
+\STATE \textbf{Input:} Number of tests $m$, test context, cost of false positives
+\STATE \textbf{Output:} Recommended correction method
+
+\STATE \textbf{Step 1:} Determine analysis type
+\IF{Pre-registered confirmatory analysis}
+    \STATE Proceed to Step 2
+\ELSIF{Exploratory or post-hoc analysis}
+    \STATE Use strict correction (Bonferroni or BY)
+    \STATE Flag results as requiring validation
+    \RETURN
+\ENDIF
+
+\STATE \textbf{Step 2:} Count comparisons
+\IF{$m = 1$}
+    \STATE No correction needed
+    \RETURN
+\ELSIF{$m \in [2, 10]$}
+    \STATE Consider FWER control
+\ELSIF{$m > 10$}
+    \STATE Consider FDR control
+\ENDIF
+
+\STATE \textbf{Step 3:} Assess false positive cost
+\IF{Very high (safety, irreversible)}
+    \STATE Use FWER control (Holm)
+\ELSIF{High (major product changes)}
+    \STATE Use FWER or FDR based on $m$
+\ELSIF{Moderate (minor changes, exploration)}
+    \STATE Use FDR control (BH)
+\ENDIF
+
+\STATE \textbf{Step 4:} Check test structure
+\IF{Hierarchical structure (primary/secondary)}
+    \STATE Use hierarchical testing or gatekeeping
+\ELSIF{Multiple metrics, single variant}
+    \STATE Apply chosen correction across metrics
+\ELSIF{Single metric, multiple variants}
+    \STATE Apply chosen correction across variants
+\ENDIF
+
+\STATE \textbf{Step 5:} Verify assumptions
+\IF{Tests are independent}
+    \STATE Can use any method
+\ELSIF{Tests are correlated}
+    \STATE Use Holm (FWER) or BH (FDR)
+    \STATE Avoid Šidák
+\ELSIF{Unknown dependence}
+    \STATE Use robust methods (Holm, BY)
+\ENDIF
+\end{algorithmic}
+\end{algorithm}
+
+\section{Summary}
+
+Multiple testing is a pervasive challenge in modern A/B testing that requires careful attention:
+
+\begin{itemize}
+    \item \textbf{The Problem:} Each additional test increases the probability of false discoveries. Without correction, false positive rates can reach 40\% or higher with just 10 tests.
+
+    \item \textbf{Basic Corrections:} Bonferroni, Holm (FWER control) and Benjamini-Hochberg, Benjamini-Yekutieli (FDR control) provide foundational methods.
+
+    \item \textbf{Advanced Approaches:} Closed testing, gatekeeping, adaptive procedures, and Bayesian methods offer sophisticated solutions for complex scenarios.
+
+    \item \textbf{Practical Applications:} Multiple metrics, subgroup analysis, sequential testing, and platform-wide programs each require tailored strategies.
+
+    \item \textbf{Implementation:} Pre-registration, hierarchical testing, clear primary/secondary distinction, and organizational best practices maintain integrity.
+
+    \item \textbf{Choice of Method:} Depends on number of tests, false positive costs, test structure, independence, and whether analysis is confirmatory or exploratory.
+\end{itemize}
+
+The multiple testing problem is serious, but solvable. By understanding the available methods and applying them thoughtfully within an organizational framework, you can maintain statistical rigor while preserving power to detect real effects and making sound business decisions.
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \textbf{Benjamini, Y., \& Hochberg, Y. (1995).} ``Controlling the false discovery rate: a practical and powerful approach to multiple testing.'' \textit{Journal of the Royal Statistical Society: Series B}, 57(1), 289-300.
+
+    \item \textbf{Bretz, F., Maurer, W., Brannath, W., \& Posch, M. (2009).} ``A graphical approach to sequentially rejective multiple test procedures.'' \textit{Statistics in Medicine}, 28(4), 586-604.
+
+    \item \textbf{Dudoit, S., \& van der Laan, M. J. (2008).} \textit{Multiple Testing Procedures with Applications to Genomics.} Springer.
+
+    \item \textbf{Efron, B. (2010).} \textit{Large-Scale Inference: Empirical Bayes Methods for Estimation, Testing, and Prediction.} Cambridge University Press.
+
+    \item \textbf{Dmitrienko, A., Tamhane, A. C., \& Bretz, F. (2009).} \textit{Multiple Testing Problems in Pharmaceutical Statistics.} CRC Press.
+
+    \item \textbf{Kohavi, R., Tang, D., \& Xu, Y. (2020).} \textit{Trustworthy Online Controlled Experiments.} Cambridge University Press, Chapter 20.
+\end{itemize}
+
+\section{Exercises}
+
+\subsection{Conceptual Questions}
+
+\begin{enumerate}
+    \item Explain why the probability of at least one false positive increases with the number of tests, even when each test individually has only a 5\% false positive rate.
+
+    \item Why is the Benjamini-Hochberg procedure more powerful than Bonferroni correction? What does BH control that is different from what Bonferroni controls?
+
+    \item A colleague argues: ``We should never use multiple testing corrections because they reduce our power to detect real effects.'' How would you respond?
+
+    \item Explain the difference between FWER and FDR. Give examples of situations where each would be more appropriate.
+
+    \item Describe closed testing and explain why it can be more powerful than simple Bonferroni correction.
+
+    \item What is gatekeeping and when is it appropriate? Give an example from industry.
+
+    \item Compare and contrast pre-planned and exploratory analyses. Why do they require different multiple testing approaches?
+\end{enumerate}
+
+\subsection{Calculation Exercises}
+
+\begin{enumerate}
+    \item You conduct 8 hypothesis tests at $\alpha = 0.05$. If all null hypotheses are true:
+    \begin{enumerate}
+        \item What is the probability of at least one false positive without correction?
+        \item What is the Bonferroni-corrected threshold?
+        \item What is the Holm-corrected threshold for the 3rd ordered p-value?
+    \end{enumerate}
+
+    \item Given p-values: [0.001, 0.015, 0.023, 0.047, 0.089, 0.134] at $\alpha = 0.05$:
+    \begin{enumerate}
+        \item Apply Bonferroni correction. Which are significant?
+        \item Apply Holm's procedure. Which are significant?
+        \item Apply Benjamini-Hochberg. Which are significant?
+        \item Apply Benjamini-Yekutieli with $c(6) = 2.45$. Which are significant?
+    \end{enumerate}
+
+    \item For Storey's $\pi_0$ estimator with $\lambda = 0.5$, you have 100 p-values and 63 exceed 0.5. Estimate $\pi_0$ and compute the adaptive BH threshold for the 10th ordered p-value.
+
+    \item Design a serial gatekeeping procedure for:
+    \begin{itemize}
+        \item Family 1: 1 primary hypothesis
+        \item Family 2: 3 secondary hypotheses
+        \item Family 3: 5 exploratory hypotheses
+    \end{itemize}
+    Specify the testing procedure and thresholds for each family.
+\end{enumerate}
+
+\subsection{Programming Exercises}
+
+\begin{enumerate}
+    \item Implement a simulation demonstrating the multiple testing problem:
+    \begin{enumerate}
+        \item Generate data under the null for $m = 1, 5, 10, 20, 50$ tests
+        \item Run 10,000 simulations
+        \item Plot empirical FWER vs. $m$
+        \item Compare to theoretical FWER
+    \end{enumerate}
+
+    \item Implement and compare power of correction methods:
+    \begin{enumerate}
+        \item Simulate $m = 50$ tests where 20\% have true effects
+        \item Calculate power for Bonferroni, Holm, BH, and adaptive BH
+        \item Vary effect sizes and repeat
+        \item Plot power curves
+    \end{enumerate}
+
+    \item Implement a gatekeeping procedure:
+    \begin{enumerate}
+        \item Code serial and parallel gatekeeping
+        \item Test on simulated data with hierarchical structure
+        \item Compare FWER control to single-step procedures
+        \item Demonstrate power advantage
+    \end{enumerate}
+
+    \item Create a complete experiment analysis framework:
+    \begin{enumerate}
+        \item Support pre-registration of metrics
+        \item Implement hierarchical testing
+        \item Apply appropriate corrections automatically
+        \item Generate comprehensive report
+        \item Include visualization of results
+    \end{enumerate}
+\end{enumerate}
+
+\subsection{Applied Exercises}
+
+\begin{enumerate}
+    \item You're testing a new product feature with:
+    \begin{itemize}
+        \item Primary: Conversion rate ($p = 0.012$)
+        \item Secondary: Revenue ($p = 0.045$), Engagement ($p = 0.089$), Retention ($p = 0.003$)
+        \item Guardrails: Load time ($p = 0.234$), Errors ($p = 0.456$)
+    \end{itemize}
+    Design the analysis strategy, apply corrections, and make a launch decision.
+
+    \item A social media platform runs 500 experiments per quarter. Design a platform-wide multiple testing strategy including:
+    \begin{itemize}
+        \item Metric hierarchies
+        \item Default correction methods
+        \item Review processes
+        \item Monitoring procedures
+    \end{itemize}
+
+    \item Design a subgroup analysis for an A/B test examining effects across:
+    \begin{itemize}
+        \item 3 geographic regions
+        \item 2 device types (mobile, desktop)
+        \item 2 user types (new, returning)
+    \end{itemize}
+    Specify correction method and decision criteria.
+
+    \item Review a real A/B test from your organization:
+    \begin{enumerate}
+        \item Identify all hypothesis tests performed
+        \item Determine if correction was applied
+        \item Calculate what correction should have been used
+        \item Assess if conclusions would change
+    \end{enumerate}
+\end{enumerate}
+
+\subsection{Advanced Exercises}
+
+\begin{enumerate}
+    \item Prove that Holm's procedure is uniformly more powerful than Bonferroni.
+
+    \item Implement local FDR estimation and compare to traditional FDR control.
+
+    \item Design a graphical gatekeeping procedure (Bretz et al., 2009) for a complex clinical trial with multiple endpoints and populations.
+
+    \item Conduct a comprehensive simulation study comparing FWER and FDR methods:
+    \begin{itemize}
+        \item Varying $m$ (5, 20, 100 tests)
+        \item Varying proportion of true alternatives
+        \item Varying effect sizes
+        \item Varying correlation structures (independent, positive, negative)
+    \end{itemize}
+    Create visualizations and recommendations.
+
+    \item Implement a Bayesian multiple testing procedure with empirical Bayes estimation of prior parameters from data.
+\end{enumerate}

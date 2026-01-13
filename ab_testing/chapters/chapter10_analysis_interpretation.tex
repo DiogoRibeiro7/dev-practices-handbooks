@@ -1,0 +1,4136 @@
+% Chapter 10: Data Analysis and Result Interpretation
+
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Implement comprehensive data preprocessing pipelines for A/B test data
+    \item Detect and handle outliers using multiple statistical approaches
+    \item Address missing data with appropriate imputation strategies
+    \item Apply data transformation techniques to meet analysis assumptions
+    \item Conduct thorough exploratory data analysis with professional visualizations
+    \item Build automated statistical analysis pipelines with assumption checking
+    \item Calculate and interpret effect sizes and confidence intervals
+    \item Distinguish between statistical and practical significance
+    \item Perform segment analysis to identify heterogeneous treatment effects
+    \item Create executive summaries and technical reports for different audiences
+    \item Implement reproducible analysis workflows using Pandas and NumPy
+    \item Generate interactive visualizations with Plotly and Matplotlib
+\end{itemize}
+
+\section{Introduction: From Data to Decisions}
+
+The quality of experimental conclusions depends not just on experimental design but on the rigor of data analysis and interpretation. Between collecting raw data and making business decisions lies a critical analytical journey requiring statistical expertise, programming proficiency, and business acumen.
+
+This chapter presents a comprehensive framework for analyzing A/B test results, from initial data validation through final reporting. We emphasize:
+
+\begin{itemize}
+    \item \textbf{Reproducibility:} Analyses should be scripted, versioned, and automated
+    \item \textbf{Robustness:} Results should withstand sensitivity analyses
+    \item \textbf{Transparency:} Methods and limitations should be clearly documented
+    \item \textbf{Context:} Statistical findings must connect to business impact
+    \item \textbf{Communication:} Insights should be accessible to all stakeholders
+\end{itemize}
+
+Modern A/B testing analysis leverages powerful Python libraries:
+\begin{itemize}
+    \item \textbf{Pandas:} Data manipulation and transformation
+    \item \textbf{NumPy:} Numerical computations
+    \item \textbf{SciPy:} Statistical tests and distributions
+    \item \textbf{Statsmodels:} Advanced statistical modeling
+    \item \textbf{Matplotlib/Seaborn:} Static visualizations
+    \item \textbf{Plotly:} Interactive dashboards
+\end{itemize}
+
+We'll build practical, production-ready analysis code throughout this chapter.
+
+\section{Data Preprocessing}
+
+Raw experimental data typically requires substantial preprocessing before analysis. This section covers systematic approaches to data cleaning, validation, and transformation.
+
+\subsection{Data Quality Assessment}
+
+Before any analysis, assess data quality systematically.
+
+\lstset{language=Python, caption=Comprehensive Data Quality Framework}
+\begin{lstlisting}
+import pandas as pd
+import numpy as np
+from scipy import stats
+from typing import Dict, List, Tuple
+import warnings
+
+class ABTestDataValidator:
+    """
+    Comprehensive data quality validation for A/B tests.
+
+    Checks for:
+    - Sample ratio mismatch
+    - Assignment consistency
+    - Temporal anomalies
+    - Missing data patterns
+    - Duplicate records
+    - Invalid values
+    """
+
+    def __init__(self, data: pd.DataFrame,
+                 variant_col: str = 'variant',
+                 user_col: str = 'user_id',
+                 timestamp_col: str = 'timestamp',
+                 metric_cols: List[str] = None):
+        """
+        Initialize validator.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Experimental data
+        variant_col : str
+            Column indicating variant assignment
+        user_col : str
+            Column with unique user identifiers
+        timestamp_col : str
+            Column with event timestamps
+        metric_cols : List[str]
+            Columns containing metrics to analyze
+        """
+        self.data = data.copy()
+        self.variant_col = variant_col
+        self.user_col = user_col
+        self.timestamp_col = timestamp_col
+        self.metric_cols = metric_cols or []
+        self.issues = []
+        self.warnings = []
+
+    def run_all_checks(self) -> Dict:
+        """Run all validation checks."""
+        results = {
+            'sample_ratio_mismatch': self.check_sample_ratio_mismatch(),
+            'assignment_consistency': self.check_assignment_consistency(),
+            'temporal_stability': self.check_temporal_stability(),
+            'missing_data': self.check_missing_data(),
+            'duplicates': self.check_duplicates(),
+            'value_ranges': self.check_value_ranges(),
+            'novelty_effects': self.check_novelty_effects()
+        }
+
+        results['summary'] = {
+            'total_issues': len(self.issues),
+            'total_warnings': len(self.warnings),
+            'passed': len(self.issues) == 0,
+            'issues': self.issues,
+            'warnings': self.warnings
+        }
+
+        return results
+
+    def check_sample_ratio_mismatch(self,
+                                   expected_ratios: Dict = None,
+                                   alpha: float = 0.01) -> Dict:
+        """
+        Check for Sample Ratio Mismatch (SRM).
+
+        Parameters:
+        -----------
+        expected_ratios : Dict
+            Expected allocation ratios {variant: proportion}
+            If None, assumes equal allocation
+        alpha : float
+            Significance level for SRM test
+
+        Returns:
+        --------
+        Dict with SRM test results
+        """
+        variant_counts = self.data[self.variant_col].value_counts()
+        n_variants = len(variant_counts)
+        total_n = len(self.data)
+
+        # Default to equal allocation
+        if expected_ratios is None:
+            expected_ratios = {v: 1/n_variants for v in variant_counts.index}
+
+        # Calculate expected counts
+        expected_counts = np.array([
+            expected_ratios.get(v, 1/n_variants) * total_n
+            for v in variant_counts.index
+        ])
+
+        # Chi-square test
+        chi2_stat, p_value = stats.chisquare(
+            variant_counts.values,
+            expected_counts
+        )
+
+        # Check for SRM
+        has_srm = p_value < alpha
+
+        if has_srm:
+            self.issues.append(
+                f"Sample Ratio Mismatch detected (p={p_value:.6f})"
+            )
+
+        return {
+            'chi2_statistic': chi2_stat,
+            'p_value': p_value,
+            'has_srm': has_srm,
+            'observed_counts': dict(variant_counts),
+            'expected_counts': dict(zip(variant_counts.index, expected_counts)),
+            'percent_deviation': dict(
+                (v, (variant_counts[v] - expected_counts[i]) /
+                 expected_counts[i] * 100)
+                for i, v in enumerate(variant_counts.index)
+            )
+        }
+
+    def check_assignment_consistency(self) -> Dict:
+        """
+        Check if users have consistent variant assignments.
+
+        Returns:
+        --------
+        Dict with consistency check results
+        """
+        # Count unique variants per user
+        variants_per_user = self.data.groupby(
+            self.user_col
+        )[self.variant_col].nunique()
+
+        inconsistent_users = variants_per_user[variants_per_user > 1]
+        n_inconsistent = len(inconsistent_users)
+        pct_inconsistent = n_inconsistent / len(variants_per_user) * 100
+
+        if pct_inconsistent > 1:
+            self.issues.append(
+                f"{n_inconsistent} users ({pct_inconsistent:.2f}%) "
+                f"with inconsistent assignments"
+            )
+        elif pct_inconsistent > 0:
+            self.warnings.append(
+                f"{n_inconsistent} users with inconsistent assignments"
+            )
+
+        return {
+            'n_inconsistent_users': n_inconsistent,
+            'pct_inconsistent': pct_inconsistent,
+            'inconsistent_user_ids': list(inconsistent_users.index),
+            'is_consistent': n_inconsistent == 0
+        }
+
+    def check_temporal_stability(self, window: str = 'D') -> Dict:
+        """
+        Check for temporal instability in metric distributions.
+
+        Parameters:
+        -----------
+        window : str
+            Pandas frequency string for grouping ('D', 'H', etc.)
+
+        Returns:
+        --------
+        Dict with temporal stability results
+        """
+        self.data[self.timestamp_col] = pd.to_datetime(
+            self.data[self.timestamp_col]
+        )
+        self.data['period'] = self.data[self.timestamp_col].dt.floor(window)
+
+        temporal_stats = {}
+
+        for metric in self.metric_cols:
+            # Calculate metric by period and variant
+            period_stats = self.data.groupby(
+                ['period', self.variant_col]
+            )[metric].agg(['mean', 'std', 'count']).reset_index()
+
+            # Calculate coefficient of variation over time
+            cv_by_variant = {}
+            for variant in period_stats[self.variant_col].unique():
+                variant_data = period_stats[
+                    period_stats[self.variant_col] == variant
+                ]
+                mean_of_means = variant_data['mean'].mean()
+                std_of_means = variant_data['mean'].std()
+                cv = std_of_means / mean_of_means if mean_of_means != 0 else np.inf
+                cv_by_variant[variant] = cv
+
+            # Flag high variability
+            max_cv = max(cv_by_variant.values())
+            if max_cv > 0.5:
+                self.warnings.append(
+                    f"High temporal variability in {metric} (CV={max_cv:.2f})"
+                )
+
+            temporal_stats[metric] = {
+                'cv_by_variant': cv_by_variant,
+                'max_cv': max_cv,
+                'period_data': period_stats
+            }
+
+        return temporal_stats
+
+    def check_missing_data(self, threshold: float = 5.0) -> Dict:
+        """
+        Analyze missing data patterns.
+
+        Parameters:
+        -----------
+        threshold : float
+            Percentage threshold for flagging high missingness
+
+        Returns:
+        --------
+        Dict with missing data analysis
+        """
+        missing_pct = (self.data.isnull().sum() / len(self.data) * 100)
+
+        high_missing = missing_pct[missing_pct > threshold]
+
+        if len(high_missing) > 0:
+            self.warnings.append(
+                f"High missing data in columns: {dict(high_missing)}"
+            )
+
+        # Check if missingness differs by variant
+        missing_by_variant = {}
+        for col in self.data.columns:
+            if self.data[col].isnull().sum() > 0:
+                missing_rates = self.data.groupby(
+                    self.variant_col
+                )[col].apply(lambda x: x.isnull().sum() / len(x) * 100)
+                missing_by_variant[col] = dict(missing_rates)
+
+        return {
+            'missing_percentages': dict(missing_pct),
+            'high_missing_columns': dict(high_missing),
+            'missing_by_variant': missing_by_variant
+        }
+
+    def check_duplicates(self) -> Dict:
+        """Check for duplicate records."""
+        n_total = len(self.data)
+        n_unique = len(self.data.drop_duplicates())
+        n_duplicates = n_total - n_unique
+        pct_duplicates = n_duplicates / n_total * 100
+
+        if pct_duplicates > 0:
+            self.warnings.append(
+                f"{n_duplicates} duplicate records ({pct_duplicates:.2f}%)"
+            )
+
+        return {
+            'n_duplicates': n_duplicates,
+            'pct_duplicates': pct_duplicates,
+            'has_duplicates': n_duplicates > 0
+        }
+
+    def check_value_ranges(self) -> Dict:
+        """Check for values outside expected ranges."""
+        range_issues = {}
+
+        for metric in self.metric_cols:
+            data_series = self.data[metric].dropna()
+
+            # Basic range statistics
+            min_val = data_series.min()
+            max_val = data_series.max()
+            mean_val = data_series.mean()
+            std_val = data_series.std()
+
+            # Check for negative values where inappropriate
+            if 'revenue' in metric.lower() or 'time' in metric.lower():
+                n_negative = (data_series < 0).sum()
+                if n_negative > 0:
+                    self.warnings.append(
+                        f"{n_negative} negative values in {metric}"
+                    )
+                    range_issues[metric] = {'negative_values': n_negative}
+
+            # Check for extreme outliers (> 5 std from mean)
+            z_scores = np.abs(stats.zscore(data_series))
+            n_extreme = (z_scores > 5).sum()
+            if n_extreme > 0:
+                self.warnings.append(
+                    f"{n_extreme} extreme outliers in {metric} (>5 SD)"
+                )
+                if metric in range_issues:
+                    range_issues[metric]['extreme_outliers'] = n_extreme
+                else:
+                    range_issues[metric] = {'extreme_outliers': n_extreme}
+
+        return range_issues
+
+    def check_novelty_effects(self, periods: int = 3) -> Dict:
+        """
+        Check for novelty effects (first-period differences).
+
+        Parameters:
+        -----------
+        periods : int
+            Number of time periods to examine
+
+        Returns:
+        --------
+        Dict with novelty effect analysis
+        """
+        self.data[self.timestamp_col] = pd.to_datetime(
+            self.data[self.timestamp_col]
+        )
+        self.data['period_rank'] = self.data.groupby(
+            self.variant_col
+        )[self.timestamp_col].rank(method='dense', pct=True)
+
+        # Split into early and late periods
+        early_cutoff = 1.0 / periods
+
+        novelty_results = {}
+        for metric in self.metric_cols:
+            early_data = self.data[self.data['period_rank'] <= early_cutoff]
+            late_data = self.data[self.data['period_rank'] > early_cutoff]
+
+            early_means = early_data.groupby(self.variant_col)[metric].mean()
+            late_means = late_data.groupby(self.variant_col)[metric].mean()
+
+            # Compare early vs late
+            relative_change = ((late_means - early_means) / early_means * 100)
+
+            novelty_results[metric] = {
+                'early_means': dict(early_means),
+                'late_means': dict(late_means),
+                'relative_change_pct': dict(relative_change)
+            }
+
+        return novelty_results
+
+    def generate_report(self) -> str:
+        """Generate human-readable validation report."""
+        results = self.run_all_checks()
+
+        report = []
+        report.append("=" * 60)
+        report.append("A/B TEST DATA VALIDATION REPORT")
+        report.append("=" * 60)
+        report.append("")
+
+        # Summary
+        summary = results['summary']
+        status = "PASSED" if summary['passed'] else "FAILED"
+        report.append(f"Overall Status: {status}")
+        report.append(f"Total Issues: {summary['total_issues']}")
+        report.append(f"Total Warnings: {summary['total_warnings']}")
+        report.append("")
+
+        # Issues
+        if summary['issues']:
+            report.append("CRITICAL ISSUES:")
+            for issue in summary['issues']:
+                report.append(f"  - {issue}")
+            report.append("")
+
+        # Warnings
+        if summary['warnings']:
+            report.append("WARNINGS:")
+            for warning in summary['warnings']:
+                report.append(f"  - {warning}")
+            report.append("")
+
+        # Detailed results
+        report.append("DETAILED RESULTS:")
+        report.append("")
+
+        # SRM
+        srm = results['sample_ratio_mismatch']
+        report.append(f"Sample Ratio Mismatch Test: p-value = {srm['p_value']:.6f}")
+        report.append(f"  Observed counts: {srm['observed_counts']}")
+        report.append("")
+
+        return "\n".join(report)
+
+# Example usage
+if __name__ == "__main__":
+    # Load experimental data
+    # data = pd.read_csv('experiment_data.csv')
+
+    # Initialize validator
+    # validator = ABTestDataValidator(
+    #     data=data,
+    #     variant_col='variant',
+    #     user_col='user_id',
+    #     timestamp_col='timestamp',
+    #     metric_cols=['conversion', 'revenue', 'engagement_time']
+    # )
+
+    # Run validation
+    # print(validator.generate_report())
+    pass
+\end{lstlisting}
+
+\subsection{Outlier Detection and Treatment}
+
+Outliers can substantially bias estimates, particularly for mean-based metrics. We need systematic approaches to detect and handle extreme values.
+
+\subsubsection{Detection Methods}
+
+\begin{enumerate}
+    \item \textbf{Statistical methods:} Z-scores, IQR, modified Z-scores
+    \item \textbf{Visual methods:} Box plots, scatter plots, histograms
+    \item \textbf{Domain knowledge:} Business rules and plausibility checks
+    \item \textbf{Robust statistics:} Median absolute deviation (MAD)
+\end{enumerate}
+
+\lstset{language=Python, caption=Comprehensive Outlier Detection}
+\begin{lstlisting}
+class OutlierDetector:
+    """
+    Multiple methods for outlier detection in A/B test data.
+    """
+
+    @staticmethod
+    def detect_zscore(data: pd.Series, threshold: float = 3) -> pd.Series:
+        """
+        Detect outliers using Z-score method.
+
+        Parameters:
+        -----------
+        data : Series
+            Numerical data
+        threshold : float
+            Z-score threshold (typically 2.5-3)
+
+        Returns:
+        --------
+        Boolean series indicating outliers
+        """
+        z_scores = np.abs(stats.zscore(data.dropna()))
+        return pd.Series(z_scores > threshold, index=data.dropna().index)
+
+    @staticmethod
+    def detect_iqr(data: pd.Series, k: float = 1.5) -> pd.Series:
+        """
+        Detect outliers using IQR method.
+
+        Parameters:
+        -----------
+        data : Series
+            Numerical data
+        k : float
+            IQR multiplier (1.5 for outliers, 3 for extreme outliers)
+
+        Returns:
+        --------
+        Boolean series indicating outliers
+        """
+        Q1 = data.quantile(0.25)
+        Q3 = data.quantile(0.75)
+        IQR = Q3 - Q1
+
+        lower_bound = Q1 - k * IQR
+        upper_bound = Q3 + k * IQR
+
+        return (data < lower_bound) | (data > upper_bound)
+
+    @staticmethod
+    def detect_mad(data: pd.Series, threshold: float = 3.5) -> pd.Series:
+        """
+        Detect outliers using Median Absolute Deviation (MAD).
+        More robust to outliers than Z-score.
+
+        Parameters:
+        -----------
+        data : Series
+            Numerical data
+        threshold : float
+            MAD threshold (typically 3.5)
+
+        Returns:
+        --------
+        Boolean series indicating outliers
+        """
+        median = data.median()
+        mad = np.median(np.abs(data - median))
+
+        # Modified Z-score
+        modified_z_scores = 0.6745 * (data - median) / mad
+
+        return np.abs(modified_z_scores) > threshold
+
+    @staticmethod
+    def detect_isolation_forest(data: pd.DataFrame,
+                               contamination: float = 0.1) -> pd.Series:
+        """
+        Detect outliers using Isolation Forest algorithm.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Numerical features
+        contamination : float
+            Expected proportion of outliers
+
+        Returns:
+        --------
+        Boolean series indicating outliers
+        """
+        from sklearn.ensemble import IsolationForest
+
+        clf = IsolationForest(contamination=contamination, random_state=42)
+        predictions = clf.fit_predict(data)
+
+        return pd.Series(predictions == -1, index=data.index)
+
+    @staticmethod
+    def detect_domain_specific(data: pd.Series,
+                              metric_name: str,
+                              business_rules: Dict = None) -> pd.Series:
+        """
+        Apply domain-specific outlier rules.
+
+        Parameters:
+        -----------
+        data : Series
+            Metric data
+        metric_name : str
+            Name of metric for rule selection
+        business_rules : Dict
+            Custom business rules {metric: {'min': val, 'max': val}}
+
+        Returns:
+        --------
+        Boolean series indicating outliers
+        """
+        if business_rules and metric_name in business_rules:
+            rules = business_rules[metric_name]
+            min_val = rules.get('min', -np.inf)
+            max_val = rules.get('max', np.inf)
+            return (data < min_val) | (data > max_val)
+
+        # Default rules for common metrics
+        if 'revenue' in metric_name.lower():
+            # Revenue should be non-negative and below some maximum
+            max_revenue = data.quantile(0.999) * 2
+            return (data < 0) | (data > max_revenue)
+
+        if 'time' in metric_name.lower():
+            # Time metrics should be non-negative
+            max_time = data.quantile(0.999) * 2
+            return (data < 0) | (data > max_time)
+
+        if 'rate' in metric_name.lower() or 'ratio' in metric_name.lower():
+            # Rates should be in [0, 1] or [0, 100]
+            return (data < 0) | (data > 100)
+
+        return pd.Series(False, index=data.index)
+
+    @staticmethod
+    def consensus_detection(data: pd.Series, methods: List[str] = None,
+                          min_agreement: int = 2) -> pd.Series:
+        """
+        Combine multiple detection methods with voting.
+
+        Parameters:
+        -----------
+        data : Series
+            Numerical data
+        methods : List[str]
+            Methods to use: ['zscore', 'iqr', 'mad']
+        min_agreement : int
+            Minimum number of methods that must agree
+
+        Returns:
+        --------
+        Boolean series indicating consensus outliers
+        """
+        if methods is None:
+            methods = ['zscore', 'iqr', 'mad']
+
+        detector = OutlierDetector()
+        results = []
+
+        if 'zscore' in methods:
+            results.append(detector.detect_zscore(data))
+        if 'iqr' in methods:
+            results.append(detector.detect_iqr(data))
+        if 'mad' in methods:
+            results.append(detector.detect_mad(data))
+
+        # Count agreements
+        agreement_count = sum(results)
+
+        return agreement_count >= min_agreement
+
+# Example visualization
+def plot_outlier_analysis(data: pd.Series, metric_name: str):
+    """Create comprehensive outlier visualization."""
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    detector = OutlierDetector()
+
+    # 1. Box plot
+    axes[0, 0].boxplot(data.dropna())
+    axes[0, 0].set_ylabel(metric_name)
+    axes[0, 0].set_title('Box Plot')
+    axes[0, 0].grid(alpha=0.3)
+
+    # 2. Histogram with outlier thresholds
+    axes[0, 1].hist(data.dropna(), bins=50, alpha=0.7, edgecolor='black')
+
+    # Add IQR bounds
+    Q1 = data.quantile(0.25)
+    Q3 = data.quantile(0.75)
+    IQR = Q3 - Q1
+    lower = Q1 - 1.5 * IQR
+    upper = Q3 + 1.5 * IQR
+
+    axes[0, 1].axvline(lower, color='red', linestyle='--',
+                       label=f'IQR Lower: {lower:.2f}')
+    axes[0, 1].axvline(upper, color='red', linestyle='--',
+                       label=f'IQR Upper: {upper:.2f}')
+    axes[0, 1].set_xlabel(metric_name)
+    axes[0, 1].set_ylabel('Frequency')
+    axes[0, 1].set_title('Distribution with IQR Bounds')
+    axes[0, 1].legend()
+    axes[0, 1].grid(alpha=0.3)
+
+    # 3. Q-Q plot
+    stats.probplot(data.dropna(), dist="norm", plot=axes[1, 0])
+    axes[1, 0].set_title('Q-Q Plot (Normal Distribution)')
+    axes[1, 0].grid(alpha=0.3)
+
+    # 4. Detection method comparison
+    methods = {
+        'Z-score': detector.detect_zscore(data),
+        'IQR': detector.detect_iqr(data),
+        'MAD': detector.detect_mad(data)
+    }
+
+    method_counts = {k: v.sum() for k, v in methods.items()}
+
+    axes[1, 1].bar(method_counts.keys(), method_counts.values())
+    axes[1, 1].set_ylabel('Number of Outliers Detected')
+    axes[1, 1].set_title('Outlier Detection Method Comparison')
+    axes[1, 1].grid(alpha=0.3)
+
+    plt.tight_layout()
+    return fig
+\end{lstlisting}
+
+\subsubsection{Treatment Strategies}
+
+Once outliers are detected, choose appropriate treatment:
+
+\begin{enumerate}
+    \item \textbf{Removal:} Delete outlier observations (use cautiously)
+    \item \textbf{Winsorization:} Cap at percentiles (e.g., 1st and 99th)
+    \item \textbf{Transformation:} Log, square root, or other transforms
+    \item \textbf{Robust statistics:} Use median, trimmed mean, or Huber loss
+    \item \textbf{Separate analysis:} Report both with and without outliers
+\end{enumerate}
+
+\lstset{language=Python, caption=Outlier Treatment Methods}
+\begin{lstlisting}
+class OutlierTreatment:
+    """Methods for treating outliers in A/B test data."""
+
+    @staticmethod
+    def winsorize(data: pd.Series,
+                  lower_percentile: float = 1,
+                  upper_percentile: float = 99) -> Tuple[pd.Series, Dict]:
+        """
+        Winsorize data by capping at percentiles.
+
+        Parameters:
+        -----------
+        data : Series
+            Numerical data
+        lower_percentile, upper_percentile : float
+            Percentile thresholds
+
+        Returns:
+        --------
+        Tuple of (winsorized data, metadata dict)
+        """
+        from scipy.stats.mstats import winsorize as scipy_winsorize
+
+        lower_bound = np.percentile(data.dropna(), lower_percentile)
+        upper_bound = np.percentile(data.dropna(), upper_percentile)
+
+        winsorized = data.clip(lower=lower_bound, upper=upper_bound)
+
+        n_capped_lower = (data < lower_bound).sum()
+        n_capped_upper = (data > upper_bound).sum()
+        n_capped_total = n_capped_lower + n_capped_upper
+
+        metadata = {
+            'lower_bound': lower_bound,
+            'upper_bound': upper_bound,
+            'n_capped_lower': n_capped_lower,
+            'n_capped_upper': n_capped_upper,
+            'n_capped_total': n_capped_total,
+            'pct_capped': n_capped_total / len(data) * 100
+        }
+
+        return winsorized, metadata
+
+    @staticmethod
+    def log_transform(data: pd.Series, offset: float = 1) -> pd.Series:
+        """
+        Apply log transformation.
+
+        Parameters:
+        -----------
+        data : Series
+            Numerical data (must be positive)
+        offset : float
+            Value to add before log (handles zeros)
+
+        Returns:
+        --------
+        Log-transformed series
+        """
+        return np.log(data + offset)
+
+    @staticmethod
+    def remove_outliers(data: pd.DataFrame,
+                       metric_col: str,
+                       method: str = 'iqr',
+                       **kwargs) -> Tuple[pd.DataFrame, Dict]:
+        """
+        Remove outlier observations.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Experimental data
+        metric_col : str
+            Column to check for outliers
+        method : str
+            Detection method: 'zscore', 'iqr', 'mad'
+        **kwargs : additional arguments for detection method
+
+        Returns:
+        --------
+        Tuple of (cleaned DataFrame, metadata dict)
+        """
+        detector = OutlierDetector()
+
+        if method == 'zscore':
+            outliers = detector.detect_zscore(data[metric_col], **kwargs)
+        elif method == 'iqr':
+            outliers = detector.detect_iqr(data[metric_col], **kwargs)
+        elif method == 'mad':
+            outliers = detector.detect_mad(data[metric_col], **kwargs)
+        else:
+            raise ValueError(f"Unknown method: {method}")
+
+        n_outliers = outliers.sum()
+        pct_removed = n_outliers / len(data) * 100
+
+        cleaned_data = data[~outliers]
+
+        metadata = {
+            'method': method,
+            'n_outliers': n_outliers,
+            'pct_removed': pct_removed,
+            'original_n': len(data),
+            'cleaned_n': len(cleaned_data)
+        }
+
+        return cleaned_data, metadata
+
+    @staticmethod
+    def trimmed_mean(data: pd.Series, trim_pct: float = 0.1) -> float:
+        """
+        Calculate trimmed mean (removes extremes from both tails).
+
+        Parameters:
+        -----------
+        data : Series
+            Numerical data
+        trim_pct : float
+            Percentage to trim from each tail (0.1 = 10%)
+
+        Returns:
+        --------
+        Trimmed mean value
+        """
+        from scipy.stats import trim_mean
+        return trim_mean(data.dropna(), trim_pct)
+
+    @staticmethod
+    def compare_treatments(data: pd.DataFrame,
+                          metric_col: str,
+                          variant_col: str = 'variant') -> pd.DataFrame:
+        """
+        Compare effect estimates under different treatments.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Experimental data
+        metric_col : str
+            Metric to analyze
+        variant_col : str
+            Variant column
+
+        Returns:
+        --------
+        DataFrame comparing treatment methods
+        """
+        treatment = OutlierTreatment()
+
+        results = []
+
+        # Original data
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant][metric_col]
+            results.append({
+                'treatment': 'original',
+                'variant': variant,
+                'mean': variant_data.mean(),
+                'median': variant_data.median(),
+                'std': variant_data.std(),
+                'n': len(variant_data)
+            })
+
+        # Winsorized
+        data_wins = data.copy()
+        data_wins[f'{metric_col}_wins'], _ = treatment.winsorize(
+            data[metric_col]
+        )
+        for variant in data_wins[variant_col].unique():
+            variant_data = data_wins[
+                data_wins[variant_col] == variant
+            ][f'{metric_col}_wins']
+            results.append({
+                'treatment': 'winsorized',
+                'variant': variant,
+                'mean': variant_data.mean(),
+                'median': variant_data.median(),
+                'std': variant_data.std(),
+                'n': len(variant_data)
+            })
+
+        # Log-transformed
+        if (data[metric_col] > 0).all():
+            data_log = data.copy()
+            data_log[f'{metric_col}_log'] = treatment.log_transform(
+                data[metric_col]
+            )
+            for variant in data_log[variant_col].unique():
+                variant_data = data_log[
+                    data_log[variant_col] == variant
+                ][f'{metric_col}_log']
+                results.append({
+                    'treatment': 'log_transform',
+                    'variant': variant,
+                    'mean': variant_data.mean(),
+                    'median': variant_data.median(),
+                    'std': variant_data.std(),
+                    'n': len(variant_data)
+                })
+
+        # Outliers removed
+        data_clean, _ = treatment.remove_outliers(
+            data, metric_col, method='iqr'
+        )
+        for variant in data_clean[variant_col].unique():
+            variant_data = data_clean[
+                data_clean[variant_col] == variant
+            ][metric_col]
+            results.append({
+                'treatment': 'outliers_removed',
+                'variant': variant,
+                'mean': variant_data.mean(),
+                'median': variant_data.median(),
+                'std': variant_data.std(),
+                'n': len(variant_data)
+            })
+
+        return pd.DataFrame(results)
+\end{lstlisting}
+
+\subsection{Missing Data Handling}
+
+Missing data is ubiquitous in A/B tests. The approach depends on the missingness mechanism:
+
+\begin{itemize}
+    \item \textbf{MCAR (Missing Completely At Random):} Missingness independent of any variable
+    \item \textbf{MAR (Missing At Random):} Missingness depends on observed variables
+    \item \textbf{MNAR (Missing Not At Random):} Missingness depends on unobserved variables
+\end{itemize}
+
+\lstset{language=Python, caption=Missing Data Analysis and Imputation}
+\begin{lstlisting}
+class MissingDataHandler:
+    """
+    Comprehensive missing data analysis and treatment.
+    """
+
+    @staticmethod
+    def analyze_missingness(data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Comprehensive missing data analysis.
+
+        Returns:
+        --------
+        DataFrame with missingness statistics per column
+        """
+        missing_stats = []
+
+        for col in data.columns:
+            n_missing = data[col].isnull().sum()
+            pct_missing = n_missing / len(data) * 100
+
+            missing_stats.append({
+                'column': col,
+                'n_missing': n_missing,
+                'pct_missing': pct_missing,
+                'dtype': str(data[col].dtype)
+            })
+
+        return pd.DataFrame(missing_stats).sort_values(
+            'pct_missing', ascending=False
+        )
+
+    @staticmethod
+    def test_mcar(data: pd.DataFrame,
+                  target_col: str,
+                  predictor_cols: List[str] = None) -> Dict:
+        """
+        Test if data is Missing Completely At Random using Little's test.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Data with missing values
+        target_col : str
+            Column to test for MCAR
+        predictor_cols : List[str]
+            Columns to use as predictors
+
+        Returns:
+        --------
+        Dict with test results
+        """
+        if predictor_cols is None:
+            predictor_cols = [c for c in data.columns if c != target_col]
+
+        # Create missingness indicator
+        data_test = data[predictor_cols + [target_col]].copy()
+        data_test['is_missing'] = data_test[target_col].isnull().astype(int)
+
+        # Test if predictors differ between missing and non-missing
+        results = {}
+        for col in predictor_cols:
+            if data_test[col].dtype in ['int64', 'float64']:
+                # T-test for numerical predictors
+                missing_group = data_test[
+                    data_test['is_missing'] == 1
+                ][col].dropna()
+                present_group = data_test[
+                    data_test['is_missing'] == 0
+                ][col].dropna()
+
+                if len(missing_group) > 0 and len(present_group) > 0:
+                    t_stat, p_val = stats.ttest_ind(
+                        missing_group, present_group
+                    )
+                    results[col] = {
+                        'test': 't-test',
+                        'statistic': t_stat,
+                        'p_value': p_val,
+                        'differs_significantly': p_val < 0.05
+                    }
+
+        # Overall assessment
+        n_significant = sum(
+            1 for r in results.values() if r.get('differs_significantly', False)
+        )
+
+        likely_mcar = n_significant == 0
+
+        return {
+            'predictor_tests': results,
+            'n_significant_predictors': n_significant,
+            'likely_mcar': likely_mcar
+        }
+
+    @staticmethod
+    def simple_imputation(data: pd.DataFrame,
+                         col: str,
+                         method: str = 'mean',
+                         variant_col: str = None) -> pd.Series:
+        """
+        Simple imputation methods.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Data with missing values
+        col : str
+            Column to impute
+        method : str
+            'mean', 'median', 'mode', or 'forward_fill'
+        variant_col : str
+            If provided, impute within variants
+
+        Returns:
+        --------
+        Series with imputed values
+        """
+        if variant_col:
+            # Impute within each variant
+            result = data[col].copy()
+            for variant in data[variant_col].unique():
+                mask = data[variant_col] == variant
+                variant_data = data.loc[mask, col]
+
+                if method == 'mean':
+                    fill_value = variant_data.mean()
+                elif method == 'median':
+                    fill_value = variant_data.median()
+                elif method == 'mode':
+                    fill_value = variant_data.mode()[0]
+                else:
+                    raise ValueError(f"Unknown method: {method}")
+
+                result.loc[mask] = variant_data.fillna(fill_value)
+
+            return result
+        else:
+            # Global imputation
+            if method == 'mean':
+                return data[col].fillna(data[col].mean())
+            elif method == 'median':
+                return data[col].fillna(data[col].median())
+            elif method == 'mode':
+                return data[col].fillna(data[col].mode()[0])
+            elif method == 'forward_fill':
+                return data[col].fillna(method='ffill')
+            else:
+                raise ValueError(f"Unknown method: {method}")
+
+    @staticmethod
+    def multiple_imputation(data: pd.DataFrame,
+                           cols_to_impute: List[str],
+                           n_imputations: int = 5) -> List[pd.DataFrame]:
+        """
+        Multiple imputation using MICE algorithm.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Data with missing values
+        cols_to_impute : List[str]
+            Columns to impute
+        n_imputations : int
+            Number of imputed datasets to create
+
+        Returns:
+        --------
+        List of imputed DataFrames
+        """
+        from sklearn.experimental import enable_iterative_imputer
+        from sklearn.impute import IterativeImputer
+
+        imputer = IterativeImputer(
+            max_iter=10,
+            random_state=42,
+            sample_posterior=True
+        )
+
+        imputed_datasets = []
+
+        for i in range(n_imputations):
+            data_imputed = data.copy()
+            imputer.set_params(random_state=42 + i)
+
+            # Impute numerical columns
+            numerical_cols = data[cols_to_impute].select_dtypes(
+                include=['float64', 'int64']
+            ).columns
+
+            if len(numerical_cols) > 0:
+                imputed_values = imputer.fit_transform(
+                    data[numerical_cols]
+                )
+                data_imputed[numerical_cols] = imputed_values
+
+            imputed_datasets.append(data_imputed)
+
+        return imputed_datasets
+
+    @staticmethod
+    def analyze_with_multiple_imputation(
+        imputed_datasets: List[pd.DataFrame],
+        variant_col: str,
+        metric_col: str
+    ) -> Dict:
+        """
+        Analyze with multiple imputation and pool results (Rubin's rules).
+
+        Parameters:
+        -----------
+        imputed_datasets : List[DataFrame]
+            List of imputed datasets
+        variant_col : str
+            Variant column
+        metric_col : str
+            Metric to analyze
+
+        Returns:
+        --------
+        Dict with pooled results
+        """
+        estimates = []
+        variances = []
+
+        for data_imp in imputed_datasets:
+            # Calculate treatment effect in this imputed dataset
+            variants = data_imp[variant_col].unique()
+            if len(variants) == 2:
+                control = variants[0]
+                treatment = variants[1]
+
+                control_data = data_imp[
+                    data_imp[variant_col] == control
+                ][metric_col]
+                treatment_data = data_imp[
+                    data_imp[variant_col] == treatment
+                ][metric_col]
+
+                # Difference in means
+                diff = treatment_data.mean() - control_data.mean()
+
+                # Variance of difference
+                var_diff = (
+                    control_data.var() / len(control_data) +
+                    treatment_data.var() / len(treatment_data)
+                )
+
+                estimates.append(diff)
+                variances.append(var_diff)
+
+        # Pool using Rubin's rules
+        m = len(imputed_datasets)
+
+        # Pooled estimate
+        pooled_estimate = np.mean(estimates)
+
+        # Within-imputation variance
+        within_var = np.mean(variances)
+
+        # Between-imputation variance
+        between_var = np.var(estimates, ddof=1)
+
+        # Total variance
+        total_var = within_var + (1 + 1/m) * between_var
+
+        # Standard error
+        se = np.sqrt(total_var)
+
+        # Degrees of freedom (Barnard-Rubin adjustment)
+        df = (m - 1) * (1 + within_var / ((1 + 1/m) * between_var)) ** 2
+
+        # Confidence interval
+        t_crit = stats.t.ppf(0.975, df)
+        ci_lower = pooled_estimate - t_crit * se
+        ci_upper = pooled_estimate + t_crit * se
+
+        return {
+            'pooled_estimate': pooled_estimate,
+            'standard_error': se,
+            'ci_lower': ci_lower,
+            'ci_upper': ci_upper,
+            'within_variance': within_var,
+            'between_variance': between_var,
+            'total_variance': total_var,
+            'degrees_of_freedom': df,
+            'individual_estimates': estimates
+        }
+\end{lstlisting}
+
+\subsection{Data Transformation Techniques}
+
+Transformations can improve adherence to statistical assumptions (normality, homoscedasticity).
+
+\begin{enumerate}
+    \item \textbf{Log transformation:} For right-skewed data ($y' = \log(y)$)
+    \item \textbf{Square root:} For count data ($y' = \sqrt{y}$)
+    \item \textbf{Box-Cox:} General power transformation
+    \item \textbf{Logit:} For proportions ($y' = \log(p/(1-p))$)
+    \item \textbf{Standardization:} Zero mean, unit variance ($y' = (y - \mu)/\sigma$)
+\end{enumerate}
+
+\lstset{language=Python, caption=Data Transformation Functions}
+\begin{lstlisting}
+class DataTransformer:
+    """Data transformation methods for A/B test analysis."""
+
+    @staticmethod
+    def log_transform(data: pd.Series, offset: float = 1) -> pd.Series:
+        """Log transformation with offset for zeros."""
+        return np.log(data + offset)
+
+    @staticmethod
+    def sqrt_transform(data: pd.Series) -> pd.Series:
+        """Square root transformation for count data."""
+        return np.sqrt(data)
+
+    @staticmethod
+    def boxcox_transform(data: pd.Series) -> Tuple[pd.Series, float]:
+        """
+        Box-Cox transformation.
+
+        Returns:
+        --------
+        Tuple of (transformed data, lambda parameter)
+        """
+        from scipy.stats import boxcox
+
+        # Box-Cox requires positive data
+        if (data <= 0).any():
+            offset = abs(data.min()) + 1
+            data_positive = data + offset
+        else:
+            data_positive = data
+
+        transformed, lambda_param = boxcox(data_positive)
+
+        return pd.Series(transformed, index=data.index), lambda_param
+
+    @staticmethod
+    def standardize(data: pd.Series) -> pd.Series:
+        """Z-score standardization."""
+        return (data - data.mean()) / data.std()
+
+    @staticmethod
+    def recommend_transformation(data: pd.Series) -> str:
+        """
+        Recommend transformation based on data characteristics.
+
+        Returns:
+        --------
+        str : Recommended transformation
+        """
+        # Check skewness
+        skew = stats.skew(data.dropna())
+
+        # Check if data has zeros
+        has_zeros = (data == 0).any()
+
+        # Check if all positive
+        all_positive = (data > 0).all()
+
+        # Check range
+        data_range = data.max() - data.min()
+        mean_val = data.mean()
+
+        # Decision tree for recommendation
+        if abs(skew) < 0.5:
+            return "none (data is approximately symmetric)"
+
+        if skew > 1 and all_positive:
+            return "log (right-skewed, positive data)"
+
+        if skew > 1 and has_zeros:
+            return "log_with_offset (right-skewed with zeros)"
+
+        if skew < -1:
+            return "reflect_and_log (left-skewed)"
+
+        if 0.5 <= abs(skew) <= 1:
+            return "sqrt (moderately skewed)"
+
+        return "boxcox (general power transformation)"
+
+    @staticmethod
+    def assess_normality(data: pd.Series) -> Dict:
+        """
+        Assess normality using multiple tests.
+
+        Returns:
+        --------
+        Dict with normality test results
+        """
+        # Shapiro-Wilk test (good for n < 5000)
+        if len(data) < 5000:
+            shapiro_stat, shapiro_p = stats.shapiro(data.dropna())
+        else:
+            shapiro_stat, shapiro_p = None, None
+
+        # Anderson-Darling test
+        anderson_result = stats.anderson(data.dropna())
+
+        # Kolmogorov-Smirnov test
+        ks_stat, ks_p = stats.kstest(
+            data.dropna(),
+            'norm',
+            args=(data.mean(), data.std())
+        )
+
+        # Skewness and kurtosis
+        skewness = stats.skew(data.dropna())
+        kurt = stats.kurtosis(data.dropna())
+
+        return {
+            'shapiro_statistic': shapiro_stat,
+            'shapiro_p_value': shapiro_p,
+            'is_normal_shapiro': shapiro_p > 0.05 if shapiro_p else None,
+            'ks_statistic': ks_stat,
+            'ks_p_value': ks_p,
+            'is_normal_ks': ks_p > 0.05,
+            'skewness': skewness,
+            'kurtosis': kurt,
+            'anderson_statistic': anderson_result.statistic,
+            'anderson_critical_values': anderson_result.critical_values
+        }
+
+    @staticmethod
+    def compare_transformations(data: pd.DataFrame,
+                               metric_col: str,
+                               transformations: List[str] = None) -> pd.DataFrame:
+        """
+        Compare normality under different transformations.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Data to transform
+        metric_col : str
+            Column to transform
+        transformations : List[str]
+            List of transformations to try
+
+        Returns:
+        --------
+        DataFrame comparing transformation results
+        """
+        if transformations is None:
+            transformations = ['none', 'log', 'sqrt', 'boxcox']
+
+        transformer = DataTransformer()
+        results = []
+
+        for trans in transformations:
+            if trans == 'none':
+                transformed = data[metric_col]
+            elif trans == 'log':
+                transformed = transformer.log_transform(data[metric_col])
+            elif trans == 'sqrt':
+                transformed = transformer.sqrt_transform(data[metric_col])
+            elif trans == 'boxcox':
+                transformed, _ = transformer.boxcox_transform(data[metric_col])
+            else:
+                continue
+
+            # Assess normality
+            normality = transformer.assess_normality(transformed)
+
+            results.append({
+                'transformation': trans,
+                'skewness': normality['skewness'],
+                'kurtosis': normality['kurtosis'],
+                'shapiro_p': normality['shapiro_p_value'],
+                'ks_p': normality['ks_p_value'],
+                'is_normal': normality['is_normal_ks']
+            })
+
+        return pd.DataFrame(results).sort_values(
+            'shapiro_p' if results[0]['shapiro_p'] else 'ks_p',
+            ascending=False
+        )
+\end{lstlisting}
+
+\subsection{Quality Assurance Checks}
+
+Final QA before analysis:
+
+\lstset{language=Python, caption=Pre-Analysis Quality Assurance}
+\begin{lstlisting}
+def run_pre_analysis_qa(data: pd.DataFrame,
+                        variant_col: str = 'variant',
+                        metric_cols: List[str] = None,
+                        user_col: str = 'user_id',
+                        timestamp_col: str = 'timestamp') -> Dict:
+    """
+    Comprehensive pre-analysis quality assurance.
+
+    Returns:
+    --------
+    Dict with QA results and recommendations
+    """
+    qa_results = {
+        'passed': True,
+        'errors': [],
+        'warnings': [],
+        'recommendations': []
+    }
+
+    # 1. Data validation
+    validator = ABTestDataValidator(
+        data=data,
+        variant_col=variant_col,
+        user_col=user_col,
+        timestamp_col=timestamp_col,
+        metric_cols=metric_cols
+    )
+
+    validation = validator.run_all_checks()
+
+    if not validation['summary']['passed']:
+        qa_results['passed'] = False
+        qa_results['errors'].extend(validation['summary']['issues'])
+
+    qa_results['warnings'].extend(validation['summary']['warnings'])
+
+    # 2. Missing data analysis
+    if metric_cols:
+        missing_handler = MissingDataHandler()
+        missing_analysis = missing_handler.analyze_missingness(
+            data[metric_cols]
+        )
+
+        high_missing = missing_analysis[
+            missing_analysis['pct_missing'] > 5
+        ]
+
+        if len(high_missing) > 0:
+            qa_results['warnings'].append(
+                f"High missing data in {len(high_missing)} metrics"
+            )
+            qa_results['recommendations'].append(
+                "Consider multiple imputation for metrics with >5% missing"
+            )
+
+    # 3. Outlier detection
+    if metric_cols:
+        detector = OutlierDetector()
+        for metric in metric_cols:
+            outliers_iqr = detector.detect_iqr(data[metric])
+            pct_outliers = outliers_iqr.sum() / len(data) * 100
+
+            if pct_outliers > 5:
+                qa_results['warnings'].append(
+                    f"{metric}: {pct_outliers:.1f}% outliers detected"
+                )
+                qa_results['recommendations'].append(
+                    f"Consider winsorization for {metric}"
+                )
+
+    # 4. Normality assessment
+    if metric_cols:
+        transformer = DataTransformer()
+        for metric in metric_cols:
+            normality = transformer.assess_normality(data[metric].dropna())
+
+            if not normality['is_normal_ks']:
+                skew = normality['skewness']
+                qa_results['recommendations'].append(
+                    f"{metric} is non-normal (skewness={skew:.2f}). "
+                    f"Consider transformation or non-parametric tests."
+                )
+
+    # 5. Sample size check
+    variant_sizes = data[variant_col].value_counts()
+    min_size = variant_sizes.min()
+
+    if min_size < 100:
+        qa_results['warnings'].append(
+            f"Small sample size: minimum n={min_size}"
+        )
+        qa_results['recommendations'].append(
+            "Small sample size may limit statistical power"
+        )
+
+    return qa_results
+
+# Generate QA report
+def generate_qa_report(qa_results: Dict) -> str:
+    """Generate human-readable QA report."""
+    report = []
+    report.append("=" * 60)
+    report.append("PRE-ANALYSIS QUALITY ASSURANCE REPORT")
+    report.append("=" * 60)
+    report.append("")
+
+    # Status
+    status = "PASSED" if qa_results['passed'] else "FAILED"
+    report.append(f"Status: {status}")
+    report.append("")
+
+    # Errors
+    if qa_results['errors']:
+        report.append("ERRORS (Must Fix):")
+        for error in qa_results['errors']:
+            report.append(f"  X {error}")
+        report.append("")
+
+    # Warnings
+    if qa_results['warnings']:
+        report.append("WARNINGS:")
+        for warning in qa_results['warnings']:
+            report.append(f"  ! {warning}")
+        report.append("")
+
+    # Recommendations
+    if qa_results['recommendations']:
+        report.append("RECOMMENDATIONS:")
+        for rec in qa_results['recommendations']:
+            report.append(f"  - {rec}")
+        report.append("")
+
+    return "\n".join(report)
+\end{lstlisting}
+
+\section{Exploratory Data Analysis}
+
+After preprocessing, conduct systematic exploratory analysis to understand data structure, distributions, and relationships.
+
+\subsection{Descriptive Statistics}
+
+Compute comprehensive summary statistics:
+
+\lstset{language=Python, caption=Descriptive Statistics Framework}
+\begin{lstlisting}
+class DescriptiveStats:
+    """Comprehensive descriptive statistics for A/B tests."""
+
+    @staticmethod
+    def summary_statistics(data: pd.DataFrame,
+                          metric_col: str,
+                          variant_col: str = 'variant') -> pd.DataFrame:
+        """
+        Calculate comprehensive summary statistics by variant.
+
+        Returns:
+        --------
+        DataFrame with summary statistics
+        """
+        def compute_stats(series: pd.Series) -> Dict:
+            """Compute statistics for a series."""
+            return {
+                'n': len(series),
+                'n_missing': series.isnull().sum(),
+                'mean': series.mean(),
+                'median': series.median(),
+                'std': series.std(),
+                'min': series.min(),
+                'q25': series.quantile(0.25),
+                'q50': series.quantile(0.50),
+                'q75': series.quantile(0.75),
+                'max': series.max(),
+                'iqr': series.quantile(0.75) - series.quantile(0.25),
+                'skewness': stats.skew(series.dropna()),
+                'kurtosis': stats.kurtosis(series.dropna()),
+                'cv': series.std() / series.mean() if series.mean() != 0 else np.inf
+            }
+
+        # Overall statistics
+        overall = compute_stats(data[metric_col])
+        overall['variant'] = 'overall'
+
+        # By variant
+        variant_stats = []
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant][metric_col]
+            stats_dict = compute_stats(variant_data)
+            stats_dict['variant'] = variant
+            variant_stats.append(stats_dict)
+
+        # Combine
+        all_stats = [overall] + variant_stats
+
+        return pd.DataFrame(all_stats).set_index('variant')
+
+    @staticmethod
+    def confidence_intervals(data: pd.DataFrame,
+                           metric_col: str,
+                           variant_col: str = 'variant',
+                           confidence_level: float = 0.95) -> pd.DataFrame:
+        """
+        Calculate confidence intervals for means.
+
+        Returns:
+        --------
+        DataFrame with confidence intervals
+        """
+        results = []
+
+        alpha = 1 - confidence_level
+
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant][metric_col].dropna()
+
+            n = len(variant_data)
+            mean = variant_data.mean()
+            sem = stats.sem(variant_data)
+
+            # T-distribution for CI
+            ci = stats.t.interval(
+                confidence_level,
+                df=n-1,
+                loc=mean,
+                scale=sem
+            )
+
+            results.append({
+                'variant': variant,
+                'mean': mean,
+                'sem': sem,
+                'ci_lower': ci[0],
+                'ci_upper': ci[1],
+                'ci_width': ci[1] - ci[0],
+                'n': n
+            })
+
+        return pd.DataFrame(results)
+
+    @staticmethod
+    def proportion_statistics(data: pd.DataFrame,
+                             success_col: str,
+                             variant_col: str = 'variant',
+                             confidence_level: float = 0.95) -> pd.DataFrame:
+        """
+        Calculate statistics for binary/proportion metrics.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Experimental data
+        success_col : str
+            Binary column (0/1) indicating success
+        variant_col : str
+            Variant column
+        confidence_level : float
+            CI confidence level
+
+        Returns:
+        --------
+        DataFrame with proportion statistics and CIs
+        """
+        from statsmodels.stats.proportion import proportion_confint
+
+        results = []
+
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant]
+
+            n = len(variant_data)
+            successes = variant_data[success_col].sum()
+            rate = successes / n
+
+            # Wilson score interval (better for proportions)
+            ci_lower, ci_upper = proportion_confint(
+                successes,
+                n,
+                alpha=1-confidence_level,
+                method='wilson'
+            )
+
+            # Standard error
+            se = np.sqrt(rate * (1 - rate) / n)
+
+            results.append({
+                'variant': variant,
+                'n': n,
+                'successes': successes,
+                'rate': rate,
+                'se': se,
+                'ci_lower': ci_lower,
+                'ci_upper': ci_upper,
+                'ci_width': ci_upper - ci_lower
+            })
+
+        return pd.DataFrame(results)
+\end{lstlisting}
+
+\subsection{Visualization Techniques}
+
+Effective visualizations reveal patterns and communicate findings.
+
+\lstset{language=Python, caption=Comprehensive EDA Visualizations}
+\begin{lstlisting}
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+
+class EDAVisualizer:
+    """Create comprehensive EDA visualizations."""
+
+    def __init__(self, style: str = 'seaborn-v0_8'):
+        """Initialize visualizer with style."""
+        plt.style.use(style)
+        sns.set_palette("husl")
+
+    def create_dashboard(self,
+                        data: pd.DataFrame,
+                        metric_col: str,
+                        variant_col: str = 'variant',
+                        timestamp_col: str = None) -> plt.Figure:
+        """
+        Create comprehensive EDA dashboard.
+
+        Returns:
+        --------
+        Matplotlib figure with multiple subplots
+        """
+        fig = plt.figure(figsize=(16, 12))
+        gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
+
+        # 1. Distribution comparison (top left)
+        ax1 = fig.add_subplot(gs[0, 0])
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant][metric_col].dropna()
+            ax1.hist(variant_data, bins=50, alpha=0.6, label=f'{variant}')
+        ax1.set_xlabel(metric_col)
+        ax1.set_ylabel('Frequency')
+        ax1.set_title('Distribution by Variant')
+        ax1.legend()
+        ax1.grid(alpha=0.3)
+
+        # 2. Box plot comparison (top middle)
+        ax2 = fig.add_subplot(gs[0, 1])
+        data.boxplot(column=metric_col, by=variant_col, ax=ax2)
+        ax2.set_xlabel('Variant')
+        ax2.set_ylabel(metric_col)
+        ax2.set_title('Box Plot Comparison')
+        plt.sca(ax2)
+        plt.xticks(rotation=0)
+
+        # 3. Violin plot (top right)
+        ax3 = fig.add_subplot(gs[0, 2])
+        sns.violinplot(data=data, x=variant_col, y=metric_col, ax=ax3)
+        ax3.set_title('Violin Plot')
+        ax3.grid(alpha=0.3)
+
+        # 4. Mean with confidence intervals (middle left)
+        ax4 = fig.add_subplot(gs[1, 0])
+        desc_stats = DescriptiveStats()
+        ci_data = desc_stats.confidence_intervals(data, metric_col, variant_col)
+
+        x_pos = range(len(ci_data))
+        ax4.errorbar(
+            x_pos,
+            ci_data['mean'],
+            yerr=[
+                ci_data['mean'] - ci_data['ci_lower'],
+                ci_data['ci_upper'] - ci_data['mean']
+            ],
+            fmt='o',
+            markersize=8,
+            capsize=5,
+            capthick=2
+        )
+        ax4.set_xticks(x_pos)
+        ax4.set_xticklabels(ci_data['variant'])
+        ax4.set_ylabel(f'Mean {metric_col}')
+        ax4.set_title('Means with 95% Confidence Intervals')
+        ax4.grid(alpha=0.3)
+
+        # 5. Q-Q plots (middle middle and right)
+        variants = data[variant_col].unique()
+        for idx, variant in enumerate(variants[:2]):
+            ax = fig.add_subplot(gs[1, idx + 1])
+            variant_data = data[data[variant_col] == variant][metric_col].dropna()
+            stats.probplot(variant_data, dist="norm", plot=ax)
+            ax.set_title(f'Q-Q Plot: {variant}')
+            ax.grid(alpha=0.3)
+
+        # 6. Time series (bottom row - if timestamp available)
+        if timestamp_col:
+            ax6 = fig.add_subplot(gs[2, :])
+            data[timestamp_col] = pd.to_datetime(data[timestamp_col])
+
+            # Daily aggregation
+            daily_data = data.groupby(
+                [pd.Grouper(key=timestamp_col, freq='D'), variant_col]
+            )[metric_col].agg(['mean', 'sem', 'count']).reset_index()
+
+            for variant in data[variant_col].unique():
+                variant_daily = daily_data[daily_data[variant_col] == variant]
+
+                ax6.plot(
+                    variant_daily[timestamp_col],
+                    variant_daily['mean'],
+                    marker='o',
+                    label=f'{variant}',
+                    linewidth=2
+                )
+
+                # Add confidence bands
+                ax6.fill_between(
+                    variant_daily[timestamp_col],
+                    variant_daily['mean'] - 1.96 * variant_daily['sem'],
+                    variant_daily['mean'] + 1.96 * variant_daily['sem'],
+                    alpha=0.2
+                )
+
+            ax6.set_xlabel('Date')
+            ax6.set_ylabel(f'Daily Mean {metric_col}')
+            ax6.set_title('Time Series with 95% Confidence Bands')
+            ax6.legend()
+            ax6.grid(alpha=0.3)
+            plt.setp(ax6.xaxis.get_majorticklabels(), rotation=45)
+        else:
+            # 7. CDF comparison (bottom left)
+            ax7 = fig.add_subplot(gs[2, 0])
+            for variant in data[variant_col].unique():
+                variant_data = data[
+                    data[variant_col] == variant
+                ][metric_col].dropna().sort_values()
+
+                cdf = np.arange(1, len(variant_data) + 1) / len(variant_data)
+                ax7.plot(variant_data, cdf, label=f'{variant}', linewidth=2)
+
+            ax7.set_xlabel(metric_col)
+            ax7.set_ylabel('Cumulative Probability')
+            ax7.set_title('Empirical CDF Comparison')
+            ax7.legend()
+            ax7.grid(alpha=0.3)
+
+            # 8. Density plot (bottom middle)
+            ax8 = fig.add_subplot(gs[2, 1])
+            for variant in data[variant_col].unique():
+                variant_data = data[data[variant_col] == variant][metric_col].dropna()
+                sns.kdeplot(data=variant_data, label=f'{variant}', ax=ax8, linewidth=2)
+            ax8.set_xlabel(metric_col)
+            ax8.set_ylabel('Density')
+            ax8.set_title('Kernel Density Estimation')
+            ax8.legend()
+            ax8.grid(alpha=0.3)
+
+            # 9. Summary statistics table (bottom right)
+            ax9 = fig.add_subplot(gs[2, 2])
+            ax9.axis('tight')
+            ax9.axis('off')
+
+            summary = desc_stats.summary_statistics(data, metric_col, variant_col)
+            summary_display = summary[['mean', 'median', 'std', 'n']].round(2)
+
+            table = ax9.table(
+                cellText=summary_display.values,
+                colLabels=summary_display.columns,
+                rowLabels=summary_display.index,
+                cellLoc='center',
+                loc='center'
+            )
+            table.auto_set_font_size(False)
+            table.set_fontsize(9)
+            table.scale(1, 2)
+            ax9.set_title('Summary Statistics')
+
+        plt.suptitle(f'Exploratory Data Analysis: {metric_col}',
+                     fontsize=16, y=0.995)
+
+        return fig
+
+    def create_interactive_dashboard(self,
+                                    data: pd.DataFrame,
+                                    metric_col: str,
+                                    variant_col: str = 'variant',
+                                    timestamp_col: str = None):
+        """
+        Create interactive Plotly dashboard.
+
+        Returns:
+        --------
+        Plotly figure object
+        """
+        # Create subplots
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=(
+                'Distribution Comparison',
+                'Box Plot',
+                'Time Series' if timestamp_col else 'CDF Comparison',
+                'Mean Comparison'
+            ),
+            specs=[
+                [{"type": "histogram"}, {"type": "box"}],
+                [{"type": "scatter"}, {"type": "bar"}]
+            ]
+        )
+
+        # 1. Histogram
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant][metric_col].dropna()
+            fig.add_trace(
+                go.Histogram(
+                    x=variant_data,
+                    name=str(variant),
+                    opacity=0.7,
+                    nbinsx=50
+                ),
+                row=1, col=1
+            )
+
+        # 2. Box plot
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant][metric_col].dropna()
+            fig.add_trace(
+                go.Box(
+                    y=variant_data,
+                    name=str(variant),
+                    boxmean='sd'
+                ),
+                row=1, col=2
+            )
+
+        # 3. Time series or CDF
+        if timestamp_col:
+            data[timestamp_col] = pd.to_datetime(data[timestamp_col])
+            daily_data = data.groupby(
+                [pd.Grouper(key=timestamp_col, freq='D'), variant_col]
+            )[metric_col].mean().reset_index()
+
+            for variant in data[variant_col].unique():
+                variant_daily = daily_data[daily_data[variant_col] == variant]
+                fig.add_trace(
+                    go.Scatter(
+                        x=variant_daily[timestamp_col],
+                        y=variant_daily[metric_col],
+                        name=str(variant),
+                        mode='lines+markers'
+                    ),
+                    row=2, col=1
+                )
+        else:
+            # CDF
+            for variant in data[variant_col].unique():
+                variant_data = data[
+                    data[variant_col] == variant
+                ][metric_col].dropna().sort_values()
+
+                cdf = np.arange(1, len(variant_data) + 1) / len(variant_data)
+                fig.add_trace(
+                    go.Scatter(
+                        x=variant_data,
+                        y=cdf,
+                        name=str(variant),
+                        mode='lines'
+                    ),
+                    row=2, col=1
+                )
+
+        # 4. Mean comparison
+        desc_stats = DescriptiveStats()
+        ci_data = desc_stats.confidence_intervals(data, metric_col, variant_col)
+
+        fig.add_trace(
+            go.Bar(
+                x=ci_data['variant'].astype(str),
+                y=ci_data['mean'],
+                error_y=dict(
+                    type='data',
+                    symmetric=False,
+                    array=ci_data['ci_upper'] - ci_data['mean'],
+                    arrayminus=ci_data['mean'] - ci_data['ci_lower']
+                ),
+                name='Mean with 95% CI'
+            ),
+            row=2, col=2
+        )
+
+        # Update layout
+        fig.update_layout(
+            height=800,
+            showlegend=True,
+            title_text=f"Interactive EDA Dashboard: {metric_col}"
+        )
+
+        fig.update_xaxes(title_text=metric_col, row=1, col=1)
+        fig.update_yaxes(title_text="Frequency", row=1, col=1)
+
+        fig.update_yaxes(title_text=metric_col, row=1, col=2)
+
+        if timestamp_col:
+            fig.update_xaxes(title_text="Date", row=2, col=1)
+            fig.update_yaxes(title_text=f"Mean {metric_col}", row=2, col=1)
+        else:
+            fig.update_xaxes(title_text=metric_col, row=2, col=1)
+            fig.update_yaxes(title_text="Cumulative Probability", row=2, col=1)
+
+        fig.update_xaxes(title_text="Variant", row=2, col=2)
+        fig.update_yaxes(title_text=f"Mean {metric_col}", row=2, col=2)
+
+        return fig
+\end{lstlisting}
+
+\subsection{Distribution Analysis}
+
+Understanding the underlying distribution of metrics is critical for selecting appropriate statistical tests and interpreting results.
+
+\lstset{language=Python, caption=Distribution Analysis Functions}
+\begin{lstlisting}
+class DistributionAnalyzer:
+    """Analyze and compare distributions in A/B test data."""
+
+    @staticmethod
+    def compare_distributions(data: pd.DataFrame,
+                            metric_col: str,
+                            variant_col: str = 'variant') -> Dict:
+        """
+        Compare distributions between variants using statistical tests.
+
+        Returns:
+        --------
+        Dict with distribution comparison results
+        """
+        from scipy import stats
+
+        variants = data[variant_col].unique()
+        if len(variants) != 2:
+            raise ValueError("This function requires exactly 2 variants")
+
+        control = variants[0]
+        treatment = variants[1]
+
+        control_data = data[data[variant_col] == control][metric_col].dropna()
+        treatment_data = data[data[variant_col] == treatment][metric_col].dropna()
+
+        results = {}
+
+        # Kolmogorov-Smirnov test
+        ks_stat, ks_p = stats.ks_2samp(control_data, treatment_data)
+        results['ks_test'] = {
+            'statistic': ks_stat,
+            'p_value': ks_p,
+            'distributions_differ': ks_p < 0.05
+        }
+
+        # Mann-Whitney U test (for medians)
+        mw_stat, mw_p = stats.mannwhitneyu(
+            control_data, treatment_data, alternative='two-sided'
+        )
+        results['mann_whitney'] = {
+            'statistic': mw_stat,
+            'p_value': mw_p,
+            'medians_differ': mw_p < 0.05
+        }
+
+        # Levene's test (for variance equality)
+        levene_stat, levene_p = stats.levene(control_data, treatment_data)
+        results['levene_test'] = {
+            'statistic': levene_stat,
+            'p_value': levene_p,
+            'variances_differ': levene_p < 0.05,
+            'homoscedastic': levene_p >= 0.05
+        }
+
+        return results
+
+    @staticmethod
+    def plot_distribution_comparison(data: pd.DataFrame,
+                                    metric_col: str,
+                                    variant_col: str = 'variant'):
+        """Create detailed distribution comparison visualization."""
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+        # 1. Overlapping histograms
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant][metric_col].dropna()
+            axes[0, 0].hist(variant_data, bins=50, alpha=0.6, label=str(variant))
+        axes[0, 0].set_xlabel(metric_col)
+        axes[0, 0].set_ylabel('Frequency')
+        axes[0, 0].set_title('Histogram Comparison')
+        axes[0, 0].legend()
+        axes[0, 0].grid(alpha=0.3)
+
+        # 2. KDE plots
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant][metric_col].dropna()
+            sns.kdeplot(data=variant_data, label=str(variant),
+                       ax=axes[0, 1], linewidth=2)
+        axes[0, 1].set_xlabel(metric_col)
+        axes[0, 1].set_ylabel('Density')
+        axes[0, 1].set_title('Kernel Density Estimation')
+        axes[0, 1].legend()
+        axes[0, 1].grid(alpha=0.3)
+
+        # 3. Empirical CDF
+        for variant in data[variant_col].unique():
+            variant_data = data[
+                data[variant_col] == variant
+            ][metric_col].dropna().sort_values()
+            cdf = np.arange(1, len(variant_data) + 1) / len(variant_data)
+            axes[1, 0].plot(variant_data, cdf, label=str(variant), linewidth=2)
+        axes[1, 0].set_xlabel(metric_col)
+        axes[1, 0].set_ylabel('Cumulative Probability')
+        axes[1, 0].set_title('Empirical CDF')
+        axes[1, 0].legend()
+        axes[1, 0].grid(alpha=0.3)
+
+        # 4. Box and violin plots combined
+        ax_box = axes[1, 1]
+        positions = np.arange(len(data[variant_col].unique()))
+
+        # Violin plots
+        parts = ax_box.violinplot(
+            [data[data[variant_col] == v][metric_col].dropna()
+             for v in data[variant_col].unique()],
+            positions=positions,
+            showmeans=False,
+            showmedians=False
+        )
+
+        # Overlay box plots
+        ax_box.boxplot(
+            [data[data[variant_col] == v][metric_col].dropna()
+             for v in data[variant_col].unique()],
+            positions=positions,
+            widths=0.15
+        )
+
+        ax_box.set_xticks(positions)
+        ax_box.set_xticklabels(data[variant_col].unique())
+        ax_box.set_ylabel(metric_col)
+        ax_box.set_title('Box + Violin Plot')
+        ax_box.grid(alpha=0.3)
+
+        plt.tight_layout()
+        return fig
+
+\end{lstlisting}
+
+\subsection{Trend and Seasonality Detection}
+
+Temporal patterns can indicate novelty effects, external events, or seasonal variations.
+
+\lstset{language=Python, caption=Temporal Pattern Detection}
+\begin{lstlisting}
+class TemporalAnalyzer:
+    """Analyze temporal patterns in A/B test data."""
+
+    @staticmethod
+    def detect_trend(data: pd.DataFrame,
+                    metric_col: str,
+                    timestamp_col: str,
+                    variant_col: str = None) -> Dict:
+        """
+        Detect linear trend in time series using Mann-Kendall test.
+
+        Returns:
+        --------
+        Dict with trend detection results
+        """
+        import pymannkendall as mk
+
+        data = data.copy()
+        data[timestamp_col] = pd.to_datetime(data[timestamp_col])
+        data = data.sort_values(timestamp_col)
+
+        if variant_col:
+            # Test within each variant
+            results = {}
+            for variant in data[variant_col].unique():
+                variant_data = data[data[variant_col] == variant]
+                daily_mean = variant_data.groupby(
+                    variant_data[timestamp_col].dt.date
+                )[metric_col].mean()
+
+                mk_result = mk.original_test(daily_mean)
+
+                results[variant] = {
+                    'trend': mk_result.trend,
+                    'p_value': mk_result.p,
+                    'tau': mk_result.Tau,
+                    'has_trend': mk_result.trend != 'no trend'
+                }
+            return results
+        else:
+            # Overall trend
+            daily_mean = data.groupby(
+                data[timestamp_col].dt.date
+            )[metric_col].mean()
+
+            mk_result = mk.original_test(daily_mean)
+
+            return {
+                'trend': mk_result.trend,
+                'p_value': mk_result.p,
+                'tau': mk_result.Tau,
+                'has_trend': mk_result.trend != 'no trend'
+            }
+
+    @staticmethod
+    def detect_day_of_week_effects(data: pd.DataFrame,
+                                   metric_col: str,
+                                   timestamp_col: str,
+                                   variant_col: str = 'variant') -> Dict:
+        """
+        Test for day-of-week effects using ANOVA.
+
+        Returns:
+        --------
+        Dict with day-of-week analysis results
+        """
+        from scipy import stats as sp_stats
+
+        data = data.copy()
+        data[timestamp_col] = pd.to_datetime(data[timestamp_col])
+        data['day_of_week'] = data[timestamp_col].dt.dayofweek
+        data['day_name'] = data[timestamp_col].dt.day_name()
+
+        results = {}
+
+        # Overall effect
+        groups = [data[data['day_of_week'] == d][metric_col].dropna()
+                 for d in range(7)]
+        f_stat, p_value = sp_stats.f_oneway(*groups)
+
+        results['overall'] = {
+            'f_statistic': f_stat,
+            'p_value': p_value,
+            'has_dow_effect': p_value < 0.05
+        }
+
+        # By variant
+        variant_results = {}
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant]
+            groups = [variant_data[variant_data['day_of_week'] == d][metric_col].dropna()
+                     for d in range(7)]
+            f_stat, p_value = sp_stats.f_oneway(*groups)
+
+            variant_results[variant] = {
+                'f_statistic': f_stat,
+                'p_value': p_value,
+                'has_dow_effect': p_value < 0.05
+            }
+
+        results['by_variant'] = variant_results
+
+        # Mean by day of week
+        dow_means = data.groupby(['day_name', variant_col])[metric_col].mean().unstack()
+        results['means_by_dow'] = dow_means
+
+        return results
+
+    @staticmethod
+    def plot_temporal_patterns(data: pd.DataFrame,
+                              metric_col: str,
+                              timestamp_col: str,
+                              variant_col: str = 'variant'):
+        """Create comprehensive temporal analysis visualizations."""
+        import matplotlib.pyplot as plt
+
+        data = data.copy()
+        data[timestamp_col] = pd.to_datetime(data[timestamp_col])
+        data['date'] = data[timestamp_col].dt.date
+        data['hour'] = data[timestamp_col].dt.hour
+        data['day_of_week'] = data[timestamp_col].dt.dayofweek
+        data['day_name'] = data[timestamp_col].dt.day_name()
+
+        fig, axes = plt.subplots(2, 2, figsize=(16, 10))
+
+        # 1. Daily trend
+        daily_data = data.groupby(['date', variant_col])[metric_col].mean().unstack()
+
+        for variant in daily_data.columns:
+            axes[0, 0].plot(daily_data.index, daily_data[variant],
+                          marker='o', label=str(variant), linewidth=2, alpha=0.7)
+
+        axes[0, 0].set_xlabel('Date')
+        axes[0, 0].set_ylabel(f'Mean {metric_col}')
+        axes[0, 0].set_title('Daily Trend')
+        axes[0, 0].legend()
+        axes[0, 0].grid(alpha=0.3)
+        axes[0, 0].tick_params(axis='x', rotation=45)
+
+        # 2. Day of week pattern
+        dow_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday',
+                     'Friday', 'Saturday', 'Sunday']
+        dow_data = data.groupby(['day_name', variant_col])[metric_col].mean().unstack()
+        dow_data = dow_data.reindex(dow_order)
+
+        x = np.arange(len(dow_order))
+        width = 0.35
+
+        variants = data[variant_col].unique()
+        for i, variant in enumerate(variants):
+            offset = width * (i - len(variants)/2 + 0.5)
+            axes[0, 1].bar(x + offset, dow_data[variant],
+                          width, label=str(variant), alpha=0.7)
+
+        axes[0, 1].set_xlabel('Day of Week')
+        axes[0, 1].set_ylabel(f'Mean {metric_col}')
+        axes[0, 1].set_title('Day of Week Pattern')
+        axes[0, 1].set_xticks(x)
+        axes[0, 1].set_xticklabels(dow_order, rotation=45)
+        axes[0, 1].legend()
+        axes[0, 1].grid(alpha=0.3)
+
+        # 3. Hourly pattern (if timestamps include hours)
+        if data['hour'].nunique() > 1:
+            hourly_data = data.groupby(['hour', variant_col])[metric_col].mean().unstack()
+
+            for variant in hourly_data.columns:
+                axes[1, 0].plot(hourly_data.index, hourly_data[variant],
+                              marker='o', label=str(variant), linewidth=2)
+
+            axes[1, 0].set_xlabel('Hour of Day')
+            axes[1, 0].set_ylabel(f'Mean {metric_col}')
+            axes[1, 0].set_title('Hourly Pattern')
+            axes[1, 0].legend()
+            axes[1, 0].grid(alpha=0.3)
+
+        # 4. Cumulative metric over time
+        cumulative_data = data.sort_values(timestamp_col).groupby(
+            variant_col
+        )[metric_col].cumsum().reset_index()
+
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant].sort_values(timestamp_col)
+            variant_cumulative = variant_data[metric_col].cumsum()
+
+            axes[1, 1].plot(range(len(variant_cumulative)), variant_cumulative,
+                          label=str(variant), linewidth=2, alpha=0.7)
+
+        axes[1, 1].set_xlabel('Observation Index')
+        axes[1, 1].set_ylabel(f'Cumulative {metric_col}')
+        axes[1, 1].set_title('Cumulative Metric Over Time')
+        axes[1, 1].legend()
+        axes[1, 1].grid(alpha=0.3)
+
+        plt.tight_layout()
+        return fig
+
+\end{lstlisting}
+
+\section{Statistical Analysis Pipeline}
+
+After preprocessing and EDA, execute the statistical tests systematically.
+
+\subsection{Assumption Checking}
+
+Before applying parametric tests, verify assumptions.
+
+\lstset{language=Python, caption=Statistical Assumption Checking}
+\begin{lstlisting}
+class AssumptionChecker:
+    """Check statistical assumptions for A/B test analysis."""
+
+    @staticmethod
+    def check_normality(data: pd.DataFrame,
+                       metric_col: str,
+                       variant_col: str = 'variant',
+                       alpha: float = 0.05) -> Dict:
+        """
+        Check normality assumption for each variant.
+
+        Returns:
+        --------
+        Dict with normality test results
+        """
+        results = {}
+
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant][metric_col].dropna()
+
+            # Shapiro-Wilk test
+            if len(variant_data) < 5000:
+                sw_stat, sw_p = stats.shapiro(variant_data)
+            else:
+                sw_stat, sw_p = None, None
+
+            # Anderson-Darling test
+            ad_result = stats.anderson(variant_data)
+
+            # K-S test
+            ks_stat, ks_p = stats.kstest(
+                variant_data,
+                'norm',
+                args=(variant_data.mean(), variant_data.std())
+            )
+
+            results[variant] = {
+                'shapiro_wilk': {
+                    'statistic': sw_stat,
+                    'p_value': sw_p,
+                    'is_normal': sw_p > alpha if sw_p else None
+                },
+                'kolmogorov_smirnov': {
+                    'statistic': ks_stat,
+                    'p_value': ks_p,
+                    'is_normal': ks_p > alpha
+                },
+                'anderson_darling': {
+                    'statistic': ad_result.statistic,
+                    'critical_values': ad_result.critical_values.tolist(),
+                    'significance_levels': ad_result.significance_level.tolist()
+                },
+                'skewness': stats.skew(variant_data),
+                'kurtosis': stats.kurtosis(variant_data)
+            }
+
+        return results
+
+    @staticmethod
+    def check_variance_equality(data: pd.DataFrame,
+                               metric_col: str,
+                               variant_col: str = 'variant',
+                               alpha: float = 0.05) -> Dict:
+        """
+        Check variance equality assumption (homoscedasticity).
+
+        Returns:
+        --------
+        Dict with variance equality test results
+        """
+        variants = data[variant_col].unique()
+        groups = [data[data[variant_col] == v][metric_col].dropna()
+                 for v in variants]
+
+        # Levene's test (robust to non-normality)
+        levene_stat, levene_p = stats.levene(*groups)
+
+        # Bartlett's test (assumes normality)
+        bartlett_stat, bartlett_p = stats.bartlett(*groups)
+
+        # Fligner-Killeen test (non-parametric)
+        fligner_stat, fligner_p = stats.fligner(*groups)
+
+        # Variance ratios
+        variances = {v: data[data[variant_col] == v][metric_col].var()
+                    for v in variants}
+
+        return {
+            'levene_test': {
+                'statistic': levene_stat,
+                'p_value': levene_p,
+                'equal_variances': levene_p > alpha
+            },
+            'bartlett_test': {
+                'statistic': bartlett_stat,
+                'p_value': bartlett_p,
+                'equal_variances': bartlett_p > alpha
+            },
+            'fligner_test': {
+                'statistic': fligner_stat,
+                'p_value': fligner_p,
+                'equal_variances': fligner_p > alpha
+            },
+            'variances_by_variant': variances,
+            'variance_ratio': max(variances.values()) / min(variances.values())
+        }
+
+    @staticmethod
+    def check_independence(data: pd.DataFrame,
+                          user_col: str = 'user_id',
+                          variant_col: str = 'variant') -> Dict:
+        """
+        Check independence assumption.
+
+        Returns:
+        --------
+        Dict with independence check results
+        """
+        # Check for users appearing in multiple variants
+        users_per_variant = data.groupby(user_col)[variant_col].nunique()
+        multi_variant_users = users_per_variant[users_per_variant > 1]
+
+        # Check for temporal autocorrelation (if timestamp available)
+        results = {
+            'multi_variant_users': {
+                'count': len(multi_variant_users),
+                'percentage': len(multi_variant_users) / len(users_per_variant) * 100,
+                'independent': len(multi_variant_users) == 0
+            }
+        }
+
+        return results
+
+    @staticmethod
+    def generate_assumption_report(data: pd.DataFrame,
+                                   metric_col: str,
+                                   variant_col: str = 'variant',
+                                   user_col: str = 'user_id') -> str:
+        """Generate comprehensive assumption check report."""
+        checker = AssumptionChecker()
+
+        report = []
+        report.append("=" * 60)
+        report.append("STATISTICAL ASSUMPTIONS CHECK")
+        report.append("=" * 60)
+        report.append("")
+
+        # Normality
+        report.append("1. NORMALITY:")
+        normality = checker.check_normality(data, metric_col, variant_col)
+        for variant, results in normality.items():
+            report.append(f"\n  Variant: {variant}")
+            if results['shapiro_wilk']['p_value']:
+                report.append(f"    Shapiro-Wilk p-value: {results['shapiro_wilk']['p_value']:.4f}")
+            report.append(f"    K-S p-value: {results['kolmogorov_smirnov']['p_value']:.4f}")
+            report.append(f"    Skewness: {results['skewness']:.4f}")
+            report.append(f"    Kurtosis: {results['kurtosis']:.4f}")
+
+        # Variance equality
+        report.append("\n2. VARIANCE EQUALITY:")
+        var_eq = checker.check_variance_equality(data, metric_col, variant_col)
+        report.append(f"  Levene's test p-value: {var_eq['levene_test']['p_value']:.4f}")
+        report.append(f"  Equal variances: {var_eq['levene_test']['equal_variances']}")
+        report.append(f"  Variance ratio: {var_eq['variance_ratio']:.2f}")
+
+        # Independence
+        report.append("\n3. INDEPENDENCE:")
+        indep = checker.check_independence(data, user_col, variant_col)
+        report.append(f"  Multi-variant users: {indep['multi_variant_users']['count']}")
+        report.append(f"  Independent: {indep['multi_variant_users']['independent']}")
+
+        report.append("")
+        return "\n".join(report)
+
+\end{lstlisting}
+
+\subsection{Test Execution}
+
+Execute appropriate statistical tests based on data characteristics.
+
+\lstset{language=Python, caption=Automated Test Execution}
+\begin{lstlisting}
+class ABTestExecutor:
+    """Execute statistical tests for A/B experiments."""
+
+    @staticmethod
+    def t_test(data: pd.DataFrame,
+              metric_col: str,
+              variant_col: str = 'variant',
+              equal_var: bool = None,
+              alpha: float = 0.05) -> Dict:
+        """
+        Execute t-test for continuous metrics.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Experimental data
+        metric_col : str
+            Metric to test
+        variant_col : str
+            Variant column
+        equal_var : bool
+            Assume equal variance? If None, will test
+        alpha : float
+            Significance level
+
+        Returns:
+        --------
+        Dict with t-test results
+        """
+        variants = data[variant_col].unique()
+        if len(variants) != 2:
+            raise ValueError("T-test requires exactly 2 variants")
+
+        control = variants[0]
+        treatment = variants[1]
+
+        control_data = data[data[variant_col] == control][metric_col].dropna()
+        treatment_data = data[data[variant_col] == treatment][metric_col].dropna()
+
+        # Test for equal variance if not specified
+        if equal_var is None:
+            _, levene_p = stats.levene(control_data, treatment_data)
+            equal_var = levene_p > 0.05
+
+        # Perform t-test
+        t_stat, p_value = stats.ttest_ind(
+            treatment_data,
+            control_data,
+            equal_var=equal_var
+        )
+
+        # Calculate effect size (Cohen's d)
+        pooled_std = np.sqrt(
+            ((len(control_data) - 1) * control_data.var() +
+             (len(treatment_data) - 1) * treatment_data.var()) /
+            (len(control_data) + len(treatment_data) - 2)
+        )
+        cohens_d = (treatment_data.mean() - control_data.mean()) / pooled_std
+
+        # Confidence interval for difference
+        se_diff = pooled_std * np.sqrt(
+            1/len(control_data) + 1/len(treatment_data)
+        )
+        df = len(control_data) + len(treatment_data) - 2
+        t_crit = stats.t.ppf(1 - alpha/2, df)
+
+        diff = treatment_data.mean() - control_data.mean()
+        ci_lower = diff - t_crit * se_diff
+        ci_upper = diff + t_crit * se_diff
+
+        return {
+            'test_type': 't-test',
+            'control_mean': control_data.mean(),
+            'treatment_mean': treatment_data.mean(),
+            'difference': diff,
+            'relative_difference_pct': (diff / control_data.mean() * 100)
+                                      if control_data.mean() != 0 else np.inf,
+            't_statistic': t_stat,
+            'p_value': p_value,
+            'significant': p_value < alpha,
+            'degrees_of_freedom': df,
+            'equal_variance_assumed': equal_var,
+            'cohens_d': cohens_d,
+            'confidence_interval': {
+                'level': 1 - alpha,
+                'lower': ci_lower,
+                'upper': ci_upper
+            },
+            'sample_sizes': {
+                'control': len(control_data),
+                'treatment': len(treatment_data)
+            }
+        }
+
+    @staticmethod
+    def mann_whitney_test(data: pd.DataFrame,
+                         metric_col: str,
+                         variant_col: str = 'variant',
+                         alpha: float = 0.05) -> Dict:
+        """
+        Execute Mann-Whitney U test (non-parametric).
+
+        Returns:
+        --------
+        Dict with Mann-Whitney test results
+        """
+        variants = data[variant_col].unique()
+        if len(variants) != 2:
+            raise ValueError("Mann-Whitney test requires exactly 2 variants")
+
+        control = variants[0]
+        treatment = variants[1]
+
+        control_data = data[data[variant_col] == control][metric_col].dropna()
+        treatment_data = data[data[variant_col] == treatment][metric_col].dropna()
+
+        # Perform test
+        u_stat, p_value = stats.mannwhitneyu(
+            treatment_data,
+            control_data,
+            alternative='two-sided'
+        )
+
+        # Effect size (rank-biserial correlation)
+        n1 = len(control_data)
+        n2 = len(treatment_data)
+        rank_biserial = 1 - (2*u_stat) / (n1 * n2)
+
+        return {
+            'test_type': 'mann_whitney',
+            'control_median': control_data.median(),
+            'treatment_median': treatment_data.median(),
+            'difference_in_medians': treatment_data.median() - control_data.median(),
+            'u_statistic': u_stat,
+            'p_value': p_value,
+            'significant': p_value < alpha,
+            'rank_biserial_correlation': rank_biserial,
+            'sample_sizes': {
+                'control': n1,
+                'treatment': n2
+            }
+        }
+
+    @staticmethod
+    def proportion_test(data: pd.DataFrame,
+                       success_col: str,
+                       variant_col: str = 'variant',
+                       alpha: float = 0.05) -> Dict:
+        """
+        Execute proportion test (z-test for proportions).
+
+        Returns:
+        --------
+        Dict with proportion test results
+        """
+        from statsmodels.stats.proportion import proportions_ztest, proportion_confint
+
+        variants = data[variant_col].unique()
+        if len(variants) != 2:
+            raise ValueError("Proportion test requires exactly 2 variants")
+
+        control = variants[0]
+        treatment = variants[1]
+
+        control_data = data[data[variant_col] == control]
+        treatment_data = data[data[variant_col] == treatment]
+
+        n_control = len(control_data)
+        n_treatment = len(treatment_data)
+
+        successes_control = control_data[success_col].sum()
+        successes_treatment = treatment_data[success_col].sum()
+
+        p_control = successes_control / n_control
+        p_treatment = successes_treatment / n_treatment
+
+        # Z-test
+        counts = np.array([successes_treatment, successes_control])
+        nobs = np.array([n_treatment, n_control])
+
+        z_stat, p_value = proportions_ztest(counts, nobs)
+
+        # Confidence intervals
+        ci_control = proportion_confint(
+            successes_control, n_control, alpha=alpha, method='wilson'
+        )
+        ci_treatment = proportion_confint(
+            successes_treatment, n_treatment, alpha=alpha, method='wilson'
+        )
+
+        # Relative difference (lift)
+        relative_diff = (p_treatment - p_control) / p_control * 100 if p_control > 0 else np.inf
+
+        # Absolute difference CI
+        se_diff = np.sqrt(
+            p_control * (1 - p_control) / n_control +
+            p_treatment * (1 - p_treatment) / n_treatment
+        )
+        z_crit = stats.norm.ppf(1 - alpha/2)
+        diff = p_treatment - p_control
+        ci_diff_lower = diff - z_crit * se_diff
+        ci_diff_upper = diff + z_crit * se_diff
+
+        return {
+            'test_type': 'proportion_ztest',
+            'control_rate': p_control,
+            'treatment_rate': p_treatment,
+            'absolute_difference': diff,
+            'relative_difference_pct': relative_diff,
+            'z_statistic': z_stat,
+            'p_value': p_value,
+            'significant': p_value < alpha,
+            'confidence_intervals': {
+                'control': {'lower': ci_control[0], 'upper': ci_control[1]},
+                'treatment': {'lower': ci_treatment[0], 'upper': ci_treatment[1]},
+                'difference': {'lower': ci_diff_lower, 'upper': ci_diff_upper}
+            },
+            'sample_sizes': {
+                'control': n_control,
+                'treatment': n_treatment
+            },
+            'successes': {
+                'control': int(successes_control),
+                'treatment': int(successes_treatment)
+            }
+        }
+
+    @staticmethod
+    def automatic_test_selection(data: pd.DataFrame,
+                                 metric_col: str,
+                                 variant_col: str = 'variant',
+                                 is_binary: bool = None,
+                                 alpha: float = 0.05) -> Dict:
+        """
+        Automatically select and execute appropriate test.
+
+        Returns:
+        --------
+        Dict with test results and recommendation
+        """
+        executor = ABTestExecutor()
+        checker = AssumptionChecker()
+
+        # Determine if binary
+        if is_binary is None:
+            unique_vals = data[metric_col].dropna().unique()
+            is_binary = len(unique_vals) == 2 and set(unique_vals) <= {0, 1}
+
+        if is_binary:
+            # Use proportion test
+            result = executor.proportion_test(data, metric_col, variant_col, alpha)
+            result['recommendation'] = "Proportion z-test (binary outcome)"
+            return result
+
+        # Check normality and variance equality
+        normality = checker.check_normality(data, metric_col, variant_col, alpha)
+        var_equality = checker.check_variance_equality(data, metric_col, variant_col, alpha)
+
+        # Decision logic
+        all_normal = all(
+            v.get('shapiro_wilk', {}).get('is_normal', False) or
+            v.get('kolmogorov_smirnov', {}).get('is_normal', False)
+            for v in normality.values()
+        )
+
+        equal_var = var_equality['levene_test']['equal_variances']
+
+        if all_normal:
+            # Use t-test
+            result = executor.t_test(data, metric_col, variant_col, equal_var, alpha)
+            if equal_var:
+                result['recommendation'] = "Student's t-test (equal variances)"
+            else:
+                result['recommendation'] = "Welch's t-test (unequal variances)"
+        else:
+            # Use Mann-Whitney
+            result = executor.mann_whitney_test(data, metric_col, variant_col, alpha)
+            result['recommendation'] = "Mann-Whitney U test (non-normal distribution)"
+
+        result['assumption_checks'] = {
+            'normality': normality,
+            'variance_equality': var_equality
+        }
+
+        return result
+
+\end{lstlisting}
+
+\subsection{Effect Size Calculation}
+
+Statistical significance doesn't indicate practical importance. Always calculate and report effect sizes.
+
+\lstset{language=Python, caption=Effect Size Calculations}
+\begin{lstlisting}
+class EffectSizeCalculator:
+    """Calculate various effect size measures for A/B tests."""
+
+    @staticmethod
+    def cohens_d(data: pd.DataFrame,
+                metric_col: str,
+                variant_col: str = 'variant',
+                pooled: bool = True) -> Dict:
+        """
+        Calculate Cohen's d for continuous metrics.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Experimental data
+        metric_col : str
+            Metric to analyze
+        variant_col : str
+            Variant column
+        pooled : bool
+            Use pooled standard deviation
+
+        Returns:
+        --------
+        Dict with Cohen's d and interpretation
+        """
+        variants = data[variant_col].unique()
+        if len(variants) != 2:
+            raise ValueError("Cohen's d requires exactly 2 variants")
+
+        control = variants[0]
+        treatment = variants[1]
+
+        control_data = data[data[variant_col] == control][metric_col].dropna()
+        treatment_data = data[data[variant_col] == treatment][metric_col].dropna()
+
+        mean_diff = treatment_data.mean() - control_data.mean()
+
+        if pooled:
+            # Pooled standard deviation
+            n1, n2 = len(control_data), len(treatment_data)
+            var1, var2 = control_data.var(), treatment_data.var()
+            pooled_std = np.sqrt(((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2))
+            d = mean_diff / pooled_std
+        else:
+            # Control group standard deviation
+            d = mean_diff / control_data.std()
+
+        # Interpretation
+        if abs(d) < 0.2:
+            interpretation = "negligible"
+        elif abs(d) < 0.5:
+            interpretation = "small"
+        elif abs(d) < 0.8:
+            interpretation = "medium"
+        else:
+            interpretation = "large"
+
+        return {
+            'cohens_d': d,
+            'interpretation': interpretation,
+            'mean_difference': mean_diff,
+            'pooled_std': pooled_std if pooled else None
+        }
+
+    @staticmethod
+    def relative_effect(data: pd.DataFrame,
+                       metric_col: str,
+                       variant_col: str = 'variant') -> Dict:
+        """
+        Calculate relative (percentage) effect.
+
+        Returns:
+        --------
+        Dict with relative effect measures
+        """
+        variants = data[variant_col].unique()
+        if len(variants) != 2:
+            raise ValueError("Requires exactly 2 variants")
+
+        control = variants[0]
+        treatment = variants[1]
+
+        control_mean = data[data[variant_col] == control][metric_col].mean()
+        treatment_mean = data[data[variant_col] == treatment][metric_col].mean()
+
+        absolute_diff = treatment_mean - control_mean
+        relative_diff_pct = (absolute_diff / control_mean * 100) if control_mean != 0 else np.inf
+
+        return {
+            'control_mean': control_mean,
+            'treatment_mean': treatment_mean,
+            'absolute_difference': absolute_diff,
+            'relative_difference_pct': relative_diff_pct,
+            'lift_pct': relative_diff_pct
+        }
+
+    @staticmethod
+    def odds_ratio(data: pd.DataFrame,
+                  success_col: str,
+                  variant_col: str = 'variant') -> Dict:
+        """
+        Calculate odds ratio for binary outcomes.
+
+        Returns:
+        --------
+        Dict with odds ratio and confidence interval
+        """
+        from statsmodels.stats.contingency_tables import Table2x2
+
+        variants = data[variant_col].unique()
+        if len(variants) != 2:
+            raise ValueError("Requires exactly 2 variants")
+
+        control = variants[0]
+        treatment = variants[1]
+
+        # Create contingency table
+        control_data = data[data[variant_col] == control]
+        treatment_data = data[data[variant_col] == treatment]
+
+        # [treatment_success, treatment_failure]
+        # [control_success, control_failure]
+        table = np.array([
+            [treatment_data[success_col].sum(),
+             len(treatment_data) - treatment_data[success_col].sum()],
+            [control_data[success_col].sum(),
+             len(control_data) - control_data[success_col].sum()]
+        ])
+
+        table2x2 = Table2x2(table)
+        or_value = table2x2.oddsratio
+        ci = table2x2.oddsratio_confint()
+
+        # Interpretation
+        if or_value > 1:
+            interpretation = f"Treatment has {or_value:.2f}x odds of success"
+        elif or_value < 1:
+            interpretation = f"Control has {1/or_value:.2f}x odds of success"
+        else:
+            interpretation = "Equal odds"
+
+        return {
+            'odds_ratio': or_value,
+            'confidence_interval': {'lower': ci[0], 'upper': ci[1]},
+            'log_odds_ratio': np.log(or_value),
+            'interpretation': interpretation
+        }
+
+    @staticmethod
+    def risk_ratio(data: pd.DataFrame,
+                  success_col: str,
+                  variant_col: str = 'variant') -> Dict:
+        """
+        Calculate risk ratio (relative risk) for binary outcomes.
+
+        Returns:
+        --------
+        Dict with risk ratio
+        """
+        variants = data[variant_col].unique()
+        if len(variants) != 2:
+            raise ValueError("Requires exactly 2 variants")
+
+        control = variants[0]
+        treatment = variants[1]
+
+        control_data = data[data[variant_col] == control]
+        treatment_data = data[data[variant_col] == treatment]
+
+        p_control = control_data[success_col].mean()
+        p_treatment = treatment_data[success_col].mean()
+
+        rr = p_treatment / p_control if p_control > 0 else np.inf
+
+        # Confidence interval (log method)
+        se_log_rr = np.sqrt(
+            (1 - p_control) / (control_data[success_col].sum()) +
+            (1 - p_treatment) / (treatment_data[success_col].sum())
+        )
+
+        ci_lower = np.exp(np.log(rr) - 1.96 * se_log_rr)
+        ci_upper = np.exp(np.log(rr) + 1.96 * se_log_rr)
+
+        return {
+            'risk_ratio': rr,
+            'confidence_interval': {'lower': ci_lower, 'upper': ci_upper},
+            'control_risk': p_control,
+            'treatment_risk': p_treatment
+        }
+
+\end{lstlisting}
+
+\subsection{Confidence Interval Estimation}
+
+Confidence intervals quantify uncertainty and are more informative than p-values alone.
+
+\lstset{language=Python, caption=Advanced Confidence Interval Methods}
+\begin{lstlisting}
+class ConfidenceIntervalEstimator:
+    """Advanced confidence interval estimation methods."""
+
+    @staticmethod
+    def bootstrap_ci(data: pd.DataFrame,
+                    metric_col: str,
+                    variant_col: str = 'variant',
+                    statistic: str = 'mean',
+                    n_bootstrap: int = 10000,
+                    confidence_level: float = 0.95) -> Dict:
+        """
+        Calculate bootstrap confidence intervals.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Experimental data
+        metric_col : str
+            Metric to analyze
+        variant_col : str
+            Variant column
+        statistic : str
+            Statistic to compute: 'mean', 'median', 'std'
+        n_bootstrap : int
+            Number of bootstrap samples
+        confidence_level : float
+            Confidence level
+
+        Returns:
+        --------
+        Dict with bootstrap CI
+        """
+        from scipy.stats import bootstrap
+
+        variants = data[variant_col].unique()
+        if len(variants) != 2:
+            raise ValueError("Requires exactly 2 variants")
+
+        control = variants[0]
+        treatment = variants[1]
+
+        control_data = data[data[variant_col] == control][metric_col].dropna().values
+        treatment_data = data[data[variant_col] == treatment][metric_col].dropna().values
+
+        # Define statistic function
+        if statistic == 'mean':
+            stat_func = np.mean
+        elif statistic == 'median':
+            stat_func = np.median
+        elif statistic == 'std':
+            stat_func = np.std
+        else:
+            raise ValueError(f"Unknown statistic: {statistic}")
+
+        # Bootstrap for difference
+        def difference_stat(x, y):
+            return stat_func(y) - stat_func(x)
+
+        bootstrap_diffs = []
+        rng = np.random.RandomState(42)
+
+        for _ in range(n_bootstrap):
+            control_sample = rng.choice(control_data, size=len(control_data), replace=True)
+            treatment_sample = rng.choice(treatment_data, size=len(treatment_data), replace=True)
+            bootstrap_diffs.append(stat_func(treatment_sample) - stat_func(control_sample))
+
+        bootstrap_diffs = np.array(bootstrap_diffs)
+
+        # Percentile method
+        alpha = 1 - confidence_level
+        ci_lower = np.percentile(bootstrap_diffs, alpha/2 * 100)
+        ci_upper = np.percentile(bootstrap_diffs, (1 - alpha/2) * 100)
+
+        # Observed difference
+        obs_diff = stat_func(treatment_data) - stat_func(control_data)
+
+        return {
+            'statistic': statistic,
+            'observed_difference': obs_diff,
+            'confidence_interval': {
+                'method': 'percentile_bootstrap',
+                'level': confidence_level,
+                'lower': ci_lower,
+                'upper': ci_upper
+            },
+            'n_bootstrap': n_bootstrap,
+            'bootstrap_distribution': bootstrap_diffs
+        }
+
+    @staticmethod
+    def delta_method_ci(data: pd.DataFrame,
+                       metric_col: str,
+                       variant_col: str = 'variant',
+                       transformation: str = 'log',
+                       confidence_level: float = 0.95) -> Dict:
+        """
+        Calculate CI using delta method for transformed statistics.
+
+        Parameters:
+        -----------
+        transformation : str
+            'log', 'logit', or 'sqrt'
+
+        Returns:
+        --------
+        Dict with delta method CI
+        """
+        variants = data[variant_col].unique()
+        if len(variants) != 2:
+            raise ValueError("Requires exactly 2 variants")
+
+        control = variants[0]
+        treatment = variants[1]
+
+        control_data = data[data[variant_col] == control][metric_col].dropna()
+        treatment_data = data[data[variant_col] == treatment][metric_col].dropna()
+
+        # Calculate means and variances
+        mean_c = control_data.mean()
+        mean_t = treatment_data.mean()
+        var_c = control_data.var() / len(control_data)
+        var_t = treatment_data.var() / len(treatment_data)
+
+        alpha = 1 - confidence_level
+        z_crit = stats.norm.ppf(1 - alpha/2)
+
+        if transformation == 'log':
+            # Log transformation
+            ratio = mean_t / mean_c
+            log_ratio = np.log(ratio)
+
+            # Delta method variance
+            var_log = var_t / (mean_t ** 2) + var_c / (mean_c ** 2)
+            se_log = np.sqrt(var_log)
+
+            ci_log_lower = log_ratio - z_crit * se_log
+            ci_log_upper = log_ratio + z_crit * se_log
+
+            # Back-transform
+            ci_lower = np.exp(ci_log_lower)
+            ci_upper = np.exp(ci_log_upper)
+
+            return {
+                'transformation': 'log',
+                'ratio': ratio,
+                'log_ratio': log_ratio,
+                'confidence_interval': {
+                    'level': confidence_level,
+                    'lower': ci_lower,
+                    'upper': ci_upper
+                }
+            }
+
+        elif transformation == 'logit':
+            # Logit transformation (for proportions)
+            # p must be in (0, 1)
+            def logit(p):
+                return np.log(p / (1 - p))
+
+            def inv_logit(x):
+                return 1 / (1 + np.exp(-x))
+
+            logit_t = logit(mean_t)
+            logit_c = logit(mean_c)
+            diff_logit = logit_t - logit_c
+
+            # Delta method variance
+            var_logit = var_t / (mean_t ** 2 * (1 - mean_t) ** 2) + \
+                       var_c / (mean_c ** 2 * (1 - mean_c) ** 2)
+            se_logit = np.sqrt(var_logit)
+
+            ci_logit_lower = diff_logit - z_crit * se_logit
+            ci_logit_upper = diff_logit + z_crit * se_logit
+
+            # Back-transform
+            ci_lower = inv_logit(ci_logit_lower)
+            ci_upper = inv_logit(ci_logit_upper)
+
+            return {
+                'transformation': 'logit',
+                'difference_logit': diff_logit,
+                'confidence_interval': {
+                    'level': confidence_level,
+                    'lower': ci_lower,
+                    'upper': ci_upper
+                }
+            }
+
+        else:
+            raise ValueError(f"Unknown transformation: {transformation}")
+
+\end{lstlisting}
+
+\section{Result Interpretation}
+
+Statistical results must be translated into business insights and actionable recommendations.
+
+\subsection{Statistical vs. Practical Significance}
+
+\textbf{Statistical significance} indicates whether an effect is likely real (not due to chance). \textbf{Practical significance} indicates whether the effect is large enough to matter for business decisions.
+
+\begin{example}[Statistical vs. Practical Significance]
+An A/B test with 1 million users finds that variant B increases conversion rate from 10.0\% to 10.05\% (p < 0.001).
+
+\textbf{Statistical significance:} Yes (p < 0.001)
+
+\textbf{Practical significance:} Depends on context
+\begin{itemize}
+    \item If incremental implementation cost is \$10,000 and each conversion worth \$50, then: Additional revenue = $1,000,000 \times 0.0005 \times \$50 = \$25,000$ per million users
+    \item ROI = $(\$25,000 - \$10,000) / \$10,000 = 150\%$ $\rightarrow$ \textbf{Practically significant}
+\end{itemize}
+
+\textbf{Decision:} Ship despite small effect size due to favorable cost-benefit.
+\end{example}
+
+\lstset{language=Python, caption=Business Impact Assessment}
+\begin{lstlisting}
+class BusinessImpactAnalyzer:
+    """Assess business impact of A/B test results."""
+
+    @staticmethod
+    def calculate_business_impact(test_results: Dict,
+                                 annual_users: int,
+                                 value_per_conversion: float,
+                                 implementation_cost: float) -> Dict:
+        """
+        Calculate business impact metrics.
+
+        Parameters:
+        -----------
+        test_results : Dict
+            Results from statistical test (must include difference and CI)
+        annual_users : int
+            Expected annual users
+        value_per_conversion : float
+            Dollar value per conversion/success
+        implementation_cost : float
+            One-time implementation cost
+
+        Returns:
+        --------
+        Dict with business impact assessment
+        """
+        # Extract effect size
+        if 'absolute_difference' in test_results:
+            effect = test_results['absolute_difference']
+        elif 'difference' in test_results:
+            effect = test_results['difference']
+        else:
+            raise ValueError("Test results must include effect size")
+
+        ci = test_results.get('confidence_interval', {})
+        ci_lower = ci.get('lower', None)
+        ci_upper = ci.get('upper', None)
+
+        # Annual impact
+        annual_additional_conversions = annual_users * effect
+        annual_revenue_impact = annual_additional_conversions * value_per_conversion
+
+        # ROI calculation
+        roi = (annual_revenue_impact - implementation_cost) / implementation_cost * 100 if implementation_cost > 0 else np.inf
+
+        # Conservative estimate (lower CI bound)
+        if ci_lower is not None:
+            conservative_conversions = annual_users * ci_lower
+            conservative_revenue = conservative_conversions * value_per_conversion
+            conservative_roi = (conservative_revenue - implementation_cost) / implementation_cost * 100 if implementation_cost > 0 else np.inf
+        else:
+            conservative_revenue = None
+            conservative_roi = None
+
+        # Optimistic estimate (upper CI bound)
+        if ci_upper is not None:
+            optimistic_conversions = annual_users * ci_upper
+            optimistic_revenue = optimistic_conversions * value_per_conversion
+            optimistic_roi = (optimistic_revenue - implementation_cost) / implementation_cost * 100 if implementation_cost > 0 else np.inf
+        else:
+            optimistic_revenue = None
+            optimistic_roi = None
+
+        # Practical significance assessment
+        min_meaningful_effect = implementation_cost / (annual_users * value_per_conversion)
+        is_practically_significant = abs(effect) > min_meaningful_effect
+
+        return {
+            'effect_size': effect,
+            'annual_additional_conversions': annual_additional_conversions,
+            'expected_annual_revenue_impact': annual_revenue_impact,
+            'implementation_cost': implementation_cost,
+            'expected_roi_pct': roi,
+            'conservative_estimate': {
+                'annual_revenue_impact': conservative_revenue,
+                'roi_pct': conservative_roi
+            },
+            'optimistic_estimate': {
+                'annual_revenue_impact': optimistic_revenue,
+                'roi_pct': optimistic_roi
+            },
+            'min_meaningful_effect': min_meaningful_effect,
+            'is_practically_significant': is_practically_significant,
+            'is_statistically_significant': test_results.get('significant', False)
+        }
+
+    @staticmethod
+    def create_impact_summary(impact_results: Dict) -> str:
+        """Generate human-readable impact summary."""
+        summary = []
+        summary.append("=" * 60)
+        summary.append("BUSINESS IMPACT SUMMARY")
+        summary.append("=" * 60)
+        summary.append("")
+
+        summary.append(f"Effect Size: {impact_results['effect_size']:.4f}")
+        summary.append(f"Annual Additional Conversions: {impact_results['annual_additional_conversions']:,.0f}")
+        summary.append("")
+
+        summary.append(f"Expected Annual Revenue Impact: ${impact_results['expected_annual_revenue_impact']:,.2f}")
+        summary.append(f"Implementation Cost: ${impact_results['implementation_cost']:,.2f}")
+        summary.append(f"Expected ROI: {impact_results['expected_roi_pct']:.1f}%")
+        summary.append("")
+
+        if impact_results['conservative_estimate']['annual_revenue_impact']:
+            summary.append(f"Conservative Estimate (95% CI lower bound):")
+            summary.append(f"  Revenue Impact: ${impact_results['conservative_estimate']['annual_revenue_impact']:,.2f}")
+            summary.append(f"  ROI: {impact_results['conservative_estimate']['roi_pct']:.1f}%")
+            summary.append("")
+
+        summary.append(f"Statistical Significance: {'Yes' if impact_results['is_statistically_significant'] else 'No'}")
+        summary.append(f"Practical Significance: {'Yes' if impact_results['is_practically_significant'] else 'No'}")
+        summary.append("")
+
+        # Decision recommendation
+        if impact_results['is_statistically_significant'] and impact_results['is_practically_significant']:
+            recommendation = "RECOMMEND: Ship - Both statistically and practically significant"
+        elif impact_results['is_statistically_significant'] and not impact_results['is_practically_significant']:
+            recommendation = "CONSIDER: Small effect - Evaluate strategic value beyond ROI"
+        elif not impact_results['is_statistically_significant'] and impact_results['is_practically_significant']:
+            recommendation = "INCONCLUSIVE: Run longer test for more power"
+        else:
+            recommendation = "DO NOT SHIP: Not significant"
+
+        summary.append(f"Recommendation: {recommendation}")
+        summary.append("")
+
+        return "\n".join(summary)
+
+\end{lstlisting}
+
+\subsection{Segment Analysis}
+
+Treatment effects may vary across user segments. Segmented analysis reveals heterogeneous treatment effects (HTEs).
+
+\lstset{language=Python, caption=Segment Analysis Framework}
+\begin{lstlisting}
+class SegmentAnalyzer:
+    """Analyze treatment effects across segments."""
+
+    @staticmethod
+    def segment_analysis(data: pd.DataFrame,
+                        metric_col: str,
+                        segment_col: str,
+                        variant_col: str = 'variant',
+                        test_type: str = 'auto') -> Dict:
+        """
+        Analyze treatment effect within each segment.
+
+        Parameters:
+        -----------
+        data : DataFrame
+            Experimental data
+        metric_col : str
+            Metric to analyze
+        segment_col : str
+            Column defining segments
+        variant_col : str
+            Variant column
+        test_type : str
+            'auto', 't_test', 'mann_whitney', or 'proportion'
+
+        Returns:
+        --------
+        Dict with segment-specific results
+        """
+        executor = ABTestExecutor()
+        segment_results = {}
+
+        for segment in data[segment_col].unique():
+            segment_data = data[data[segment_col] == segment]
+
+            # Run appropriate test
+            if test_type == 'auto':
+                result = executor.automatic_test_selection(
+                    segment_data, metric_col, variant_col
+                )
+            elif test_type == 't_test':
+                result = executor.t_test(segment_data, metric_col, variant_col)
+            elif test_type == 'mann_whitney':
+                result = executor.mann_whitney_test(segment_data, metric_col, variant_col)
+            elif test_type == 'proportion':
+                result = executor.proportion_test(segment_data, metric_col, variant_col)
+            else:
+                raise ValueError(f"Unknown test_type: {test_type}")
+
+            segment_results[segment] = result
+
+        return segment_results
+
+    @staticmethod
+    def test_for_interaction(data: pd.DataFrame,
+                            metric_col: str,
+                            segment_col: str,
+                            variant_col: str = 'variant') -> Dict:
+        """
+        Test if treatment effect differs significantly across segments.
+
+        Uses two-way ANOVA or similar to test for interaction.
+
+        Returns:
+        --------
+        Dict with interaction test results
+        """
+        from scipy import stats as sp_stats
+        import statsmodels.formula.api as smf
+
+        # Create interaction term
+        data_test = data.copy()
+        data_test['interaction'] = (
+            data_test[variant_col].astype(str) + '_' +
+            data_test[segment_col].astype(str)
+        )
+
+        # Two-way ANOVA
+        formula = f'{metric_col} ~ C({variant_col}) + C({segment_col}) + C({variant_col}):C({segment_col})'
+
+        try:
+            model = smf.ols(formula, data=data_test).fit()
+            anova_table = sm.stats.anova_lm(model, typ=2)
+
+            interaction_p = anova_table.loc[
+                f'C({variant_col}):C({segment_col})', 'PR(>F)'
+            ]
+
+            return {
+                'has_interaction': interaction_p < 0.05,
+                'interaction_p_value': interaction_p,
+                'anova_table': anova_table,
+                'interpretation': (
+                    "Treatment effect varies significantly across segments"
+                    if interaction_p < 0.05
+                    else "No significant interaction detected"
+                )
+            }
+        except Exception as e:
+            return {
+                'error': str(e),
+                'message': "Could not perform interaction test"
+            }
+
+    @staticmethod
+    def visualize_segments(data: pd.DataFrame,
+                          metric_col: str,
+                          segment_col: str,
+                          variant_col: str = 'variant'):
+        """Create segment analysis visualization."""
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        segments = data[segment_col].unique()
+        n_segments = len(segments)
+
+        fig, axes = plt.subplots(1, min(n_segments, 4), figsize=(16, 4))
+        if n_segments == 1:
+            axes = [axes]
+
+        for idx, segment in enumerate(segments[:4]):
+            segment_data = data[data[segment_col] == segment]
+
+            # Create violin + box plot
+            sns.violinplot(
+                data=segment_data,
+                x=variant_col,
+                y=metric_col,
+                ax=axes[idx],
+                alpha=0.5
+            )
+
+            # Calculate means and plot
+            segment_stats = DescriptiveStats()
+            ci_data = segment_stats.confidence_intervals(
+                segment_data, metric_col, variant_col
+            )
+
+            for i, row in ci_data.iterrows():
+                axes[idx].plot(
+                    [i, i],
+                    [row['ci_lower'], row['ci_upper']],
+                    'k-',
+                    linewidth=2
+                )
+                axes[idx].plot(i, row['mean'], 'ro', markersize=8)
+
+            axes[idx].set_title(f'Segment: {segment}')
+            axes[idx].set_ylabel(metric_col)
+            axes[idx].grid(alpha=0.3)
+
+        plt.tight_layout()
+        return fig
+
+    @staticmethod
+    def create_segment_report(segment_results: Dict) -> pd.DataFrame:
+        """Create summary table of segment results."""
+        rows = []
+
+        for segment, result in segment_results.items():
+            if 'control_mean' in result:
+                control_val = result['control_mean']
+                treatment_val = result['treatment_mean']
+            elif 'control_rate' in result:
+                control_val = result['control_rate']
+                treatment_val = result['treatment_rate']
+            elif 'control_median' in result:
+                control_val = result['control_median']
+                treatment_val = result['treatment_median']
+            else:
+                continue
+
+            rows.append({
+                'segment': segment,
+                'control': control_val,
+                'treatment': treatment_val,
+                'difference': result.get('difference',  result.get('absolute_difference', treatment_val - control_val)),
+                'p_value': result.get('p_value', np.nan),
+                'significant': result.get('significant', False)
+            })
+
+        return pd.DataFrame(rows)
+
+\end{lstlisting}
+
+\subsection{Long-term Effects Consideration}
+
+Short-term test results may not reflect long-term impact.
+
+\begin{itemize}
+    \item \textbf{Novelty effects:} Users may engage more/less with new features initially
+    \item \textbf{Learning effects:} Behavior changes as users become familiar
+    \item \textbf{Network effects:} Impact may compound as more users adopt
+    \item \textbf{Cannibalization:} Short-term gains may reduce long-term metrics
+\end{itemize}
+
+\textbf{Strategies for assessing long-term effects:}
+\begin{enumerate}
+    \item Run experiments for multiple weeks/months
+    \item Analyze cohorts based on exposure duration
+    \item Monitor post-experiment metrics
+    \item Use holdout groups for long-term tracking
+\end{enumerate}
+
+\section{Reporting and Communication}
+
+Effective communication ensures stakeholders understand results and can make informed decisions.
+
+\subsection{Stakeholder Communication Strategies}
+
+Different audiences require different levels of detail:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Audience} & \textbf{Focus} & \textbf{Format} \\
+\midrule
+Executives & Business impact, ROI & 1-page summary \\
+Product managers & Metrics, segments, recommendations & Dashboard + slides \\
+Engineers & Implementation details, edge cases & Technical doc \\
+Data scientists & Methods, assumptions, limitations & Full analysis \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Visualization Best Practices}
+
+\lstset{language=Python, caption=Professional Result Visualization}
+\begin{lstlisting}
+class ResultVisualizer:
+    """Create professional visualizations for reporting."""
+
+    @staticmethod
+    def create_executive_summary_viz(test_results: Dict,
+                                     metric_name: str):
+        """Create executive summary visualization."""
+        import matplotlib.pyplot as plt
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+        # 1. Treatment effect with CI
+        if 'control_mean' in test_results:
+            control_val = test_results['control_mean']
+            treatment_val = test_results['treatment_mean']
+            value_type = 'Mean'
+        elif 'control_rate' in test_results:
+            control_val = test_results['control_rate']
+            treatment_val = test_results['treatment_rate']
+            value_type = 'Rate'
+        else:
+            raise ValueError("Unknown result format")
+
+        ci = test_results['confidence_interval']
+
+        # Bar chart with error bars
+        variants = ['Control', 'Treatment']
+        values = [control_val, treatment_val]
+
+        bars = axes[0].bar(variants, values, color=['#3498db', '#e74c3c'], alpha=0.7)
+
+        # Add CI for treatment
+        diff = test_results.get('difference', test_results.get('absolute_difference'))
+        axes[0].errorbar(
+            [1],
+            [treatment_val],
+            yerr=[[treatment_val - ci['lower']], [ci['upper'] - treatment_val]],
+            fmt='none',
+            color='black',
+            capsize=10,
+            linewidth=2
+        )
+
+        # Annotations
+        for i, (bar, val) in enumerate(zip(bars, values)):
+            height = bar.get_height()
+            axes[0].text(
+                bar.get_x() + bar.get_width()/2.,
+                height,
+                f'{val:.4f}',
+                ha='center',
+                va='bottom',
+                fontsize=12,
+                fontweight='bold'
+            )
+
+        axes[0].set_ylabel(f'{value_type} {metric_name}', fontsize=12)
+        axes[0].set_title(f'{metric_name} Comparison', fontsize=14, fontweight='bold')
+        axes[0].grid(axis='y', alpha=0.3)
+
+        # 2. Effect size visualization
+        rel_diff = test_results.get('relative_difference_pct', 0)
+
+        color = '#27ae60' if rel_diff > 0 else '#e74c3c'
+
+        axes[1].barh(['Relative\nLift'], [rel_diff], color=color, alpha=0.7)
+        axes[1].axvline(0, color='black', linestyle='--', linewidth=1)
+
+        axes[1].text(
+            rel_diff,
+            0,
+            f'{rel_diff:+.2f}%',
+            ha='left' if rel_diff > 0 else 'right',
+            va='center',
+            fontsize=14,
+            fontweight='bold'
+        )
+
+        axes[1].set_xlabel('Percentage Change', fontsize=12)
+        axes[1].set_title('Treatment Effect Size', fontsize=14, fontweight='bold')
+        axes[1].grid(axis='x', alpha=0.3)
+
+        # Overall title
+        sig_status = "Significant" if test_results.get('significant') else "Not Significant"
+        p_val = test_results.get('p_value', np.nan)
+
+        fig.suptitle(
+            f'A/B Test Results: {metric_name}\n{sig_status} (p={p_val:.4f})',
+            fontsize=16,
+            fontweight='bold'
+        )
+
+        plt.tight_layout()
+        return fig
+
+    @staticmethod
+    def create_comprehensive_report_viz(data: pd.DataFrame,
+                                       metric_col: str,
+                                       test_results: Dict,
+                                       variant_col: str = 'variant'):
+        """Create comprehensive report with multiple visualizations."""
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        fig = plt.figure(figsize=(16, 12))
+        gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
+
+        # 1. Distribution comparison
+        ax1 = fig.add_subplot(gs[0, :])
+        for variant in data[variant_col].unique():
+            variant_data = data[data[variant_col] == variant][metric_col].dropna()
+            sns.kdeplot(data=variant_data, label=str(variant), ax=ax1, linewidth=2)
+        ax1.set_xlabel(metric_col, fontsize=11)
+        ax1.set_ylabel('Density', fontsize=11)
+        ax1.set_title('Distribution Comparison', fontsize=13, fontweight='bold')
+        ax1.legend()
+        ax1.grid(alpha=0.3)
+
+        # 2. Effect size with CI
+        ax2 = fig.add_subplot(gs[1, 0])
+
+        diff = test_results.get('difference', test_results.get('absolute_difference', 0))
+        ci = test_results.get('confidence_interval', {})
+
+        ax2.plot([0], [diff], 'o', markersize=12, color='#e74c3c')
+        if ci:
+            ax2.plot(
+                [0, 0],
+                [ci.get('lower', diff), ci.get('upper', diff)],
+                linewidth=3,
+                color='#3498db'
+            )
+
+        ax2.axhline(0, color='gray', linestyle='--', linewidth=1)
+        ax2.set_xlim(-0.5, 0.5)
+        ax2.set_ylabel(f'Treatment Effect on {metric_col}', fontsize=11)
+        ax2.set_title('Effect Size with 95% CI', fontsize=13, fontweight='bold')
+        ax2.set_xticks([])
+        ax2.grid(axis='y', alpha=0.3)
+
+        # 3. Sample sizes
+        ax3 = fig.add_subplot(gs[1, 1])
+
+        sample_sizes = test_results.get('sample_sizes', {})
+        if sample_sizes:
+            variants_list = list(sample_sizes.keys())
+            sizes = list(sample_sizes.values())
+
+            bars = ax3.bar(variants_list, sizes, color=['#3498db', '#e74c3c'], alpha=0.7)
+
+            for bar, size in zip(bars, sizes):
+                height = bar.get_height()
+                ax3.text(
+                    bar.get_x() + bar.get_width()/2.,
+                    height,
+                    f'n={size:,}',
+                    ha='center',
+                    va='bottom',
+                    fontsize=10
+                )
+
+            ax3.set_ylabel('Sample Size', fontsize=11)
+            ax3.set_title('Sample Sizes by Variant', fontsize=13, fontweight='bold')
+            ax3.grid(axis='y', alpha=0.3)
+
+        # 4. Statistical summary table
+        ax4 = fig.add_subplot(gs[2, :])
+        ax4.axis('tight')
+        ax4.axis('off')
+
+        summary_data = [
+            ['Metric', metric_col],
+            ['Test Type', test_results.get('test_type', 'N/A')],
+            ['P-value', f"{test_results.get('p_value', np.nan):.4f}"],
+            ['Significance Level', '0.05'],
+            ['Significant', 'Yes' if test_results.get('significant') else 'No'],
+            ['Effect Size', f"{diff:.4f}"],
+            ['Relative Change', f"{test_results.get('relative_difference_pct', 0):.2f}%"],
+            ['CI Lower', f"{ci.get('lower', np.nan):.4f}"],
+            ['CI Upper', f"{ci.get('upper', np.nan):.4f}"]
+        ]
+
+        table = ax4.table(
+            cellText=summary_data,
+            cellLoc='left',
+            loc='center',
+            colWidths=[0.4, 0.6]
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(10)
+        table.scale(1, 2)
+        ax4.set_title('Statistical Summary', fontsize=13, fontweight='bold', pad=20)
+
+        plt.suptitle(
+            f'Comprehensive A/B Test Report: {metric_col}',
+            fontsize=16,
+            fontweight='bold',
+            y=0.995
+        )
+
+        return fig
+
+\end{lstlisting}
+
+\subsection{Executive Summary Template}
+
+\lstset{language=Python, caption=Executive Summary Generation}
+\begin{lstlisting}
+class ReportGenerator:
+    """Generate professional A/B test reports."""
+
+    @staticmethod
+    def generate_executive_summary(test_results: Dict,
+                                   metric_name: str,
+                                   experiment_name: str,
+                                   business_impact: Dict = None) -> str:
+        """
+        Generate one-page executive summary.
+
+        Parameters:
+        -----------
+        test_results : Dict
+            Statistical test results
+        metric_name : str
+            Name of primary metric
+        experiment_name : str
+            Name/description of experiment
+        business_impact : Dict
+            Business impact assessment results
+
+        Returns:
+        --------
+        str : Formatted executive summary
+        """
+        summary = []
+        summary.append("=" * 70)
+        summary.append(f"EXECUTIVE SUMMARY: {experiment_name}")
+        summary.append("=" * 70)
+        summary.append("")
+
+        # Key findings
+        summary.append("KEY FINDINGS")
+        summary.append("-" * 70)
+
+        sig_status = "SIGNIFICANT" if test_results.get('significant') else "NOT SIGNIFICANT"
+        direction = "increased" if test_results.get('difference', 0) > 0 else "decreased"
+
+        rel_change = test_results.get('relative_difference_pct', 0)
+
+        summary.append(
+            f"The treatment {direction} {metric_name} by {abs(rel_change):.2f}% "
+            f"(p={test_results.get('p_value', np.nan):.4f})"
+        )
+        summary.append(f"Result is {sig_status} at 95% confidence level")
+        summary.append("")
+
+        # Business impact
+        if business_impact:
+            summary.append("BUSINESS IMPACT")
+            summary.append("-" * 70)
+
+            revenue = business_impact.get('expected_annual_revenue_impact', 0)
+            roi = business_impact.get('expected_roi_pct', 0)
+
+            summary.append(f"Expected Annual Revenue Impact: ${revenue:,.0f}")
+            summary.append(f"Expected ROI: {roi:.1f}%")
+
+            if business_impact.get('conservative_estimate', {}).get('annual_revenue_impact'):
+                cons_revenue = business_impact['conservative_estimate']['annual_revenue_impact']
+                summary.append(f"Conservative Estimate (95% CI lower): ${cons_revenue:,.0f}")
+
+            summary.append("")
+
+        # Recommendation
+        summary.append("RECOMMENDATION")
+        summary.append("-" * 70)
+
+        if business_impact:
+            if (business_impact.get('is_statistically_significant') and
+                business_impact.get('is_practically_significant')):
+                recommendation = "SHIP: Both statistically and practically significant"
+            elif (business_impact.get('is_statistically_significant') and
+                  not business_impact.get('is_practically_significant')):
+                recommendation = "CONSIDER: Statistically significant but small business impact"
+            elif (not business_impact.get('is_statistically_significant') and
+                  business_impact.get('is_practically_significant')):
+                recommendation = "EXTEND TEST: Promising but needs more data"
+            else:
+                recommendation = "DO NOT SHIP: Not significant"
+        else:
+            recommendation = f"SHIP if {sig_status}" if test_results.get('significant') else "DO NOT SHIP"
+
+        summary.append(recommendation)
+        summary.append("")
+
+        # Technical details
+        summary.append("TECHNICAL DETAILS")
+        summary.append("-" * 70)
+
+        sample_sizes = test_results.get('sample_sizes', {})
+        if sample_sizes:
+            for variant, size in sample_sizes.items():
+                summary.append(f"  {variant}: n={size:,}")
+
+        summary.append(f"  Test type: {test_results.get('test_type', test_results.get('recommendation', 'N/A'))}")
+        summary.append("")
+
+        return "\n".join(summary)
+
+    @staticmethod
+    def generate_technical_documentation(test_results: Dict,
+                                        data_summary: Dict,
+                                        assumptions: Dict,
+                                        metric_name: str) -> str:
+        """Generate detailed technical documentation."""
+        doc = []
+        doc.append("=" * 70)
+        doc.append("TECHNICAL DOCUMENTATION: A/B TEST ANALYSIS")
+        doc.append("=" * 70)
+        doc.append("")
+
+        # 1. Data Summary
+        doc.append("1. DATA SUMMARY")
+        doc.append("-" * 70)
+        doc.append(f"Primary Metric: {metric_name}")
+        doc.append(f"Total Observations: {data_summary.get('n_total', 'N/A'):,}")
+        doc.append(f"Date Range: {data_summary.get('date_range', 'N/A')}")
+        doc.append("")
+
+        # 2. Statistical Method
+        doc.append("2. STATISTICAL METHOD")
+        doc.append("-" * 70)
+        doc.append(f"Test Type: {test_results.get('test_type', 'N/A')}")
+        doc.append(f"Significance Level: α = 0.05")
+        doc.append(f"Hypothesis: Two-sided")
+        doc.append("")
+
+        # 3. Assumptions
+        doc.append("3. ASSUMPTIONS")
+        doc.append("-" * 70)
+
+        if assumptions:
+            if 'normality' in assumptions:
+                doc.append("Normality:")
+                for variant, result in assumptions['normality'].items():
+                    is_normal = result.get('shapiro_wilk', {}).get('is_normal', 'Unknown')
+                    doc.append(f"  {variant}: {'Normal' if is_normal else 'Non-normal'}")
+
+            if 'variance_equality' in assumptions:
+                equal_var = assumptions['variance_equality'].get('levene_test', {}).get('equal_variances', 'Unknown')
+                doc.append(f"Equal Variances: {'Yes' if equal_var else 'No'}")
+
+        doc.append("")
+
+        # 4. Results
+        doc.append("4. RESULTS")
+        doc.append("-" * 70)
+
+        p_val = test_results.get('p_value', np.nan)
+        doc.append(f"P-value: {p_val:.6f}")
+
+        if 'control_mean' in test_results:
+            doc.append(f"Control Mean: {test_results['control_mean']:.4f}")
+            doc.append(f"Treatment Mean: {test_results['treatment_mean']:.4f}")
+        elif 'control_rate' in test_results:
+            doc.append(f"Control Rate: {test_results['control_rate']:.4f}")
+            doc.append(f"Treatment Rate: {test_results['treatment_rate']:.4f}")
+
+        diff = test_results.get('difference', test_results.get('absolute_difference', 0))
+        doc.append(f"Absolute Difference: {diff:.4f}")
+        doc.append(f"Relative Difference: {test_results.get('relative_difference_pct', 0):.2f}%")
+
+        ci = test_results.get('confidence_interval', {})
+        if ci:
+            doc.append(f"95% CI: [{ci.get('lower', np.nan):.4f}, {ci.get('upper', np.nan):.4f}]")
+
+        doc.append("")
+
+        # 5. Interpretation
+        doc.append("5. INTERPRETATION")
+        doc.append("-" * 70)
+
+        if test_results.get('significant'):
+            doc.append("The treatment has a statistically significant effect.")
+        else:
+            doc.append("No statistically significant difference detected.")
+
+        doc.append("")
+
+        return "\n".join(doc)
+
+\end{lstlisting}
+
+\section{Summary}
+
+This chapter presented a comprehensive framework for analyzing and interpreting A/B test results:
+
+\begin{itemize}
+    \item \textbf{Data Preprocessing:} Systematic validation, outlier treatment, missing data handling, and transformations ensure data quality
+    \item \textbf{Exploratory Analysis:} Descriptive statistics and visualizations reveal patterns before formal testing
+    \item \textbf{Statistical Pipeline:} Automated assumption checking and test selection ensure appropriate methodology
+    \item \textbf{Effect Sizes:} Cohen's d, relative effects, and other measures quantify practical significance
+    \item \textbf{Business Impact:} ROI calculations connect statistical findings to business decisions
+    \item \textbf{Segment Analysis:} Heterogeneous treatment effects reveal differential impacts
+    \item \textbf{Communication:} Tailored reporting ensures all stakeholders can act on findings
+\end{itemize}
+
+The Python frameworks provided enable reproducible, production-ready analysis workflows. By combining statistical rigor with business context, we transform experimental data into actionable insights.
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \cite{deng2016data}: Data quality in online experiments
+    \item \cite{kohavi2020trustworthy}: Comprehensive experimentation guide
+    \item \cite{gelman2006data}: Data analysis using regression and multilevel models
+    \item \cite{harrell2015regression}: Regression modeling strategies
+    \item \cite{tukey1977exploratory}: Exploratory data analysis foundations
+\end{itemize}
+
+\section{Exercises}
+
+\begin{enumerate}
+    \item \textbf{Data Preprocessing Pipeline:} Implement a complete preprocessing pipeline for A/B test data including:
+    \begin{itemize}
+        \item SRM detection
+        \item Outlier identification using multiple methods
+        \item Missing data imputation
+        \item Transformation assessment
+    \end{itemize}
+
+    \item \textbf{EDA Dashboard:} Create an interactive EDA dashboard using Plotly that includes:
+    \begin{itemize}
+        \item Distribution comparisons
+        \item Temporal trends
+        \item Statistical summaries
+        \item Assumption diagnostics
+    \end{itemize}
+
+    \item \textbf{Automated Analysis:} Build an automated analysis pipeline that:
+    \begin{itemize}
+        \item Selects appropriate statistical tests based on data characteristics
+        \item Calculates effect sizes and confidence intervals
+        \item Assesses business impact
+        \item Generates executive summary
+    \end{itemize}
+
+    \item \textbf{Segment Analysis:} Analyze treatment effects across multiple segments and:
+    \begin{itemize}
+        \item Test for interactions
+        \item Visualize heterogeneous effects
+        \item Report segment-specific recommendations
+    \end{itemize}
+
+    \item \textbf{Report Generation:} Create templates for:
+    \begin{itemize}
+        \item Executive one-pagers
+        \item Technical documentation
+        \item Stakeholder presentations
+    \end{itemize}
+\end{enumerate}

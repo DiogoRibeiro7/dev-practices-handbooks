@@ -1,0 +1,2424 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Apply a systematic methodology for designing complete end-to-end ML systems
+    \item Evaluate and select appropriate architectures using decision frameworks
+    \item Implement integration patterns that connect data, training, and serving pipelines
+    \item Design systems that meet performance and scalability requirements
+    \item Plan for system evolution, maintenance, and continuous improvement
+    \item Analyze trade-offs between different architectural approaches
+    \item Design production-ready ML systems from requirements to deployment
+\end{itemize}
+
+\section{Introduction}
+
+Building end-to-end ML systems requires integrating concepts from all previous chapters: data engineering, model development, deployment, monitoring, and operations. This chapter provides a comprehensive methodology for designing, implementing, and evolving production ML systems that deliver business value while remaining maintainable and scalable.
+
+Unlike previous chapters that focused on specific components, this chapter takes a holistic view of ML system architecture, examining how components interact and how to make informed trade-offs between competing requirements.
+
+\textbf{Key Challenges in End-to-End ML Systems:}
+
+\begin{itemize}
+    \item \textbf{Complexity:} ML systems involve many interdependent components
+    \item \textbf{Trade-offs:} Balancing latency, accuracy, cost, and maintainability
+    \item \textbf{Evolution:} Systems must adapt to changing requirements and data
+    \item \textbf{Integration:} Connecting ML components with existing infrastructure
+    \item \textbf{Operationalization:} Moving from prototype to production-ready system
+\end{itemize}
+
+\section{System Design Methodology}
+
+\subsection{The ML System Design Process}
+
+A systematic approach to ML system design follows these phases:
+
+\begin{enumerate}
+    \item \textbf{Problem Framing:} Define business objectives and ML formulation
+    \item \textbf{Requirements Analysis:} Gather technical and business constraints
+    \item \textbf{Architecture Design:} Select components and integration patterns
+    \item \textbf{Implementation Planning:} Break down into deliverable milestones
+    \item \textbf{Validation Strategy:} Define success metrics and testing approach
+    \item \textbf{Evolution Roadmap:} Plan for future enhancements and scaling
+\end{enumerate}
+
+\subsection{Phase 1: Problem Framing}
+
+\textbf{Business Objectives Translation:}
+
+\begin{table}[h]
+\centering
+\caption{Business Objective to ML Problem Mapping}
+\begin{tabular}{p{4cm}p{4cm}p{5cm}}
+\toprule
+\textbf{Business Goal} & \textbf{ML Formulation} & \textbf{Success Metrics} \\
+\midrule
+Reduce customer churn & Binary classification & Precision, recall, F1-score, business value \\
+\midrule
+Personalize recommendations & Ranking/retrieval & Click-through rate, conversion, revenue lift \\
+\midrule
+Optimize pricing & Regression/RL & Revenue, margin, customer satisfaction \\
+\midrule
+Detect anomalies & Anomaly detection & Detection rate, false positive rate, MTTD \\
+\midrule
+Automate support & NLP classification & Resolution rate, user satisfaction, cost savings \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Critical Questions for Problem Framing:}
+
+\begin{itemize}
+    \item What specific decision will the ML system enable or automate?
+    \item What is the baseline (non-ML) performance?
+    \item What improvement justifies the investment in ML?
+    \item Are there regulatory or ethical constraints?
+    \item What is the cost of false positives vs. false negatives?
+    \item How will humans interact with the system?
+\end{itemize}
+
+\subsection{Phase 2: Requirements Analysis}
+
+\textbf{Functional Requirements:}
+
+\begin{lstlisting}[language=Python, caption=Requirements Specification Template]
+#!/usr/bin/env python3
+"""
+ML System Requirements Specification
+"""
+
+from dataclasses import dataclass
+from typing import List, Optional
+from enum import Enum
+
+class LatencyClass(Enum):
+    REAL_TIME = "< 100ms"
+    NEAR_REAL_TIME = "< 1s"
+    BATCH = "> 1s"
+
+class ConsistencyLevel(Enum):
+    STRONG = "immediate consistency"
+    EVENTUAL = "eventual consistency"
+
+@dataclass
+class FunctionalRequirements:
+    """Functional requirements for ML system."""
+
+    # Core capabilities
+    prediction_types: List[str]  # e.g., ["classification", "ranking"]
+    input_modalities: List[str]  # e.g., ["text", "images", "tabular"]
+    output_format: str  # e.g., "probability", "ranking", "class"
+
+    # Business rules
+    business_constraints: List[str]
+    regulatory_requirements: List[str]
+    explainability_needed: bool
+    human_in_the_loop: bool
+
+@dataclass
+class NonFunctionalRequirements:
+    """Non-functional requirements for ML system."""
+
+    # Performance
+    latency_requirement: LatencyClass
+    throughput_rps: int  # requests per second
+    availability_target: float  # e.g., 0.999 for 99.9%
+
+    # Scalability
+    expected_users: int
+    expected_growth_rate: float  # annual growth
+    peak_to_average_ratio: float
+
+    # Data
+    training_data_size: str  # e.g., "10GB", "1TB"
+    data_update_frequency: str  # e.g., "hourly", "daily"
+    data_retention_period: str
+
+    # Model
+    model_accuracy_target: float
+    model_update_frequency: str
+    max_model_size: str  # e.g., "1GB"
+
+    # Operations
+    max_deployment_time: str  # e.g., "15 minutes"
+    monitoring_granularity: str  # e.g., "per-request", "aggregate"
+    incident_response_time: str  # e.g., "< 1 hour"
+
+    # Cost
+    infrastructure_budget: Optional[float]
+    cost_per_prediction: Optional[float]
+
+# Example instantiation
+requirements = NonFunctionalRequirements(
+    latency_requirement=LatencyClass.REAL_TIME,
+    throughput_rps=10000,
+    availability_target=0.999,
+    expected_users=5_000_000,
+    expected_growth_rate=0.5,  # 50% annual growth
+    peak_to_average_ratio=3.0,
+    training_data_size="500GB",
+    data_update_frequency="daily",
+    data_retention_period="2 years",
+    model_accuracy_target=0.95,
+    model_update_frequency="weekly",
+    max_model_size="2GB",
+    max_deployment_time="10 minutes",
+    monitoring_granularity="aggregate",
+    incident_response_time="30 minutes",
+    infrastructure_budget=50000.0,  # monthly
+    cost_per_prediction=0.001
+)
+\end{lstlisting}
+
+\subsection{Phase 3: Architecture Design}
+
+\textbf{Layered Architecture Pattern:}
+
+\begin{figure}[h]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=1.2cm,
+    layer/.style={rectangle, draw, fill=blue!20, text width=10cm, text centered, minimum height=1cm},
+    component/.style={rectangle, draw, fill=green!20, text width=2.3cm, text centered, minimum height=0.7cm, font=\footnotesize}
+]
+
+% Layers
+\node[layer] (presentation) {Presentation Layer};
+\node[layer, below=of presentation] (application) {Application Layer};
+\node[layer, below=of application] (ml) {ML Layer};
+\node[layer, below=of ml] (data) {Data Layer};
+\node[layer, below=of data] (infrastructure) {Infrastructure Layer};
+
+% Presentation components
+\node[component, above right=0.3cm and -4.8cm of presentation] (web) {Web UI};
+\node[component, right=0.1cm of web] (mobile) {Mobile App};
+\node[component, right=0.1cm of mobile] (api) {REST API};
+\node[component, right=0.1cm of api] (sdk) {SDK};
+
+% Application components
+\node[component, above right=0.3cm and -4.8cm of application] (auth) {Auth};
+\node[component, right=0.1cm of auth] (business) {Business Logic};
+\node[component, right=0.1cm of business] (orchestration) {Orchestration};
+\node[component, right=0.1cm of orchestration] (cache) {Caching};
+
+% ML components
+\node[component, above right=0.3cm and -4.8cm of ml] (serving) {Model Serving};
+\node[component, right=0.1cm of serving] (features) {Feature Store};
+\node[component, right=0.1cm of features] (training) {Training};
+\node[component, right=0.1cm of training] (registry) {Registry};
+
+% Data components
+\node[component, above right=0.3cm and -4.8cm of data] (streaming) {Streaming};
+\node[component, right=0.1cm of streaming] (batch) {Batch ETL};
+\node[component, right=0.1cm of batch] (warehouse) {Warehouse};
+\node[component, right=0.1cm of warehouse] (lake) {Data Lake};
+
+% Infrastructure components
+\node[component, above right=0.3cm and -4.8cm of infrastructure] (compute) {Compute};
+\node[component, right=0.1cm of compute] (storage) {Storage};
+\node[component, right=0.1cm of storage] (network) {Network};
+\node[component, right=0.1cm of network] (monitoring) {Monitoring};
+\end{tikzpicture}}
+\caption{Layered Architecture for End-to-End ML Systems}
+\end{figure}
+
+\section{Architecture Decision Frameworks}
+
+\subsection{Decision Matrix for Architecture Patterns}
+
+When designing ML systems, architects must choose between competing patterns. Use this framework to evaluate options systematically.
+
+\textbf{Architecture Decision Record (ADR) Template:}
+
+\begin{lstlisting}[language=Python, caption=ADR Implementation]
+#!/usr/bin/env python3
+"""
+Architecture Decision Record (ADR) System
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import List, Dict
+from enum import Enum
+
+class DecisionStatus(Enum):
+    PROPOSED = "proposed"
+    ACCEPTED = "accepted"
+    DEPRECATED = "deprecated"
+    SUPERSEDED = "superseded"
+
+@dataclass
+class Alternative:
+    """Alternative architectural approach."""
+    name: str
+    description: str
+    pros: List[str]
+    cons: List[str]
+    cost_estimate: float
+    complexity_score: int  # 1-10
+    risk_score: int  # 1-10
+
+@dataclass
+class ArchitectureDecision:
+    """Architecture Decision Record."""
+
+    # Metadata
+    id: int
+    title: str
+    date: datetime
+    status: DecisionStatus
+    decision_makers: List[str]
+
+    # Context
+    context: str  # Why is this decision needed?
+    business_drivers: List[str]
+    technical_drivers: List[str]
+    constraints: List[str]
+
+    # Analysis
+    alternatives: List[Alternative]
+    evaluation_criteria: Dict[str, float]  # criterion -> weight
+
+    # Decision
+    chosen_alternative: str
+    rationale: str
+    consequences: List[str]
+
+    # Follow-up
+    validation_metrics: List[str]
+    review_date: datetime
+    related_decisions: List[int] = field(default_factory=list)
+
+class DecisionFramework:
+    """Framework for evaluating architectural decisions."""
+
+    def __init__(self):
+        self.decisions: List[ArchitectureDecision] = []
+
+    def score_alternative(
+        self,
+        alternative: Alternative,
+        criteria: Dict[str, float]
+    ) -> float:
+        """
+        Score an alternative based on weighted criteria.
+
+        Args:
+            alternative: Alternative to score
+            criteria: Dict of criterion -> weight
+
+        Returns:
+            Weighted score (0-100)
+        """
+        scores = {
+            'cost': (10 - alternative.cost_estimate / 10000) * 10,
+            'complexity': (10 - alternative.complexity_score) * 10,
+            'risk': (10 - alternative.risk_score) * 10,
+            'pros': len(alternative.pros) * 10,
+            'cons': (5 - len(alternative.cons)) * 10
+        }
+
+        weighted_score = sum(
+            scores.get(criterion, 0) * weight
+            for criterion, weight in criteria.items()
+        )
+
+        return weighted_score
+
+    def recommend_alternative(
+        self,
+        alternatives: List[Alternative],
+        criteria: Dict[str, float]
+    ) -> Alternative:
+        """Recommend best alternative based on criteria."""
+        scored = [
+            (alt, self.score_alternative(alt, criteria))
+            for alt in alternatives
+        ]
+        return max(scored, key=lambda x: x[1])[0]
+
+# Example: Batch vs Stream Processing Decision
+batch_alternative = Alternative(
+    name="Batch Processing",
+    description="Daily batch jobs for feature generation",
+    pros=[
+        "Simpler to implement and debug",
+        "Lower operational complexity",
+        "Better for large-scale data processing",
+        "Easier to reprocess historical data"
+    ],
+    cons=[
+        "Higher latency (24-hour delay)",
+        "Cannot handle real-time use cases",
+        "Resource spikes during batch windows"
+    ],
+    cost_estimate=5000,  # monthly
+    complexity_score=3,
+    risk_score=2
+)
+
+stream_alternative = Alternative(
+    name="Stream Processing",
+    description="Real-time streaming with Kafka/Flink",
+    pros=[
+        "Low latency (seconds)",
+        "Enables real-time features",
+        "Smooth resource utilization",
+        "Better user experience"
+    ],
+    cons=[
+        "Higher operational complexity",
+        "More difficult to debug",
+        "Requires specialized expertise",
+        "Harder to reprocess data"
+    ],
+    cost_estimate=15000,  # monthly
+    complexity_score=8,
+    risk_score=6
+)
+
+hybrid_alternative = Alternative(
+    name="Hybrid Batch + Stream",
+    description="Stream for real-time, batch for complex features",
+    pros=[
+        "Balanced latency and complexity",
+        "Leverages strengths of both",
+        "Can handle diverse use cases",
+        "Incremental migration path"
+    ],
+    cons=[
+        "Highest complexity overall",
+        "Need to maintain two systems",
+        "Potential consistency issues",
+        "Higher total cost"
+    ],
+    cost_estimate=18000,  # monthly
+    complexity_score=9,
+    risk_score=7
+)
+
+# Create decision
+decision = ArchitectureDecision(
+    id=1,
+    title="Data Processing Architecture",
+    date=datetime.now(),
+    status=DecisionStatus.PROPOSED,
+    decision_makers=["ML Lead", "Data Engineering Lead", "CTO"],
+    context="""
+    Need to design data processing pipeline for real-time
+    recommendation system with 10K RPS requirement.
+    """,
+    business_drivers=[
+        "Reduce latency to improve conversion rates",
+        "Enable personalization features",
+        "Support A/B testing"
+    ],
+    technical_drivers=[
+        "Handle 10K RPS",
+        "Process 100GB daily data",
+        "Support both batch and real-time features"
+    ],
+    constraints=[
+        "Budget: $20K/month",
+        "Team size: 3 data engineers",
+        "Timeline: 3 months"
+    ],
+    alternatives=[batch_alternative, stream_alternative, hybrid_alternative],
+    evaluation_criteria={
+        'cost': 0.2,
+        'complexity': 0.3,
+        'risk': 0.2,
+        'pros': 0.2,
+        'cons': 0.1
+    },
+    chosen_alternative="Hybrid Batch + Stream",
+    rationale="""
+    While hybrid approach has highest complexity, it provides
+    the best balance for our use case. We can start with batch
+    processing for complex features and add streaming for
+    real-time features incrementally.
+    """,
+    consequences=[
+        "Need to hire streaming expert",
+        "6-month timeline instead of 3",
+        "Invest in monitoring and tooling"
+    ],
+    validation_metrics=[
+        "Feature freshness < 1 minute",
+        "System uptime > 99.9%",
+        "Cost within budget"
+    ],
+    review_date=datetime(2025, 12, 31)
+)
+\end{lstlisting}
+
+\subsection{Trade-off Analysis Framework}
+
+\textbf{Common Trade-offs in ML Systems:}
+
+\begin{table}[h]
+\centering
+\caption{Architecture Trade-off Matrix}
+\begin{tabular}{p{3cm}p{3cm}p{3cm}p{3cm}}
+\toprule
+\textbf{Dimension} & \textbf{Option A} & \textbf{Option B} & \textbf{Consider When} \\
+\midrule
+Latency & Batch (high) & Real-time (low) & User-facing vs. backend \\
+\midrule
+Accuracy & Complex model & Simple model & Business value of improvement \\
+\midrule
+Cost & GPU training & CPU training & Budget vs. time-to-market \\
+\midrule
+Complexity & Monolith & Microservices & Team size and expertise \\
+\midrule
+Freshness & Static model & Continuous learning & Data drift rate \\
+\midrule
+Consistency & Strong & Eventual & Correctness requirements \\
+\midrule
+Coupling & Tight & Loose & System stability needs \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Integration Patterns and Best Practices}
+
+\subsection{Data Integration Patterns}
+
+\textbf{Pattern 1: Event-Driven Architecture}
+
+\begin{lstlisting}[language=Python, caption=Event-Driven ML System Integration]
+#!/usr/bin/env python3
+"""
+Event-Driven Integration for ML Systems
+"""
+
+import json
+from typing import Dict, List, Callable, Any
+from dataclasses import dataclass, asdict
+from datetime import datetime
+import asyncio
+from abc import ABC, abstractmethod
+
+@dataclass
+class Event:
+    """Base event class."""
+    event_id: str
+    event_type: str
+    timestamp: datetime
+    source: str
+    data: Dict[str, Any]
+
+    def to_json(self) -> str:
+        """Serialize event to JSON."""
+        return json.dumps({
+            **asdict(self),
+            'timestamp': self.timestamp.isoformat()
+        })
+
+class EventBus(ABC):
+    """Abstract event bus interface."""
+
+    @abstractmethod
+    async def publish(self, topic: str, event: Event):
+        """Publish event to topic."""
+        pass
+
+    @abstractmethod
+    async def subscribe(self, topic: str, handler: Callable):
+        """Subscribe to topic with handler."""
+        pass
+
+class KafkaEventBus(EventBus):
+    """Kafka-based event bus implementation."""
+
+    def __init__(self, bootstrap_servers: List[str]):
+        self.bootstrap_servers = bootstrap_servers
+        self.handlers: Dict[str, List[Callable]] = {}
+
+    async def publish(self, topic: str, event: Event):
+        """Publish event to Kafka topic."""
+        # Simplified - use aiokafka in production
+        print(f"Publishing to {topic}: {event.to_json()}")
+
+    async def subscribe(self, topic: str, handler: Callable):
+        """Subscribe handler to topic."""
+        if topic not in self.handlers:
+            self.handlers[topic] = []
+        self.handlers[topic].append(handler)
+
+class MLSystemIntegration:
+    """
+    Integration layer for ML system components.
+    Coordinates between data, training, and serving.
+    """
+
+    def __init__(self, event_bus: EventBus):
+        self.event_bus = event_bus
+        self._setup_handlers()
+
+    def _setup_handlers(self):
+        """Register event handlers for ML pipeline."""
+        # Data pipeline events
+        asyncio.create_task(
+            self.event_bus.subscribe(
+                'data.ingested',
+                self.handle_data_ingestion
+            )
+        )
+
+        # Training events
+        asyncio.create_task(
+            self.event_bus.subscribe(
+                'training.completed',
+                self.handle_training_completion
+            )
+        )
+
+        # Monitoring events
+        asyncio.create_task(
+            self.event_bus.subscribe(
+                'model.performance_degraded',
+                self.handle_performance_degradation
+            )
+        )
+
+    async def handle_data_ingestion(self, event: Event):
+        """
+        Handle new data ingestion.
+        Triggers feature computation and model evaluation.
+        """
+        print(f"Data ingested: {event.data['record_count']} records")
+
+        # Trigger feature computation
+        feature_event = Event(
+            event_id=f"feat-{event.event_id}",
+            event_type="feature.compute_requested",
+            timestamp=datetime.now(),
+            source="integration_layer",
+            data={
+                'data_batch_id': event.data['batch_id'],
+                'feature_set': 'v1'
+            }
+        )
+        await self.event_bus.publish('feature.requests', feature_event)
+
+        # Check if retraining needed
+        if self._should_retrain(event):
+            training_event = Event(
+                event_id=f"train-{event.event_id}",
+                event_type="training.requested",
+                timestamp=datetime.now(),
+                source="integration_layer",
+                data={
+                    'trigger': 'scheduled',
+                    'data_version': event.data['data_version']
+                }
+            )
+            await self.event_bus.publish('training.requests', training_event)
+
+    async def handle_training_completion(self, event: Event):
+        """
+        Handle training completion.
+        Validates model and triggers deployment if passing.
+        """
+        model_id = event.data['model_id']
+        metrics = event.data['metrics']
+
+        print(f"Training completed: {model_id}")
+        print(f"Metrics: {metrics}")
+
+        # Validate model
+        if self._validate_model(metrics):
+            # Trigger deployment
+            deploy_event = Event(
+                event_id=f"deploy-{event.event_id}",
+                event_type="deployment.requested",
+                timestamp=datetime.now(),
+                source="integration_layer",
+                data={
+                    'model_id': model_id,
+                    'strategy': 'canary',
+                    'canary_percentage': 10
+                }
+            )
+            await self.event_bus.publish('deployment.requests', deploy_event)
+        else:
+            # Alert on failed validation
+            alert_event = Event(
+                event_id=f"alert-{event.event_id}",
+                event_type="alert.model_validation_failed",
+                timestamp=datetime.now(),
+                source="integration_layer",
+                data={
+                    'model_id': model_id,
+                    'metrics': metrics,
+                    'severity': 'high'
+                }
+            )
+            await self.event_bus.publish('alerts', alert_event)
+
+    async def handle_performance_degradation(self, event: Event):
+        """
+        Handle model performance degradation.
+        Triggers retraining or rollback.
+        """
+        model_id = event.data['model_id']
+        metric = event.data['metric']
+        current_value = event.data['current_value']
+        threshold = event.data['threshold']
+
+        print(f"Performance degraded: {model_id}")
+        print(f"{metric}: {current_value} (threshold: {threshold})")
+
+        # Trigger retraining
+        training_event = Event(
+            event_id=f"train-{event.event_id}",
+            event_type="training.requested",
+            timestamp=datetime.now(),
+            source="integration_layer",
+            data={
+                'trigger': 'performance_degradation',
+                'model_to_replace': model_id
+            }
+        )
+        await self.event_bus.publish('training.requests', training_event)
+
+    def _should_retrain(self, event: Event) -> bool:
+        """Determine if retraining is needed."""
+        # Example logic
+        return event.data.get('record_count', 0) > 1000000
+
+    def _validate_model(self, metrics: Dict[str, float]) -> bool:
+        """Validate model metrics meet thresholds."""
+        return (
+            metrics.get('accuracy', 0) > 0.90 and
+            metrics.get('precision', 0) > 0.85 and
+            metrics.get('recall', 0) > 0.85
+        )
+
+# Example usage
+async def main():
+    # Initialize event bus
+    event_bus = KafkaEventBus(['localhost:9092'])
+
+    # Initialize integration layer
+    integration = MLSystemIntegration(event_bus)
+
+    # Simulate data ingestion event
+    data_event = Event(
+        event_id="data-001",
+        event_type="data.ingested",
+        timestamp=datetime.now(),
+        source="data_pipeline",
+        data={
+            'batch_id': 'batch-2025-001',
+            'record_count': 1500000,
+            'data_version': 'v2.1'
+        }
+    )
+
+    await event_bus.publish('data.ingested', data_event)
+
+    # Simulate training completion
+    training_event = Event(
+        event_id="train-001",
+        event_type="training.completed",
+        timestamp=datetime.now(),
+        source="training_pipeline",
+        data={
+            'model_id': 'model-v2.1',
+            'metrics': {
+                'accuracy': 0.92,
+                'precision': 0.89,
+                'recall': 0.87
+            }
+        }
+    )
+
+    await event_bus.publish('training.completed', training_event)
+
+# Run example
+# asyncio.run(main())
+\end{lstlisting}
+
+\textbf{Pattern 2: API Gateway Integration}
+
+\begin{lstlisting}[language=Python, caption=API Gateway for ML System]
+#!/usr/bin/env python3
+"""
+API Gateway for ML System Integration
+"""
+
+from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from typing import Dict, List, Optional, Any
+import time
+import logging
+from datetime import datetime
+import asyncio
+from circuitbreaker import circuit
+import redis
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Models
+class PredictionRequest(BaseModel):
+    """Prediction request schema."""
+    user_id: str
+    context: Dict[str, Any]
+    features: Optional[Dict[str, float]] = None
+    model_version: Optional[str] = None
+
+class PredictionResponse(BaseModel):
+    """Prediction response schema."""
+    prediction: Any
+    confidence: float
+    model_version: str
+    latency_ms: float
+    request_id: str
+
+class HealthResponse(BaseModel):
+    """Health check response."""
+    status: str
+    timestamp: datetime
+    components: Dict[str, str]
+
+# API Gateway
+class MLAPIGateway:
+    """
+    API Gateway for ML system.
+    Handles routing, load balancing, caching, and monitoring.
+    """
+
+    def __init__(
+        self,
+        model_endpoints: Dict[str, str],
+        feature_store_url: str,
+        cache_url: str
+    ):
+        self.model_endpoints = model_endpoints
+        self.feature_store_url = feature_store_url
+        self.cache = redis.Redis.from_url(cache_url)
+
+        # Metrics
+        self.request_count = 0
+        self.error_count = 0
+        self.total_latency = 0.0
+
+    async def predict(
+        self,
+        request: PredictionRequest,
+        model_name: str = "default"
+    ) -> PredictionResponse:
+        """
+        Handle prediction request.
+        Implements caching, feature enrichment, and error handling.
+        """
+        start_time = time.time()
+        request_id = f"req-{int(time.time())}-{self.request_count}"
+        self.request_count += 1
+
+        try:
+            # Check cache
+            cache_key = self._get_cache_key(request, model_name)
+            cached = self._get_from_cache(cache_key)
+            if cached:
+                logger.info(f"Cache hit: {request_id}")
+                return cached
+
+            # Enrich with features from feature store
+            if request.features is None:
+                request.features = await self._get_features(request.user_id)
+
+            # Get prediction from model service
+            prediction = await self._call_model_service(
+                model_name,
+                request
+            )
+
+            # Calculate latency
+            latency_ms = (time.time() - start_time) * 1000
+            self.total_latency += latency_ms
+
+            # Build response
+            response = PredictionResponse(
+                prediction=prediction['prediction'],
+                confidence=prediction['confidence'],
+                model_version=prediction['model_version'],
+                latency_ms=latency_ms,
+                request_id=request_id
+            )
+
+            # Cache response
+            self._cache_response(cache_key, response)
+
+            # Log metrics
+            logger.info(
+                f"Request {request_id}: "
+                f"latency={latency_ms:.2f}ms, "
+                f"confidence={prediction['confidence']:.3f}"
+            )
+
+            return response
+
+        except Exception as e:
+            self.error_count += 1
+            logger.error(f"Prediction error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @circuit(failure_threshold=5, recovery_timeout=60)
+    async def _call_model_service(
+        self,
+        model_name: str,
+        request: PredictionRequest
+    ) -> Dict[str, Any]:
+        """
+        Call model service with circuit breaker.
+        Falls back to backup model if primary fails.
+        """
+        endpoint = self.model_endpoints.get(model_name)
+        if not endpoint:
+            raise ValueError(f"Unknown model: {model_name}")
+
+        try:
+            # Simulate model service call
+            await asyncio.sleep(0.01)  # Simulated latency
+
+            # Return prediction
+            return {
+                'prediction': 0.85,
+                'confidence': 0.92,
+                'model_version': 'v1.2.3'
+            }
+        except Exception as e:
+            logger.warning(f"Primary model failed: {e}, trying backup")
+            return await self._call_backup_model(request)
+
+    async def _call_backup_model(
+        self,
+        request: PredictionRequest
+    ) -> Dict[str, Any]:
+        """Fallback to backup model."""
+        # Simplified backup model
+        return {
+            'prediction': 0.5,  # Default prediction
+            'confidence': 0.5,
+            'model_version': 'backup-v1.0'
+        }
+
+    async def _get_features(self, user_id: str) -> Dict[str, float]:
+        """Fetch features from feature store."""
+        # Simulate feature store call
+        await asyncio.sleep(0.005)
+
+        return {
+            'feature_1': 0.5,
+            'feature_2': 0.8,
+            'feature_3': 0.3
+        }
+
+    def _get_cache_key(
+        self,
+        request: PredictionRequest,
+        model_name: str
+    ) -> str:
+        """Generate cache key."""
+        return f"pred:{model_name}:{request.user_id}:{hash(str(request.context))}"
+
+    def _get_from_cache(self, key: str) -> Optional[PredictionResponse]:
+        """Get prediction from cache."""
+        try:
+            cached = self.cache.get(key)
+            if cached:
+                return PredictionResponse.parse_raw(cached)
+        except:
+            pass
+        return None
+
+    def _cache_response(
+        self,
+        key: str,
+        response: PredictionResponse,
+        ttl: int = 300
+    ):
+        """Cache prediction response."""
+        try:
+            self.cache.setex(
+                key,
+                ttl,
+                response.json()
+            )
+        except Exception as e:
+            logger.warning(f"Cache write failed: {e}")
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get gateway metrics."""
+        avg_latency = (
+            self.total_latency / self.request_count
+            if self.request_count > 0 else 0
+        )
+        error_rate = (
+            self.error_count / self.request_count
+            if self.request_count > 0 else 0
+        )
+
+        return {
+            'request_count': self.request_count,
+            'error_count': self.error_count,
+            'error_rate': error_rate,
+            'avg_latency_ms': avg_latency
+        }
+
+# FastAPI application
+app = FastAPI(title="ML API Gateway")
+
+# Add CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize gateway
+gateway = MLAPIGateway(
+    model_endpoints={
+        'default': 'http://model-service:8000',
+        'recommendation': 'http://rec-service:8001',
+        'fraud': 'http://fraud-service:8002'
+    },
+    feature_store_url='http://feature-store:8003',
+    cache_url='redis://localhost:6379'
+)
+
+# Authentication dependency
+async def verify_api_key(x_api_key: str = Header(...)):
+    """Verify API key."""
+    if x_api_key != "secret-key":  # Use proper auth in production
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    return x_api_key
+
+# Endpoints
+@app.post("/predict/{model_name}", response_model=PredictionResponse)
+async def predict(
+    model_name: str,
+    request: PredictionRequest,
+    api_key: str = Depends(verify_api_key)
+):
+    """Prediction endpoint."""
+    return await gateway.predict(request, model_name)
+
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Health check endpoint."""
+    return HealthResponse(
+        status="healthy",
+        timestamp=datetime.now(),
+        components={
+            'api_gateway': 'up',
+            'cache': 'up',
+            'model_service': 'up'
+        }
+    )
+
+@app.get("/metrics")
+async def metrics():
+    """Metrics endpoint."""
+    return gateway.get_metrics()
+\end{lstlisting}
+
+\subsection{Model Integration Patterns}
+
+\textbf{Pattern 3: Model Ensemble Integration}
+
+\begin{lstlisting}[language=Python, caption=Ensemble Model Integration]
+#!/usr/bin/env python3
+"""
+Ensemble Model Integration Pattern
+"""
+
+from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
+import numpy as np
+from abc import ABC, abstractmethod
+import asyncio
+
+@dataclass
+class ModelPrediction:
+    """Single model prediction."""
+    model_id: str
+    prediction: Any
+    confidence: float
+    latency_ms: float
+    metadata: Dict[str, Any]
+
+class EnsembleStrategy(ABC):
+    """Abstract ensemble strategy."""
+
+    @abstractmethod
+    def combine(
+        self,
+        predictions: List[ModelPrediction]
+    ) -> ModelPrediction:
+        """Combine predictions from multiple models."""
+        pass
+
+class AveragingEnsemble(EnsembleStrategy):
+    """Averaging ensemble strategy."""
+
+    def combine(
+        self,
+        predictions: List[ModelPrediction]
+    ) -> ModelPrediction:
+        """Average predictions."""
+        pred_values = [p.prediction for p in predictions]
+        confidences = [p.confidence for p in predictions]
+
+        return ModelPrediction(
+            model_id="ensemble_average",
+            prediction=np.mean(pred_values),
+            confidence=np.mean(confidences),
+            latency_ms=max(p.latency_ms for p in predictions),
+            metadata={'n_models': len(predictions)}
+        )
+
+class WeightedEnsemble(EnsembleStrategy):
+    """Weighted ensemble strategy."""
+
+    def __init__(self, weights: Dict[str, float]):
+        self.weights = weights
+
+    def combine(
+        self,
+        predictions: List[ModelPrediction]
+    ) -> ModelPrediction:
+        """Weighted average of predictions."""
+        weighted_sum = sum(
+            p.prediction * self.weights.get(p.model_id, 1.0)
+            for p in predictions
+        )
+        total_weight = sum(
+            self.weights.get(p.model_id, 1.0)
+            for p in predictions
+        )
+
+        return ModelPrediction(
+            model_id="ensemble_weighted",
+            prediction=weighted_sum / total_weight,
+            confidence=max(p.confidence for p in predictions),
+            latency_ms=max(p.latency_ms for p in predictions),
+            metadata={
+                'n_models': len(predictions),
+                'weights': self.weights
+            }
+        )
+
+class StackingEnsemble(EnsembleStrategy):
+    """Stacking ensemble with meta-learner."""
+
+    def __init__(self, meta_model):
+        self.meta_model = meta_model
+
+    def combine(
+        self,
+        predictions: List[ModelPrediction]
+    ) -> ModelPrediction:
+        """Use meta-model to combine predictions."""
+        # Stack predictions as features for meta-model
+        features = np.array([
+            [p.prediction, p.confidence]
+            for p in predictions
+        ]).flatten()
+
+        # Meta-model prediction
+        meta_pred = self.meta_model.predict(features.reshape(1, -1))[0]
+
+        return ModelPrediction(
+            model_id="ensemble_stacking",
+            prediction=meta_pred,
+            confidence=0.9,  # From meta-model
+            latency_ms=max(p.latency_ms for p in predictions) + 5,
+            metadata={'n_models': len(predictions)}
+        )
+
+class EnsembleOrchestrator:
+    """
+    Orchestrates ensemble of models.
+    Handles parallel execution and result combination.
+    """
+
+    def __init__(
+        self,
+        models: Dict[str, Any],
+        strategy: EnsembleStrategy,
+        timeout: float = 1.0
+    ):
+        self.models = models
+        self.strategy = strategy
+        self.timeout = timeout
+
+    async def predict(
+        self,
+        features: Dict[str, Any]
+    ) -> ModelPrediction:
+        """
+        Get predictions from all models and combine.
+
+        Args:
+            features: Input features
+
+        Returns:
+            Combined prediction
+        """
+        # Execute models in parallel
+        tasks = [
+            self._predict_single(model_id, model, features)
+            for model_id, model in self.models.items()
+        ]
+
+        try:
+            predictions = await asyncio.gather(
+                *tasks,
+                return_exceptions=True
+            )
+
+            # Filter out exceptions
+            valid_predictions = [
+                p for p in predictions
+                if isinstance(p, ModelPrediction)
+            ]
+
+            if not valid_predictions:
+                raise RuntimeError("All models failed")
+
+            # Combine predictions
+            return self.strategy.combine(valid_predictions)
+
+        except asyncio.TimeoutError:
+            # Fallback to fastest responding model
+            return await self._fallback_prediction(features)
+
+    async def _predict_single(
+        self,
+        model_id: str,
+        model: Any,
+        features: Dict[str, Any]
+    ) -> ModelPrediction:
+        """Get prediction from single model."""
+        import time
+        start = time.time()
+
+        try:
+            # Simulate model prediction
+            await asyncio.sleep(0.01)
+            prediction = 0.8  # model.predict(features)
+            confidence = 0.9
+
+            latency_ms = (time.time() - start) * 1000
+
+            return ModelPrediction(
+                model_id=model_id,
+                prediction=prediction,
+                confidence=confidence,
+                latency_ms=latency_ms,
+                metadata={}
+            )
+        except Exception as e:
+            raise RuntimeError(f"Model {model_id} failed: {e}")
+
+    async def _fallback_prediction(
+        self,
+        features: Dict[str, Any]
+    ) -> ModelPrediction:
+        """Fallback when ensemble fails."""
+        return ModelPrediction(
+            model_id="fallback",
+            prediction=0.5,
+            confidence=0.5,
+            latency_ms=0.0,
+            metadata={'reason': 'timeout'}
+        )
+
+# Example usage
+async def main():
+    # Mock models
+    models = {
+        'model_a': None,  # XGBoost
+        'model_b': None,  # LightGBM
+        'model_c': None   # Neural Network
+    }
+
+    # Weighted ensemble
+    strategy = WeightedEnsemble({
+        'model_a': 0.4,
+        'model_b': 0.35,
+        'model_c': 0.25
+    })
+
+    orchestrator = EnsembleOrchestrator(models, strategy)
+
+    # Get prediction
+    features = {'user_id': '123', 'item_id': '456'}
+    result = await orchestrator.predict(features)
+
+    print(f"Ensemble prediction: {result.prediction}")
+    print(f"Confidence: {result.confidence}")
+    print(f"Latency: {result.latency_ms}ms")
+
+# asyncio.run(main())
+\end{lstlisting}
+
+\section{Performance and Scalability Considerations}
+
+\subsection{Performance Optimization Strategies}
+
+\textbf{1. Latency Optimization}
+
+\begin{table}[h]
+\centering
+\caption{Latency Optimization Techniques}
+\begin{tabular}{p{3.5cm}p{4cm}p{4cm}}
+\toprule
+\textbf{Technique} & \textbf{Latency Reduction} & \textbf{Trade-offs} \\
+\midrule
+Caching & 80-95\% (cache hits) & Stale data, memory cost \\
+\midrule
+Model quantization & 40-60\% & 1-2\% accuracy loss \\
+\midrule
+Batching & 30-50\% (throughput) & Increased latency per request \\
+\midrule
+Feature precomputation & 50-70\% & Storage cost, freshness \\
+\midrule
+Model pruning & 30-40\% & Slight accuracy loss \\
+\midrule
+GPU inference & 70-90\% (vs CPU) & Higher cost \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{2. Scalability Patterns}
+
+\begin{lstlisting}[language=Python, caption=Auto-Scaling ML Service]
+#!/usr/bin/env python3
+"""
+Auto-Scaling Configuration for ML Service
+"""
+
+from dataclasses import dataclass
+from typing import List, Dict
+from enum import Enum
+
+class ScalingMetric(Enum):
+    """Metrics for autoscaling decisions."""
+    CPU_UTILIZATION = "cpu"
+    MEMORY_UTILIZATION = "memory"
+    REQUEST_COUNT = "requests"
+    LATENCY_P99 = "latency_p99"
+    QUEUE_DEPTH = "queue_depth"
+
+@dataclass
+class ScalingPolicy:
+    """Auto-scaling policy configuration."""
+
+    # Scale-up triggers
+    scale_up_metric: ScalingMetric
+    scale_up_threshold: float
+    scale_up_evaluation_periods: int
+    scale_up_cooldown_seconds: int
+
+    # Scale-down triggers
+    scale_down_metric: ScalingMetric
+    scale_down_threshold: float
+    scale_down_evaluation_periods: int
+    scale_down_cooldown_seconds: int
+
+    # Capacity limits
+    min_instances: int
+    max_instances: int
+    target_instances: int
+
+    # Scaling increments
+    scale_up_increment: int = 2
+    scale_down_increment: int = 1
+
+@dataclass
+class ResourceConfiguration:
+    """Resource configuration for ML service."""
+
+    # Compute
+    cpu_cores: int
+    memory_gb: int
+    gpu_count: int
+    gpu_type: str
+
+    # Storage
+    disk_gb: int
+
+    # Network
+    max_concurrent_requests: int
+    request_timeout_seconds: int
+
+class MLServiceScalingConfig:
+    """Complete scaling configuration for ML service."""
+
+    def __init__(self):
+        # Resource configuration per instance
+        self.resources = ResourceConfiguration(
+            cpu_cores=4,
+            memory_gb=16,
+            gpu_count=1,
+            gpu_type="T4",
+            disk_gb=100,
+            max_concurrent_requests=100,
+            request_timeout_seconds=30
+        )
+
+        # Scaling policy
+        self.scaling_policy = ScalingPolicy(
+            scale_up_metric=ScalingMetric.CPU_UTILIZATION,
+            scale_up_threshold=70.0,  # 70% CPU
+            scale_up_evaluation_periods=2,  # 2 periods above threshold
+            scale_up_cooldown_seconds=300,  # 5 minutes
+            scale_down_metric=ScalingMetric.CPU_UTILIZATION,
+            scale_down_threshold=30.0,  # 30% CPU
+            scale_down_evaluation_periods=5,  # 5 periods below threshold
+            scale_down_cooldown_seconds=600,  # 10 minutes
+            min_instances=2,  # For high availability
+            max_instances=20,
+            target_instances=3,
+            scale_up_increment=2,  # Scale up by 2 instances
+            scale_down_increment=1  # Scale down by 1 instance
+        )
+
+    def get_kubernetes_manifest(self) -> Dict:
+        """Generate Kubernetes HPA manifest."""
+        return {
+            'apiVersion': 'autoscaling/v2',
+            'kind': 'HorizontalPodAutoscaler',
+            'metadata': {
+                'name': 'ml-service-hpa'
+            },
+            'spec': {
+                'scaleTargetRef': {
+                    'apiVersion': 'apps/v1',
+                    'kind': 'Deployment',
+                    'name': 'ml-service'
+                },
+                'minReplicas': self.scaling_policy.min_instances,
+                'maxReplicas': self.scaling_policy.max_instances,
+                'metrics': [
+                    {
+                        'type': 'Resource',
+                        'resource': {
+                            'name': 'cpu',
+                            'target': {
+                                'type': 'Utilization',
+                                'averageUtilization': int(
+                                    self.scaling_policy.scale_up_threshold
+                                )
+                            }
+                        }
+                    }
+                ],
+                'behavior': {
+                    'scaleUp': {
+                        'stabilizationWindowSeconds': (
+                            self.scaling_policy.scale_up_cooldown_seconds
+                        ),
+                        'policies': [
+                            {
+                                'type': 'Pods',
+                                'value': self.scaling_policy.scale_up_increment,
+                                'periodSeconds': 60
+                            }
+                        ]
+                    },
+                    'scaleDown': {
+                        'stabilizationWindowSeconds': (
+                            self.scaling_policy.scale_down_cooldown_seconds
+                        ),
+                        'policies': [
+                            {
+                                'type': 'Pods',
+                                'value': self.scaling_policy.scale_down_increment,
+                                'periodSeconds': 60
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+
+# Example configuration
+config = MLServiceScalingConfig()
+hpa_manifest = config.get_kubernetes_manifest()
+\end{lstlisting}
+
+\textbf{3. Load Balancing Strategies}
+
+\begin{itemize}
+    \item \textbf{Round-robin:} Simple, even distribution (good for homogeneous instances)
+    \item \textbf{Least-connections:} Route to instance with fewest connections
+    \item \textbf{Weighted:} Distribute based on instance capacity
+    \item \textbf{Latency-based:} Route to lowest-latency instance
+    \item \textbf{Model-aware:} Route to specialized models based on request characteristics
+\end{itemize}
+
+\section{Evolution and Maintenance Strategies}
+
+\subsection{System Evolution Framework}
+
+\textbf{Evolution Maturity Levels:}
+
+\begin{table}[h]
+\centering
+\caption{ML System Maturity Model}
+\begin{tabular}{p{2cm}p{4cm}p{5cm}}
+\toprule
+\textbf{Level} & \textbf{Characteristics} & \textbf{Capabilities} \\
+\midrule
+Level 0: Manual & Scripts, notebooks & One-off model training \\
+\midrule
+Level 1: Automated Training & Training pipelines & Reproducible training \\
+\midrule
+Level 2: Automated Deployment & CI/CD for ML & Automated model deployment \\
+\midrule
+Level 3: Automated Monitoring & Monitoring + alerts & Detect degradation \\
+\midrule
+Level 4: Automated Retraining & Trigger-based retraining & Self-healing system \\
+\midrule
+Level 5: Full MLOps & End-to-end automation & Continuous learning \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Maintenance Strategies}
+
+\begin{lstlisting}[language=Python, caption=System Maintenance Framework]
+#!/usr/bin/env python3
+"""
+ML System Maintenance Framework
+"""
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import List, Dict, Optional
+from enum import Enum
+
+class MaintenanceType(Enum):
+    """Types of maintenance activities."""
+    PREVENTIVE = "preventive"
+    CORRECTIVE = "corrective"
+    ADAPTIVE = "adaptive"
+    PERFECTIVE = "perfective"
+
+@dataclass
+class MaintenanceTask:
+    """Maintenance task definition."""
+    task_id: str
+    task_type: MaintenanceType
+    description: str
+    frequency: str  # e.g., "daily", "weekly", "monthly"
+    estimated_duration: timedelta
+    impact: str  # "low", "medium", "high"
+    requires_downtime: bool
+
+class MLSystemMaintenance:
+    """Framework for ML system maintenance."""
+
+    def __init__(self):
+        self.tasks = self._define_maintenance_tasks()
+
+    def _define_maintenance_tasks(self) -> List[MaintenanceTask]:
+        """Define all maintenance tasks."""
+        return [
+            # Preventive maintenance
+            MaintenanceTask(
+                task_id="prev-001",
+                task_type=MaintenanceType.PREVENTIVE,
+                description="Monitor data drift and feature distributions",
+                frequency="daily",
+                estimated_duration=timedelta(hours=1),
+                impact="low",
+                requires_downtime=False
+            ),
+            MaintenanceTask(
+                task_id="prev-002",
+                task_type=MaintenanceType.PREVENTIVE,
+                description="Review model performance metrics",
+                frequency="daily",
+                estimated_duration=timedelta(hours=2),
+                impact="low",
+                requires_downtime=False
+            ),
+            MaintenanceTask(
+                task_id="prev-003",
+                task_type=MaintenanceType.PREVENTIVE,
+                description="Check infrastructure health and resource usage",
+                frequency="daily",
+                estimated_duration=timedelta(minutes=30),
+                impact="low",
+                requires_downtime=False
+            ),
+            MaintenanceTask(
+                task_id="prev-004",
+                task_type=MaintenanceType.PREVENTIVE,
+                description="Validate data pipeline integrity",
+                frequency="weekly",
+                estimated_duration=timedelta(hours=3),
+                impact="medium",
+                requires_downtime=False
+            ),
+            MaintenanceTask(
+                task_id="prev-005",
+                task_type=MaintenanceType.PREVENTIVE,
+                description="Update dependencies and security patches",
+                frequency="monthly",
+                estimated_duration=timedelta(hours=4),
+                impact="medium",
+                requires_downtime=True
+            ),
+
+            # Corrective maintenance
+            MaintenanceTask(
+                task_id="corr-001",
+                task_type=MaintenanceType.CORRECTIVE,
+                description="Retrain model due to performance degradation",
+                frequency="as_needed",
+                estimated_duration=timedelta(hours=8),
+                impact="high",
+                requires_downtime=False
+            ),
+            MaintenanceTask(
+                task_id="corr-002",
+                task_type=MaintenanceType.CORRECTIVE,
+                description="Fix data quality issues",
+                frequency="as_needed",
+                estimated_duration=timedelta(hours=4),
+                impact="high",
+                requires_downtime=False
+            ),
+            MaintenanceTask(
+                task_id="corr-003",
+                task_type=MaintenanceType.CORRECTIVE,
+                description="Rollback failed deployment",
+                frequency="as_needed",
+                estimated_duration=timedelta(minutes=30),
+                impact="critical",
+                requires_downtime=True
+            ),
+
+            # Adaptive maintenance
+            MaintenanceTask(
+                task_id="adapt-001",
+                task_type=MaintenanceType.ADAPTIVE,
+                description="Add new features based on changing patterns",
+                frequency="quarterly",
+                estimated_duration=timedelta(days=5),
+                impact="medium",
+                requires_downtime=False
+            ),
+            MaintenanceTask(
+                task_id="adapt-002",
+                task_type=MaintenanceType.ADAPTIVE,
+                description="Adapt to new data sources or formats",
+                frequency="as_needed",
+                estimated_duration=timedelta(days=3),
+                impact="high",
+                requires_downtime=False
+            ),
+
+            # Perfective maintenance
+            MaintenanceTask(
+                task_id="perf-001",
+                task_type=MaintenanceType.PERFECTIVE,
+                description="Optimize model latency",
+                frequency="quarterly",
+                estimated_duration=timedelta(days=7),
+                impact="medium",
+                requires_downtime=False
+            ),
+            MaintenanceTask(
+                task_id="perf-002",
+                task_type=MaintenanceType.PERFECTIVE,
+                description="Improve model accuracy",
+                frequency="quarterly",
+                estimated_duration=timedelta(days=10),
+                impact="medium",
+                requires_downtime=False
+            ),
+            MaintenanceTask(
+                task_id="perf-003",
+                task_type=MaintenanceType.PERFECTIVE,
+                description="Reduce infrastructure costs",
+                frequency="quarterly",
+                estimated_duration=timedelta(days=5),
+                impact="low",
+                requires_downtime=False
+            )
+        ]
+
+    def get_maintenance_schedule(
+        self,
+        start_date: datetime,
+        end_date: datetime
+    ) -> List[tuple[datetime, MaintenanceTask]]:
+        """
+        Generate maintenance schedule for date range.
+
+        Args:
+            start_date: Schedule start date
+            end_date: Schedule end date
+
+        Returns:
+            List of (scheduled_datetime, task) tuples
+        """
+        schedule = []
+
+        for task in self.tasks:
+            if task.frequency == "as_needed":
+                continue
+
+            # Calculate occurrences
+            current_date = start_date
+            while current_date <= end_date:
+                schedule.append((current_date, task))
+
+                # Increment based on frequency
+                if task.frequency == "daily":
+                    current_date += timedelta(days=1)
+                elif task.frequency == "weekly":
+                    current_date += timedelta(weeks=1)
+                elif task.frequency == "monthly":
+                    current_date += timedelta(days=30)
+                elif task.frequency == "quarterly":
+                    current_date += timedelta(days=90)
+                else:
+                    break
+
+        return sorted(schedule, key=lambda x: x[0])
+
+    def estimate_maintenance_effort(
+        self,
+        period_days: int = 30
+    ) -> Dict[str, float]:
+        """
+        Estimate maintenance effort for period.
+
+        Args:
+            period_days: Period in days
+
+        Returns:
+            Dict with effort estimates by maintenance type
+        """
+        effort = {
+            'preventive': 0.0,
+            'corrective': 0.0,
+            'adaptive': 0.0,
+            'perfective': 0.0,
+            'total': 0.0
+        }
+
+        for task in self.tasks:
+            if task.frequency == "as_needed":
+                continue
+
+            # Calculate occurrences in period
+            if task.frequency == "daily":
+                occurrences = period_days
+            elif task.frequency == "weekly":
+                occurrences = period_days / 7
+            elif task.frequency == "monthly":
+                occurrences = period_days / 30
+            elif task.frequency == "quarterly":
+                occurrences = period_days / 90
+            else:
+                occurrences = 0
+
+            # Add to effort
+            hours = occurrences * task.estimated_duration.total_seconds() / 3600
+            effort[task.task_type.value] += hours
+            effort['total'] += hours
+
+        return effort
+
+# Example usage
+maintenance = MLSystemMaintenance()
+
+# Get 30-day schedule
+start = datetime.now()
+end = start + timedelta(days=30)
+schedule = maintenance.get_maintenance_schedule(start, end)
+
+print(f"Maintenance schedule ({len(schedule)} tasks):")
+for date, task in schedule[:5]:
+    print(f"  {date.strftime('%Y-%m-%d')}: {task.description}")
+
+# Estimate effort
+effort = maintenance.estimate_maintenance_effort(30)
+print(f"\nEstimated 30-day effort: {effort['total']:.1f} hours")
+print(f"  Preventive: {effort['preventive']:.1f}h")
+print(f"  Corrective: {effort['corrective']:.1f}h")
+print(f"  Adaptive: {effort['adaptive']:.1f}h")
+print(f"  Perfective: {effort['perfective']:.1f}h")
+\end{lstlisting}
+
+\section{Real-World System Examples}
+
+\subsection{Example 1: Real-Time Content Moderation System}
+
+\textbf{Business Context:}
+\begin{itemize}
+    \item Social media platform with 50M daily active users
+    \item Need to detect and remove harmful content (hate speech, violence, spam)
+    \item Requirements: <100ms latency, 99.5\% recall, 95\% precision
+    \item Handle multiple content types: text, images, video
+\end{itemize}
+
+\textbf{System Architecture:}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=1.3cm,
+    component/.style={rectangle, draw, fill=blue!20, text width=2.5cm, text centered, minimum height=0.8cm, font=\footnotesize},
+    storage/.style={cylinder, draw, fill=green!20, text width=2.2cm, text centered, minimum height=0.8cm, aspect=0.3, font=\footnotesize}
+]
+
+% User layer
+\node[component] (user) {User Posts Content};
+
+% API Gateway
+\node[component, below=of user] (gateway) {API Gateway};
+
+% Content processing
+\node[component, below left=1cm and 0.5cm of gateway] (text) {Text Classifier};
+\node[component, below=of gateway] (image) {Image Classifier};
+\node[component, below right=1cm and 0.5cm of gateway] (video) {Video Analyzer};
+
+% Aggregation
+\node[component, below=2.5cm of gateway] (ensemble) {Ensemble Scorer};
+
+% Decision
+\node[component, below=of ensemble] (decision) {Decision Engine};
+
+% Actions
+\node[component, below left=1cm and 0.5cm of decision] (allow) {Allow Post};
+\node[component, below=of decision] (review) {Human Review Queue};
+\node[component, below right=1cm and 0.5cm of decision] (block) {Block Content};
+
+% Storage
+\node[storage, right=2cm of decision] (db) {Moderation DB};
+
+% Arrows
+\draw[->] (user) -- (gateway);
+\draw[->] (gateway) -- (text);
+\draw[->] (gateway) -- (image);
+\draw[->] (gateway) -- (video);
+\draw[->] (text) -- (ensemble);
+\draw[->] (image) -- (ensemble);
+\draw[->] (video) -- (ensemble);
+\draw[->] (ensemble) -- (decision);
+\draw[->] (decision) -- (allow);
+\draw[->] (decision) -- (review);
+\draw[->] (decision) -- (block);
+\draw[->] (decision) -- (db);
+
+\end{tikzpicture}
+\caption{Content Moderation System Architecture}
+\end{figure}
+
+\textbf{Key Design Decisions:}
+
+\begin{enumerate}
+    \item \textbf{Parallel Processing:} Text, image, and video classifiers run in parallel to minimize latency
+    \item \textbf{Ensemble Scoring:} Combine signals from multiple models for robust detection
+    \item \textbf{Human-in-the-Loop:} Route borderline cases to human review (0.7 < score < 0.9)
+    \item \textbf{Model Serving:} Use TorchServe with GPU inference for image/video models
+    \item \textbf{Caching:} Cache recent decisions for duplicate content (40\% cache hit rate)
+    \item \textbf{Monitoring:} Track precision/recall, false positive rate, and user appeals
+\end{enumerate}
+
+\textbf{Implementation Highlights:}
+
+\begin{lstlisting}[language=Python, caption=Content Moderation Decision Engine]
+#!/usr/bin/env python3
+"""
+Content Moderation Decision Engine
+"""
+
+from dataclasses import dataclass
+from typing import List, Dict, Optional
+from enum import Enum
+
+class ContentType(Enum):
+    TEXT = "text"
+    IMAGE = "image"
+    VIDEO = "video"
+
+class ModerationAction(Enum):
+    ALLOW = "allow"
+    REVIEW = "review"
+    BLOCK = "block"
+
+@dataclass
+class ModerationScore:
+    """Moderation score from a single model."""
+    content_type: ContentType
+    violation_type: str  # "hate_speech", "violence", etc.
+    score: float  # 0.0 (safe) to 1.0 (harmful)
+    confidence: float
+
+@dataclass
+class ModerationDecision:
+    """Final moderation decision."""
+    action: ModerationAction
+    combined_score: float
+    reason: str
+    model_scores: List[ModerationScore]
+    requires_human_review: bool
+
+class ModerationEngine:
+    """
+    Decision engine for content moderation.
+    Combines signals from multiple models and applies business rules.
+    """
+
+    def __init__(
+        self,
+        block_threshold: float = 0.9,
+        review_threshold: float = 0.7,
+        weights: Optional[Dict[str, float]] = None
+    ):
+        self.block_threshold = block_threshold
+        self.review_threshold = review_threshold
+        self.weights = weights or {
+            'hate_speech': 1.0,
+            'violence': 1.0,
+            'spam': 0.7,
+            'nudity': 0.8
+        }
+
+    def make_decision(
+        self,
+        scores: List[ModerationScore]
+    ) -> ModerationDecision:
+        """
+        Make moderation decision based on model scores.
+
+        Args:
+            scores: List of scores from different models
+
+        Returns:
+            Final moderation decision
+        """
+        # Calculate weighted combined score
+        combined_score = self._combine_scores(scores)
+
+        # Apply thresholds
+        if combined_score >= self.block_threshold:
+            action = ModerationAction.BLOCK
+            reason = self._get_block_reason(scores)
+            requires_review = False
+        elif combined_score >= self.review_threshold:
+            action = ModerationAction.REVIEW
+            reason = "Borderline case requiring human judgment"
+            requires_review = True
+        else:
+            action = ModerationAction.ALLOW
+            reason = "Content passes moderation checks"
+            requires_review = False
+
+        # Check for high-confidence violations
+        if self._has_high_confidence_violation(scores):
+            action = ModerationAction.BLOCK
+            requires_review = False
+
+        return ModerationDecision(
+            action=action,
+            combined_score=combined_score,
+            reason=reason,
+            model_scores=scores,
+            requires_human_review=requires_review
+        )
+
+    def _combine_scores(self, scores: List[ModerationScore]) -> float:
+        """Combine scores using weighted average."""
+        if not scores:
+            return 0.0
+
+        weighted_sum = sum(
+            score.score * self.weights.get(score.violation_type, 1.0)
+            for score in scores
+        )
+        total_weight = sum(
+            self.weights.get(score.violation_type, 1.0)
+            for score in scores
+        )
+
+        return weighted_sum / total_weight if total_weight > 0 else 0.0
+
+    def _has_high_confidence_violation(
+        self,
+        scores: List[ModerationScore]
+    ) -> bool:
+        """Check if any model has high-confidence violation."""
+        return any(
+            score.score >= 0.95 and score.confidence >= 0.9
+            for score in scores
+        )
+
+    def _get_block_reason(self, scores: List[ModerationScore]) -> str:
+        """Get human-readable reason for blocking."""
+        violations = [
+            score.violation_type
+            for score in scores
+            if score.score >= self.review_threshold
+        ]
+
+        if len(violations) == 1:
+            return f"Content violates policy: {violations[0]}"
+        else:
+            return f"Content violates multiple policies: {', '.join(violations)}"
+
+# Example usage
+engine = ModerationEngine()
+
+scores = [
+    ModerationScore(
+        content_type=ContentType.TEXT,
+        violation_type="hate_speech",
+        score=0.92,
+        confidence=0.88
+    ),
+    ModerationScore(
+        content_type=ContentType.IMAGE,
+        violation_type="violence",
+        score=0.45,
+        confidence=0.75
+    )
+]
+
+decision = engine.make_decision(scores)
+print(f"Action: {decision.action.value}")
+print(f"Score: {decision.combined_score:.3f}")
+print(f"Reason: {decision.reason}")
+\end{lstlisting}
+
+\textbf{Results:}
+\begin{itemize}
+    \item Achieved 99.7\% recall, 94\% precision
+    \item Reduced manual review workload by 60\%
+    \item p99 latency: 85ms
+    \item Cost: \$0.0003 per moderation
+\end{itemize}
+
+\subsection{Example 2: Dynamic Pricing System}
+
+\textbf{Business Context:}
+\begin{itemize}
+    \item Ride-sharing platform with 10M weekly trips
+    \item Need to optimize prices based on supply/demand
+    \item Requirements: Maximize revenue while maintaining acceptable wait times
+    \item Handle surge pricing during peak hours and special events
+\end{itemize}
+
+\textbf{System Architecture:}
+
+\begin{lstlisting}[language=Python, caption=Dynamic Pricing System]
+#!/usr/bin/env python3
+"""
+Dynamic Pricing System for Ride-Sharing
+"""
+
+import numpy as np
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+from datetime import datetime, timedelta
+
+@dataclass
+class MarketConditions:
+    """Current market conditions for pricing."""
+    location_id: str
+    available_drivers: int
+    pending_requests: int
+    avg_wait_time_minutes: float
+    hour_of_day: int
+    day_of_week: int
+    is_special_event: bool
+    weather_condition: str
+    historical_demand: float
+
+@dataclass
+class PricingDecision:
+    """Pricing decision output."""
+    base_price: float
+    surge_multiplier: float
+    final_price: float
+    expected_wait_time: float
+    confidence: float
+    reasoning: str
+
+class DynamicPricingEngine:
+    """
+    ML-powered dynamic pricing engine.
+    Uses demand forecasting, supply estimation, and optimization.
+    """
+
+    def __init__(
+        self,
+        base_price: float = 10.0,
+        min_multiplier: float = 1.0,
+        max_multiplier: float = 5.0
+    ):
+        self.base_price = base_price
+        self.min_multiplier = min_multiplier
+        self.max_multiplier = max_multiplier
+
+    def calculate_price(
+        self,
+        conditions: MarketConditions
+    ) -> PricingDecision:
+        """
+        Calculate optimal price based on market conditions.
+
+        Args:
+            conditions: Current market conditions
+
+        Returns:
+            Pricing decision
+        """
+        # Calculate supply-demand ratio
+        supply_demand_ratio = (
+            conditions.available_drivers /
+            max(conditions.pending_requests, 1)
+        )
+
+        # Base surge multiplier on supply-demand
+        if supply_demand_ratio >= 1.5:
+            # Oversupply: no surge
+            surge_multiplier = 1.0
+        elif supply_demand_ratio >= 0.8:
+            # Balanced: minimal surge
+            surge_multiplier = 1.2
+        elif supply_demand_ratio >= 0.5:
+            # High demand: moderate surge
+            surge_multiplier = 2.0
+        else:
+            # Very high demand: high surge
+            surge_multiplier = 3.5
+
+        # Adjust for time of day
+        if conditions.hour_of_day in [7, 8, 9, 17, 18, 19]:
+            # Peak commute hours
+            surge_multiplier *= 1.2
+        elif conditions.hour_of_day >= 22 or conditions.hour_of_day <= 5:
+            # Late night/early morning
+            surge_multiplier *= 1.3
+
+        # Adjust for special events
+        if conditions.is_special_event:
+            surge_multiplier *= 1.5
+
+        # Adjust for weather
+        if conditions.weather_condition in ['rain', 'snow']:
+            surge_multiplier *= 1.3
+
+        # Cap multiplier
+        surge_multiplier = np.clip(
+            surge_multiplier,
+            self.min_multiplier,
+            self.max_multiplier
+        )
+
+        # Calculate final price
+        final_price = self.base_price * surge_multiplier
+
+        # Estimate wait time
+        expected_wait_time = self._estimate_wait_time(
+            conditions,
+            surge_multiplier
+        )
+
+        # Generate reasoning
+        reasoning = self._generate_reasoning(
+            supply_demand_ratio,
+            surge_multiplier,
+            conditions
+        )
+
+        return PricingDecision(
+            base_price=self.base_price,
+            surge_multiplier=surge_multiplier,
+            final_price=final_price,
+            expected_wait_time=expected_wait_time,
+            confidence=0.85,
+            reasoning=reasoning
+        )
+
+    def _estimate_wait_time(
+        self,
+        conditions: MarketConditions,
+        surge_multiplier: float
+    ) -> float:
+        """Estimate wait time based on conditions and pricing."""
+        # Higher prices attract more drivers and reduce demand
+        elasticity = 0.3  # 30% demand reduction per 2x price increase
+        demand_adjustment = 1 - (elasticity * np.log2(surge_multiplier))
+
+        adjusted_requests = conditions.pending_requests * demand_adjustment
+
+        # Simple queuing model
+        if conditions.available_drivers == 0:
+            return 30.0  # Max wait time
+
+        wait_time = (adjusted_requests / conditions.available_drivers) * 3.0
+        return min(wait_time, 30.0)
+
+    def _generate_reasoning(
+        self,
+        supply_demand_ratio: float,
+        surge_multiplier: float,
+        conditions: MarketConditions
+    ) -> str:
+        """Generate human-readable pricing reasoning."""
+        reasons = []
+
+        if supply_demand_ratio < 0.5:
+            reasons.append("high demand")
+        elif supply_demand_ratio > 1.5:
+            reasons.append("low demand")
+
+        if conditions.is_special_event:
+            reasons.append("special event")
+
+        if conditions.weather_condition in ['rain', 'snow']:
+            reasons.append("adverse weather")
+
+        if conditions.hour_of_day in [7, 8, 9, 17, 18, 19]:
+            reasons.append("peak hours")
+
+        if not reasons:
+            return "Normal market conditions"
+
+        return f"Surge pricing due to: {', '.join(reasons)}"
+
+# Example usage
+engine = DynamicPricingEngine()
+
+# Peak hour with high demand
+conditions = MarketConditions(
+    location_id="downtown_01",
+    available_drivers=15,
+    pending_requests=50,
+    avg_wait_time_minutes=8.5,
+    hour_of_day=18,
+    day_of_week=4,  # Friday
+    is_special_event=False,
+    weather_condition="clear",
+    historical_demand=45.0
+)
+
+decision = engine.calculate_price(conditions)
+print(f"Base price: ${decision.base_price:.2f}")
+print(f"Surge multiplier: {decision.surge_multiplier:.2f}x")
+print(f"Final price: ${decision.final_price:.2f}")
+print(f"Expected wait: {decision.expected_wait_time:.1f} minutes")
+print(f"Reasoning: {decision.reasoning}")
+\end{lstlisting}
+
+\textbf{Key Design Decisions:}
+
+\begin{enumerate}
+    \item \textbf{Real-Time Computation:} Price calculated on-demand based on current conditions
+    \item \textbf{Demand Forecasting:} Use historical data + external signals (events, weather)
+    \item \textbf{Price Elasticity:} Model how price changes affect demand
+    \item \textbf{Fairness Constraints:} Cap maximum surge multiplier at 5x
+    \item \textbf{Transparency:} Provide clear reasoning for surge pricing
+    \item \textbf{A/B Testing:} Continuously test pricing strategies
+\end{enumerate}
+
+\textbf{Results:}
+\begin{itemize}
+    \item 23\% revenue increase vs. fixed pricing
+    \item 18\% reduction in average wait times
+    \item Driver earnings increased 15\%
+    \item Customer satisfaction maintained above 4.2/5.0
+\end{itemize}
+
+\section{Chapter Summary}
+
+Building end-to-end ML systems requires careful consideration of:
+
+\begin{itemize}
+    \item \textbf{System Design Methodology:} Follow structured process from problem framing to implementation
+    \item \textbf{Architecture Decisions:} Use frameworks to evaluate trade-offs systematically
+    \item \textbf{Integration Patterns:} Implement robust patterns for connecting components
+    \item \textbf{Performance:} Design for scalability and low latency from the start
+    \item \textbf{Evolution:} Plan for continuous improvement and adaptation
+    \item \textbf{Maintenance:} Establish processes for ongoing system health
+\end{itemize}
+
+\textbf{Key Takeaways:}
+
+\begin{bestpractice}
+Start simple and iterate. Begin with minimal viable system, measure performance, and enhance based on real-world feedback. Premature optimization leads to complexity without proven value.
+\end{bestpractice}
+
+\begin{bestpractice}
+Design for observability from day one. You cannot improve what you cannot measure. Instrument every component with logging, metrics, and tracing.
+\end{bestpractice}
+
+\begin{bestpractice}
+Embrace trade-offs. Perfect systems don't exist. Make informed decisions about accuracy vs. latency, cost vs. performance, and complexity vs. maintainability.
+\end{bestpractice}
+
+\begin{bestpractice}
+Plan for failure. Systems will fail. Design with redundancy, graceful degradation, and automated recovery mechanisms.
+\end{bestpractice}
+
+\section{Exercises}
+
+\begin{exercise}
+\textbf{Exercise 1: E-Commerce Search and Ranking System}
+
+Design a complete end-to-end ML system for product search and ranking on an e-commerce platform.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item 1 million products, 5 million monthly users
+    \item Support text search with semantic understanding
+    \item Personalized ranking based on user history
+    \item Real-time inventory and pricing updates
+    \item <200ms p99 latency
+    \item A/B testing capability
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{enumerate}
+    \item Complete architecture diagram with all components
+    \item Data pipeline design (batch and real-time)
+    \item ML model architecture (retrieval + ranking)
+    \item Serving infrastructure design
+    \item Monitoring and evaluation strategy
+    \item Cost estimate and capacity planning
+    \item Discussion of key trade-offs and decisions
+\end{enumerate}
+
+\textbf{Consider:}
+\begin{itemize}
+    \item How will you handle cold-start for new users/products?
+    \item How will you balance relevance, recency, and business metrics?
+    \item What features will you use for ranking?
+    \item How will you ensure diversity in results?
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Exercise 2: Credit Risk Assessment System}
+
+Design an ML system for assessing credit risk and determining loan approvals.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Process 10,000 loan applications daily
+    \item Predict default probability with 90\%+ AUC
+    \item Provide explanations for decisions (regulatory requirement)
+    \item Fair lending compliance (no bias by protected attributes)
+    \item Support manual override by loan officers
+    \item Audit trail for all decisions
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{enumerate}
+    \item End-to-end system architecture
+    \item Data sources and feature engineering strategy
+    \item Model selection and training approach
+    \item Explainability implementation
+    \item Fairness evaluation and mitigation plan
+    \item Deployment strategy and rollback plan
+    \item Monitoring dashboard specification
+\end{enumerate}
+
+\textbf{Consider:}
+\begin{itemize}
+    \item How will you ensure model fairness across demographics?
+    \item What explainability method will you use?
+    \item How will you handle model updates without disrupting operations?
+    \item What metrics will you monitor in production?
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Exercise 3: Video Content Recommendation System}
+
+Design a recommendation system for a video streaming platform similar to Netflix or YouTube.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item 50 million users, 100,000 videos
+    \item Personalized recommendations on homepage and autoplay
+    \item Support cold-start for new users
+    \item Optimize for watch time and user satisfaction
+    \item Handle diverse content (movies, series, shorts)
+    \item Support A/B testing and experimentation
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{enumerate}
+    \item Multi-stage recommendation architecture (candidate generation + ranking)
+    \item Feature engineering for users and videos
+    \item Model architecture (collaborative filtering, deep learning, etc.)
+    \item Real-time serving infrastructure
+    \item Evaluation metrics (online and offline)
+    \item Experimentation framework
+    \item Scalability plan for 10x growth
+\end{enumerate}
+
+\textbf{Consider:}
+\begin{itemize}
+    \item How will you balance exploration vs. exploitation?
+    \item How will you prevent filter bubbles?
+    \item What's your strategy for cold-start users?
+    \item How will you handle content freshness?
+\end{itemize}
+\end{exercise}
+
+\begin{exercise}
+\textbf{Exercise 4: Predictive Maintenance System}
+
+Design an ML system for predictive maintenance of industrial equipment.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Monitor 10,000 machines across 50 facilities
+    \item Sensor data: temperature, vibration, pressure (sampled at 100Hz)
+    \item Predict failures 7-14 days in advance
+    \item Minimize false alarms (high cost of unnecessary maintenance)
+    \item Provide actionable insights for maintenance teams
+    \item Handle network connectivity issues at remote facilities
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{enumerate}
+    \item IoT data collection and processing architecture
+    \item Feature engineering from time-series sensor data
+    \item Anomaly detection and failure prediction models
+    \item Edge vs. cloud processing strategy
+    \item Alert generation and prioritization system
+    \item Visualization dashboard for maintenance teams
+    \item ROI analysis (cost savings from preventing failures)
+\end{enumerate}
+
+\textbf{Consider:}
+\begin{itemize}
+    \item How will you handle class imbalance (rare failures)?
+    \item What features will you extract from time-series data?
+    \item How will you handle missing data from sensor failures?
+    \item What's your strategy for different equipment types?
+\end{itemize}
+\end{exercise}

@@ -1,0 +1,66 @@
+\chapter{Case Studies: Collaboration Transformation in Practice}
+
+\section{Chapter Overview}
+Abstract guidance becomes real when teams see how peers applied it. This chapter profiles three organizations that transformed their collaboration practices: a fast-growing startup, an enterprise platform team, and a regulated financial institution. Each case study highlights the pain points, interventions, metrics, and cultural shifts that made the change stick.
+
+\section{Startup: Shipping Weekly Without Chaos}
+\subsection{Context}
+A 30-person startup struggled with 7-day PR cycle times and surprise regressions. Developers pushed large weekend merges, and no one owned review quality.
+
+\subsection{Intervention}
+\begin{enumerate}
+  \item Introduced commit templates and automated linting to enforce atomic commits.
+  \item Established a ``two-hour review'' policy with auto-assign rules balancing load.
+  \item Adopted feature flags so partial work could land safely mid-week.
+\end{enumerate}
+
+\subsection{Results}
+Within eight weeks, median PR cycle time dropped to 36 hours, deployment frequency doubled, and post-merge defects fell by 45\%. The team credits automation (commit hooks, flag dashboards) and pairing sessions for reinforcing the new habits.
+
+\section{Platform Team: Defragmenting a Monorepo}
+\subsection{Context}
+An enterprise platform team maintained a monorepo with 60 contributors. Review disputes stalled for days because multiple squads owned overlapping directories, and flaky tests made trunk unreliable.
+
+\subsection{Intervention}
+\begin{enumerate}
+  \item Implemented CODEOWNERS with clear escalation paths and ``break glass'' rules.
+  \item Created a review council that met weekly to resolve architecture disagreements quickly.
+  \item Invested in trunk-based development playbooks, including yellow-build protocols and on-call rotations for keeping CI green.
+\end{enumerate}
+
+\subsection{Results}
+Review turnaround improved to under 24 hours, and trunk stability rose to 98\% green builds. Teams reported fewer political escalations because the review council provided a structured forum for debate.
+
+\section{Financial Institution: Compliance Without Bottlenecks}
+\subsection{Context}
+A bank's mobile team faced heavy compliance requirements: every PR required dual approval, audit logs, and security sign-off. Cycle times ballooned to two weeks, and engineers felt micromanaged.
+
+\subsection{Intervention}
+\begin{enumerate}
+  \item Automated compliance evidence collection via PR templates that captured testing, rollout plans, and ticket links.
+  \item Integrated security scanners and policy-as-code checks into CI, reducing manual review load.
+  \item Introduced asynchronous review rituals with ``changes since last review'' sections to keep auditors in the loop without repeated meetings.
+\end{enumerate}
+
+\subsection{Results}
+Cycle time shrank to 5 days without sacrificing compliance. Auditors praised the PR documentation, and engineers regained trust because feedback focused on substantive risk rather than paperwork.
+
+\section{Lessons Across Case Studies}
+\begin{itemize}
+  \item Automation anchored behavior change in every case: commit hooks, CI gates, templates.
+  \item Explicit review agreements (two-hour policy, review council, compliance templates) gave teams predictability.
+  \item Metrics guided iterations---each team tracked cycle time, defect rates, or build health to prove improvements.
+  \item Cultural reinforcement (pairing, councils, async rituals) ensured practices stuck after the initial push.
+\end{itemize}
+
+\section*{Exercises}
+
+\paragraph{1. Case reflection} Choose one case study and map which interventions your team could adopt immediately. Note blockers and required tooling.
+
+\paragraph{2. Metrics replication} Recreate one of the metrics used (cycle time, defect rate, build health) for your team using current data. Compare trends before and after a recent process change.
+
+\paragraph{3. Council experiment} If your org struggles with cross-team disagreements, draft a charter for a review council. Include membership, cadence, and decision-making authority.
+
+\paragraph{4. Compliance template} For teams in regulated environments, sketch a PR template section that captures the evidence your auditors request. Share it with compliance partners for feedback.
+
+\paragraph{5. Storytelling practice} Write a short narrative describing a collaboration win in your team. Present it in the next retro to inspire peers and build momentum for further improvement.

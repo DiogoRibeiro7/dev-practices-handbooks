@@ -1,0 +1,3064 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Implement comprehensive model governance frameworks
+    \item Ensure regulatory compliance (GDPR, CCPA, AI Act)
+    \item Design model documentation and audit trails
+    \item Implement fairness and bias testing
+    \item Conduct model risk assessments
+    \item Build approval workflows and controls
+    \item Create governance policies for ML systems
+    \item Audit model behavior and data usage
+\end{itemize}
+
+\section{Introduction}
+
+Model governance provides the policies, processes, and controls needed to ensure ML systems are developed and deployed responsibly. As ML systems increasingly impact high-stakes decisions in healthcare, finance, hiring, and criminal justice, governance frameworks ensure these systems are fair, transparent, and compliant with regulations.
+
+\textbf{Why Model Governance Matters:}
+
+\begin{itemize}
+    \item \textbf{Regulatory Compliance:} GDPR, CCPA, EU AI Act require transparency and accountability
+    \item \textbf{Risk Management:} High-stakes decisions need oversight and controls
+    \item \textbf{Fairness and Bias:} Prevent discriminatory outcomes across protected groups
+    \item \textbf{Trust and Transparency:} Stakeholders need to understand model decisions
+    \item \textbf{Audit and Accountability:} Trace decisions back to data, code, and approvals
+    \item \textbf{Legal Protection:} Documentation protects organizations from liability
+\end{itemize}
+
+\textbf{Governance Scope:}
+
+\begin{enumerate}
+    \item \textbf{Model Development:} Code reviews, data quality checks, bias testing
+    \item \textbf{Model Approval:} Risk assessment, stakeholder sign-off, compliance verification
+    \item \textbf{Model Deployment:} Controlled rollouts, monitoring, audit trails
+    \item \textbf{Model Monitoring:} Performance tracking, fairness metrics, drift detection
+    \item \textbf{Model Retirement:} Decommissioning process, data retention, archival
+\end{enumerate}
+
+\section{Model Governance Framework Implementation}
+
+A comprehensive governance framework defines roles, processes, and systems for managing ML models throughout their lifecycle.
+
+\subsection{Governance Structure and Roles}
+
+\begin{lstlisting}[language=Python, caption=Model Governance Framework Structure]
+#!/usr/bin/env python3
+"""
+Model Governance Framework
+Defines roles, responsibilities, and governance processes
+"""
+
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
+from enum import Enum
+from datetime import datetime
+import json
+
+class GovernanceRole(Enum):
+    """Roles in model governance"""
+    MODEL_DEVELOPER = "model_developer"
+    DATA_SCIENTIST = "data_scientist"
+    ML_ENGINEER = "ml_engineer"
+    MODEL_VALIDATOR = "model_validator"
+    COMPLIANCE_OFFICER = "compliance_officer"
+    BUSINESS_OWNER = "business_owner"
+    LEGAL_COUNSEL = "legal_counsel"
+    RISK_MANAGER = "risk_manager"
+
+class RiskTier(Enum):
+    """Model risk categorization"""
+    CRITICAL = "critical"  # Healthcare, finance, legal decisions
+    HIGH = "high"  # Customer-facing, revenue impact
+    MEDIUM = "medium"  # Internal tools, low impact
+    LOW = "low"  # Experimental, no production use
+
+@dataclass
+class GovernancePolicy:
+    """Governance policy for a risk tier"""
+    risk_tier: RiskTier
+    required_approvers: List[GovernanceRole]
+    required_documentation: List[str]
+    testing_requirements: List[str]
+    monitoring_frequency: str
+    review_period_days: int
+    audit_retention_years: int
+
+@dataclass
+class ModelGovernanceRecord:
+    """Complete governance record for a model"""
+    model_id: str
+    model_name: str
+    model_version: str
+    risk_tier: RiskTier
+    business_owner: str
+    development_team: List[str]
+
+    # Documentation
+    model_card_url: str
+    technical_documentation_url: str
+    risk_assessment_url: str
+
+    # Approvals
+    approvals: List[Dict[str, str]] = field(default_factory=list)
+
+    # Compliance
+    compliance_checks: Dict[str, bool] = field(default_factory=dict)
+
+    # Timestamps
+    created_at: datetime = field(default_factory=datetime.now)
+    approved_at: Optional[datetime] = None
+    deployed_at: Optional[datetime] = None
+    next_review_date: Optional[datetime] = None
+
+    # Audit trail
+    audit_log: List[Dict] = field(default_factory=list)
+
+class ModelGovernanceFramework:
+    """Model governance framework implementation"""
+
+    def __init__(self):
+        self.policies = self._define_policies()
+        self.models: Dict[str, ModelGovernanceRecord] = {}
+
+    def _define_policies(self) -> Dict[RiskTier, GovernancePolicy]:
+        """Define governance policies by risk tier"""
+
+        return {
+            RiskTier.CRITICAL: GovernancePolicy(
+                risk_tier=RiskTier.CRITICAL,
+                required_approvers=[
+                    GovernanceRole.MODEL_VALIDATOR,
+                    GovernanceRole.COMPLIANCE_OFFICER,
+                    GovernanceRole.LEGAL_COUNSEL,
+                    GovernanceRole.RISK_MANAGER,
+                    GovernanceRole.BUSINESS_OWNER
+                ],
+                required_documentation=[
+                    "model_card",
+                    "technical_documentation",
+                    "risk_assessment",
+                    "fairness_report",
+                    "privacy_impact_assessment",
+                    "explainability_report",
+                    "monitoring_plan"
+                ],
+                testing_requirements=[
+                    "unit_tests",
+                    "integration_tests",
+                    "fairness_tests",
+                    "adversarial_tests",
+                    "performance_tests",
+                    "stress_tests"
+                ],
+                monitoring_frequency="daily",
+                review_period_days=90,
+                audit_retention_years=7
+            ),
+
+            RiskTier.HIGH: GovernancePolicy(
+                risk_tier=RiskTier.HIGH,
+                required_approvers=[
+                    GovernanceRole.MODEL_VALIDATOR,
+                    GovernanceRole.COMPLIANCE_OFFICER,
+                    GovernanceRole.BUSINESS_OWNER
+                ],
+                required_documentation=[
+                    "model_card",
+                    "technical_documentation",
+                    "risk_assessment",
+                    "fairness_report"
+                ],
+                testing_requirements=[
+                    "unit_tests",
+                    "integration_tests",
+                    "fairness_tests",
+                    "performance_tests"
+                ],
+                monitoring_frequency="weekly",
+                review_period_days=180,
+                audit_retention_years=5
+            ),
+
+            RiskTier.MEDIUM: GovernancePolicy(
+                risk_tier=RiskTier.MEDIUM,
+                required_approvers=[
+                    GovernanceRole.MODEL_VALIDATOR,
+                    GovernanceRole.BUSINESS_OWNER
+                ],
+                required_documentation=[
+                    "model_card",
+                    "technical_documentation"
+                ],
+                testing_requirements=[
+                    "unit_tests",
+                    "integration_tests"
+                ],
+                monitoring_frequency="monthly",
+                review_period_days=365,
+                audit_retention_years=3
+            ),
+
+            RiskTier.LOW: GovernancePolicy(
+                risk_tier=RiskTier.LOW,
+                required_approvers=[
+                    GovernanceRole.BUSINESS_OWNER
+                ],
+                required_documentation=[
+                    "model_card"
+                ],
+                testing_requirements=[
+                    "unit_tests"
+                ],
+                monitoring_frequency="quarterly",
+                review_period_days=730,
+                audit_retention_years=1
+            )
+        }
+
+    def register_model(self, record: ModelGovernanceRecord) -> str:
+        """Register a new model for governance"""
+
+        # Validate required documentation
+        policy = self.policies[record.risk_tier]
+
+        record.audit_log.append({
+            "timestamp": datetime.now().isoformat(),
+            "action": "model_registered",
+            "user": "system",
+            "details": f"Model {record.model_name} registered with risk tier {record.risk_tier.value}"
+        })
+
+        self.models[record.model_id] = record
+        return record.model_id
+
+    def request_approval(
+        self,
+        model_id: str,
+        approver_role: GovernanceRole,
+        approver_name: str
+    ) -> bool:
+        """Request approval from a governance role"""
+
+        record = self.models.get(model_id)
+        if not record:
+            raise ValueError(f"Model {model_id} not found")
+
+        policy = self.policies[record.risk_tier]
+
+        # Check if this approver is required
+        if approver_role not in policy.required_approvers:
+            return False
+
+        # Add approval
+        record.approvals.append({
+            "role": approver_role.value,
+            "approver": approver_name,
+            "timestamp": datetime.now().isoformat(),
+            "status": "pending"
+        })
+
+        record.audit_log.append({
+            "timestamp": datetime.now().isoformat(),
+            "action": "approval_requested",
+            "user": "system",
+            "details": f"Approval requested from {approver_role.value}"
+        })
+
+        return True
+
+    def grant_approval(
+        self,
+        model_id: str,
+        approver_role: GovernanceRole,
+        approver_name: str,
+        comments: str = ""
+    ) -> bool:
+        """Grant approval for a model"""
+
+        record = self.models.get(model_id)
+        if not record:
+            raise ValueError(f"Model {model_id} not found")
+
+        # Find pending approval
+        for approval in record.approvals:
+            if (approval["role"] == approver_role.value and
+                approval["approver"] == approver_name and
+                approval["status"] == "pending"):
+
+                approval["status"] = "approved"
+                approval["approved_at"] = datetime.now().isoformat()
+                approval["comments"] = comments
+
+                record.audit_log.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "action": "approval_granted",
+                    "user": approver_name,
+                    "role": approver_role.value,
+                    "details": comments
+                })
+
+                # Check if all required approvals obtained
+                if self.check_approval_status(model_id):
+                    record.approved_at = datetime.now()
+                    record.audit_log.append({
+                        "timestamp": datetime.now().isoformat(),
+                        "action": "fully_approved",
+                        "user": "system",
+                        "details": "All required approvals obtained"
+                    })
+
+                return True
+
+        return False
+
+    def check_approval_status(self, model_id: str) -> bool:
+        """Check if model has all required approvals"""
+
+        record = self.models.get(model_id)
+        if not record:
+            return False
+
+        policy = self.policies[record.risk_tier]
+
+        # Get approved roles
+        approved_roles = set()
+        for approval in record.approvals:
+            if approval["status"] == "approved":
+                approved_roles.add(GovernanceRole(approval["role"]))
+
+        # Check if all required approvers have approved
+        required_roles = set(policy.required_approvers)
+        return required_roles.issubset(approved_roles)
+
+    def record_deployment(self, model_id: str, deployment_details: Dict):
+        """Record model deployment"""
+
+        record = self.models.get(model_id)
+        if not record:
+            raise ValueError(f"Model {model_id} not found")
+
+        if not self.check_approval_status(model_id):
+            raise ValueError(f"Model {model_id} not fully approved for deployment")
+
+        record.deployed_at = datetime.now()
+
+        record.audit_log.append({
+            "timestamp": datetime.now().isoformat(),
+            "action": "model_deployed",
+            "user": deployment_details.get("deployed_by", "system"),
+            "details": json.dumps(deployment_details)
+        })
+
+    def export_governance_report(self, model_id: str, output_file: str):
+        """Export governance report for a model"""
+
+        record = self.models.get(model_id)
+        if not record:
+            raise ValueError(f"Model {model_id} not found")
+
+        policy = self.policies[record.risk_tier]
+
+        report = {
+            "model_id": record.model_id,
+            "model_name": record.model_name,
+            "model_version": record.model_version,
+            "risk_tier": record.risk_tier.value,
+            "business_owner": record.business_owner,
+            "development_team": record.development_team,
+            "policy": {
+                "required_approvers": [role.value for role in policy.required_approvers],
+                "required_documentation": policy.required_documentation,
+                "testing_requirements": policy.testing_requirements,
+                "monitoring_frequency": policy.monitoring_frequency
+            },
+            "approvals": record.approvals,
+            "compliance_checks": record.compliance_checks,
+            "created_at": record.created_at.isoformat(),
+            "approved_at": record.approved_at.isoformat() if record.approved_at else None,
+            "deployed_at": record.deployed_at.isoformat() if record.deployed_at else None,
+            "audit_log": record.audit_log
+        }
+
+        with open(output_file, 'w') as f:
+            json.dump(report, f, indent=2)
+
+        print(f"Governance report exported to {output_file}")
+
+# Example usage
+if __name__ == "__main__":
+    # Initialize framework
+    framework = ModelGovernanceFramework()
+
+    # Register a critical risk model
+    credit_model = ModelGovernanceRecord(
+        model_id="model-001",
+        model_name="credit-risk-classifier",
+        model_version="v2.1.0",
+        risk_tier=RiskTier.CRITICAL,
+        business_owner="jane.smith@company.com",
+        development_team=[
+            "john.doe@company.com",
+            "alice.wong@company.com"
+        ],
+        model_card_url="https://internal/models/credit-risk/card.html",
+        technical_documentation_url="https://internal/models/credit-risk/docs/",
+        risk_assessment_url="https://internal/models/credit-risk/risk-assessment.pdf"
+    )
+
+    model_id = framework.register_model(credit_model)
+    print(f"Model registered: {model_id}")
+
+    # Request approvals
+    framework.request_approval(model_id, GovernanceRole.MODEL_VALIDATOR, "validator@company.com")
+    framework.request_approval(model_id, GovernanceRole.COMPLIANCE_OFFICER, "compliance@company.com")
+    framework.request_approval(model_id, GovernanceRole.LEGAL_COUNSEL, "legal@company.com")
+    framework.request_approval(model_id, GovernanceRole.RISK_MANAGER, "risk@company.com")
+    framework.request_approval(model_id, GovernanceRole.BUSINESS_OWNER, "jane.smith@company.com")
+
+    # Grant approvals
+    framework.grant_approval(
+        model_id,
+        GovernanceRole.MODEL_VALIDATOR,
+        "validator@company.com",
+        "Model passes all validation tests"
+    )
+
+    framework.grant_approval(
+        model_id,
+        GovernanceRole.COMPLIANCE_OFFICER,
+        "compliance@company.com",
+        "Compliant with GDPR and internal policies"
+    )
+
+    # Check approval status
+    is_approved = framework.check_approval_status(model_id)
+    print(f"Approval status: {is_approved}")
+
+    # Export governance report
+    framework.export_governance_report(model_id, "governance_report.json")
+\end{lstlisting}
+
+\subsection{Model Inventory and Lifecycle Management}
+
+\begin{lstlisting}[language=Python, caption=Model Inventory System]
+#!/usr/bin/env python3
+"""
+Model Inventory and Lifecycle Management
+Centralized tracking of all models in the organization
+"""
+
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
+from enum import Enum
+from datetime import datetime, timedelta
+import sqlite3
+import json
+
+class ModelStatus(Enum):
+    """Model lifecycle status"""
+    DEVELOPMENT = "development"
+    TESTING = "testing"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    DEPLOYED = "deployed"
+    DEPRECATED = "deprecated"
+    RETIRED = "retired"
+
+class ModelType(Enum):
+    """Type of ML model"""
+    CLASSIFICATION = "classification"
+    REGRESSION = "regression"
+    CLUSTERING = "clustering"
+    RECOMMENDATION = "recommendation"
+    NLP = "nlp"
+    COMPUTER_VISION = "computer_vision"
+    TIME_SERIES = "time_series"
+    REINFORCEMENT_LEARNING = "reinforcement_learning"
+
+@dataclass
+class ModelInventoryEntry:
+    """Single model in inventory"""
+    model_id: str
+    model_name: str
+    model_version: str
+    model_type: ModelType
+    status: ModelStatus
+
+    # Ownership
+    business_owner: str
+    technical_owner: str
+    team: str
+
+    # Technical details
+    framework: str  # sklearn, tensorflow, pytorch, etc.
+    algorithm: str
+    training_data_source: str
+    features: List[str]
+    target_variable: str
+
+    # Performance
+    performance_metrics: Dict[str, float]
+
+    # Deployment
+    deployment_environment: Optional[str] = None
+    endpoint_url: Optional[str] = None
+
+    # Compliance
+    data_privacy_review: bool = False
+    fairness_assessment: bool = False
+    security_review: bool = False
+
+    # Timestamps
+    created_at: datetime = field(default_factory=datetime.now)
+    last_updated: datetime = field(default_factory=datetime.now)
+    deployed_at: Optional[datetime] = None
+    deprecated_at: Optional[datetime] = None
+
+class ModelInventorySystem:
+    """Centralized model inventory management"""
+
+    def __init__(self, db_path: str = "model_inventory.db"):
+        self.db_path = db_path
+        self._initialize_database()
+
+    def _initialize_database(self):
+        """Create database schema"""
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS models (
+                model_id TEXT PRIMARY KEY,
+                model_name TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                model_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                business_owner TEXT NOT NULL,
+                technical_owner TEXT NOT NULL,
+                team TEXT NOT NULL,
+                framework TEXT NOT NULL,
+                algorithm TEXT NOT NULL,
+                training_data_source TEXT,
+                features TEXT,
+                target_variable TEXT,
+                performance_metrics TEXT,
+                deployment_environment TEXT,
+                endpoint_url TEXT,
+                data_privacy_review BOOLEAN,
+                fairness_assessment BOOLEAN,
+                security_review BOOLEAN,
+                created_at TIMESTAMP,
+                last_updated TIMESTAMP,
+                deployed_at TIMESTAMP,
+                deprecated_at TIMESTAMP,
+                UNIQUE(model_name, model_version)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS model_versions (
+                version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_name TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                parent_version TEXT,
+                changes TEXT,
+                created_by TEXT,
+                created_at TIMESTAMP
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS model_dependencies (
+                dependency_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_id TEXT NOT NULL,
+                dependency_type TEXT NOT NULL,
+                dependency_name TEXT NOT NULL,
+                dependency_version TEXT,
+                FOREIGN KEY (model_id) REFERENCES models(model_id)
+            )
+        """)
+
+        conn.commit()
+        conn.close()
+
+    def add_model(self, entry: ModelInventoryEntry) -> str:
+        """Add model to inventory"""
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO models (
+                model_id, model_name, model_version, model_type, status,
+                business_owner, technical_owner, team, framework, algorithm,
+                training_data_source, features, target_variable,
+                performance_metrics, deployment_environment, endpoint_url,
+                data_privacy_review, fairness_assessment, security_review,
+                created_at, last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            entry.model_id,
+            entry.model_name,
+            entry.model_version,
+            entry.model_type.value,
+            entry.status.value,
+            entry.business_owner,
+            entry.technical_owner,
+            entry.team,
+            entry.framework,
+            entry.algorithm,
+            entry.training_data_source,
+            json.dumps(entry.features),
+            entry.target_variable,
+            json.dumps(entry.performance_metrics),
+            entry.deployment_environment,
+            entry.endpoint_url,
+            entry.data_privacy_review,
+            entry.fairness_assessment,
+            entry.security_review,
+            entry.created_at,
+            entry.last_updated
+        ))
+
+        conn.commit()
+        conn.close()
+
+        return entry.model_id
+
+    def update_model_status(self, model_id: str, new_status: ModelStatus):
+        """Update model status"""
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE models
+            SET status = ?, last_updated = ?
+            WHERE model_id = ?
+        """, (new_status.value, datetime.now(), model_id))
+
+        if new_status == ModelStatus.DEPLOYED:
+            cursor.execute("""
+                UPDATE models
+                SET deployed_at = ?
+                WHERE model_id = ?
+            """, (datetime.now(), model_id))
+
+        elif new_status == ModelStatus.DEPRECATED:
+            cursor.execute("""
+                UPDATE models
+                SET deprecated_at = ?
+                WHERE model_id = ?
+            """, (datetime.now(), model_id))
+
+        conn.commit()
+        conn.close()
+
+    def get_models_by_status(self, status: ModelStatus) -> List[Dict]:
+        """Get all models with specific status"""
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT * FROM models WHERE status = ?
+        """, (status.value,))
+
+        columns = [desc[0] for desc in cursor.description]
+        models = []
+
+        for row in cursor.fetchall():
+            model_dict = dict(zip(columns, row))
+            models.append(model_dict)
+
+        conn.close()
+        return models
+
+    def get_models_requiring_review(self, days_threshold: int = 90) -> List[Dict]:
+        """Get models that need periodic review"""
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        threshold_date = datetime.now() - timedelta(days=days_threshold)
+
+        cursor.execute("""
+            SELECT * FROM models
+            WHERE status = 'deployed'
+            AND last_updated < ?
+        """, (threshold_date,))
+
+        columns = [desc[0] for desc in cursor.description]
+        models = []
+
+        for row in cursor.fetchall():
+            model_dict = dict(zip(columns, row))
+            models.append(model_dict)
+
+        conn.close()
+        return models
+
+    def get_inventory_statistics(self) -> Dict:
+        """Get inventory statistics"""
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        stats = {}
+
+        # Total models
+        cursor.execute("SELECT COUNT(*) FROM models")
+        stats['total_models'] = cursor.fetchone()[0]
+
+        # Models by status
+        cursor.execute("""
+            SELECT status, COUNT(*)
+            FROM models
+            GROUP BY status
+        """)
+        stats['by_status'] = dict(cursor.fetchall())
+
+        # Models by type
+        cursor.execute("""
+            SELECT model_type, COUNT(*)
+            FROM models
+            GROUP BY model_type
+        """)
+        stats['by_type'] = dict(cursor.fetchall())
+
+        # Models by team
+        cursor.execute("""
+            SELECT team, COUNT(*)
+            FROM models
+            GROUP BY team
+        """)
+        stats['by_team'] = dict(cursor.fetchall())
+
+        # Compliance status
+        cursor.execute("""
+            SELECT
+                SUM(CASE WHEN data_privacy_review = 1 THEN 1 ELSE 0 END) as privacy_reviewed,
+                SUM(CASE WHEN fairness_assessment = 1 THEN 1 ELSE 0 END) as fairness_assessed,
+                SUM(CASE WHEN security_review = 1 THEN 1 ELSE 0 END) as security_reviewed
+            FROM models
+        """)
+        compliance = cursor.fetchone()
+        stats['compliance'] = {
+            'privacy_reviewed': compliance[0],
+            'fairness_assessed': compliance[1],
+            'security_reviewed': compliance[2]
+        }
+
+        conn.close()
+        return stats
+
+# Example usage
+if __name__ == "__main__":
+    # Initialize inventory system
+    inventory = ModelInventorySystem()
+
+    # Add a model
+    fraud_model = ModelInventoryEntry(
+        model_id="fraud-detection-v1",
+        model_name="fraud-detection",
+        model_version="v1.0.0",
+        model_type=ModelType.CLASSIFICATION,
+        status=ModelStatus.DEVELOPMENT,
+        business_owner="fraud-team@company.com",
+        technical_owner="ml-team@company.com",
+        team="fraud-prevention",
+        framework="scikit-learn",
+        algorithm="RandomForestClassifier",
+        training_data_source="s3://data/fraud-transactions-2024/",
+        features=["transaction_amount", "merchant_id", "time_of_day", "user_history"],
+        target_variable="is_fraudulent",
+        performance_metrics={
+            "accuracy": 0.95,
+            "precision": 0.92,
+            "recall": 0.89,
+            "f1_score": 0.90,
+            "auc_roc": 0.94
+        },
+        data_privacy_review=True,
+        fairness_assessment=True,
+        security_review=False
+    )
+
+    inventory.add_model(fraud_model)
+    print(f"Model added: {fraud_model.model_id}")
+
+    # Get inventory statistics
+    stats = inventory.get_inventory_statistics()
+    print(f"\nInventory Statistics:")
+    print(f"Total models: {stats['total_models']}")
+    print(f"By status: {stats['by_status']}")
+    print(f"Compliance: {stats['compliance']}")
+\end{lstlisting}
+
+\section{GDPR and CCPA Compliance for ML Systems}
+
+Regulatory compliance is critical for ML systems that process personal data. GDPR (General Data Protection Regulation) and CCPA (California Consumer Privacy Act) impose specific requirements on data processing and automated decision-making.
+
+\subsection{GDPR Requirements for ML}
+
+\textbf{Key GDPR Principles for ML:}
+
+\begin{enumerate}
+    \item \textbf{Right to Explanation:} Individuals can request explanation of automated decisions (Article 22)
+    \item \textbf{Data Minimization:} Collect only necessary data for the specified purpose (Article 5)
+    \item \textbf{Purpose Limitation:} Use data only for stated purposes (Article 5)
+    \item \textbf{Right to Erasure:} Individuals can request deletion of their data (Article 17)
+    \item \textbf{Data Portability:} Provide data in machine-readable format (Article 20)
+    \item \textbf{Privacy by Design:} Build privacy into system architecture (Article 25)
+    \item \textbf{Data Protection Impact Assessment (DPIA):} Required for high-risk processing (Article 35)
+\end{enumerate}
+
+\subsection{GDPR Compliance Implementation}
+
+\begin{lstlisting}[language=Python, caption=GDPR Compliance Framework for ML Systems]
+#!/usr/bin/env python3
+"""
+GDPR Compliance Framework for ML Systems
+Implements key GDPR requirements for ML models
+"""
+
+from dataclasses import dataclass
+from typing import List, Dict, Optional
+from datetime import datetime
+import hashlib
+import json
+
+@dataclass
+class DataSubjectRequest:
+    """GDPR data subject request"""
+    request_id: str
+    subject_id: str
+    request_type: str  # explanation, deletion, portability, rectification
+    timestamp: datetime
+    status: str  # pending, completed, rejected
+    response: Optional[str] = None
+
+class GDPRCompliance:
+    """GDPR compliance manager for ML systems"""
+
+    def __init__(self, model_id: str):
+        self.model_id = model_id
+        self.data_usage_log: List[Dict] = []
+        self.subject_requests: List[DataSubjectRequest] = []
+
+    def log_data_processing(
+        self,
+        subject_id: str,
+        purpose: str,
+        legal_basis: str,
+        data_categories: List[str]
+    ):
+        """Log data processing activity (Article 30)"""
+
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "subject_id": self._pseudonymize(subject_id),
+            "purpose": purpose,
+            "legal_basis": legal_basis,
+            "data_categories": data_categories,
+            "model_id": self.model_id
+        }
+
+        self.data_usage_log.append(log_entry)
+
+    def _pseudonymize(self, subject_id: str) -> str:
+        """Pseudonymize user ID"""
+        return hashlib.sha256(subject_id.encode()).hexdigest()[:16]
+
+    def generate_explanation(
+        self,
+        subject_id: str,
+        prediction: float,
+        feature_importance: Dict[str, float],
+        threshold: float = 0.5
+    ) -> str:
+        """Generate human-readable explanation (Article 22)"""
+
+        decision = "approved" if prediction >= threshold else "denied"
+
+        # Sort features by importance
+        top_features = sorted(
+            feature_importance.items(),
+            key=lambda x: abs(x[1]),
+            reverse=True
+        )[:5]
+
+        explanation = f"""
+Automated Decision Explanation
+
+Subject ID: {self._pseudonymize(subject_id)}
+Model: {self.model_id}
+Decision: {decision.upper()}
+Confidence: {prediction:.2%}
+Timestamp: {datetime.now().isoformat()}
+
+Top Contributing Factors:
+"""
+
+        for feature, importance in top_features:
+            direction = "increased" if importance > 0 else "decreased"
+            explanation += f"\n- {feature}: {direction} likelihood by {abs(importance):.2%}"
+
+        explanation += f"""
+
+Right to Contest:
+You have the right to contest this decision and request human review.
+Contact: dpo@company.com
+
+This explanation is provided in accordance with GDPR Article 22.
+"""
+
+        return explanation
+
+    def handle_deletion_request(
+        self,
+        subject_id: str,
+        model_training_data_location: str
+    ) -> Dict:
+        """Handle right to erasure request (Article 17)"""
+
+        request = DataSubjectRequest(
+            request_id=f"DEL-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            subject_id=self._pseudonymize(subject_id),
+            request_type="deletion",
+            timestamp=datetime.now(),
+            status="pending"
+        )
+
+        # Steps for deletion
+        steps = {
+            "1_remove_from_training_data": False,
+            "2_remove_from_feature_store": False,
+            "3_invalidate_affected_models": False,
+            "4_remove_from_logs": False,
+            "5_remove_from_backups": False,
+            "6_document_deletion": False
+        }
+
+        # In practice, implement actual deletion logic
+        # This is a template showing required steps
+
+        response = {
+            "request_id": request.request_id,
+            "subject_id": request.subject_id,
+            "status": "Data deletion initiated",
+            "steps_required": steps,
+            "completion_estimate": "30 days",
+            "notes": [
+                "Training data will be removed from active datasets",
+                "Models trained on affected data will be marked for retraining",
+                "Logs will be anonymized",
+                "Backups will be marked for deletion after retention period"
+            ]
+        }
+
+        request.response = json.dumps(response)
+        self.subject_requests.append(request)
+
+        return response
+
+    def handle_portability_request(
+        self,
+        subject_id: str,
+        data_store_path: str
+    ) -> Dict:
+        """Handle data portability request (Article 20)"""
+
+        request = DataSubjectRequest(
+            request_id=f"PORT-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            subject_id=self._pseudonymize(subject_id),
+            request_type="portability",
+            timestamp=datetime.now(),
+            status="completed"
+        )
+
+        # Collect all data related to subject
+        portable_data = {
+            "subject_id": self._pseudonymize(subject_id),
+            "data_export_date": datetime.now().isoformat(),
+            "data_categories": {
+                "profile_data": {},
+                "behavioral_data": {},
+                "predictions": [],
+                "processing_activities": [
+                    entry for entry in self.data_usage_log
+                    if entry["subject_id"] == self._pseudonymize(subject_id)
+                ]
+            },
+            "format": "JSON",
+            "gdpr_article": "Article 20 - Right to Data Portability"
+        }
+
+        return portable_data
+
+    def conduct_dpia(self, model_description: Dict) -> Dict:
+        """Conduct Data Protection Impact Assessment (Article 35)"""
+
+        dpia = {
+            "model_id": self.model_id,
+            "assessment_date": datetime.now().isoformat(),
+            "model_description": model_description,
+            "risk_assessment": {},
+            "mitigation_measures": {},
+            "residual_risks": {}
+        }
+
+        # Assess risks
+        risks = [
+            {
+                "risk_id": "R1",
+                "description": "Unauthorized access to personal data",
+                "likelihood": "medium",
+                "impact": "high",
+                "risk_level": "high",
+                "mitigation": [
+                    "Encrypt data at rest and in transit",
+                    "Implement access controls (RBAC)",
+                    "Regular security audits"
+                ]
+            },
+            {
+                "risk_id": "R2",
+                "description": "Discriminatory bias in predictions",
+                "likelihood": "medium",
+                "impact": "high",
+                "risk_level": "high",
+                "mitigation": [
+                    "Regular fairness testing",
+                    "Diverse training data",
+                    "Human oversight for high-stakes decisions"
+                ]
+            },
+            {
+                "risk_id": "R3",
+                "description": "Model inversion attacks",
+                "likelihood": "low",
+                "impact": "high",
+                "risk_level": "medium",
+                "mitigation": [
+                    "Differential privacy in training",
+                    "Rate limiting on API",
+                    "Monitor for unusual query patterns"
+                ]
+            },
+            {
+                "risk_id": "R4",
+                "description": "Data retention beyond legal period",
+                "likelihood": "medium",
+                "impact": "medium",
+                "risk_level": "medium",
+                "mitigation": [
+                    "Automated data retention policies",
+                    "Regular data cleanup jobs",
+                    "Audit data age"
+                ]
+            }
+        ]
+
+        dpia["risk_assessment"] = risks
+
+        # Calculate overall risk
+        high_risks = sum(1 for r in risks if r["risk_level"] == "high")
+        dpia["overall_risk"] = "high" if high_risks > 0 else "medium"
+        dpia["dpo_consultation_required"] = high_risks > 0
+        dpia["supervisory_authority_consultation_required"] = high_risks > 2
+
+        return dpia
+
+    def generate_compliance_report(self, output_file: str):
+        """Generate GDPR compliance report"""
+
+        report = {
+            "model_id": self.model_id,
+            "report_date": datetime.now().isoformat(),
+            "data_processing_activities": len(self.data_usage_log),
+            "subject_requests": {
+                "total": len(self.subject_requests),
+                "by_type": {},
+                "average_response_time_days": 15  # Example
+            },
+            "compliance_measures": {
+                "data_minimization": "Implemented",
+                "purpose_limitation": "Implemented",
+                "storage_limitation": "Implemented",
+                "accuracy": "Regular monitoring",
+                "integrity_confidentiality": "Encryption enabled",
+                "accountability": "Full audit trail"
+            },
+            "recent_requests": [
+                {
+                    "request_id": req.request_id,
+                    "type": req.request_type,
+                    "status": req.status,
+                    "timestamp": req.timestamp.isoformat()
+                }
+                for req in self.subject_requests[-10:]
+            ]
+        }
+
+        with open(output_file, 'w') as f:
+            json.dump(report, f, indent=2)
+
+        print(f"GDPR compliance report generated: {output_file}")
+        return report
+
+# Example usage
+if __name__ == "__main__":
+    gdpr = GDPRCompliance(model_id="credit-risk-v1")
+
+    # Log data processing
+    gdpr.log_data_processing(
+        subject_id="user123",
+        purpose="Credit risk assessment",
+        legal_basis="Legitimate interest",
+        data_categories=["financial_history", "employment", "credit_score"]
+    )
+
+    # Generate explanation
+    explanation = gdpr.generate_explanation(
+        subject_id="user123",
+        prediction=0.35,
+        feature_importance={
+            "credit_score": -0.25,
+            "income": 0.15,
+            "debt_to_income_ratio": -0.20,
+            "employment_years": 0.10,
+            "previous_defaults": -0.15
+        }
+    )
+    print(explanation)
+
+    # Handle deletion request
+    deletion_response = gdpr.handle_deletion_request(
+        subject_id="user123",
+        model_training_data_location="s3://ml-data/credit-risk-training/"
+    )
+    print(f"\nDeletion request: {deletion_response['request_id']}")
+
+    # Conduct DPIA
+    dpia = gdpr.conduct_dpia({
+        "name": "Credit Risk Assessment Model",
+        "purpose": "Automated credit decision making",
+        "data_sources": ["Credit bureau", "Internal transaction history"],
+        "data_subjects": "Loan applicants",
+        "processing_type": "Automated decision-making"
+    })
+    print(f"\nDPIA Overall Risk: {dpia['overall_risk']}")
+    print(f"DPO Consultation Required: {dpia['dpo_consultation_required']}")
+
+    # Generate compliance report
+    gdpr.generate_compliance_report("gdpr_compliance_report.json")
+\end{lstlisting}
+
+\subsection{CCPA Compliance}
+
+\textbf{CCPA Requirements for ML:}
+
+\begin{enumerate}
+    \item \textbf{Right to Know:} Disclose what personal information is collected
+    \item \textbf{Right to Delete:} Allow consumers to request deletion
+    \item \textbf{Right to Opt-Out:} Allow opt-out of sale of personal information
+    \item \textbf{Right to Non-Discrimination:} Cannot discriminate against consumers who exercise rights
+    \item \textbf{Notice at Collection:} Inform consumers of data collection purposes
+\end{enumerate}
+
+\begin{lstlisting}[language=Python, caption=CCPA Compliance Manager]
+#!/usr/bin/env python3
+"""
+CCPA Compliance Manager
+Implements CCPA requirements for ML systems
+"""
+
+from dataclasses import dataclass
+from typing import List, Dict
+from datetime import datetime
+import json
+
+class CCPACompliance:
+    """CCPA compliance manager"""
+
+    def __init__(self, business_name: str):
+        self.business_name = business_name
+        self.opt_out_registry: Dict[str, datetime] = {}
+
+    def generate_notice_at_collection(self, model_purpose: str) -> str:
+        """Generate CCPA-compliant notice"""
+
+        notice = f"""
+NOTICE AT COLLECTION OF PERSONAL INFORMATION
+
+Business: {self.business_name}
+
+Categories of Personal Information Collected:
+- Identifiers (name, email, ID numbers)
+- Commercial information (transaction history, purchases)
+- Internet activity (browsing history, interactions)
+- Geolocation data
+- Inferences (preferences, characteristics, behavior)
+
+Purpose of Collection and Use:
+- {model_purpose}
+- Service improvement
+- Fraud prevention
+- Legal compliance
+
+Third Parties with Whom Information is Shared:
+- Service providers (cloud hosting, analytics)
+- Business partners (with your consent)
+
+Your CCPA Rights:
+1. Right to Know: Request details about personal information collected
+2. Right to Delete: Request deletion of your personal information
+3. Right to Opt-Out: Opt out of sale of personal information
+4. Right to Non-Discrimination: Equal service regardless of privacy choices
+
+To Exercise Your Rights:
+- Email: privacy@{self.business_name}.com
+- Phone: 1-800-PRIVACY
+- Web: https://{self.business_name}.com/privacy-request
+
+We will respond within 45 days of receiving your request.
+
+Last Updated: {datetime.now().strftime('%Y-%m-%d')}
+"""
+        return notice
+
+    def handle_opt_out_request(self, consumer_id: str) -> Dict:
+        """Handle opt-out of sale request"""
+
+        self.opt_out_registry[consumer_id] = datetime.now()
+
+        return {
+            "consumer_id": consumer_id,
+            "opt_out_status": "active",
+            "effective_date": datetime.now().isoformat(),
+            "actions_taken": [
+                "Flagged in CRM system",
+                "Excluded from data sharing with partners",
+                "Removed from third-party analytics",
+                "Updated consent preferences"
+            ]
+        }
+
+    def verify_opt_out_status(self, consumer_id: str) -> bool:
+        """Check if consumer has opted out"""
+        return consumer_id in self.opt_out_registry
+
+    def generate_data_inventory(self) -> Dict:
+        """Generate inventory of personal information (required for CCPA)"""
+
+        inventory = {
+            "business_name": self.business_name,
+            "report_date": datetime.now().isoformat(),
+            "categories_collected": [
+                {
+                    "category": "Identifiers",
+                    "examples": ["Name", "Email", "Phone", "User ID"],
+                    "source": "Direct from consumer",
+                    "business_purpose": "Account management, communication",
+                    "third_parties_shared": ["Cloud provider", "Email service"]
+                },
+                {
+                    "category": "Commercial Information",
+                    "examples": ["Purchase history", "Payment information"],
+                    "source": "Transaction records",
+                    "business_purpose": "Order fulfillment, fraud prevention",
+                    "third_parties_shared": ["Payment processor"]
+                },
+                {
+                    "category": "Inferences",
+                    "examples": ["Preferences", "Risk scores", "Predictions"],
+                    "source": "Derived from ML models",
+                    "business_purpose": "Personalization, risk assessment",
+                    "third_parties_shared": ["None"]
+                }
+            ],
+            "retention_periods": {
+                "transaction_data": "7 years (legal requirement)",
+                "behavioral_data": "2 years",
+                "model_predictions": "1 year",
+                "training_data": "5 years"
+            }
+        }
+
+        return inventory
+
+# Example usage
+if __name__ == "__main__":
+    ccpa = CCPACompliance(business_name="ExampleCorp")
+
+    # Generate notice
+    notice = ccpa.generate_notice_at_collection(
+        model_purpose="Credit risk assessment and loan decision automation"
+    )
+    print(notice)
+
+    # Handle opt-out
+    opt_out_response = ccpa.handle_opt_out_request("consumer_12345")
+    print(f"\n\\nOpt-out processed: {opt_out_response}")
+
+    # Generate data inventory
+    inventory = ccpa.generate_data_inventory()
+    print(f"\nData categories tracked: {len(inventory['categories_collected'])}")
+\end{lstlisting}
+
+\section{Model Documentation and Audit Trails}
+
+Comprehensive documentation and audit trails are essential for governance, compliance, and debugging model issues.
+
+\subsection{Model Cards}
+
+Model Cards provide standardized documentation for ML models, promoting transparency and responsible AI.
+
+\begin{lstlisting}[language=Python, caption=Model Card Generator]
+#!/usr/bin/env python3
+"""
+Model Card Generator
+Creates standardized model documentation following Model Cards framework
+Reference: Mitchell et al. (2019) "Model Cards for Model Reporting"
+"""
+
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
+from datetime import datetime
+import json
+
+@dataclass
+class ModelCard:
+    """Standardized model documentation"""
+
+    # Model Details
+    model_name: str
+    model_version: str
+    model_date: datetime
+    model_type: str
+    paper_or_resource: Optional[str] = None
+    citation: Optional[str] = None
+    license: str = "Proprietary"
+    contact: str = ""
+
+    # Intended Use
+    primary_uses: List[str] = field(default_factory=list)
+    primary_users: List[str] = field(default_factory=list)
+    out_of_scope_uses: List[str] = field(default_factory=list)
+
+    # Factors
+    relevant_factors: List[str] = field(default_factory=list)
+    evaluation_factors: List[str] = field(default_factory=list)
+
+    # Metrics
+    model_performance_measures: Dict[str, float] = field(default_factory=dict)
+    decision_thresholds: Dict[str, float] = field(default_factory=dict)
+    approaches_to_uncertainty: str = ""
+
+    # Training Data
+    training_data_description: str = ""
+    training_data_source: str = ""
+    training_data_size: int = 0
+    training_data_preprocessing: List[str] = field(default_factory=list)
+
+    # Evaluation Data
+    evaluation_data_description: str = ""
+    evaluation_data_source: str = ""
+    evaluation_data_size: int = 0
+
+    # Quantitative Analyses
+    unitary_results: Dict[str, float] = field(default_factory=dict)
+    intersectional_results: Dict[str, Dict] = field(default_factory=dict)
+
+    # Ethical Considerations
+    sensitive_data: List[str] = field(default_factory=list)
+    human_life_impact: str = ""
+    mitigations: List[str] = field(default_factory=list)
+    risks_and_harms: List[str] = field(default_factory=list)
+    use_cases: List[str] = field(default_factory=list)
+
+    # Caveats and Recommendations
+    caveats: List[str] = field(default_factory=list)
+    recommendations: List[str] = field(default_factory=list)
+
+class ModelCardGenerator:
+    """Generate standardized model cards"""
+
+    def generate_html(self, card: ModelCard, output_file: str):
+        """Generate HTML model card"""
+
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Model Card: {card.model_name}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }}
+        h1 {{ color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }}
+        h2 {{ color: #555; margin-top: 30px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }}
+        .section {{ margin: 20px 0; }}
+        .metric {{ background: #f8f9fa; padding: 10px; margin: 5px 0; border-left: 3px solid #007bff; }}
+        .warning {{ background: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 20px 0; }}
+        ul {{ line-height: 1.8; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+        th {{ background-color: #007bff; color: white; }}
+    </style>
+</head>
+<body>
+    <h1>Model Card: {card.model_name}</h1>
+
+    <div class="section">
+        <p><strong>Version:</strong> {card.model_version}</p>
+        <p><strong>Date:</strong> {card.model_date.strftime('%Y-%m-%d')}</p>
+        <p><strong>Model Type:</strong> {card.model_type}</p>
+        <p><strong>Contact:</strong> {card.contact}</p>
+        <p><strong>License:</strong> {card.license}</p>
+    </div>
+
+    <h2>Intended Use</h2>
+    <div class="section">
+        <h3>Primary Uses</h3>
+        <ul>
+            {''.join([f'<li>{use}</li>' for use in card.primary_uses])}
+        </ul>
+
+        <h3>Primary Users</h3>
+        <ul>
+            {''.join([f'<li>{user}</li>' for user in card.primary_users])}
+        </ul>
+
+        <h3>Out of Scope Uses</h3>
+        <div class="warning">
+            <strong>Warning:</strong> This model should NOT be used for:
+            <ul>
+                {''.join([f'<li>{use}</li>' for use in card.out_of_scope_uses])}
+            </ul>
+        </div>
+    </div>
+
+    <h2>Model Performance</h2>
+    <div class="section">
+        <table>
+            <tr>
+                <th>Metric</th>
+                <th>Value</th>
+            </tr>
+            {''.join([f'<tr><td>{metric}</td><td>{value:.4f}</td></tr>' for metric, value in card.model_performance_measures.items()])}
+        </table>
+    </div>
+
+    <h2>Training Data</h2>
+    <div class="section">
+        <p><strong>Description:</strong> {card.training_data_description}</p>
+        <p><strong>Source:</strong> {card.training_data_source}</p>
+        <p><strong>Size:</strong> {card.training_data_size:,} samples</p>
+
+        <h3>Preprocessing Steps</h3>
+        <ul>
+            {''.join([f'<li>{step}</li>' for step in card.training_data_preprocessing])}
+        </ul>
+    </div>
+
+    <h2>Evaluation Data</h2>
+    <div class="section">
+        <p><strong>Description:</strong> {card.evaluation_data_description}</p>
+        <p><strong>Source:</strong> {card.evaluation_data_source}</p>
+        <p><strong>Size:</strong> {card.evaluation_data_size:,} samples</p>
+    </div>
+
+    <h2>Ethical Considerations</h2>
+    <div class="section">
+        <h3>Sensitive Data Used</h3>
+        <ul>
+            {''.join([f'<li>{data}</li>' for data in card.sensitive_data])}
+        </ul>
+
+        <h3>Impact on Human Life</h3>
+        <p>{card.human_life_impact}</p>
+
+        <h3>Risks and Harms</h3>
+        <ul>
+            {''.join([f'<li>{risk}</li>' for risk in card.risks_and_harms])}
+        </ul>
+
+        <h3>Mitigations</h3>
+        <ul>
+            {''.join([f'<li>{mitigation}</li>' for mitigation in card.mitigations])}
+        </ul>
+    </div>
+
+    <h2>Caveats and Recommendations</h2>
+    <div class="section">
+        <h3>Caveats</h3>
+        <ul>
+            {''.join([f'<li>{caveat}</li>' for caveat in card.caveats])}
+        </ul>
+
+        <h3>Recommendations</h3>
+        <ul>
+            {''.join([f'<li>{rec}</li>' for rec in card.recommendations])}
+        </ul>
+    </div>
+
+    <hr>
+    <p style="text-align: center; color: #666; font-size: 0.9em;">
+        Model Card generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+    </p>
+</body>
+</html>
+"""
+
+        with open(output_file, 'w') as f:
+            f.write(html)
+
+        print(f"Model card generated: {output_file}")
+
+    def generate_json(self, card: ModelCard, output_file: str):
+        """Generate JSON model card"""
+
+        card_dict = {
+            "model_details": {
+                "name": card.model_name,
+                "version": card.model_version,
+                "date": card.model_date.isoformat(),
+                "type": card.model_type,
+                "paper_or_resource": card.paper_or_resource,
+                "citation": card.citation,
+                "license": card.license,
+                "contact": card.contact
+            },
+            "intended_use": {
+                "primary_uses": card.primary_uses,
+                "primary_users": card.primary_users,
+                "out_of_scope_uses": card.out_of_scope_uses
+            },
+            "factors": {
+                "relevant_factors": card.relevant_factors,
+                "evaluation_factors": card.evaluation_factors
+            },
+            "metrics": {
+                "model_performance": card.model_performance_measures,
+                "decision_thresholds": card.decision_thresholds,
+                "uncertainty_approaches": card.approaches_to_uncertainty
+            },
+            "training_data": {
+                "description": card.training_data_description,
+                "source": card.training_data_source,
+                "size": card.training_data_size,
+                "preprocessing": card.training_data_preprocessing
+            },
+            "evaluation_data": {
+                "description": card.evaluation_data_description,
+                "source": card.evaluation_data_source,
+                "size": card.evaluation_data_size
+            },
+            "quantitative_analyses": {
+                "unitary_results": card.unitary_results,
+                "intersectional_results": card.intersectional_results
+            },
+            "ethical_considerations": {
+                "sensitive_data": card.sensitive_data,
+                "human_life_impact": card.human_life_impact,
+                "mitigations": card.mitigations,
+                "risks_and_harms": card.risks_and_harms
+            },
+            "caveats_and_recommendations": {
+                "caveats": card.caveats,
+                "recommendations": card.recommendations
+            }
+        }
+
+        with open(output_file, 'w') as f:
+            json.dump(card_dict, f, indent=2)
+
+        print(f"Model card JSON exported: {output_file}")
+
+# Example usage
+if __name__ == "__main__":
+    # Create model card
+    card = ModelCard(
+        model_name="Credit Risk Classifier",
+        model_version="v2.1.0",
+        model_date=datetime.now(),
+        model_type="Binary Classification (Random Forest)",
+        contact="ml-team@company.com",
+        primary_uses=[
+            "Automated credit risk assessment for loan applications",
+            "Risk-based pricing decisions",
+            "Portfolio risk monitoring"
+        ],
+        primary_users=[
+            "Loan officers",
+            "Risk management teams",
+            "Automated lending platform"
+        ],
+        out_of_scope_uses=[
+            "Employment decisions",
+            "Insurance underwriting",
+            "Criminal justice applications",
+            "Decisions where model cannot be explained"
+        ],
+        model_performance_measures={
+            "Accuracy": 0.912,
+            "Precision": 0.897,
+            "Recall": 0.883,
+            "F1-Score": 0.890,
+            "AUC-ROC": 0.945
+        },
+        training_data_description="Historical loan application data from 2018-2023",
+        training_data_source="Internal CRM and credit bureau data",
+        training_data_size=245000,
+        training_data_preprocessing=[
+            "Removed personally identifiable information",
+            "Imputed missing values using median strategy",
+            "Standardized numerical features",
+            "One-hot encoded categorical variables",
+            "Balanced classes using SMOTE"
+        ],
+        evaluation_data_description="Hold-out test set from 2024 Q1",
+        evaluation_data_source="Internal CRM",
+        evaluation_data_size=32000,
+        sensitive_data=[
+            "Credit history",
+            "Income information",
+            "Employment status",
+            "Demographic data (for fairness testing only)"
+        ],
+        human_life_impact="Model decisions affect individuals' ability to obtain credit, impacting their financial well-being and life opportunities.",
+        risks_and_harms=[
+            "Potential for discriminatory outcomes across protected groups",
+            "Economic harm from false rejections",
+            "Credit availability disparities",
+            "Reinforcement of historical lending biases"
+        ],
+        mitigations=[
+            "Regular fairness audits across demographic groups",
+            "Human review for borderline cases",
+            "Appeals process for rejected applications",
+            "Ongoing monitoring of disparate impact",
+            "Periodic model retraining with recent data"
+        ],
+        caveats=[
+            "Model trained on historical data may not reflect current economic conditions",
+            "Performance may degrade during economic crises",
+            "Protected attributes not used in training but proxy variables may exist",
+            "Model should not be sole decision-maker for high-value loans"
+        ],
+        recommendations=[
+            "Combine with human judgment for loans above $50,000",
+            "Review model quarterly for performance degradation",
+            "Conduct annual fairness audits",
+            "Retrain model when AUC drops below 0.90",
+            "Maintain human override capability"
+        ]
+    )
+
+    # Generate outputs
+    generator = ModelCardGenerator()
+    generator.generate_html(card, "model_card.html")
+    generator.generate_json(card, "model_card.json")
+\end{lstlisting}
+
+\subsection{Audit Trail Implementation}
+
+\begin{lstlisting}[language=Python, caption=Comprehensive Audit Trail System]
+#!/usr/bin/env python3
+"""
+Audit Trail System for ML Models
+Immutable logging of all model-related activities
+"""
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+from datetime import datetime
+import hashlib
+import json
+import sqlite3
+
+@dataclass
+class AuditEvent:
+    """Single audit event"""
+    event_id: str
+    timestamp: datetime
+    event_type: str
+    actor: str
+    model_id: str
+    action: str
+    details: Dict
+    ip_address: Optional[str] = None
+    previous_hash: Optional[str] = None
+    current_hash: Optional[str] = None
+
+class AuditTrailSystem:
+    """Immutable audit trail for model governance"""
+
+    def __init__(self, db_path: str = "audit_trail.db"):
+        self.db_path = db_path
+        self._initialize_database()
+
+    def _initialize_database(self):
+        """Create audit trail database"""
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS audit_events (
+                event_id TEXT PRIMARY KEY,
+                timestamp TIMESTAMP NOT NULL,
+                event_type TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                details TEXT NOT NULL,
+                ip_address TEXT,
+                previous_hash TEXT,
+                current_hash TEXT NOT NULL,
+                UNIQUE(current_hash)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_model_id ON audit_events(model_id)
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_timestamp ON audit_events(timestamp)
+        """)
+
+        conn.commit()
+        conn.close()
+
+    def _calculate_hash(self, event: AuditEvent) -> str:
+        """Calculate cryptographic hash of event"""
+
+        event_string = f"{event.timestamp.isoformat()}|{event.event_type}|{event.actor}|{event.model_id}|{event.action}|{json.dumps(event.details, sort_keys=True)}|{event.previous_hash}"
+
+        return hashlib.sha256(event_string.encode()).hexdigest()
+
+    def _get_latest_hash(self, model_id: str) -> Optional[str]:
+        """Get hash of most recent event for model"""
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT current_hash FROM audit_events
+            WHERE model_id = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (model_id,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        return result[0] if result else None
+
+    def log_event(
+        self,
+        event_type: str,
+        actor: str,
+        model_id: str,
+        action: str,
+        details: Dict,
+        ip_address: Optional[str] = None
+    ) -> str:
+        """Log audit event"""
+
+        # Get previous hash for blockchain-like linking
+        previous_hash = self._get_latest_hash(model_id)
+
+        # Create event
+        event = AuditEvent(
+            event_id=f"{model_id}-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+            timestamp=datetime.now(),
+            event_type=event_type,
+            actor=actor,
+            model_id=model_id,
+            action=action,
+            details=details,
+            ip_address=ip_address,
+            previous_hash=previous_hash
+        )
+
+        # Calculate hash
+        event.current_hash = self._calculate_hash(event)
+
+        # Store event
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            INSERT INTO audit_events (
+                event_id, timestamp, event_type, actor, model_id,
+                action, details, ip_address, previous_hash, current_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            event.event_id,
+            event.timestamp,
+            event.event_type,
+            event.actor,
+            event.model_id,
+            event.action,
+            json.dumps(event.details),
+            event.ip_address,
+            event.previous_hash,
+            event.current_hash
+        ))
+
+        conn.commit()
+        conn.close()
+
+        return event.event_id
+
+    def verify_integrity(self, model_id: str) -> bool:
+        """Verify audit trail integrity using hash chain"""
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT event_id, timestamp, event_type, actor, model_id,
+                   action, details, previous_hash, current_hash
+            FROM audit_events
+            WHERE model_id = ?
+            ORDER BY timestamp ASC
+        """, (model_id,))
+
+        events = cursor.fetchall()
+        conn.close()
+
+        if not events:
+            return True
+
+        # Verify hash chain
+        for i, event_data in enumerate(events):
+            event = AuditEvent(
+                event_id=event_data[0],
+                timestamp=datetime.fromisoformat(event_data[1]),
+                event_type=event_data[2],
+                actor=event_data[3],
+                model_id=event_data[4],
+                action=event_data[5],
+                details=json.loads(event_data[6]),
+                previous_hash=event_data[7],
+                current_hash=event_data[8]
+            )
+
+            # Recalculate hash
+            expected_hash = self._calculate_hash(event)
+
+            if expected_hash != event.current_hash:
+                print(f"Integrity violation at event {event.event_id}")
+                return False
+
+            # Check chain linkage
+            if i > 0:
+                previous_event_hash = events[i-1][8]
+                if event.previous_hash != previous_event_hash:
+                    print(f"Chain break at event {event.event_id}")
+                    return False
+
+        return True
+
+    def get_model_history(self, model_id: str) -> List[Dict]:
+        """Get complete audit history for a model"""
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT event_id, timestamp, event_type, actor, action, details
+            FROM audit_events
+            WHERE model_id = ?
+            ORDER BY timestamp ASC
+        """, (model_id,))
+
+        events = []
+        for row in cursor.fetchall():
+            events.append({
+                "event_id": row[0],
+                "timestamp": row[1],
+                "event_type": row[2],
+                "actor": row[3],
+                "action": row[4],
+                "details": json.loads(row[5])
+            })
+
+        conn.close()
+        return events
+
+    def generate_audit_report(self, model_id: str, output_file: str):
+        """Generate audit report for compliance"""
+
+        history = self.get_model_history(model_id)
+        integrity_valid = self.verify_integrity(model_id)
+
+        report = {
+            "model_id": model_id,
+            "report_generated": datetime.now().isoformat(),
+            "total_events": len(history),
+            "integrity_verified": integrity_valid,
+            "timeline": history,
+            "summary": {
+                "first_event": history[0]["timestamp"] if history else None,
+                "last_event": history[-1]["timestamp"] if history else None,
+                "unique_actors": len(set(e["actor"] for e in history)),
+                "event_types": list(set(e["event_type"] for e in history))
+            }
+        }
+
+        with open(output_file, 'w') as f:
+            json.dump(report, f, indent=2)
+
+        print(f"Audit report generated: {output_file}")
+        return report
+
+# Example usage
+if __name__ == "__main__":
+    audit = AuditTrailSystem()
+
+    # Log various events
+    audit.log_event(
+        event_type="model_development",
+        actor="john.doe@company.com",
+        model_id="fraud-detection-v1",
+        action="training_started",
+        details={
+            "framework": "scikit-learn",
+            "algorithm": "RandomForest",
+            "training_samples": 100000
+        },
+        ip_address="192.168.1.100"
+    )
+
+    audit.log_event(
+        event_type="model_validation",
+        actor="validator@company.com",
+        model_id="fraud-detection-v1",
+        action="validation_passed",
+        details={
+            "accuracy": 0.95,
+            "f1_score": 0.92,
+            "validation_criteria_met": True
+        }
+    )
+
+    audit.log_event(
+        event_type="model_approval",
+        actor="compliance@company.com",
+        model_id="fraud-detection-v1",
+        action="approval_granted",
+        details={
+            "approval_type": "compliance_review",
+            "comments": "Meets all regulatory requirements"
+        }
+    )
+
+    audit.log_event(
+        event_type="model_deployment",
+        actor="ml-engineer@company.com",
+        model_id="fraud-detection-v1",
+        action="deployed_to_production",
+        details={
+            "environment": "production",
+            "endpoint": "https://api.company.com/fraud-detection/v1",
+            "deployment_type": "blue-green"
+        }
+    )
+
+    # Verify integrity
+    is_valid = audit.verify_integrity("fraud-detection-v1")
+    print(f"Audit trail integrity: {'VALID' if is_valid else 'INVALID'}")
+
+    # Generate audit report
+    audit.generate_audit_report("fraud-detection-v1", "audit_report.json")
+\end{lstlisting}
+
+
+\section{Bias Detection and Fairness Testing}
+
+Ensuring fairness in ML models is both an ethical imperative and, increasingly, a legal requirement. Bias can arise from training data, feature selection, or algorithmic decisions.
+
+\subsection{Fairness Metrics}
+
+\textbf{Common Fairness Definitions:}
+
+\begin{enumerate}
+    \item \textbf{Demographic Parity:} Equal selection rates across groups
+    \item \textbf{Equal Opportunity:} Equal true positive rates across groups
+    \item \textbf{Equalized Odds:} Equal TPR and FPR across groups
+    \item \textbf{Predictive Parity:} Equal precision across groups
+    \item \textbf{Calibration:} Predicted probabilities match observed frequencies
+\end{enumerate}
+
+\textbf{Bias Mitigation Strategies:}
+
+\begin{itemize}
+    \item \textbf{Pre-processing:} Reweighting, resampling, or removing biased features
+    \item \textbf{In-processing:} Fairness constraints in optimization objective
+    \item \textbf{Post-processing:} Adjust decision thresholds per group
+    \item \textbf{Adversarial Debiasing:} Train model to be invariant to protected attributes
+\end{itemize}
+
+\section{Risk Assessment Frameworks}
+
+Risk assessment helps prioritize governance efforts and determine appropriate controls for ML systems.
+
+\textbf{Risk Assessment Dimensions:}
+
+\begin{enumerate}
+    \item \textbf{Performance Risk:} Model accuracy degradation, data drift
+    \item \textbf{Fairness Risk:} Discriminatory outcomes, disparate impact
+    \item \textbf{Security Risk:} Adversarial attacks, model inversion
+    \item \textbf{Privacy Risk:} Data leakage, re-identification
+    \item \textbf{Operational Risk:} System failures, dependency issues
+    \item \textbf{Reputational Risk:} Public backlash, trust erosion
+    \item \textbf{Compliance Risk:} Regulatory violations, legal liability
+\end{enumerate}
+
+\textbf{Risk Scoring Matrix:}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\textbf{Impact $\backslash$ Likelihood} & \textbf{Rare} & \textbf{Unlikely} & \textbf{Possible} & \textbf{Likely} & \textbf{Very Likely} \\
+\hline
+\textbf{Critical} & Medium & High & High & Critical & Critical \\
+\hline
+\textbf{High} & Low & Medium & High & High & Critical \\
+\hline
+\textbf{Medium} & Low & Low & Medium & Medium & High \\
+\hline
+\textbf{Low} & Low & Low & Low & Low & Medium \\
+\hline
+\textbf{Minimal} & Low & Low & Low & Low & Low \\
+\hline
+\end{tabular}
+\caption{Risk Scoring Matrix}
+\end{table}
+
+\section{Approval Workflows and Controls}
+
+Approval workflows ensure models go through appropriate review before deployment based on risk level.
+
+\textbf{Approval Gate Structure:}
+
+\begin{enumerate}
+    \item \textbf{Technical Review:} Code quality, testing, performance
+    \item \textbf{Validation:} Model meets performance requirements
+    \item \textbf{Fairness Review:} Bias testing, disparate impact analysis
+    \item \textbf{Security Review:} Vulnerability scanning, threat modeling
+    \item \textbf{Compliance Review:} Regulatory requirements, legal approval
+    \item \textbf{Business Approval:} Stakeholder sign-off, resource allocation
+    \item \textbf{Final Sign-Off:} Executive approval for high-risk models
+\end{enumerate}
+
+\textbf{Automated Control Checks:}
+
+\begin{itemize}
+    \item Minimum accuracy/performance thresholds
+    \item Fairness metrics within acceptable bounds
+    \item Security vulnerability scan passing
+    \item Required documentation complete
+    \item Test coverage above minimum
+    \item No critical code quality issues
+\end{itemize}
+
+\section{Governance Implementation Exercises}
+
+\subsection{Exercise 1: Build Governance Framework for Healthcare ML System}
+
+\textbf{Scenario:} Hospital deploying ML model for predicting patient readmission risk within 30 days. Model will inform care coordination decisions.
+
+\textbf{Context:}
+\begin{itemize}
+    \item Model accuracy: 82\%
+    \item Training data: 50,000 patient records (5 years)
+    \item Protected attributes: age, gender, race, insurance type
+    \item Regulatory environment: HIPAA, state healthcare regulations
+    \item Impact: Affects care team workflows and resource allocation
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Classify model risk tier (Low/Medium/High/Critical) with justification
+    \item Define required approvers and approval workflow
+    \item Identify minimum 8 governance requirements
+    \item Design fairness testing approach for protected attributes
+    \item Create model card with ethical considerations section
+    \item Establish monitoring metrics and alert thresholds
+    \item Define incident response procedure for model failures
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Risk assessment report with scored risk factors
+    \item Approval workflow diagram showing gates and approvers
+    \item Governance policy document (2-3 pages)
+    \item Model card (HTML or PDF)
+    \item Monitoring dashboard specification
+\end{itemize}
+
+\subsection{Exercise 2: GDPR Compliance Implementation}
+
+\textbf{Scenario:} E-commerce company using ML for personalized product recommendations. Expanding to EU market requires GDPR compliance.
+
+\textbf{Current State:}
+\begin{itemize}
+    \item Recommendation model trained on user behavioral data
+    \item Data includes: browsing history, purchases, demographics, location
+    \item Real-time inference via API
+    \item Data retained indefinitely
+    \item No current explainability capability
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Conduct Data Protection Impact Assessment (DPIA)
+    \item Implement right to explanation mechanism
+    \item Design data deletion workflow for right to erasure
+    \item Create privacy notice for data collection
+    \item Implement consent management system
+    \item Establish data retention policy with automated deletion
+    \item Document legal basis for processing
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Completed DPIA document
+    \item Explanation generation code (Python)
+    \item Data deletion procedure documentation
+    \item CCPA/GDPR compliance checklist (completed)
+    \item Privacy policy text
+    \item Data flow diagram showing processing activities
+\end{itemize}
+
+\subsection{Exercise 3: Fairness Audit and Remediation}
+
+\textbf{Scenario:} Lending institution discovers potential bias in credit scoring model after customer complaints.
+
+\textbf{Model Details:}
+\begin{itemize}
+    \item Random Forest classifier for loan approval
+    \item Overall accuracy: 88\%
+    \item Disparate impact ratio (race): 0.68
+    \item False negative rate varies by demographic group
+    \item Model has been in production for 2 years
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Calculate comprehensive fairness metrics (demographic parity, equal opportunity, equalized odds)
+    \item Identify source of bias (data, features, or algorithm)
+    \item Implement three bias mitigation techniques
+    \item Compare fairness-accuracy tradeoffs
+    \item Design ongoing fairness monitoring system
+    \item Create remediation plan for affected customers
+    \item Document findings for regulatory reporting
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Fairness audit report with all metrics
+    \item Bias mitigation code (3 approaches)
+    \item Performance comparison matrix
+    \item Fairness monitoring dashboard spec
+    \item Customer remediation procedure
+    \item Executive summary for board presentation
+\end{itemize}
+
+\subsection{Exercise 4: Multi-Stage Approval Workflow Implementation}
+
+\textbf{Scenario:} Financial services firm implementing governance for 50+ ML models across organization.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Three risk tiers: Low, Medium, High
+    \item Different approval requirements per tier
+    \item Automated controls before human approval
+    \item Audit trail for all decisions
+    \item SLA: 5 days for low risk, 15 days for medium, 30 days for high
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Design approval workflow for each risk tier
+    \item Implement automated control checks
+    \item Create approval tracking system (database schema + code)
+    \item Build notification system for pending approvals
+    \item Implement SLA monitoring and escalation
+    \item Design approval delegation mechanism
+    \item Create compliance reporting dashboard
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Workflow diagrams for all three tiers
+    \item Automated control check code (Python)
+    \item Database schema for approval tracking
+    \item Approval workflow engine implementation
+    \item SLA dashboard mockup
+    \item User guide for approvers
+\end{itemize}
+
+\subsection{Exercise 5: Model Risk Assessment}
+
+\textbf{Scenario:} Startup deploying first ML model to production. Board requires comprehensive risk assessment.
+
+\textbf{Model Context:}
+\begin{itemize}
+    \item Fraud detection for payment transactions
+    \item Real-time decision-making (< 100ms latency)
+    \item Processes 1M transactions/day
+    \item False positives block legitimate transactions
+    \item False negatives result in fraud losses
+    \item Public API exposed to merchants
+\end{itemize}
+
+\textbf{Tasks:}
+\begin{enumerate}
+    \item Identify all risk categories (performance, security, operational, etc.)
+    \item Score each risk (Impact x Likelihood)
+    \item Prioritize top 5 risks
+    \item Design mitigation strategies for critical risks
+    \item Estimate residual risk after mitigations
+    \item Create risk register
+    \item Present findings to executive stakeholders
+\end{enumerate}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Risk assessment spreadsheet with all factors
+    \item Risk heat map visualization
+    \item Mitigation plan with timelines and owners
+    \item Residual risk analysis
+    \item Risk register (living document)
+    \item Executive presentation (10 slides max)
+\end{itemize}
+
+\section{Summary}
+
+Model governance and compliance are critical for responsible AI deployment. This chapter covered:
+
+\textbf{1. Governance Framework:}
+\begin{itemize}
+    \item Role-based governance structure
+    \item Risk-based policies (4 tiers)
+    \item Model inventory and lifecycle tracking
+    \item Approval workflows and controls
+\end{itemize}
+
+\textbf{2. Regulatory Compliance:}
+\begin{itemize}
+    \item GDPR requirements (explanation, deletion, portability, DPIA)
+    \item CCPA requirements (notice, deletion, opt-out)
+    \item Privacy by design principles
+    \item Compliance reporting
+\end{itemize}
+
+\textbf{3. Documentation and Audit:}
+\begin{itemize}
+    \item Model Cards for transparency
+    \item Immutable audit trails
+    \item Blockchain-like event hashing
+    \item Compliance reports
+\end{itemize}
+
+\textbf{4. Fairness and Bias:}
+\begin{itemize}
+    \item Fairness metrics (demographic parity, equal opportunity, etc.)
+    \item Bias detection methods
+    \item Mitigation strategies
+    \item Ongoing fairness monitoring
+\end{itemize}
+
+\textbf{5. Risk Assessment:}
+\begin{itemize}
+    \item Multi-dimensional risk evaluation
+    \item Impact and likelihood scoring
+    \item Risk categorization and prioritization
+    \item Mitigation planning
+\end{itemize}
+
+\textbf{6. Approval Workflows:}
+\begin{itemize}
+    \item Multi-stage approval gates
+    \item Automated control checks
+    \item Role-based approvers
+    \item Audit trail generation
+\end{itemize}
+
+\textbf{Key Takeaways:}
+
+\begin{enumerate}
+    \item \textbf{Governance is Risk-Based:} Higher-risk models require more rigorous controls
+    \item \textbf{Automate Where Possible:} Automated controls reduce human error and speed approvals
+    \item \textbf{Document Everything:} Comprehensive documentation protects organizations legally
+    \item \textbf{Fairness is Not Optional:} Bias testing must be part of every ML workflow
+    \item \textbf{Compliance is Continuous:} Ongoing monitoring and auditing required
+    \item \textbf{Culture Matters:} Governance succeeds when embedded in organizational culture
+    \item \textbf{Balance Control and Innovation:} Governance should enable, not block, ML development
+\end{enumerate}
+
+Effective model governance balances innovation with responsibility, ensuring ML systems deliver value while protecting individuals and organizations from harm. As AI regulations evolve globally (EU AI Act, US AI Bill of Rights), robust governance frameworks will become competitive advantages, enabling organizations to deploy ML systems confidently and ethically.
+
+\subsection{Comprehensive Fairness Testing Implementation}
+
+\begin{lstlisting}[language=Python, caption=Production Fairness Testing Framework]
+#!/usr/bin/env python3
+"""
+Production-Ready Fairness Testing Framework
+Implements multiple fairness metrics with detailed reporting
+"""
+
+import numpy as np
+import pandas as pd
+from sklearn.metrics import confusion_matrix, roc_auc_score
+from typing import Dict, List, Tuple
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+class FairnessTestSuite:
+    """Comprehensive fairness testing for production models"""
+
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+        self.test_results = {}
+
+    def run_full_fairness_audit(
+        self,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_prob: np.ndarray,
+        sensitive_features: pd.DataFrame,
+        favorable_label: int = 1
+    ) -> Dict:
+        """Run comprehensive fairness audit"""
+
+        results = {
+            "model_name": self.model_name,
+            "test_date": pd.Timestamp.now().isoformat(),
+            "overall_metrics": self._calculate_overall_metrics(y_true, y_pred, y_prob),
+            "group_metrics": {},
+            "fairness_violations": []
+        }
+
+        # Test each sensitive attribute
+        for attr in sensitive_features.columns:
+            attr_results = self._test_attribute_fairness(
+                y_true, y_pred, y_prob,
+                sensitive_features[attr],
+                attr, favorable_label
+            )
+            results["group_metrics"][attr] = attr_results
+
+            # Check for violations
+            violations = self._check_fairness_violations(attr_results, attr)
+            if violations:
+                results["fairness_violations"].extend(violations)
+
+        # Intersectional analysis
+        if len(sensitive_features.columns) >= 2:
+            intersectional = self._intersectional_analysis(
+                y_true, y_pred,
+                sensitive_features
+            )
+            results["intersectional_metrics"] = intersectional
+
+        self.test_results = results
+        return results
+
+    def _calculate_overall_metrics(
+        self,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_prob: np.ndarray
+    ) -> Dict:
+        """Calculate overall model performance"""
+
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+
+        return {
+            "accuracy": (tp + tn) / (tp + tn + fp + fn),
+            "precision": tp / (tp + fp) if (tp + fp) > 0 else 0,
+            "recall": tp / (tp + fn) if (tp + fn) > 0 else 0,
+            "specificity": tn / (tn + fp) if (tn + fp) > 0 else 0,
+            "f1_score": 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0,
+            "auc_roc": roc_auc_score(y_true, y_prob),
+            "selection_rate": np.mean(y_pred),
+            "base_rate": np.mean(y_true)
+        }
+
+    def _test_attribute_fairness(
+        self,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        y_prob: np.ndarray,
+        sensitive_attr: pd.Series,
+        attr_name: str,
+        favorable_label: int
+    ) -> Dict:
+        """Test fairness for a single attribute"""
+
+        groups = {}
+        reference_group = None
+        max_selection_rate = 0
+
+        # Calculate metrics for each group
+        for group_value in sensitive_attr.unique():
+            mask = sensitive_attr == group_value
+            group_true = y_true[mask]
+            group_pred = y_pred[mask]
+            group_prob = y_prob[mask]
+
+            if len(group_true) == 0:
+                continue
+
+            tn, fp, fn, tp = confusion_matrix(group_true, group_pred).ravel()
+
+            metrics = {
+                "group_size": int(mask.sum()),
+                "group_percentage": float(mask.mean() * 100),
+                "accuracy": (tp + tn) / (tp + tn + fp + fn),
+                "precision": tp / (tp + fp) if (tp + fp) > 0 else 0,
+                "recall_tpr": tp / (tp + fn) if (tp + fn) > 0 else 0,
+                "fpr": fp / (fp + tn) if (fp + tn) > 0 else 0,
+                "fnr": fn / (fn + tp) if (fn + tp) > 0 else 0,
+                "selection_rate": float(np.mean(group_pred)),
+                "base_rate": float(np.mean(group_true)),
+                "true_positives": int(tp),
+                "false_positives": int(fp),
+                "true_negatives": int(tn),
+                "false_negatives": int(fn)
+            }
+
+            groups[str(group_value)] = metrics
+
+            # Track reference group (largest selection rate)
+            if metrics["selection_rate"] > max_selection_rate:
+                max_selection_rate = metrics["selection_rate"]
+                reference_group = str(group_value)
+
+        # Calculate relative fairness metrics
+        if reference_group:
+            for group_name, group_metrics in groups.items():
+                ref_metrics = groups[reference_group]
+
+                # Disparate impact ratio
+                if ref_metrics["selection_rate"] > 0:
+                    group_metrics["disparate_impact_ratio"] = \
+                        group_metrics["selection_rate"] / ref_metrics["selection_rate"]
+                else:
+                    group_metrics["disparate_impact_ratio"] = None
+
+                # TPR ratio (equal opportunity)
+                if ref_metrics["recall_tpr"] > 0:
+                    group_metrics["equal_opportunity_ratio"] = \
+                        group_metrics["recall_tpr"] / ref_metrics["recall_tpr"]
+                else:
+                    group_metrics["equal_opportunity_ratio"] = None
+
+                # Average odds difference
+                group_metrics["avg_odds_diff"] = \
+                    (group_metrics["recall_tpr"] - ref_metrics["recall_tpr"] +
+                     group_metrics["fpr"] - ref_metrics["fpr"]) / 2
+
+        return {
+            "attribute": attr_name,
+            "reference_group": reference_group,
+            "groups": groups,
+            "max_disparate_impact_violation": self._max_di_violation(groups),
+            "max_tpr_difference": self._max_tpr_difference(groups),
+            "max_fpr_difference": self._max_fpr_difference(groups)
+        }
+
+    def _max_di_violation(self, groups: Dict) -> float:
+        """Calculate maximum disparate impact violation"""
+        di_ratios = [g.get("disparate_impact_ratio", 1.0)
+                     for g in groups.values()
+                     if g.get("disparate_impact_ratio") is not None]
+
+        if not di_ratios:
+            return 0.0
+
+        # Return how far below 0.8 the worst group is
+        min_ratio = min(di_ratios)
+        return max(0, 0.8 - min_ratio)
+
+    def _max_tpr_difference(self, groups: Dict) -> float:
+        """Calculate maximum TPR difference between groups"""
+        tprs = [g["recall_tpr"] for g in groups.values()]
+        return max(tprs) - min(tprs) if tprs else 0.0
+
+    def _max_fpr_difference(self, groups: Dict) -> float:
+        """Calculate maximum FPR difference between groups"""
+        fprs = [g["fpr"] for g in groups.values()]
+        return max(fprs) - min(fprs) if fprs else 0.0
+
+    def _check_fairness_violations(
+        self,
+        attr_results: Dict,
+        attr_name: str
+    ) -> List[Dict]:
+        """Check for fairness metric violations"""
+
+        violations = []
+
+        # Check disparate impact (80% rule)
+        if attr_results["max_disparate_impact_violation"] > 0:
+            violations.append({
+                "attribute": attr_name,
+                "violation_type": "disparate_impact",
+                "severity": "high",
+                "description": f"Disparate impact ratio below 0.8 threshold",
+                "max_violation": attr_results["max_disparate_impact_violation"]
+            })
+
+        # Check equal opportunity (TPR difference)
+        if attr_results["max_tpr_difference"] > 0.1:
+            violations.append({
+                "attribute": attr_name,
+                "violation_type": "equal_opportunity",
+                "severity": "medium",
+                "description": f"TPR differs by {attr_results['max_tpr_difference']:.3f} across groups",
+                "max_violation": attr_results["max_tpr_difference"]
+            })
+
+        # Check equalized odds (FPR difference)
+        if attr_results["max_fpr_difference"] > 0.1:
+            violations.append({
+                "attribute": attr_name,
+                "violation_type": "equalized_odds",
+                "severity": "medium",
+                "description": f"FPR differs by {attr_results['max_fpr_difference']:.3f} across groups",
+                "max_violation": attr_results["max_fpr_difference"]
+            })
+
+        return violations
+
+    def _intersectional_analysis(
+        self,
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        sensitive_features: pd.DataFrame
+    ) -> Dict:
+        """Analyze fairness across intersections of attributes"""
+
+        # Create intersection groups
+        intersections = sensitive_features.apply(
+            lambda row: '_'.join(row.astype(str)),
+            axis=1
+        )
+
+        intersection_metrics = {}
+
+        for intersection in intersections.unique():
+            mask = intersections == intersection
+            if mask.sum() < 30:  # Skip small groups
+                continue
+
+            group_true = y_true[mask]
+            group_pred = y_pred[mask]
+
+            intersection_metrics[intersection] = {
+                "size": int(mask.sum()),
+                "accuracy": float(np.mean(group_pred == group_true)),
+                "selection_rate": float(np.mean(group_pred)),
+                "base_rate": float(np.mean(group_true))
+            }
+
+        return intersection_metrics
+
+    def generate_fairness_report_html(self, output_file: str):
+        """Generate HTML fairness report"""
+
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fairness Audit Report: {self.model_name}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 40px; }}
+        h1 {{ color: #d32f2f; }}
+        h2 {{ color: #1976d2; margin-top: 30px; }}
+        table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+        th, td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
+        th {{ background-color: #1976d2; color: white; }}
+        .violation {{ background-color: #ffebee; padding: 15px; margin: 10px 0; border-left: 4px solid #d32f2f; }}
+        .pass {{ background-color: #e8f5e9; padding: 15px; margin: 10px 0; border-left: 4px solid #4caf50; }}
+        .metric {{ display: inline-block; margin: 10px 20px 10px 0; }}
+        .metric-value {{ font-size: 24px; font-weight: bold; color: #1976d2; }}
+        .metric-label {{ font-size: 12px; color: #666; }}
+    </style>
+</head>
+<body>
+    <h1>Fairness Audit Report</h1>
+    <p><strong>Model:</strong> {self.model_name}</p>
+    <p><strong>Date:</strong> {self.test_results.get('test_date', 'N/A')}</p>
+
+    <h2>Overall Performance</h2>
+    <div>
+"""
+
+        overall = self.test_results.get("overall_metrics", {})
+        for metric, value in overall.items():
+            html += f"""
+        <div class="metric">
+            <div class="metric-value">{value:.3f}</div>
+            <div class="metric-label">{metric.replace('_', ' ').title()}</div>
+        </div>
+"""
+
+        html += """
+    </div>
+
+    <h2>Fairness Violations</h2>
+"""
+
+        violations = self.test_results.get("fairness_violations", [])
+        if violations:
+            for violation in violations:
+                html += f"""
+    <div class="violation">
+        <strong>{violation['violation_type'].replace('_', ' ').title()}</strong>
+        ({violation['severity']} severity)<br>
+        Attribute: {violation['attribute']}<br>
+        {violation['description']}
+    </div>
+"""
+        else:
+            html += '<div class="pass">No fairness violations detected!</div>'
+
+        html += """
+    <h2>Group Metrics</h2>
+"""
+
+        for attr, attr_data in self.test_results.get("group_metrics", {}).items():
+            html += f"""
+    <h3>{attr}</h3>
+    <table>
+        <tr>
+            <th>Group</th>
+            <th>Size</th>
+            <th>Selection Rate</th>
+            <th>Accuracy</th>
+            <th>TPR</th>
+            <th>FPR</th>
+            <th>DI Ratio</th>
+        </tr>
+"""
+            for group_name, group_data in attr_data.get("groups", {}).items():
+                di_ratio = group_data.get("disparate_impact_ratio")
+                di_str = f"{di_ratio:.3f}" if di_ratio is not None else "N/A"
+
+                html += f"""
+        <tr>
+            <td>{group_name}</td>
+            <td>{group_data['group_size']}</td>
+            <td>{group_data['selection_rate']:.3f}</td>
+            <td>{group_data['accuracy']:.3f}</td>
+            <td>{group_data['recall_tpr']:.3f}</td>
+            <td>{group_data['fpr']:.3f}</td>
+            <td>{di_str}</td>
+        </tr>
+"""
+
+            html += """
+    </table>
+"""
+
+        html += """
+</body>
+</html>
+"""
+
+        with open(output_file, 'w') as f:
+            f.write(html)
+
+        print(f"Fairness report generated: {output_file}")
+
+# Example usage
+if __name__ == "__main__":
+    # Generate synthetic test data
+    np.random.seed(42)
+    n_samples = 5000
+
+    # Create synthetic dataset with bias
+    gender = np.random.choice(['M', 'F'], n_samples, p=[0.6, 0.4])
+    race = np.random.choice(['White', 'Black', 'Hispanic', 'Asian'], n_samples)
+    age_group = np.random.choice(['18-30', '31-50', '51+'], n_samples)
+
+    # Ground truth with some correlation to demographics (simulating historical bias)
+    y_true = np.random.binomial(1, 0.3, n_samples)
+
+    # Predictions with introduced bias
+    y_pred = y_true.copy()
+
+    # Introduce bias: lower approval rate for certain groups
+    female_mask = gender == 'F'
+    y_pred[female_mask & (y_true == 1)] = np.random.binomial(
+        1, 0.7, (female_mask & (y_true == 1)).sum()
+    )
+
+    y_prob = np.random.uniform(0, 1, n_samples)
+    y_prob[y_pred == 1] = np.random.uniform(0.5, 1.0, (y_pred == 1).sum())
+
+    # Create DataFrame with sensitive attributes
+    sensitive_features = pd.DataFrame({
+        'gender': gender,
+        'race': race,
+        'age_group': age_group
+    })
+
+    # Run fairness audit
+    fairness_tester = FairnessTestSuite(model_name="Credit Approval Model v2.0")
+
+    results = fairness_tester.run_full_fairness_audit(
+        y_true=y_true,
+        y_pred=y_pred,
+        y_prob=y_prob,
+        sensitive_features=sensitive_features[['gender', 'race']],
+        favorable_label=1
+    )
+
+    print(f"Violations found: {len(results['fairness_violations'])}")
+    for violation in results['fairness_violations']:
+        print(f"  - {violation['violation_type']}: {violation['description']}")
+
+    # Generate HTML report
+    fairness_tester.generate_fairness_report_html("fairness_audit_report.html")
+\end{lstlisting}
+
+\subsection{Advanced Risk Assessment with Quantitative Scoring}
+
+\begin{lstlisting}[language=Python, caption=Quantitative Risk Scoring System]
+#!/usr/bin/env python3
+"""
+Advanced Risk Assessment with Monte Carlo Simulation
+Quantitative risk scoring for ML models
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, List
+from dataclasses import dataclass
+import json
+
+@dataclass
+class RiskDistribution:
+    """Probability distribution for risk parameter"""
+    name: str
+    distribution_type: str  # "uniform", "normal", "triangular"
+    params: Dict  # Distribution parameters
+
+class QuantitativeRiskAssessor:
+    """Advanced risk assessment with probabilistic analysis"""
+
+    def __init__(self, model_id: str):
+        self.model_id = model_id
+        self.risk_factors = []
+
+    def add_risk_factor(
+        self,
+        name: str,
+        impact_dist: RiskDistribution,
+        likelihood_dist: RiskDistribution,
+        current_controls: float = 0.0
+    ):
+        """Add risk factor with probability distributions"""
+
+        self.risk_factors.append({
+            "name": name,
+            "impact_dist": impact_dist,
+            "likelihood_dist": likelihood_dist,
+            "current_controls": current_controls
+        })
+
+    def monte_carlo_simulation(self, n_simulations: int = 10000) -> Dict:
+        """Run Monte Carlo simulation for risk assessment"""
+
+        simulation_results = []
+
+        for _ in range(n_simulations):
+            total_risk = 0
+
+            for risk in self.risk_factors:
+                # Sample impact
+                impact = self._sample_distribution(risk["impact_dist"])
+
+                # Sample likelihood
+                likelihood = self._sample_distribution(risk["likelihood_dist"])
+
+                # Apply control effectiveness
+                control_reduction = risk["current_controls"]
+                adjusted_likelihood = likelihood * (1 - control_reduction)
+
+                # Calculate risk score
+                risk_score = impact * adjusted_likelihood
+
+                total_risk += risk_score
+
+            simulation_results.append(total_risk)
+
+        simulation_results = np.array(simulation_results)
+
+        return {
+            "mean_risk": float(np.mean(simulation_results)),
+            "median_risk": float(np.median(simulation_results)),
+            "std_risk": float(np.std(simulation_results)),
+            "percentile_95": float(np.percentile(simulation_results, 95)),
+            "percentile_99": float(np.percentile(simulation_results, 99)),
+            "min_risk": float(np.min(simulation_results)),
+            "max_risk": float(np.max(simulation_results)),
+            "probability_high_risk": float(np.mean(simulation_results > 15)),
+            "probability_critical_risk": float(np.mean(simulation_results > 20))
+        }
+
+    def _sample_distribution(self, dist: RiskDistribution) -> float:
+        """Sample from probability distribution"""
+
+        if dist.distribution_type == "uniform":
+            return np.random.uniform(
+                dist.params["low"],
+                dist.params["high"]
+            )
+        elif dist.distribution_type == "normal":
+            return np.random.normal(
+                dist.params["mean"],
+                dist.params["std"]
+            )
+        elif dist.distribution_type == "triangular":
+            return np.random.triangular(
+                dist.params["low"],
+                dist.params["mode"],
+                dist.params["high"]
+            )
+        else:
+            raise ValueError(f"Unknown distribution: {dist.distribution_type}")
+
+    def value_at_risk(self, confidence_level: float = 0.95) -> Dict:
+        """Calculate Value at Risk (VaR) metrics"""
+
+        simulation = self.monte_carlo_simulation(n_simulations=10000)
+
+        return {
+            "var_95": simulation["percentile_95"],
+            "var_99": simulation["percentile_99"],
+            "expected_risk": simulation["mean_risk"],
+            "unexpected_risk_95": simulation["percentile_95"] - simulation["mean_risk"],
+            "unexpected_risk_99": simulation["percentile_99"] - simulation["mean_risk"]
+        }
+
+    def scenario_analysis(self) -> Dict:
+        """Analyze best-case, worst-case, and expected scenarios"""
+
+        scenarios = {
+            "best_case": 0,
+            "worst_case": 0,
+            "expected_case": 0
+        }
+
+        for risk in self.risk_factors:
+            # Best case: minimum impact and likelihood
+            impact_min = risk["impact_dist"].params.get("low", 1)
+            likelihood_min = risk["likelihood_dist"].params.get("low", 0.1)
+            scenarios["best_case"] += impact_min * likelihood_min
+
+            # Worst case: maximum impact and likelihood
+            impact_max = risk["impact_dist"].params.get("high", 5)
+            likelihood_max = risk["likelihood_dist"].params.get("high", 1.0)
+            scenarios["worst_case"] += impact_max * likelihood_max * \
+                (1 - risk["current_controls"])
+
+            # Expected case: mean impact and likelihood
+            impact_mean = risk["impact_dist"].params.get("mean",
+                (risk["impact_dist"].params.get("low", 1) +
+                 risk["impact_dist"].params.get("high", 5)) / 2)
+            likelihood_mean = risk["likelihood_dist"].params.get("mean",
+                (risk["likelihood_dist"].params.get("low", 0.1) +
+                 risk["likelihood_dist"].params.get("high", 1.0)) / 2)
+            scenarios["expected_case"] += impact_mean * likelihood_mean * \
+                (1 - risk["current_controls"])
+
+        return scenarios
+
+    def sensitivity_analysis(self) -> pd.DataFrame:
+        """Analyze sensitivity of risk to individual factors"""
+
+        baseline_simulation = self.monte_carlo_simulation(n_simulations=5000)
+        baseline_risk = baseline_simulation["mean_risk"]
+
+        sensitivity = []
+
+        for i, risk in enumerate(self.risk_factors):
+            # Increase impact by 20%
+            original_params = risk["impact_dist"].params.copy()
+
+            if "mean" in original_params:
+                risk["impact_dist"].params["mean"] *= 1.2
+            else:
+                risk["impact_dist"].params["high"] *= 1.2
+
+            increased_simulation = self.monte_carlo_simulation(n_simulations=5000)
+            impact_sensitivity = (increased_simulation["mean_risk"] - baseline_risk) / baseline_risk
+
+            # Restore original parameters
+            risk["impact_dist"].params = original_params
+
+            # Increase likelihood by 20%
+            original_params = risk["likelihood_dist"].params.copy()
+
+            if "mean" in original_params:
+                risk["likelihood_dist"].params["mean"] = min(
+                    risk["likelihood_dist"].params["mean"] * 1.2, 1.0
+                )
+            else:
+                risk["likelihood_dist"].params["high"] = min(
+                    risk["likelihood_dist"].params["high"] * 1.2, 1.0
+                )
+
+            increased_simulation = self.monte_carlo_simulation(n_simulations=5000)
+            likelihood_sensitivity = (increased_simulation["mean_risk"] - baseline_risk) / baseline_risk
+
+            # Restore original parameters
+            risk["likelihood_dist"].params = original_params
+
+            sensitivity.append({
+                "risk_factor": risk["name"],
+                "impact_sensitivity": impact_sensitivity,
+                "likelihood_sensitivity": likelihood_sensitivity,
+                "total_sensitivity": impact_sensitivity + likelihood_sensitivity
+            })
+
+        return pd.DataFrame(sensitivity).sort_values("total_sensitivity", ascending=False)
+
+    def generate_risk_dashboard_data(self, output_file: str):
+        """Generate data for risk dashboard"""
+
+        monte_carlo = self.monte_carlo_simulation(n_simulations=10000)
+        var = self.value_at_risk()
+        scenarios = self.scenario_analysis()
+        sensitivity = self.sensitivity_analysis()
+
+        dashboard_data = {
+            "model_id": self.model_id,
+            "assessment_date": pd.Timestamp.now().isoformat(),
+            "summary": {
+                "expected_risk": monte_carlo["mean_risk"],
+                "risk_volatility": monte_carlo["std_risk"],
+                "value_at_risk_95": var["var_95"],
+                "probability_high_risk": monte_carlo["probability_high_risk"],
+                "risk_rating": self._get_risk_rating(monte_carlo["mean_risk"])
+            },
+            "monte_carlo_results": monte_carlo,
+            "value_at_risk": var,
+            "scenario_analysis": scenarios,
+            "sensitivity_analysis": sensitivity.to_dict(orient="records"),
+            "risk_factors": [
+                {
+                    "name": r["name"],
+                    "current_controls": r["current_controls"]
+                }
+                for r in self.risk_factors
+            ]
+        }
+
+        with open(output_file, 'w') as f:
+            json.dump(dashboard_data, f, indent=2)
+
+        print(f"Risk dashboard data generated: {output_file}")
+        return dashboard_data
+
+    def _get_risk_rating(self, mean_risk: float) -> str:
+        """Get risk rating based on mean risk score"""
+
+        if mean_risk >= 20:
+            return "CRITICAL"
+        elif mean_risk >= 12:
+            return "HIGH"
+        elif mean_risk >= 6:
+            return "MEDIUM"
+        else:
+            return "LOW"
+
+# Example usage
+if __name__ == "__main__":
+    # Create risk assessor
+    assessor = QuantitativeRiskAssessor(model_id="fraud-detection-v1")
+
+    # Add risk factors with distributions
+    assessor.add_risk_factor(
+        name="Model Performance Degradation",
+        impact_dist=RiskDistribution(
+            name="impact",
+            distribution_type="triangular",
+            params={"low": 2, "mode": 4, "high": 5}
+        ),
+        likelihood_dist=RiskDistribution(
+            name="likelihood",
+            distribution_type="triangular",
+            params={"low": 0.3, "mode": 0.5, "high": 0.8}
+        ),
+        current_controls=0.2  # 20% risk reduction from monitoring
+    )
+
+    assessor.add_risk_factor(
+        name="Adversarial Attack",
+        impact_dist=RiskDistribution(
+            name="impact",
+            distribution_type="triangular",
+            params={"low": 3, "mode": 4, "high": 5}
+        ),
+        likelihood_dist=RiskDistribution(
+            name="likelihood",
+            distribution_type="triangular",
+            params={"low": 0.1, "mode": 0.3, "high": 0.6}
+        ),
+        current_controls=0.4  # 40% risk reduction from security controls
+    )
+
+    assessor.add_risk_factor(
+        name="Regulatory Compliance Violation",
+        impact_dist=RiskDistribution(
+            name="impact",
+            distribution_type="triangular",
+            params={"low": 4, "mode": 5, "high": 5}
+        ),
+        likelihood_dist=RiskDistribution(
+            name="likelihood",
+            distribution_type="triangular",
+            params={"low": 0.05, "mode": 0.15, "high": 0.3}
+        ),
+        current_controls=0.6  # 60% risk reduction from compliance program
+    )
+
+    # Run analyses
+    monte_carlo_results = assessor.monte_carlo_simulation(n_simulations=10000)
+    print(f"Expected Risk: {monte_carlo_results['mean_risk']:.2f}")
+    print(f"95th Percentile Risk: {monte_carlo_results['percentile_95']:.2f}")
+    print(f"Probability of High Risk: {monte_carlo_results['probability_high_risk']:.2%}")
+
+    var_results = assessor.value_at_risk()
+    print(f"\nValue at Risk (95%): {var_results['var_95']:.2f}")
+
+    scenarios = assessor.scenario_analysis()
+    print(f"\nScenario Analysis:")
+    print(f"  Best Case: {scenarios['best_case']:.2f}")
+    print(f"  Expected: {scenarios['expected_case']:.2f}")
+    print(f"  Worst Case: {scenarios['worst_case']:.2f}")
+
+    sensitivity = assessor.sensitivity_analysis()
+    print(f"\nTop Risk Drivers:")
+    print(sensitivity.head(3).to_string(index=False))
+
+    # Generate dashboard data
+    assessor.generate_risk_dashboard_data("risk_dashboard.json")
+\end{lstlisting}
+

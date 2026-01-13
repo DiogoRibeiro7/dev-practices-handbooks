@@ -1,0 +1,243 @@
+\documentclass[11pt,a4paper,twoside,openright]{book}
+
+% Essential packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+
+% Page layout and formatting
+\usepackage[
+    top=2.5cm,
+    bottom=2.5cm,
+    left=3cm,
+    right=2.5cm,
+    headheight=14pt
+]{geometry}
+
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\leftmark}
+\fancyhead[RO]{\rightmark}
+\fancyfoot[C]{\thepage}
+\setlength{\headheight}{26pt}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Graphics and figures
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\graphicspath{{images/}}
+
+% Colors
+\usepackage[table]{xcolor}
+\usepackage[acronym]{glossaries}
+\definecolor{titlecolor}{RGB}{0,51,102}
+\definecolor{linkcolor}{RGB}{0,102,204}
+
+% Tables
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
+
+% Mathematics (if needed)
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+% Lists and enumerations
+\usepackage{enumitem}
+
+% Hyperlinks and cross-references
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=linkcolor,
+    citecolor=linkcolor,
+    urlcolor=linkcolor,
+    bookmarksnumbered=true,
+    pdfstartview=FitH,
+    pdftitle={Bridging Worlds: Product Management for Data-Driven Software Development},
+    pdfauthor={Diogo Ribeiro},
+    pdfsubject={Product Management, Software Development, Data Science},
+    pdfkeywords={Product Management, Software Engineering, Data Science, Agile, Requirements}
+}
+
+% Bibliography
+\usepackage[
+    backend=biber,
+    style=apa,
+    sorting=nyt,
+    maxbibnames=99
+]{biblatex}
+\addbibresource{bibliography.bib}
+
+% Code listings (for technical examples)
+\usepackage{listings}
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    captionpos=b
+}
+
+% Advanced typography
+\usepackage{microtype}
+\usepackage{csquotes}
+
+% Chapter and section styling
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+    {\normalfont\huge\bfseries\color{titlecolor}}
+    {\chaptertitlename\ \thechapter}{20pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{0pt}{40pt}
+
+% Custom commands
+\newcommand{\email}[1]{\href{mailto:#1}{\texttt{#1}}}
+\newcommand{\orcid}[1]{\href{#1}{ORCID}}
+
+% Line spacing
+\usepackage{setspace}
+\onehalfspacing
+\makeglossaries
+
+\begin{document}
+
+% Front matter
+\frontmatter
+
+% Title page
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+
+    {\Huge\bfseries\color{titlecolor} Bridging Worlds\par}
+    \vspace{0.5cm}
+    {\LARGE\bfseries Product Management for Data-Driven Software Development\par}
+    \vspace{1cm}
+    {\Large\itshape From Requirements to Reality Across Engineering, Data Science, and Business\par}
+
+    \vfill
+
+    {\Large\bfseries Diogo Ribeiro\par}
+    \vspace{0.5cm}
+
+    {\large
+    ESMAD -- Instituto Politécnico do Porto\\
+    \email{dfr@esmad.ipp.pt}\\[0.2cm]
+    \orcid{https://orcid.org/0009-0001-2022-7072}
+    \par}
+
+    \vfill
+
+    {\large \today\par}
+\end{titlepage}
+
+% Copyright page
+\thispagestyle{empty}
+\null\vfill
+\noindent
+Copyright \copyright\ \the\year\ Diogo Ribeiro\\[0.5cm]
+All rights reserved.\\[1cm]
+\noindent
+This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.\\[1cm]
+
+\noindent
+First Edition\\[0.5cm]
+
+
+\clearpage
+
+% Abstract/Preface
+\chapter*{Preface}
+\addcontentsline{toc}{chapter}{Preface}
+
+Bringing data-informed products to life requires more than technical excellence or visionary business leadership. It demands an intentional translation effort across engineering disciplines, data science practices, and stakeholder expectations. I wrote this handbook after watching too many initiatives stall because requirements were either vague aspirations or overly rigid contracts. The chapters ahead distill patterns that helped teams I have worked with deliver complex software and machine-learning systems with clarity, rigor, and mutual trust.
+
+This book serves product managers, technical program managers, engineering leads, data science managers, and executives who drive digital products. It complements—but does not replace—established frameworks such as Agile, Lean, or OKRs. Instead, it focuses on the seams those frameworks often neglect: how to express hypotheses in a ticket, how to incorporate statistical rigor into acceptance criteria, and how to maintain living documentation that aligns every audience.
+
+You can read sequentially or jump to the sections most relevant to your current challenge. Part~I diagnoses the translation problem, Part~II offers patterns for data-informed requirements, Part~III introduces mathematical rigor tailored to agile organizations, and Part~IV provides implementation templates, metrics, and documentation practices. Each chapter concludes with actionable guidance so you can experiment immediately.
+
+\subsection*{How to Read This Book}
+If you prefer a linear journey, move through the four parts in order: Part~I sets the shared language, Part~II equips you with hypothesis-driven tickets, Part~III layers on quantitative rigor, and Part~IV delivers implementation playbooks. This progression mirrors how teams mature their operating model from intent to execution.
+
+If you are jumping in midstream, treat each part as a toolbox. Skim Part~I for translation principles, then dive into the section that addresses your current pain point—upgrading acceptance criteria (Part~III), tightening measurement (Part~II), or refreshing documentation patterns (Part~IV). Cross-references call out where concepts intersect so you can explore adjacent topics without losing momentum.
+
+\clearpage
+
+% Glossary entries
+\newglossaryentry{slo}{name={SLO},description={Service Level Objective; the reliability or performance target a system commits to meet, usually expressed as an availability or latency goal}}
+\newglossaryentry{wape}{name={WAPE},description={Weighted Absolute Percentage Error; a forecasting accuracy metric that sums absolute errors weighted by actual values}}
+\newglossaryentry{psi}{name={PSI},description={Population Stability Index; a measure that tracks distribution shifts between a baseline dataset and current data, often used for model drift detection}}
+\newglossaryentry{telemetry}{name={telemetry},description={the automated collection of product or system signals that flow back to engineering teams in near real time}}
+\newglossaryentry{portfoliobet}{name={portfolio bet},description={a strategic investment a company makes across products or initiatives with the expectation of portfolio-level impact}}
+\newglossaryentry{deterministic}{name={deterministic},description={describing work expected to follow a predictable, repeatable schedule or output}}
+\newglossaryentry{probabilistic}{name={probabilistic},description={describing work governed by likelihoods and variability rather than fixed outcomes}}
+\newglossaryentry{northstar}{name={north-star metric},description={a primary outcome measure that orients an entire team or organization}}
+\newglossaryentry{conceptdrift}{name={concept drift},description={a change in the statistical properties of data over time, causing models trained on past data to degrade}}
+\newglossaryentry{rocauc}{name={ROC-AUC},description={receiver operating characteristic area under the curve; summarizes classification performance across thresholds}}
+\newglossaryentry{mapmetric}{name={MAP},description={mean average precision; evaluates ranking quality by averaging precision after each relevant item}}
+\newglossaryentry{ndcg}{name={NDCG},description={normalized discounted cumulative gain; measures ranking quality by rewarding relevant items near the top of a list}}
+\newglossaryentry{silhouette}{name={silhouette score},description={a clustering metric that compares cohesion within clusters to separation between clusters}}
+\newglossaryentry{daviesbouldin}{name={Davies--Bouldin index},description={a clustering statistic that captures the ratio of within-cluster scatter to between-cluster separation}}
+\newglossaryentry{spc}{name={statistical process control chart},description={a control chart that highlights when a metric drifts outside expected bounds}}
+\newglossaryentry{mlops}{name={MLOps},description={operational practices for deploying, monitoring, and maintaining machine-learning systems}}
+\newglossaryentry{llmops}{name={LLMOps},description={operations disciplines focused on running large language models responsibly and reliably}}
+
+\chapter*{Glossary}
+\addcontentsline{toc}{chapter}{Glossary}
+\printglossary
+\clearpage
+
+% Table of contents
+\tableofcontents
+
+% List of figures
+\listoffigures
+\addcontentsline{toc}{chapter}{List of Figures}
+
+% List of tables
+\listoftables
+\addcontentsline{toc}{chapter}{List of Tables}
+
+% Main matter
+\mainmatter
+
+% Include chapters
+\input{chapters/ch01_introduction}
+\input{chapters/ch02_translation_challenge}
+\input{chapters/ch03_traditional_pm_failures}
+\input{chapters/ch04_misalignment_costs}
+\input{chapters/ch05_case_studies}
+\input{chapters/ch06_data_informed_tickets}
+\input{chapters/ch07_uncertainty_requirements}
+\input{chapters/ch08_testable_hypotheses}
+\input{chapters/ch09_statistical_acceptance}
+\input{chapters/ch10_mathematical_rigor}
+\input{chapters/ch11_requirement_specification}
+\input{chapters/ch12_quantifying_quality}
+\input{chapters/ch13_formal_methods}
+\input{chapters/ch14_implementation_patterns}
+\input{chapters/ch15_templates_frameworks}
+\input{chapters/ch16_metrics_driven}
+\input{chapters/ch17_documentation_patterns}
+\input{chapters/ch18_conclusion}
+
+% Back matter
+\backmatter
+
+% Bibliography
+\nocite{*}
+\printbibliography[heading=bibintoc,title={References}]
+
+% Appendices
+\appendix
+\addcontentsline{toc}{chapter}{Appendices}
+\input{appendices/appendix_metrics}
+\input{appendices/appendix_pwa}
+
+\end{document}

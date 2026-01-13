@@ -1,0 +1,855 @@
+\appendix
+\chapter{Mathematical Proofs and Derivations}
+
+This appendix provides rigorous mathematical foundations for the statistical methods used in A/B testing. We present detailed proofs and derivations with step-by-step explanations.
+
+\section{Sample Size Formulas}
+
+Sample size determination is fundamental to experimental design. We derive formulas for various testing scenarios.
+
+\subsection{Sample Size for Two-Sample t-Test}
+
+\begin{theorem}[Sample Size for Comparing Two Means]
+To detect a difference $\delta = \mu_2 - \mu_1$ between two population means with common variance $\sigma^2$, significance level $\alpha$, and power $1-\beta$, the required sample size per group is:
+\begin{equation}
+n = \frac{2(z_{\alpha/2} + z_\beta)^2 \sigma^2}{\delta^2}
+\end{equation}
+where $z_{\alpha/2}$ and $z_\beta$ are the critical values from the standard normal distribution.
+\end{theorem}
+
+\begin{proof}
+Consider testing $H_0: \mu_1 = \mu_2$ versus $H_1: \mu_1 \neq \mu_2$ using the test statistic:
+\begin{equation}
+T = \frac{\bar{X}_2 - \bar{X}_1}{\sqrt{2\sigma^2/n}}
+\end{equation}
+
+\textbf{Step 1: Distribution under the null hypothesis.}
+
+Under $H_0$, the difference $\bar{X}_2 - \bar{X}_1$ has mean 0 and variance:
+\begin{equation}
+\text{Var}(\bar{X}_2 - \bar{X}_1) = \text{Var}(\bar{X}_2) + \text{Var}(\bar{X}_1) = \frac{\sigma^2}{n} + \frac{\sigma^2}{n} = \frac{2\sigma^2}{n}
+\end{equation}
+
+By the Central Limit Theorem, for large $n$:
+\begin{equation}
+T \mid H_0 \sim \mathcal{N}(0, 1)
+\end{equation}
+
+\textbf{Step 2: Rejection region.}
+
+For a two-sided test at level $\alpha$, we reject $H_0$ if $|T| > z_{\alpha/2}$, which occurs when:
+\begin{equation}
+|\bar{X}_2 - \bar{X}_1| > z_{\alpha/2} \sqrt{\frac{2\sigma^2}{n}}
+\end{equation}
+
+\textbf{Step 3: Distribution under the alternative.}
+
+Under $H_1: \mu_2 - \mu_1 = \delta$, the test statistic has mean:
+\begin{align}
+\mathbb{E}[T \mid H_1] &= \frac{\mathbb{E}[\bar{X}_2 - \bar{X}_1]}{\sqrt{2\sigma^2/n}} \\
+&= \frac{\delta}{\sqrt{2\sigma^2/n}} \\
+&= \frac{\delta\sqrt{n}}{\sqrt{2}\sigma}
+\end{align}
+
+and variance 1. Therefore:
+\begin{equation}
+T \mid H_1 \sim \mathcal{N}\left(\frac{\delta\sqrt{n}}{\sqrt{2}\sigma}, 1\right)
+\end{equation}
+
+\textbf{Step 4: Power calculation.}
+
+The power is the probability of rejecting $H_0$ when $H_1$ is true. Assuming $\delta > 0$:
+\begin{align}
+\text{Power} &= P(T > z_{\alpha/2} \mid H_1) \\
+&= P\left(\mathcal{N}\left(\frac{\delta\sqrt{n}}{\sqrt{2}\sigma}, 1\right) > z_{\alpha/2}\right) \\
+&= P\left(\mathcal{N}(0,1) > z_{\alpha/2} - \frac{\delta\sqrt{n}}{\sqrt{2}\sigma}\right) \\
+&= \Phi\left(\frac{\delta\sqrt{n}}{\sqrt{2}\sigma} - z_{\alpha/2}\right)
+\end{align}
+
+where $\Phi$ is the standard normal CDF.
+
+\textbf{Step 5: Solve for n.}
+
+For power $1-\beta$, we require:
+\begin{equation}
+\Phi\left(\frac{\delta\sqrt{n}}{\sqrt{2}\sigma} - z_{\alpha/2}\right) = 1 - \beta
+\end{equation}
+
+Since $\Phi(z_\beta) = 1 - \beta$, we have:
+\begin{equation}
+\frac{\delta\sqrt{n}}{\sqrt{2}\sigma} - z_{\alpha/2} = z_\beta
+\end{equation}
+
+Solving for $n$:
+\begin{align}
+\frac{\delta\sqrt{n}}{\sqrt{2}\sigma} &= z_{\alpha/2} + z_\beta \\
+\sqrt{n} &= \frac{\sqrt{2}\sigma(z_{\alpha/2} + z_\beta)}{\delta} \\
+n &= \frac{2(z_{\alpha/2} + z_\beta)^2 \sigma^2}{\delta^2}
+\end{align}
+\end{proof}
+
+\subsection{Sample Size for Comparing Two Proportions}
+
+\begin{theorem}[Sample Size for Proportion Comparison]
+To detect a difference between two proportions $p_1$ and $p_2$ with significance level $\alpha$ and power $1-\beta$, the required sample size per group is:
+\begin{equation}
+n = \frac{(z_{\alpha/2} + z_\beta)^2 [p_1(1-p_1) + p_2(1-p_2)]}{(p_2 - p_1)^2}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+\textbf{Step 1: Test statistic under the alternative.}
+
+Under $H_1: p_1 \neq p_2$, the difference in sample proportions has:
+\begin{align}
+\mathbb{E}[\hat{p}_2 - \hat{p}_1] &= p_2 - p_1 \\
+\text{Var}(\hat{p}_2 - \hat{p}_1) &= \frac{p_2(1-p_2)}{n} + \frac{p_1(1-p_1)}{n} = \frac{p_1(1-p_1) + p_2(1-p_2)}{n}
+\end{align}
+
+Define the standardized statistic:
+\begin{equation}
+Z = \frac{(\hat{p}_2 - \hat{p}_1) - (p_2 - p_1)}{\sqrt{[p_1(1-p_1) + p_2(1-p_2)]/n}} \sim \mathcal{N}(0, 1)
+\end{equation}
+
+\textbf{Step 2: Test statistic under the null.}
+
+Under $H_0: p_1 = p_2 = p$ (pooled proportion), the variance is:
+\begin{equation}
+\text{Var}_0(\hat{p}_2 - \hat{p}_1) = \frac{2p(1-p)}{n}
+\end{equation}
+
+The null statistic is:
+\begin{equation}
+Z_0 = \frac{\hat{p}_2 - \hat{p}_1}{\sqrt{2p(1-p)/n}} \sim \mathcal{N}(0, 1)
+\end{equation}
+
+\textbf{Step 3: Critical value.}
+
+Reject $H_0$ if $|Z_0| > z_{\alpha/2}$, which occurs when:
+\begin{equation}
+|\hat{p}_2 - \hat{p}_1| > z_{\alpha/2}\sqrt{\frac{2p(1-p)}{n}}
+\end{equation}
+
+\textbf{Step 4: Power under the alternative.}
+
+Assuming $p_2 > p_1$ and approximating $p \approx \frac{p_1 + p_2}{2}$, the power is:
+\begin{align}
+\text{Power} &= P\left(\hat{p}_2 - \hat{p}_1 > z_{\alpha/2}\sqrt{\frac{2p(1-p)}{n}} \mid H_1\right) \\
+&= P\left(\frac{(\hat{p}_2 - \hat{p}_1) - (p_2-p_1)}{\sqrt{[p_1(1-p_1) + p_2(1-p_2)]/n}} > \frac{z_{\alpha/2}\sqrt{2p(1-p)/n} - (p_2-p_1)}{\sqrt{[p_1(1-p_1) + p_2(1-p_2)]/n}}\right)
+\end{align}
+
+For large $n$, $2p(1-p) \approx p_1(1-p_1) + p_2(1-p_2)$, so:
+\begin{equation}
+\text{Power} \approx \Phi\left(\frac{(p_2-p_1)\sqrt{n}}{\sqrt{p_1(1-p_1) + p_2(1-p_2)}} - z_{\alpha/2}\right)
+\end{equation}
+
+\textbf{Step 5: Solve for n.}
+
+Setting Power $= 1 - \beta$:
+\begin{align}
+\frac{(p_2-p_1)\sqrt{n}}{\sqrt{p_1(1-p_1) + p_2(1-p_2)}} - z_{\alpha/2} &= z_\beta \\
+\sqrt{n} &= \frac{(z_{\alpha/2} + z_\beta)\sqrt{p_1(1-p_1) + p_2(1-p_2)}}{p_2 - p_1} \\
+n &= \frac{(z_{\alpha/2} + z_\beta)^2[p_1(1-p_1) + p_2(1-p_2)]}{(p_2 - p_1)^2}
+\end{align}
+\end{proof}
+
+\subsection{Minimum Detectable Effect}
+
+\begin{corollary}[Minimum Detectable Effect]
+Given fixed sample size $n$, significance level $\alpha$, and power $1-\beta$, the minimum detectable effect for comparing means is:
+\begin{equation}
+\text{MDE} = \delta = \frac{(z_{\alpha/2} + z_\beta)\sigma\sqrt{2}}{\sqrt{n}}
+\end{equation}
+\end{corollary}
+
+\begin{proof}
+Rearranging the sample size formula:
+\begin{align}
+n &= \frac{2(z_{\alpha/2} + z_\beta)^2 \sigma^2}{\delta^2} \\
+\delta^2 &= \frac{2(z_{\alpha/2} + z_\beta)^2 \sigma^2}{n} \\
+\delta &= \frac{(z_{\alpha/2} + z_\beta)\sigma\sqrt{2}}{\sqrt{n}}
+\end{align}
+\end{proof}
+
+\subsection{Unequal Sample Sizes}
+
+\begin{theorem}[Sample Size with Allocation Ratio]
+If the allocation ratio is $r = n_2/n_1$ (i.e., $n_2 = rn_1$), the required sample size for group 1 is:
+\begin{equation}
+n_1 = \frac{(z_{\alpha/2} + z_\beta)^2 \sigma^2(1 + 1/r)}{\delta^2}
+\end{equation}
+and $n_2 = rn_1$.
+\end{theorem}
+
+\begin{proof}
+The variance of the difference with unequal sample sizes is:
+\begin{equation}
+\text{Var}(\bar{X}_2 - \bar{X}_1) = \frac{\sigma^2}{n_2} + \frac{\sigma^2}{n_1} = \frac{\sigma^2}{rn_1} + \frac{\sigma^2}{n_1} = \frac{\sigma^2(1 + r)}{rn_1}
+\end{equation}
+
+Following the same derivation as before, the test statistic under $H_1$ is:
+\begin{equation}
+T = \frac{(\bar{X}_2 - \bar{X}_1) - \delta}{\sqrt{\sigma^2(1+r)/(rn_1)}} \sim \mathcal{N}(0,1)
+\end{equation}
+
+The power condition gives:
+\begin{equation}
+\frac{\delta}{\sqrt{\sigma^2(1+r)/(rn_1)}} - z_{\alpha/2} = z_\beta
+\end{equation}
+
+Solving for $n_1$:
+\begin{align}
+\frac{\delta\sqrt{rn_1}}{\sigma\sqrt{1+r}} &= z_{\alpha/2} + z_\beta \\
+n_1 &= \frac{(z_{\alpha/2} + z_\beta)^2\sigma^2(1+r)}{r\delta^2} = \frac{(z_{\alpha/2} + z_\beta)^2\sigma^2(1 + 1/r)}{\delta^2}
+\end{align}
+\end{proof}
+
+\begin{remark}
+The total sample size $N = n_1 + n_2 = n_1(1+r)$ is minimized when $r = 1$ (equal allocation).
+\end{remark}
+
+\section{Central Limit Theorem}
+
+The Central Limit Theorem is the foundation of large-sample inference in A/B testing.
+
+\subsection{Classical Central Limit Theorem}
+
+\begin{theorem}[Lindeberg-Lévy CLT]
+Let $X_1, X_2, \ldots$ be independent and identically distributed random variables with $\mathbb{E}[X_i] = \mu$ and $\text{Var}(X_i) = \sigma^2 < \infty$. Define $S_n = \sum_{i=1}^n X_i$ and $\bar{X}_n = S_n/n$. Then:
+\begin{equation}
+\frac{S_n - n\mu}{\sigma\sqrt{n}} = \frac{\bar{X}_n - \mu}{\sigma/\sqrt{n}} \xrightarrow{d} \mathcal{N}(0, 1)
+\end{equation}
+as $n \to \infty$, where $\xrightarrow{d}$ denotes convergence in distribution.
+\end{theorem}
+
+\begin{proof}[Proof Sketch via Characteristic Functions]
+We prove this using moment generating functions (characteristic functions).
+
+\textbf{Step 1: Standardize the sum.}
+
+Define $Z_i = (X_i - \mu)/\sigma$ so that $\mathbb{E}[Z_i] = 0$ and $\text{Var}(Z_i) = 1$. Then:
+\begin{equation}
+\frac{S_n - n\mu}{\sigma\sqrt{n}} = \frac{1}{\sqrt{n}}\sum_{i=1}^n Z_i
+\end{equation}
+
+\textbf{Step 2: Characteristic function.}
+
+Let $\varphi_Z(t) = \mathbb{E}[e^{itZ_1}]$ be the characteristic function of $Z_1$. The characteristic function of $\frac{1}{\sqrt{n}}\sum_{i=1}^n Z_i$ is:
+\begin{equation}
+\varphi_n(t) = \mathbb{E}\left[\exp\left(it\frac{1}{\sqrt{n}}\sum_{i=1}^n Z_i\right)\right] = \prod_{i=1}^n \mathbb{E}\left[e^{itZ_i/\sqrt{n}}\right] = \left[\varphi_Z\left(\frac{t}{\sqrt{n}}\right)\right]^n
+\end{equation}
+
+\textbf{Step 3: Taylor expansion.}
+
+Since $\mathbb{E}[Z_1] = 0$ and $\text{Var}(Z_1) = 1$, we can expand:
+\begin{align}
+\varphi_Z(t) &= \mathbb{E}[e^{itZ_1}] \\
+&= \mathbb{E}\left[1 + itZ_1 + \frac{(it)^2Z_1^2}{2!} + \frac{(it)^3Z_1^3}{3!} + \cdots\right] \\
+&= 1 + it\mathbb{E}[Z_1] + \frac{(it)^2\mathbb{E}[Z_1^2]}{2} + o(t^2) \\
+&= 1 - \frac{t^2}{2} + o(t^2)
+\end{align}
+
+\textbf{Step 4: Substitute and take limit.}
+
+\begin{align}
+\varphi_n(t) &= \left[\varphi_Z\left(\frac{t}{\sqrt{n}}\right)\right]^n \\
+&= \left[1 - \frac{t^2}{2n} + o\left(\frac{1}{n}\right)\right]^n \\
+&\to e^{-t^2/2} \quad \text{as } n \to \infty
+\end{align}
+
+by the standard limit $\lim_{n\to\infty}(1 + x/n)^n = e^x$.
+
+\textbf{Step 5: Recognize the limit.}
+
+The function $e^{-t^2/2}$ is the characteristic function of $\mathcal{N}(0,1)$.
+
+By Lévy's continuity theorem, convergence of characteristic functions implies convergence in distribution:
+\begin{equation}
+\frac{S_n - n\mu}{\sigma\sqrt{n}} \xrightarrow{d} \mathcal{N}(0, 1)
+\end{equation}
+\end{proof}
+
+\subsection{Berry-Esseen Theorem}
+
+The Berry-Esseen theorem provides a quantitative bound on the rate of convergence in the CLT.
+
+\begin{theorem}[Berry-Esseen Bound]
+Under the conditions of the CLT, if additionally $\mathbb{E}[|X_i|^3] = \rho < \infty$, then:
+\begin{equation}
+\sup_{x \in \mathbb{R}} \left|P\left(\frac{\bar{X}_n - \mu}{\sigma/\sqrt{n}} \leq x\right) - \Phi(x)\right| \leq \frac{C\rho}{\sigma^3\sqrt{n}}
+\end{equation}
+where $\Phi$ is the standard normal CDF and $C$ is an absolute constant (best known value: $C \approx 0.4748$).
+\end{theorem}
+
+\begin{remark}
+This shows convergence rate is $O(n^{-1/2})$. For practical purposes, $n \geq 30$ often suffices for near-normality.
+\end{remark}
+
+\subsection{Delta Method}
+
+\begin{theorem}[Delta Method]
+Let $\sqrt{n}(\hat{\theta}_n - \theta) \xrightarrow{d} \mathcal{N}(0, \sigma^2)$ and let $g: \mathbb{R} \to \mathbb{R}$ be differentiable at $\theta$ with $g'(\theta) \neq 0$. Then:
+\begin{equation}
+\sqrt{n}(g(\hat{\theta}_n) - g(\theta)) \xrightarrow{d} \mathcal{N}(0, [g'(\theta)]^2\sigma^2)
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+By first-order Taylor expansion around $\theta$:
+\begin{equation}
+g(\hat{\theta}_n) = g(\theta) + g'(\theta)(\hat{\theta}_n - \theta) + R_n
+\end{equation}
+where the remainder satisfies $R_n = o_p(|\hat{\theta}_n - \theta|)$.
+
+Rearranging:
+\begin{equation}
+g(\hat{\theta}_n) - g(\theta) = g'(\theta)(\hat{\theta}_n - \theta) + R_n
+\end{equation}
+
+Multiplying by $\sqrt{n}$:
+\begin{equation}
+\sqrt{n}(g(\hat{\theta}_n) - g(\theta)) = g'(\theta)\sqrt{n}(\hat{\theta}_n - \theta) + \sqrt{n}R_n
+\end{equation}
+
+Since $\hat{\theta}_n \xrightarrow{p} \theta$ (by assumption) and $R_n = o_p(|\hat{\theta}_n - \theta|)$, we have:
+\begin{equation}
+\sqrt{n}R_n = \sqrt{n} \cdot o_p(|\hat{\theta}_n - \theta|) = o_p(\sqrt{n}|\hat{\theta}_n - \theta|) = o_p(1)
+\end{equation}
+
+Therefore:
+\begin{equation}
+\sqrt{n}(g(\hat{\theta}_n) - g(\theta)) = g'(\theta)\sqrt{n}(\hat{\theta}_n - \theta) + o_p(1)
+\end{equation}
+
+By assumption, $\sqrt{n}(\hat{\theta}_n - \theta) \xrightarrow{d} \mathcal{N}(0, \sigma^2)$, and by continuous mapping theorem (multiplication by constant):
+\begin{equation}
+g'(\theta)\sqrt{n}(\hat{\theta}_n - \theta) \xrightarrow{d} \mathcal{N}(0, [g'(\theta)]^2\sigma^2)
+\end{equation}
+
+By Slutsky's theorem ($o_p(1) \to 0$), the result follows.
+\end{proof}
+
+\begin{example}[Application to Relative Lift]
+For conversion rates $\hat{p}_1, \hat{p}_2$, the relative lift is:
+\begin{equation}
+g(p_1, p_2) = \frac{p_2 - p_1}{p_1} = \frac{p_2}{p_1} - 1
+\end{equation}
+
+By multivariate delta method:
+\begin{equation}
+\text{Var}\left(\frac{\hat{p}_2 - \hat{p}_1}{\hat{p}_1}\right) \approx \frac{1}{p_1^2}\text{Var}(\hat{p}_2) + \frac{p_2^2}{p_1^4}\text{Var}(\hat{p}_1)
+\end{equation}
+\end{example}
+
+\section{Power Function Derivations}
+
+The power function characterizes the probability of rejecting $H_0$ as a function of the true parameter value.
+
+\subsection{Power Function for Two-Sample t-Test}
+
+\begin{definition}[Power Function]
+For testing $H_0: \mu_1 = \mu_2$ versus $H_1: \mu_1 \neq \mu_2$, the power function is:
+\begin{equation}
+\beta(\delta) = P(\text{Reject } H_0 \mid \mu_2 - \mu_1 = \delta)
+\end{equation}
+where $\delta$ is the true mean difference.
+\end{definition}
+
+\begin{theorem}[Power Function for t-Test]
+For the two-sample t-test with equal sample sizes $n$ per group and common variance $\sigma^2$:
+\begin{equation}
+\beta(\delta) = \Phi\left(\frac{|\delta|\sqrt{n}}{\sigma\sqrt{2}} - z_{\alpha/2}\right) + \Phi\left(-\frac{|\delta|\sqrt{n}}{\sigma\sqrt{2}} - z_{\alpha/2}\right)
+\end{equation}
+where $\Phi$ is the standard normal CDF.
+\end{theorem}
+
+\begin{proof}
+The test statistic is:
+\begin{equation}
+T = \frac{\bar{X}_2 - \bar{X}_1}{\sqrt{2\sigma^2/n}}
+\end{equation}
+
+Reject $H_0$ if $|T| > z_{\alpha/2}$, i.e., if $T > z_{\alpha/2}$ or $T < -z_{\alpha/2}$.
+
+Under the alternative $\mu_2 - \mu_1 = \delta$:
+\begin{equation}
+\mathbb{E}[T \mid \delta] = \frac{\delta}{\sqrt{2\sigma^2/n}} = \frac{\delta\sqrt{n}}{\sigma\sqrt{2}}
+\end{equation}
+
+and $\text{Var}(T) = 1$. Therefore:
+\begin{equation}
+T \mid \delta \sim \mathcal{N}\left(\frac{\delta\sqrt{n}}{\sigma\sqrt{2}}, 1\right)
+\end{equation}
+
+The power is:
+\begin{align}
+\beta(\delta) &= P(T > z_{\alpha/2} \mid \delta) + P(T < -z_{\alpha/2} \mid \delta) \\
+&= P\left(\mathcal{N}\left(\frac{\delta\sqrt{n}}{\sigma\sqrt{2}}, 1\right) > z_{\alpha/2}\right) + P\left(\mathcal{N}\left(\frac{\delta\sqrt{n}}{\sigma\sqrt{2}}, 1\right) < -z_{\alpha/2}\right)
+\end{align}
+
+Standardizing:
+\begin{align}
+&= P\left(\mathcal{N}(0,1) > z_{\alpha/2} - \frac{\delta\sqrt{n}}{\sigma\sqrt{2}}\right) + P\left(\mathcal{N}(0,1) < -z_{\alpha/2} - \frac{\delta\sqrt{n}}{\sigma\sqrt{2}}\right) \\
+&= \Phi\left(\frac{\delta\sqrt{n}}{\sigma\sqrt{2}} - z_{\alpha/2}\right) + \Phi\left(-\frac{\delta\sqrt{n}}{\sigma\sqrt{2}} - z_{\alpha/2}\right)
+\end{align}
+
+For $\delta$ large, the second term is negligible, so:
+\begin{equation}
+\beta(\delta) \approx \Phi\left(\frac{|\delta|\sqrt{n}}{\sigma\sqrt{2}} - z_{\alpha/2}\right)
+\end{equation}
+\end{proof}
+
+\subsection{Power Function for Proportion Test}
+
+\begin{theorem}[Power for Two-Proportion Test]
+For testing $H_0: p_1 = p_2$ versus $H_1: p_1 \neq p_2$ with sample size $n$ per group:
+\begin{equation}
+\beta(p_1, p_2) \approx \Phi\left(\frac{(p_2-p_1)\sqrt{n}}{\sqrt{p_1(1-p_1) + p_2(1-p_2)}} - z_{\alpha/2}\right)
+\end{equation}
+for $p_2 > p_1$.
+\end{theorem}
+
+\begin{proof}
+Under $H_1$, the test statistic:
+\begin{equation}
+Z = \frac{\hat{p}_2 - \hat{p}_1}{\sqrt{[p_1(1-p_1) + p_2(1-p_2)]/n}} \sim \mathcal{N}\left(\frac{(p_2-p_1)\sqrt{n}}{\sqrt{p_1(1-p_1) + p_2(1-p_2)}}, 1\right)
+\end{equation}
+
+Reject if $|Z| > z_{\alpha/2}$ (using pooled variance approximation under $H_0$). The power is:
+\begin{align}
+\beta &= P(Z > z_{\alpha/2} \mid H_1) \\
+&= \Phi\left(\frac{(p_2-p_1)\sqrt{n}}{\sqrt{p_1(1-p_1) + p_2(1-p_2)}} - z_{\alpha/2}\right)
+\end{align}
+\end{proof}
+
+\subsection{Non-Centrality Parameter}
+
+\begin{definition}[Non-Centrality Parameter]
+For the two-sample t-test, the non-centrality parameter is:
+\begin{equation}
+\lambda = \frac{\delta}{\sigma}\sqrt{\frac{n}{2}}
+\end{equation}
+\end{definition}
+
+\begin{theorem}[Power in Terms of Non-Central t]
+The exact power function using the non-central t-distribution with $\nu = 2(n-1)$ degrees of freedom and non-centrality parameter $\lambda$ is:
+\begin{equation}
+\beta(\delta) = P(t_{\nu, \lambda} > t_{\nu, \alpha/2}) + P(t_{\nu, \lambda} < -t_{\nu, \alpha/2})
+\end{equation}
+where $t_{\nu, \lambda}$ denotes a non-central t random variable.
+\end{theorem}
+
+\begin{remark}
+For large $n$, the normal approximation we derived earlier is excellent. For small $n$, the non-central t distribution should be used.
+\end{remark}
+
+\section{Bayesian Posterior Calculations}
+
+Bayesian inference provides an alternative framework for A/B testing, incorporating prior knowledge.
+
+\subsection{Beta-Binomial Model}
+
+\begin{theorem}[Beta-Binomial Conjugacy]
+Let $p \sim \text{Beta}(\alpha, \beta)$ be the prior distribution for a proportion. If we observe $X \sim \text{Binomial}(n, p)$ successes in $n$ trials, the posterior distribution is:
+\begin{equation}
+p \mid X \sim \text{Beta}(\alpha + X, \beta + n - X)
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+By Bayes' theorem:
+\begin{equation}
+f(p \mid X) = \frac{f(X \mid p) f(p)}{f(X)} \propto f(X \mid p) f(p)
+\end{equation}
+
+The likelihood function is:
+\begin{equation}
+f(X \mid p) = \binom{n}{X} p^X(1-p)^{n-X} \propto p^X(1-p)^{n-X}
+\end{equation}
+
+The prior density is:
+\begin{equation}
+f(p) = \frac{\Gamma(\alpha + \beta)}{\Gamma(\alpha)\Gamma(\beta)} p^{\alpha-1}(1-p)^{\beta-1} \propto p^{\alpha-1}(1-p)^{\beta-1}
+\end{equation}
+
+The posterior is proportional to:
+\begin{align}
+f(p \mid X) &\propto p^X(1-p)^{n-X} \cdot p^{\alpha-1}(1-p)^{\beta-1} \\
+&= p^{X+\alpha-1}(1-p)^{n-X+\beta-1}
+\end{align}
+
+This is the kernel of a $\text{Beta}(\alpha + X, \beta + n - X)$ distribution. The normalizing constant makes it a proper density:
+\begin{equation}
+f(p \mid X) = \frac{\Gamma(\alpha + \beta + n)}{\Gamma(\alpha + X)\Gamma(\beta + n - X)} p^{\alpha+X-1}(1-p)^{\beta+n-X-1}
+\end{equation}
+\end{proof}
+
+\subsection{Posterior Predictive Distribution}
+
+\begin{theorem}[Beta-Binomial Predictive]
+Given posterior $p \mid X \sim \text{Beta}(\alpha + X, \beta + n - X)$, the predictive probability of success in the next trial is:
+\begin{equation}
+P(\tilde{X} = 1 \mid X) = \frac{\alpha + X}{\alpha + \beta + n}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+The posterior predictive distribution is:
+\begin{align}
+P(\tilde{X} = 1 \mid X) &= \int_0^1 P(\tilde{X} = 1 \mid p) f(p \mid X) \, dp \\
+&= \int_0^1 p \cdot f(p \mid X) \, dp \\
+&= \mathbb{E}[p \mid X]
+\end{align}
+
+For $p \sim \text{Beta}(\alpha', \beta')$, the mean is $\mathbb{E}[p] = \frac{\alpha'}{\alpha' + \beta'}$. Therefore:
+\begin{equation}
+P(\tilde{X} = 1 \mid X) = \frac{\alpha + X}{\alpha + X + \beta + n - X} = \frac{\alpha + X}{\alpha + \beta + n}
+\end{equation}
+\end{proof}
+
+\subsection{Probability of Superiority}
+
+\begin{theorem}[Closed Form for Beta Distributions]
+If $p_A \sim \text{Beta}(\alpha_A, \beta_A)$ and $p_B \sim \text{Beta}(\alpha_B, \beta_B)$ independently, then:
+\begin{equation}
+P(p_B > p_A) = \sum_{i=0}^{\alpha_B-1} \frac{B(\alpha_A + i, \beta_A + \beta_B)}{(\beta_B + i) \cdot B(1+i, \beta_B) \cdot B(\alpha_A, \beta_A)}
+\end{equation}
+where $B(\cdot, \cdot)$ is the beta function.
+\end{theorem}
+
+\begin{proof}
+By definition:
+\begin{align}
+P(p_B > p_A) &= \int_0^1 \int_0^{p_B} f_A(p_A) f_B(p_B) \, dp_A \, dp_B \\
+&= \int_0^1 f_B(p_B) F_A(p_B) \, dp_B
+\end{align}
+
+where $F_A$ is the CDF of Beta$(\alpha_A, \beta_A)$.
+
+The CDF of a Beta distribution can be expressed in terms of the incomplete beta function:
+\begin{equation}
+F_A(p) = I_p(\alpha_A, \beta_A) = \frac{B_p(\alpha_A, \beta_A)}{B(\alpha_A, \beta_A)}
+\end{equation}
+
+Substituting and using properties of beta integrals leads to the series representation above.
+
+For computational purposes, when $\alpha_A, \alpha_B$ are integers (as in A/B testing with count data), this series is finite and easily computed.
+\end{proof}
+
+\subsection{Normal-Normal Conjugacy}
+
+\begin{theorem}[Normal Prior, Normal Likelihood]
+Suppose $\mu \sim \mathcal{N}(\mu_0, \tau^2)$ is the prior for a mean, and we observe data $\bar{X} \mid \mu \sim \mathcal{N}(\mu, \sigma^2/n)$ with known variance $\sigma^2$. Then the posterior is:
+\begin{equation}
+\mu \mid \bar{X} \sim \mathcal{N}\left(\frac{\frac{n}{\sigma^2}\bar{X} + \frac{1}{\tau^2}\mu_0}{\frac{n}{\sigma^2} + \frac{1}{\tau^2}}, \left(\frac{n}{\sigma^2} + \frac{1}{\tau^2}\right)^{-1}\right)
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+The posterior is proportional to likelihood times prior:
+\begin{align}
+f(\mu \mid \bar{X}) &\propto \exp\left(-\frac{n(\bar{X} - \mu)^2}{2\sigma^2}\right) \cdot \exp\left(-\frac{(\mu - \mu_0)^2}{2\tau^2}\right) \\
+&\propto \exp\left(-\frac{1}{2}\left[\frac{n(\bar{X} - \mu)^2}{\sigma^2} + \frac{(\mu - \mu_0)^2}{\tau^2}\right]\right)
+\end{align}
+
+Expand the exponent:
+\begin{align}
+&\frac{n(\bar{X} - \mu)^2}{\sigma^2} + \frac{(\mu - \mu_0)^2}{\tau^2} \\
+&= \frac{n}{\sigma^2}(\bar{X}^2 - 2\bar{X}\mu + \mu^2) + \frac{1}{\tau^2}(\mu^2 - 2\mu_0\mu + \mu_0^2) \\
+&= \left(\frac{n}{\sigma^2} + \frac{1}{\tau^2}\right)\mu^2 - 2\left(\frac{n\bar{X}}{\sigma^2} + \frac{\mu_0}{\tau^2}\right)\mu + \text{const}
+\end{align}
+
+Let $\lambda = \frac{n}{\sigma^2} + \frac{1}{\tau^2}$ (posterior precision). Complete the square:
+\begin{align}
+&= \lambda\left[\mu^2 - 2\mu \cdot \frac{1}{\lambda}\left(\frac{n\bar{X}}{\sigma^2} + \frac{\mu_0}{\tau^2}\right)\right] + \text{const} \\
+&= \lambda\left(\mu - \frac{1}{\lambda}\left(\frac{n\bar{X}}{\sigma^2} + \frac{\mu_0}{\tau^2}\right)\right)^2 + \text{const}
+\end{align}
+
+This is the kernel of $\mathcal{N}(\mu_n, \sigma_n^2)$ where:
+\begin{align}
+\mu_n &= \frac{1}{\lambda}\left(\frac{n\bar{X}}{\sigma^2} + \frac{\mu_0}{\tau^2}\right) = \frac{\frac{n}{\sigma^2}\bar{X} + \frac{1}{\tau^2}\mu_0}{\frac{n}{\sigma^2} + \frac{1}{\tau^2}} \\
+\sigma_n^2 &= \frac{1}{\lambda} = \left(\frac{n}{\sigma^2} + \frac{1}{\tau^2}\right)^{-1}
+\end{align}
+\end{proof}
+
+\begin{remark}[Interpretation]
+The posterior mean is a precision-weighted average of the prior mean $\mu_0$ and the data mean $\bar{X}$. As $n \to \infty$, the posterior converges to $\mathcal{N}(\bar{X}, \sigma^2/n)$, i.e., the data overwhelms the prior.
+\end{remark}
+
+\section{Sequential Testing Boundaries}
+
+Sequential testing allows early stopping based on accumulating evidence, while controlling error rates.
+
+\subsection{Sequential Probability Ratio Test (SPRT)}
+
+\begin{theorem}[Wald's SPRT]
+For testing $H_0: \theta = \theta_0$ versus $H_1: \theta = \theta_1$, the sequential probability ratio test stops at time $n$ when:
+\begin{equation}
+\Lambda_n = \frac{L(\theta_1; X_1, \ldots, X_n)}{L(\theta_0; X_1, \ldots, X_n)} \notin (B, A)
+\end{equation}
+and rejects $H_0$ if $\Lambda_n \geq A$, accepts $H_0$ if $\Lambda_n \leq B$, where:
+\begin{equation}
+A = \frac{1-\beta}{\alpha}, \quad B = \frac{\beta}{1-\alpha}
+\end{equation}
+for desired error rates $\alpha$ (Type I) and $\beta$ (Type II).
+\end{theorem}
+
+\begin{proof}[Proof Sketch]
+At stopping time $\tau$, if we reject $H_0$:
+\begin{equation}
+\frac{P(X_1, \ldots, X_\tau \mid \theta_1)}{P(X_1, \ldots, X_\tau \mid \theta_0)} \geq A
+\end{equation}
+
+This implies:
+\begin{equation}
+P(X_1, \ldots, X_\tau \mid \theta_1) \geq A \cdot P(X_1, \ldots, X_\tau \mid \theta_0)
+\end{equation}
+
+Summing over all sequences leading to rejection:
+\begin{equation}
+P(\text{Reject} \mid \theta_1) \geq A \cdot P(\text{Reject} \mid \theta_0)
+\end{equation}
+
+Therefore:
+\begin{equation}
+P(\text{Reject} \mid \theta_0) \leq \frac{P(\text{Reject} \mid \theta_1)}{A} = \frac{1-\beta}{A}
+\end{equation}
+
+Wald showed that choosing $A = (1-\beta)/\alpha$ achieves approximately $P(\text{Reject} \mid \theta_0) \approx \alpha$.
+\end{proof}
+
+\subsection{Group Sequential Boundaries}
+
+For group sequential designs with $K$ planned looks, we derive boundaries that maintain overall Type I error rate $\alpha$.
+
+\begin{theorem}[O'Brien-Fleming Boundaries]
+For $K$ interim analyses at information fractions $t_1, \ldots, t_K$ (where $t_K = 1$), the O'Brien-Fleming boundaries are:
+\begin{equation}
+c_k = \frac{c}{\sqrt{t_k}}, \quad k = 1, \ldots, K
+\end{equation}
+where $c$ is chosen such that:
+\begin{equation}
+P\left(\max_{1 \leq k \leq K} \frac{Z_k}{\sqrt{t_k}} > c \mid H_0\right) = \alpha
+\end{equation}
+and $Z_k$ is the standardized test statistic at analysis $k$.
+\end{theorem}
+
+\begin{proof}[Derivation]
+Let $Z_1, \ldots, Z_K$ be the sequence of standardized test statistics with information times $t_1 < \cdots < t_K = 1$.
+
+Under $H_0$, by the CLT and properties of independent increments:
+\begin{equation}
+(Z_1, \ldots, Z_K) \text{ follows a multivariate normal with } \text{Cov}(Z_i, Z_j) = \sqrt{t_i/t_j} \text{ for } i \leq j
+\end{equation}
+
+The O'Brien-Fleming approach standardizes by $\sqrt{t_k}$ at each look:
+\begin{equation}
+W_k = \frac{Z_k}{\sqrt{t_k}}
+\end{equation}
+
+We reject $H_0$ at the first $k$ where $|W_k| > c$.
+
+The Type I error is:
+\begin{equation}
+\alpha = P\left(\bigcup_{k=1}^K \{|W_k| > c\}\right) = P\left(\max_{1 \leq k \leq K} |W_k| > c\right)
+\end{equation}
+
+For equal spacing and $K$ looks, approximate values of $c$ are:
+\begin{itemize}
+    \item $K=2$: $c \approx 2.24$ (vs. 1.96 for fixed design)
+    \item $K=5$: $c \approx 2.04$
+    \item $K \to \infty$: $c \to 1.96$
+\end{itemize}
+
+These are computed numerically to achieve exact $\alpha$ (typically $\alpha = 0.05$).
+\end{proof}
+
+\subsection{Pocock Boundaries}
+
+\begin{theorem}[Pocock Boundaries]
+The Pocock boundaries use a constant critical value at each analysis:
+\begin{equation}
+c_k = c, \quad k = 1, \ldots, K
+\end{equation}
+where $c$ satisfies:
+\begin{equation}
+P\left(\max_{1 \leq k \leq K} Z_k > c \mid H_0\right) = \alpha
+\end{equation}
+\end{theorem}
+
+\begin{remark}[Comparison]
+\begin{itemize}
+    \item O'Brien-Fleming: Early boundaries are very high (conservative early, liberal late). Preserves power if test goes to completion.
+    \item Pocock: Constant boundaries (liberal early, conservative late). Higher early stopping probability.
+\end{itemize}
+\end{remark}
+
+\subsection{Alpha Spending Functions}
+
+\begin{definition}[Alpha Spending Function]
+An alpha spending function $\alpha(t)$ for $t \in [0, 1]$ satisfies:
+\begin{enumerate}
+    \item $\alpha(0) = 0$
+    \item $\alpha(1) = \alpha$ (overall Type I error)
+    \item $\alpha(t)$ is non-decreasing
+\end{enumerate}
+
+At analysis $k$ with information time $t_k$, the incremental alpha is:
+\begin{equation}
+\alpha_k = \alpha(t_k) - \alpha(t_{k-1})
+\end{equation}
+\end{definition}
+
+\begin{example}[Common Spending Functions]
+\textbf{O'Brien-Fleming type:}
+\begin{equation}
+\alpha(t) = 2\left[1 - \Phi\left(\frac{z_{\alpha/2}}{\sqrt{t}}\right)\right]
+\end{equation}
+
+\textbf{Pocock type:}
+\begin{equation}
+\alpha(t) = \alpha \log(1 + (e-1)t)
+\end{equation}
+
+\textbf{Power family:}
+\begin{equation}
+\alpha(t) = \alpha t^\rho, \quad \rho > 0
+\end{equation}
+\end{example}
+
+\subsection{Information-Based Monitoring}
+
+\begin{theorem}[Conditional Error Principle]
+At interim analysis $k$ with observed test statistic $Z_k$ and information fraction $t_k$, the boundary $c_k$ is determined by:
+\begin{equation}
+P\left(\bigcup_{j=k}^K \{Z_j > c_j\} \mid Z_k \right) = \frac{\alpha(t_k) - \alpha(t_{k-1})}{1 - \alpha(t_{k-1})}
+\end{equation}
+given that $H_0$ was not rejected at previous looks.
+\end{theorem}
+
+\begin{proof}[Derivation Sketch]
+This follows from the law of total probability and the requirement that:
+\begin{equation}
+P(\text{Reject at or after look } k \mid H_0) = \alpha(t_k)
+\end{equation}
+
+Conditioning on not having rejected before look $k$:
+\begin{align}
+\alpha(t_k) &= P(\text{Reject at look } k \mid H_0) + P(\text{Reject after look } k \mid H_0) \\
+&= P(\text{Reject at look } k \mid H_0, \text{Not rejected before}) \cdot P(\text{Not rejected before}) \\
+&\quad + P(\text{Reject after look } k \mid H_0, \text{Not rejected at } k) \cdot P(\text{Not rejected at or before } k)
+\end{align}
+
+Working through the conditional probabilities yields the stated formula for determining $c_k$.
+\end{proof}
+
+\section{Additional Results}
+
+\subsection{Variance of Sample Proportion}
+
+\begin{theorem}
+For $\hat{p} = X/n$ where $X \sim \text{Binomial}(n, p)$:
+\begin{equation}
+\text{Var}(\hat{p}) = \frac{p(1-p)}{n}
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Since $X \sim \text{Binomial}(n, p)$, we have $\text{Var}(X) = np(1-p)$. Therefore:
+\begin{equation}
+\text{Var}(\hat{p}) = \text{Var}\left(\frac{X}{n}\right) = \frac{1}{n^2}\text{Var}(X) = \frac{1}{n^2} \cdot np(1-p) = \frac{p(1-p)}{n}
+\end{equation}
+\end{proof}
+
+\subsection{CUPED Variance Reduction}
+
+\begin{theorem}[CUPED Estimator]
+For outcome $Y$ and covariate $X$, the CUPED-adjusted estimator:
+\begin{equation}
+Y^* = Y - \theta(X - \mathbb{E}[X])
+\end{equation}
+with optimal $\theta = \text{Cov}(Y, X)/\text{Var}(X)$ achieves variance:
+\begin{equation}
+\text{Var}(Y^*) = \text{Var}(Y)(1 - \rho^2)
+\end{equation}
+where $\rho = \text{Cor}(Y, X)$ is the correlation coefficient.
+\end{theorem}
+
+\begin{proof}
+Expanding the variance:
+\begin{align}
+\text{Var}(Y^*) &= \text{Var}(Y - \theta(X - \mathbb{E}[X])) \\
+&= \text{Var}(Y) + \theta^2\text{Var}(X) - 2\theta\text{Cov}(Y, X)
+\end{align}
+
+Substituting $\theta = \text{Cov}(Y, X)/\text{Var}(X)$:
+\begin{align}
+\text{Var}(Y^*) &= \text{Var}(Y) + \frac{\text{Cov}(Y,X)^2}{\text{Var}(X)^2}\text{Var}(X) - 2\frac{\text{Cov}(Y,X)}{\text{Var}(X)}\text{Cov}(Y, X) \\
+&= \text{Var}(Y) + \frac{\text{Cov}(Y,X)^2}{\text{Var}(X)} - \frac{2\text{Cov}(Y,X)^2}{\text{Var}(X)} \\
+&= \text{Var}(Y) - \frac{\text{Cov}(Y,X)^2}{\text{Var}(X)}
+\end{align}
+
+Since $\rho = \text{Cov}(Y,X)/(\sigma_Y\sigma_X)$, we have $\text{Cov}(Y,X)^2 = \rho^2\text{Var}(Y)\text{Var}(X)$:
+\begin{align}
+\text{Var}(Y^*) &= \text{Var}(Y) - \frac{\rho^2\text{Var}(Y)\text{Var}(X)}{\text{Var}(X)} \\
+&= \text{Var}(Y)(1 - \rho^2)
+\end{align}
+\end{proof}
+
+\subsection{Bonferroni and Šidák Corrections}
+
+\begin{theorem}[Bonferroni Inequality]
+For $m$ hypothesis tests, each conducted at level $\alpha/m$, the family-wise error rate satisfies:
+\begin{equation}
+\text{FWER} \leq \alpha
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Let $R_i$ be the event that test $i$ rejects a true null hypothesis. By Boole's inequality (union bound):
+\begin{align}
+\text{FWER} &= P\left(\bigcup_{i=1}^m R_i\right) \\
+&\leq \sum_{i=1}^m P(R_i) \\
+&= \sum_{i=1}^m \frac{\alpha}{m} = \alpha
+\end{align}
+\end{proof}
+
+\begin{theorem}[Šidák Correction]
+If the $m$ tests are independent, testing each at level $\alpha_s = 1 - (1-\alpha)^{1/m}$ gives exact FWER $= \alpha$.
+\end{theorem}
+
+\begin{proof}
+Under independence:
+\begin{align}
+\text{FWER} &= P(\text{Reject at least one true } H_0) \\
+&= 1 - P(\text{Accept all true } H_0) \\
+&= 1 - \prod_{i=1}^m P(\text{Accept } H_{0i}) \\
+&= 1 - \prod_{i=1}^m (1 - \alpha_s) \\
+&= 1 - (1 - \alpha_s)^m
+\end{align}
+
+Setting this equal to $\alpha$:
+\begin{align}
+1 - (1-\alpha_s)^m &= \alpha \\
+(1-\alpha_s)^m &= 1 - \alpha \\
+\alpha_s &= 1 - (1-\alpha)^{1/m}
+\end{align}
+\end{proof}
+
+\begin{remark}
+The Šidák correction is less conservative than Bonferroni when tests are independent, since $(1-\alpha)^{1/m} > 1 - \alpha/m$ for $m > 1$.
+\end{remark}
+
+\section{Summary}
+
+This appendix has provided rigorous mathematical foundations for:
+
+\begin{itemize}
+    \item \textbf{Sample size formulas:} Derived for t-tests and proportion tests, including unequal allocation
+    \item \textbf{Central Limit Theorem:} Proof via characteristic functions with Berry-Esseen bound
+    \item \textbf{Power functions:} Explicit derivations showing power as function of effect size
+    \item \textbf{Bayesian methods:} Beta-binomial and normal-normal conjugacy with posterior calculations
+    \item \textbf{Sequential testing:} SPRT, O'Brien-Fleming, and Pocock boundaries with alpha spending functions
+\end{itemize}
+
+These mathematical results underpin the practical A/B testing methods presented throughout this handbook.

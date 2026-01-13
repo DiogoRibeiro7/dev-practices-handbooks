@@ -1,0 +1,3361 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Design and implement production-ready ML project structures
+    \item Apply software engineering principles to ML code development
+    \item Build modular, testable, and maintainable ML architectures
+    \item Implement comprehensive testing strategies for ML systems
+    \item Apply design patterns specifically adapted for ML workflows
+    \item Use code quality tools and best practices for ML codebases
+    \item Create fully reproducible training and evaluation pipelines
+    \item Refactor research code into production-grade implementations
+\end{itemize}
+
+\section{Introduction: From Research Code to Production}
+
+Machine learning development often begins in Jupyter notebooks—an excellent environment for exploration and prototyping. However, production ML systems require the rigor, structure, and maintainability of well-engineered software. This chapter bridges the gap between experimental ML code and production-ready systems.
+
+The transition from research to production involves several critical shifts:
+
+\begin{itemize}
+    \item \textbf{Structure:} From linear notebooks to modular, reusable components
+    \item \textbf{Testing:} From manual verification to automated test suites
+    \item \textbf{Configuration:} From hardcoded values to flexible configuration systems
+    \item \textbf{Reproducibility:} From ad-hoc experiments to fully reproducible pipelines
+    \item \textbf{Quality:} From working code to maintainable, documented software
+\end{itemize}
+
+\section{ML Code Organization and Project Structure}
+
+A well-organized project structure is the foundation of maintainable ML systems. This section presents battle-tested patterns for structuring ML projects at scale.
+
+\subsection{Production ML Project Template}
+
+\begin{lstlisting}[style=shell, caption=Comprehensive ML project structure]
+ml-production-project/
+|
++-- README.md                 # Project overview and setup instructions
++-- Makefile                  # Common commands (train, test, deploy)
++-- setup.py                  # Package installation configuration
++-- requirements.txt          # Python dependencies
++-- requirements-dev.txt      # Development dependencies
++-- .env.example              # Environment variables template
++-- .gitignore
++-- pyproject.toml           # Modern Python project configuration
+|
++-- config/                   # Configuration files
+|   +-- config.yaml          # Main configuration
+|   +-- model/               # Model-specific configs
+|   |   +-- random_forest.yaml
+|   |   +-- xgboost.yaml
+|   |   -- neural_net.yaml
+|   +-- data/                # Data processing configs
+|   -- deployment/          # Deployment configs
+|
++-- data/                     # Data directory (gitignored)
+|   +-- raw/                 # Immutable raw data
+|   +-- interim/             # Intermediate processed data
+|   +-- processed/           # Final feature-engineered data
+|   -- external/            # External reference data
+|
++-- models/                   # Trained models (gitignored)
+|   +-- checkpoints/         # Training checkpoints
+|   +-- final/               # Production models
+|   -- experiments/         # Experimental models
+|
++-- notebooks/                # Jupyter notebooks
+|   +-- 01_exploration.ipynb
+|   +-- 02_feature_analysis.ipynb
+|   -- 03_model_prototyping.ipynb
+|
++-- src/                      # Source code
+|   +-- __init__.py
+|   |
+|   +-- data/                # Data processing
+|   |   +-- __init__.py
+|   |   +-- loaders.py       # Data loading utilities
+|   |   +-- validators.py    # Data validation
+|   |   +-- preprocessors.py # Preprocessing transformations
+|   |   -- splitters.py     # Train/val/test splitting
+|   |
+|   +-- features/            # Feature engineering
+|   |   +-- __init__.py
+|   |   +-- base.py          # Base feature classes
+|   |   +-- transformers.py  # Feature transformers
+|   |   -- registry.py      # Feature registry
+|   |
+|   +-- models/              # Model implementations
+|   |   +-- __init__.py
+|   |   +-- base.py          # Base model interface
+|   |   +-- sklearn_models.py
+|   |   +-- torch_models.py
+|   |   -- ensemble.py
+|   |
+|   +-- training/            # Training logic
+|   |   +-- __init__.py
+|   |   +-- trainer.py       # Training orchestration
+|   |   +-- callbacks.py     # Training callbacks
+|   |   -- optimizers.py    # Optimizer configurations
+|   |
+|   +-- evaluation/          # Model evaluation
+|   |   +-- __init__.py
+|   |   +-- metrics.py       # Custom metrics
+|   |   -- validators.py    # Model validation
+|   |
+|   +-- serving/             # Model serving
+|   |   +-- __init__.py
+|   |   +-- predictor.py     # Prediction interface
+|   |   -- api.py           # REST API
+|   |
+|   -- utils/               # Utilities
+|       +-- __init__.py
+|       +-- config.py        # Config management
+|       +-- logging.py       # Logging setup
+|       -- io.py            # I/O utilities
+|
++-- tests/                    # Test suite
+|   +-- __init__.py
+|   +-- conftest.py          # Pytest fixtures
+|   +-- unit/                # Unit tests
+|   |   +-- test_data.py
+|   |   +-- test_features.py
+|   |   -- test_models.py
+|   +-- integration/         # Integration tests
+|   |   +-- test_pipeline.py
+|   |   -- test_training.py
+|   -- model/               # Model-specific tests
+|       +-- test_predictions.py
+|       -- test_performance.py
+|
++-- scripts/                  # Executable scripts
+|   +-- train.py             # Training script
+|   +-- evaluate.py          # Evaluation script
+|   +-- predict.py           # Inference script
+|   -- prepare_data.py      # Data preparation
+|
++-- docker/                   # Docker configurations
+|   +-- Dockerfile
+|   +-- docker-compose.yml
+|   -- .dockerignore
+|
+-- docs/                     # Documentation
+    +-- api.md               # API documentation
+    +-- model_cards/         # Model documentation
+    -- architecture.md      # System architecture
+\end{lstlisting}
+
+\subsection{Project Structure Implementation}
+
+\begin{lstlisting}[style=python, caption=Setup configuration for package installation]
+# setup.py
+"""Package setup configuration for ML project."""
+
+from setuptools import setup, find_packages
+
+with open("README.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
+
+with open("requirements.txt", "r", encoding="utf-8") as fh:
+    requirements = [line.strip() for line in fh if line.strip() and not line.startswith("#")]
+
+setup(
+    name="ml-production-project",
+    version="0.1.0",
+    author="ML Team",
+    author_email="ml-team@company.com",
+    description="Production ML system for predictive modeling",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/company/ml-production-project",
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
+    classifiers=[
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Developers",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+    ],
+    python_requires=">=3.9",
+    install_requires=requirements,
+    extras_require={
+        "dev": [
+            "pytest>=7.0",
+            "pytest-cov>=3.0",
+            "black>=22.0",
+            "flake8>=4.0",
+            "mypy>=0.950",
+            "isort>=5.10",
+        ],
+        "docs": [
+            "sphinx>=4.0",
+            "sphinx-rtd-theme>=1.0",
+        ],
+    },
+    entry_points={
+        "console_scripts": [
+            "ml-train=scripts.train:main",
+            "ml-predict=scripts.predict:main",
+            "ml-evaluate=scripts.evaluate:main",
+        ],
+    },
+)
+\end{lstlisting}
+
+\begin{lstlisting}[style=shell, caption=Makefile for common development tasks]
+# Makefile
+.PHONY: install test train clean lint format
+
+# Installation
+install:
+	pip install -e .
+	pip install -e ".[dev]"
+
+install-prod:
+	pip install -e .
+
+# Testing
+test:
+	pytest tests/ -v --cov=src --cov-report=html
+
+test-unit:
+	pytest tests/unit/ -v
+
+test-integration:
+	pytest tests/integration/ -v
+
+test-model:
+	pytest tests/model/ -v
+
+# Code quality
+lint:
+	flake8 src/ tests/
+	mypy src/
+
+format:
+	black src/ tests/ scripts/
+	isort src/ tests/ scripts/
+
+format-check:
+	black --check src/ tests/ scripts/
+	isort --check src/ tests/ scripts/
+
+# Training
+train:
+	python scripts/train.py --config config/config.yaml
+
+train-experiment:
+	python scripts/train.py --config config/config.yaml --experiment
+
+# Evaluation
+evaluate:
+	python scripts/evaluate.py --model models/final/model.pkl
+
+# Data preparation
+prepare-data:
+	python scripts/prepare_data.py
+
+# Docker
+docker-build:
+	docker build -t ml-production:latest -f docker/Dockerfile .
+
+docker-run:
+	docker-compose -f docker/docker-compose.yml up
+
+# Cleaning
+clean:
+	find . -type f -name "*.pyc" -delete
+	find . -type d -name "__pycache__" -delete
+	find . -type d -name "*.egg-info" -exec rm -rf {} +
+	rm -rf build/ dist/ .pytest_cache/ .coverage htmlcov/
+
+# Documentation
+docs:
+	cd docs && make html
+\end{lstlisting}
+
+\section{Modular ML Architecture Patterns}
+
+Well-designed ML systems use object-oriented principles to create maintainable, testable code. This section presents core architectural patterns.
+
+\subsection{Base Model Interface}
+
+\begin{lstlisting}[style=python, caption=Abstract base class for ML models]
+# src/models/base.py
+"""Base interfaces for ML models."""
+
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional, Union
+import numpy as np
+import pandas as pd
+from pathlib import Path
+import joblib
+import json
+
+
+class BaseModel(ABC):
+    """
+    Abstract base class for all ML models.
+    Enforces consistent interface across different model types.
+    """
+
+    def __init__(self, config: Dict[str, Any]):
+        """
+        Initialize model with configuration.
+
+        Args:
+            config: Model configuration dictionary
+        """
+        self.config = config
+        self.model = None
+        self.is_fitted = False
+        self.feature_names = None
+        self.metadata = {
+            "model_type": self.__class__.__name__,
+            "config": config,
+            "training_history": []
+        }
+
+    @abstractmethod
+    def fit(
+        self,
+        X: Union[np.ndarray, pd.DataFrame],
+        y: Union[np.ndarray, pd.Series],
+        **kwargs
+    ) -> "BaseModel":
+        """
+        Train the model on provided data.
+
+        Args:
+            X: Feature matrix
+            y: Target vector
+            **kwargs: Additional training arguments
+
+        Returns:
+            self: Fitted model instance
+        """
+        pass
+
+    @abstractmethod
+    def predict(
+        self,
+        X: Union[np.ndarray, pd.DataFrame]
+    ) -> np.ndarray:
+        """
+        Generate predictions for input data.
+
+        Args:
+            X: Feature matrix
+
+        Returns:
+            Predictions array
+        """
+        pass
+
+    def predict_proba(
+        self,
+        X: Union[np.ndarray, pd.DataFrame]
+    ) -> np.ndarray:
+        """
+        Generate probability predictions (for classifiers).
+
+        Args:
+            X: Feature matrix
+
+        Returns:
+            Probability predictions
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support probability predictions"
+        )
+
+    def save(self, path: Union[str, Path]) -> None:
+        """
+        Save model to disk.
+
+        Args:
+            path: Path to save model
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Save model object
+        model_path = path.with_suffix('.pkl')
+        joblib.dump(self.model, model_path)
+
+        # Save metadata
+        metadata_path = path.with_suffix('.json')
+        with open(metadata_path, 'w') as f:
+            # Convert non-serializable objects
+            serializable_metadata = self._make_serializable(self.metadata)
+            json.dump(serializable_metadata, f, indent=2)
+
+        # Save feature names if available
+        if self.feature_names is not None:
+            features_path = path.with_name(f"{path.stem}_features.json")
+            with open(features_path, 'w') as f:
+                json.dump(self.feature_names, f)
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> "BaseModel":
+        """
+        Load model from disk.
+
+        Args:
+            path: Path to saved model
+
+        Returns:
+            Loaded model instance
+        """
+        path = Path(path)
+
+        # Load metadata
+        metadata_path = path.with_suffix('.json')
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+
+        # Create instance
+        instance = cls(metadata['config'])
+
+        # Load model object
+        model_path = path.with_suffix('.pkl')
+        instance.model = joblib.load(model_path)
+        instance.is_fitted = True
+        instance.metadata = metadata
+
+        # Load feature names if available
+        features_path = path.with_name(f"{path.stem}_features.json")
+        if features_path.exists():
+            with open(features_path, 'r') as f:
+                instance.feature_names = json.load(f)
+
+        return instance
+
+    def get_params(self) -> Dict[str, Any]:
+        """Get model parameters."""
+        return self.config
+
+    def set_params(self, **params) -> "BaseModel":
+        """Set model parameters."""
+        self.config.update(params)
+        return self
+
+    def _make_serializable(self, obj: Any) -> Any:
+        """Convert object to JSON-serializable format."""
+        if isinstance(obj, (np.integer, np.floating)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, pd.DataFrame):
+            return obj.to_dict()
+        elif isinstance(obj, dict):
+            return {k: self._make_serializable(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._make_serializable(item) for item in obj]
+        else:
+            return obj
+
+    def __repr__(self) -> str:
+        params_str = ", ".join(f"{k}={v}" for k, v in self.config.items())
+        return f"{self.__class__.__name__}({params_str})"
+\end{lstlisting}
+
+\subsection{Concrete Model Implementations}
+
+\begin{lstlisting}[style=python, caption=Sklearn-based model implementation]
+# src/models/sklearn_models.py
+"""Scikit-learn model implementations."""
+
+from typing import Any, Dict, Union, Optional
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from .base import BaseModel
+
+
+class SklearnModel(BaseModel):
+    """
+    Wrapper for scikit-learn models with unified interface.
+    """
+
+    MODEL_REGISTRY = {
+        'random_forest': RandomForestClassifier,
+        'gradient_boosting': GradientBoostingClassifier,
+        'logistic_regression': LogisticRegression,
+    }
+
+    def __init__(self, config: Dict[str, Any]):
+        """
+        Initialize sklearn model.
+
+        Args:
+            config: Must contain 'model_type' key
+        """
+        super().__init__(config)
+
+        model_type = config.get('model_type')
+        if model_type not in self.MODEL_REGISTRY:
+            raise ValueError(
+                f"Unknown model type: {model_type}. "
+                f"Available: {list(self.MODEL_REGISTRY.keys())}"
+            )
+
+        # Extract model parameters
+        model_params = {
+            k: v for k, v in config.items()
+            if k not in ['model_type', 'random_state']
+        }
+
+        # Initialize model
+        model_class = self.MODEL_REGISTRY[model_type]
+        self.model = model_class(
+            random_state=config.get('random_state', 42),
+            **model_params
+        )
+
+    def fit(
+        self,
+        X: Union[np.ndarray, pd.DataFrame],
+        y: Union[np.ndarray, pd.Series],
+        validation_data: Optional[tuple] = None,
+        **kwargs
+    ) -> "SklearnModel":
+        """
+        Fit sklearn model.
+
+        Args:
+            X: Training features
+            y: Training targets
+            validation_data: Optional (X_val, y_val) tuple
+            **kwargs: Additional fit parameters
+
+        Returns:
+            self: Fitted model
+        """
+        # Store feature names if DataFrame
+        if isinstance(X, pd.DataFrame):
+            self.feature_names = X.columns.tolist()
+
+        # Fit model
+        self.model.fit(X, y, **kwargs)
+        self.is_fitted = True
+
+        # Record training metadata
+        self.metadata['training_history'].append({
+            'n_samples': len(X),
+            'n_features': X.shape[1],
+        })
+
+        # Evaluate on validation set if provided
+        if validation_data is not None:
+            X_val, y_val = validation_data
+            val_score = self.model.score(X_val, y_val)
+            self.metadata['validation_score'] = val_score
+
+        return self
+
+    def predict(self, X: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
+        """Generate predictions."""
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before prediction")
+
+        return self.model.predict(X)
+
+    def predict_proba(self, X: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
+        """Generate probability predictions."""
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before prediction")
+
+        if not hasattr(self.model, 'predict_proba'):
+            raise NotImplementedError(
+                f"{self.config['model_type']} does not support predict_proba"
+            )
+
+        return self.model.predict_proba(X)
+
+    def get_feature_importance(self) -> Optional[pd.Series]:
+        """
+        Get feature importance if available.
+
+        Returns:
+            Series with feature importances or None
+        """
+        if not hasattr(self.model, 'feature_importances_'):
+            return None
+
+        importance = self.model.feature_importances_
+        if self.feature_names is not None:
+            return pd.Series(importance, index=self.feature_names).sort_values(
+                ascending=False
+            )
+        else:
+            return pd.Series(importance).sort_values(ascending=False)
+\end{lstlisting}
+
+\subsection{Model Factory Pattern}
+
+\begin{lstlisting}[style=python, caption=Factory pattern for model creation]
+# src/models/__init__.py
+"""Model factory and registry."""
+
+from typing import Dict, Any, Type
+from .base import BaseModel
+from .sklearn_models import SklearnModel
+
+
+class ModelFactory:
+    """
+    Factory for creating model instances.
+    Implements registry pattern for extensibility.
+    """
+
+    _registry: Dict[str, Type[BaseModel]] = {
+        'sklearn': SklearnModel,
+    }
+
+    @classmethod
+    def register(cls, name: str, model_class: Type[BaseModel]) -> None:
+        """
+        Register a new model class.
+
+        Args:
+            name: Model identifier
+            model_class: Model class to register
+        """
+        if not issubclass(model_class, BaseModel):
+            raise ValueError(f"{model_class} must inherit from BaseModel")
+
+        cls._registry[name] = model_class
+
+    @classmethod
+    def create(cls, model_type: str, config: Dict[str, Any]) -> BaseModel:
+        """
+        Create model instance from configuration.
+
+        Args:
+            model_type: Type of model to create
+            config: Model configuration
+
+        Returns:
+            Model instance
+
+        Example:
+            >>> config = {'model_type': 'random_forest', 'n_estimators': 100}
+            >>> model = ModelFactory.create('sklearn', config)
+        """
+        if model_type not in cls._registry:
+            raise ValueError(
+                f"Unknown model type: {model_type}. "
+                f"Available: {list(cls._registry.keys())}"
+            )
+
+        model_class = cls._registry[model_type]
+        return model_class(config)
+
+    @classmethod
+    def available_models(cls) -> list:
+        """Get list of registered model types."""
+        return list(cls._registry.keys())
+
+
+# Example: Register custom model
+# from .custom_models import CustomModel
+# ModelFactory.register('custom', CustomModel)
+\end{lstlisting}
+
+\subsection{Data Pipeline Architecture}
+
+\begin{lstlisting}[style=python, caption=Modular data processing pipeline]
+# src/data/pipeline.py
+"""Data processing pipeline with composable transformations."""
+
+from typing import List, Optional, Dict, Any
+from abc import ABC, abstractmethod
+import pandas as pd
+import numpy as np
+from sklearn.base import BaseEstimator, TransformerMixin
+
+
+class DataTransformer(ABC):
+    """Base class for data transformations."""
+
+    def __init__(self, name: str):
+        self.name = name
+        self.is_fitted = False
+
+    @abstractmethod
+    def fit(self, df: pd.DataFrame) -> "DataTransformer":
+        """Learn parameters from data."""
+        pass
+
+    @abstractmethod
+    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply transformation to data."""
+        pass
+
+    def fit_transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Fit and transform in one step."""
+        return self.fit(df).transform(df)
+
+
+class MissingValueImputer(DataTransformer):
+    """Impute missing values with configurable strategy."""
+
+    def __init__(
+        self,
+        strategy: str = 'mean',
+        columns: Optional[List[str]] = None
+    ):
+        super().__init__(name='MissingValueImputer')
+        self.strategy = strategy
+        self.columns = columns
+        self.fill_values = {}
+
+    def fit(self, df: pd.DataFrame) -> "MissingValueImputer":
+        """Learn imputation values from data."""
+        cols = self.columns or df.select_dtypes(include=[np.number]).columns
+
+        for col in cols:
+            if self.strategy == 'mean':
+                self.fill_values[col] = df[col].mean()
+            elif self.strategy == 'median':
+                self.fill_values[col] = df[col].median()
+            elif self.strategy == 'mode':
+                self.fill_values[col] = df[col].mode()[0]
+            elif self.strategy == 'zero':
+                self.fill_values[col] = 0
+            else:
+                raise ValueError(f"Unknown strategy: {self.strategy}")
+
+        self.is_fitted = True
+        return self
+
+    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply imputation."""
+        if not self.is_fitted:
+            raise ValueError("Transformer must be fitted before transform")
+
+        df = df.copy()
+        for col, value in self.fill_values.items():
+            if col in df.columns:
+                df[col] = df[col].fillna(value)
+
+        return df
+
+
+class OutlierClipper(DataTransformer):
+    """Clip outliers based on percentiles."""
+
+    def __init__(
+        self,
+        lower_percentile: float = 1,
+        upper_percentile: float = 99,
+        columns: Optional[List[str]] = None
+    ):
+        super().__init__(name='OutlierClipper')
+        self.lower_percentile = lower_percentile
+        self.upper_percentile = upper_percentile
+        self.columns = columns
+        self.clip_values = {}
+
+    def fit(self, df: pd.DataFrame) -> "OutlierClipper":
+        """Learn clipping thresholds."""
+        cols = self.columns or df.select_dtypes(include=[np.number]).columns
+
+        for col in cols:
+            lower = df[col].quantile(self.lower_percentile / 100)
+            upper = df[col].quantile(self.upper_percentile / 100)
+            self.clip_values[col] = (lower, upper)
+
+        self.is_fitted = True
+        return self
+
+    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply clipping."""
+        if not self.is_fitted:
+            raise ValueError("Transformer must be fitted before transform")
+
+        df = df.copy()
+        for col, (lower, upper) in self.clip_values.items():
+            if col in df.columns:
+                df[col] = df[col].clip(lower=lower, upper=upper)
+
+        return df
+
+
+class DataPipeline:
+    """
+    Composable data processing pipeline.
+    Chains multiple transformers together.
+    """
+
+    def __init__(self, transformers: List[DataTransformer]):
+        """
+        Initialize pipeline with transformers.
+
+        Args:
+            transformers: List of DataTransformer instances
+        """
+        self.transformers = transformers
+        self.is_fitted = False
+
+    def fit(self, df: pd.DataFrame) -> "DataPipeline":
+        """Fit all transformers sequentially."""
+        data = df.copy()
+
+        for transformer in self.transformers:
+            transformer.fit(data)
+            data = transformer.transform(data)
+
+        self.is_fitted = True
+        return self
+
+    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply all transformers sequentially."""
+        if not self.is_fitted:
+            raise ValueError("Pipeline must be fitted before transform")
+
+        data = df.copy()
+        for transformer in self.transformers:
+            data = transformer.transform(data)
+
+        return data
+
+    def fit_transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Fit and transform in one step."""
+        return self.fit(df).transform(df)
+
+    def add_transformer(self, transformer: DataTransformer) -> "DataPipeline":
+        """Add transformer to pipeline."""
+        self.transformers.append(transformer)
+        self.is_fitted = False  # Need to refit
+        return self
+
+
+# Example usage
+if __name__ == "__main__":
+    # Create sample data
+    df = pd.DataFrame({
+        'age': [25, 30, np.nan, 45, 200],  # Has missing and outlier
+        'income': [50000, 60000, 55000, np.nan, 80000]
+    })
+
+    # Build pipeline
+    pipeline = DataPipeline([
+        MissingValueImputer(strategy='median'),
+        OutlierClipper(lower_percentile=5, upper_percentile=95)
+    ])
+
+    # Fit and transform
+    df_clean = pipeline.fit_transform(df)
+    print(df_clean)
+\end{lstlisting}
+
+\section{Testing Strategies for ML Code}
+
+Comprehensive testing is essential for reliable ML systems. This section covers unit tests, integration tests, and model-specific testing strategies.
+
+\subsection{Unit Testing for ML Components}
+
+\begin{lstlisting}[style=python, caption=Unit tests for data processing]
+# tests/unit/test_data.py
+"""Unit tests for data processing components."""
+
+import pytest
+import pandas as pd
+import numpy as np
+from src.data.pipeline import (
+    MissingValueImputer,
+    OutlierClipper,
+    DataPipeline
+)
+
+
+class TestMissingValueImputer:
+    """Test suite for missing value imputation."""
+
+    @pytest.fixture
+    def sample_data(self):
+        """Create sample data with missing values."""
+        return pd.DataFrame({
+            'a': [1, 2, np.nan, 4, 5],
+            'b': [10, np.nan, 30, 40, 50],
+            'c': ['x', 'y', 'z', 'x', 'y']
+        })
+
+    def test_mean_imputation(self, sample_data):
+        """Test mean imputation strategy."""
+        imputer = MissingValueImputer(strategy='mean', columns=['a', 'b'])
+        result = imputer.fit_transform(sample_data)
+
+        # Check no missing values remain
+        assert not result['a'].isna().any()
+        assert not result['b'].isna().any()
+
+        # Check imputed values are correct
+        expected_a = sample_data['a'].mean()
+        assert result.loc[2, 'a'] == pytest.approx(expected_a)
+
+    def test_median_imputation(self, sample_data):
+        """Test median imputation strategy."""
+        imputer = MissingValueImputer(strategy='median', columns=['a'])
+        result = imputer.fit_transform(sample_data)
+
+        expected = sample_data['a'].median()
+        assert result.loc[2, 'a'] == expected
+
+    def test_fit_before_transform_required(self, sample_data):
+        """Test that transform fails without fit."""
+        imputer = MissingValueImputer(strategy='mean')
+
+        with pytest.raises(ValueError, match="must be fitted"):
+            imputer.transform(sample_data)
+
+    def test_unknown_strategy_raises_error(self, sample_data):
+        """Test that unknown strategy raises error."""
+        imputer = MissingValueImputer(strategy='unknown')
+
+        with pytest.raises(ValueError, match="Unknown strategy"):
+            imputer.fit(sample_data)
+
+
+class TestOutlierClipper:
+    """Test suite for outlier clipping."""
+
+    @pytest.fixture
+    def sample_data(self):
+        """Create sample data with outliers."""
+        return pd.DataFrame({
+            'value': [1, 2, 3, 4, 5, 100, 200]  # 100, 200 are outliers
+        })
+
+    def test_percentile_clipping(self, sample_data):
+        """Test clipping at specified percentiles."""
+        clipper = OutlierClipper(
+            lower_percentile=10,
+            upper_percentile=90,
+            columns=['value']
+        )
+        result = clipper.fit_transform(sample_data)
+
+        # Check max value is clipped
+        assert result['value'].max() < 100
+
+    def test_clipping_preserves_shape(self, sample_data):
+        """Test that clipping preserves DataFrame shape."""
+        clipper = OutlierClipper()
+        result = clipper.fit_transform(sample_data)
+
+        assert result.shape == sample_data.shape
+
+
+class TestDataPipeline:
+    """Test suite for data pipeline."""
+
+    @pytest.fixture
+    def sample_data(self):
+        """Create sample data."""
+        return pd.DataFrame({
+            'a': [1, np.nan, 3, 4, 100],
+            'b': [10, 20, np.nan, 40, 50]
+        })
+
+    def test_pipeline_execution_order(self, sample_data):
+        """Test transformers execute in correct order."""
+        pipeline = DataPipeline([
+            MissingValueImputer(strategy='mean'),
+            OutlierClipper(lower_percentile=5, upper_percentile=95)
+        ])
+
+        result = pipeline.fit_transform(sample_data)
+
+        # Check no missing values (imputation ran)
+        assert not result.isna().any().any()
+
+        # Check outliers clipped (clipping ran after imputation)
+        assert result['a'].max() < 100
+
+    def test_pipeline_fit_required(self, sample_data):
+        """Test pipeline requires fitting before transform."""
+        pipeline = DataPipeline([MissingValueImputer()])
+
+        with pytest.raises(ValueError, match="must be fitted"):
+            pipeline.transform(sample_data)
+\end{lstlisting}
+
+\subsection{Integration Testing for ML Pipelines}
+
+\begin{lstlisting}[style=python, caption=Integration tests for training pipeline]
+# tests/integration/test_training.py
+"""Integration tests for complete training pipeline."""
+
+import pytest
+import pandas as pd
+import numpy as np
+from pathlib import Path
+import tempfile
+from src.models import ModelFactory
+from src.data.pipeline import DataPipeline, MissingValueImputer
+from src.training.trainer import Trainer
+
+
+class TestTrainingPipeline:
+    """Test complete training pipeline end-to-end."""
+
+    @pytest.fixture
+    def training_data(self):
+        """Generate synthetic training data."""
+        np.random.seed(42)
+        n_samples = 1000
+
+        X = pd.DataFrame({
+            'feature_1': np.random.randn(n_samples),
+            'feature_2': np.random.randn(n_samples),
+            'feature_3': np.random.choice(['A', 'B', 'C'], n_samples)
+        })
+
+        # Create target with some relationship to features
+        y = (
+            X['feature_1'] * 0.5 +
+            X['feature_2'] * 0.3 +
+            np.random.randn(n_samples) * 0.1
+        )
+        y = (y > y.median()).astype(int)
+
+        return X, y
+
+    def test_end_to_end_training(self, training_data):
+        """Test complete training workflow."""
+        X, y = training_data
+
+        # Create data pipeline
+        data_pipeline = DataPipeline([
+            MissingValueImputer(strategy='mean')
+        ])
+
+        # Create model
+        model = ModelFactory.create('sklearn', {
+            'model_type': 'random_forest',
+            'n_estimators': 10,  # Small for fast testing
+            'max_depth': 3,
+            'random_state': 42
+        })
+
+        # Prepare data
+        X_processed = data_pipeline.fit_transform(X)
+
+        # Train model
+        model.fit(X_processed, y)
+
+        # Test predictions
+        predictions = model.predict(X_processed)
+
+        assert len(predictions) == len(y)
+        assert set(predictions).issubset({0, 1})
+
+        # Test prediction accuracy (should be > random)
+        accuracy = (predictions == y).mean()
+        assert accuracy > 0.6  # Better than random for this synthetic data
+
+    def test_model_save_and_load(self, training_data):
+        """Test model persistence."""
+        X, y = training_data
+
+        # Train model
+        model = ModelFactory.create('sklearn', {
+            'model_type': 'logistic_regression',
+            'random_state': 42
+        })
+        model.fit(X.select_dtypes(include=[np.number]), y)
+
+        # Save model
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model_path = Path(tmpdir) / 'test_model'
+            model.save(model_path)
+
+            # Load model
+            loaded_model = model.__class__.load(model_path)
+
+            # Test loaded model makes same predictions
+            X_numeric = X.select_dtypes(include=[np.number])
+            original_preds = model.predict(X_numeric)
+            loaded_preds = loaded_model.predict(X_numeric)
+
+            np.testing.assert_array_equal(original_preds, loaded_preds)
+
+    def test_pipeline_with_validation_split(self, training_data):
+        """Test training with validation set."""
+        X, y = training_data
+
+        # Split data
+        split_idx = int(len(X) * 0.8)
+        X_train, X_val = X[:split_idx], X[split_idx:]
+        y_train, y_val = y[:split_idx], y[split_idx:]
+
+        # Train with validation
+        model = ModelFactory.create('sklearn', {
+            'model_type': 'random_forest',
+            'n_estimators': 10,
+            'random_state': 42
+        })
+
+        X_train_num = X_train.select_dtypes(include=[np.number])
+        X_val_num = X_val.select_dtypes(include=[np.number])
+
+        model.fit(
+            X_train_num,
+            y_train,
+            validation_data=(X_val_num, y_val)
+        )
+
+        # Check validation score was recorded
+        assert 'validation_score' in model.metadata
+        assert 0 <= model.metadata['validation_score'] <= 1
+\end{lstlisting}
+
+\subsection{Model-Specific Tests}
+
+\begin{lstlisting}[style=python, caption=Tests for model behavior and performance]
+# tests/model/test_performance.py
+"""Model performance and behavior tests."""
+
+import pytest
+import pandas as pd
+import numpy as np
+from sklearn.datasets import make_classification, make_regression
+from sklearn.model_selection import cross_val_score
+from src.models import ModelFactory
+
+
+class TestModelPerformance:
+    """Test model performance meets requirements."""
+
+    @pytest.fixture
+    def classification_data(self):
+        """Generate classification dataset."""
+        X, y = make_classification(
+            n_samples=1000,
+            n_features=20,
+            n_informative=15,
+            n_redundant=5,
+            random_state=42
+        )
+        return pd.DataFrame(X), pd.Series(y)
+
+    def test_random_forest_minimum_accuracy(self, classification_data):
+        """Test Random Forest achieves minimum accuracy."""
+        X, y = classification_data
+
+        model = ModelFactory.create('sklearn', {
+            'model_type': 'random_forest',
+            'n_estimators': 100,
+            'random_state': 42
+        })
+
+        # Cross-validation
+        scores = cross_val_score(
+            model.model,  # Access underlying sklearn model
+            X, y,
+            cv=5,
+            scoring='accuracy'
+        )
+
+        # Ensure minimum performance
+        assert scores.mean() > 0.85, \
+            f"Model accuracy {scores.mean():.3f} below threshold 0.85"
+
+    def test_model_prediction_consistency(self, classification_data):
+        """Test model makes consistent predictions."""
+        X, y = classification_data
+
+        model = ModelFactory.create('sklearn', {
+            'model_type': 'random_forest',
+            'n_estimators': 50,
+            'random_state': 42
+        })
+
+        model.fit(X, y)
+
+        # Same input should give same output
+        pred1 = model.predict(X.head(10))
+        pred2 = model.predict(X.head(10))
+
+        np.testing.assert_array_equal(pred1, pred2)
+
+    def test_probability_calibration(self, classification_data):
+        """Test probability predictions are well-calibrated."""
+        X, y = classification_data
+
+        model = ModelFactory.create('sklearn', {
+            'model_type': 'random_forest',
+            'n_estimators': 100,
+            'random_state': 42
+        })
+
+        model.fit(X, y)
+        probas = model.predict_proba(X)
+
+        # Check probabilities sum to 1
+        np.testing.assert_array_almost_equal(
+            probas.sum(axis=1),
+            np.ones(len(probas)),
+            decimal=5
+        )
+
+        # Check probabilities are in valid range
+        assert (probas >= 0).all() and (probas <= 1).all()
+
+
+class TestModelInvariants:
+    """Test model invariants and edge cases."""
+
+    def test_single_sample_prediction(self):
+        """Test model can predict single sample."""
+        X = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
+        y = pd.Series([0, 1, 0])
+
+        model = ModelFactory.create('sklearn', {
+            'model_type': 'logistic_regression',
+            'random_state': 42
+        })
+        model.fit(X, y)
+
+        # Predict single sample
+        single_pred = model.predict(X.head(1))
+        assert len(single_pred) == 1
+
+    def test_empty_prediction_raises_error(self):
+        """Test prediction with empty data raises appropriate error."""
+        X = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
+        y = pd.Series([0, 1, 0])
+
+        model = ModelFactory.create('sklearn', {
+            'model_type': 'logistic_regression',
+            'random_state': 42
+        })
+        model.fit(X, y)
+
+        # Try to predict empty DataFrame
+        empty_X = pd.DataFrame(columns=['a', 'b'])
+
+        with pytest.raises(ValueError):
+            model.predict(empty_X)
+
+    def test_feature_importance_availability(self):
+        """Test feature importance is available for tree models."""
+        X = pd.DataFrame({'a': [1, 2, 3, 4], 'b': [5, 6, 7, 8]})
+        y = pd.Series([0, 1, 0, 1])
+
+        model = ModelFactory.create('sklearn', {
+            'model_type': 'random_forest',
+            'n_estimators': 10,
+            'random_state': 42
+        })
+        model.fit(X, y)
+
+        importance = model.get_feature_importance()
+
+        assert importance is not None
+        assert len(importance) == 2  # Two features
+        assert all(importance >= 0)
+        assert importance.index.tolist() == ['a', 'b']
+\end{lstlisting}
+
+\subsection{Test Configuration with Pytest}
+
+\begin{lstlisting}[style=python, caption=Pytest configuration and fixtures]
+# tests/conftest.py
+"""Shared pytest fixtures and configuration."""
+
+import pytest
+import pandas as pd
+import numpy as np
+from pathlib import Path
+import tempfile
+import shutil
+
+
+@pytest.fixture(scope="session")
+def test_data_dir():
+    """Create temporary directory for test data."""
+    tmpdir = tempfile.mkdtemp()
+    yield Path(tmpdir)
+    shutil.rmtree(tmpdir)
+
+
+@pytest.fixture
+def sample_dataframe():
+    """Create sample DataFrame for testing."""
+    np.random.seed(42)
+    return pd.DataFrame({
+        'numeric_1': np.random.randn(100),
+        'numeric_2': np.random.uniform(0, 100, 100),
+        'categorical': np.random.choice(['A', 'B', 'C'], 100),
+        'target': np.random.binomial(1, 0.5, 100)
+    })
+
+
+@pytest.fixture
+def model_config():
+    """Standard model configuration for testing."""
+    return {
+        'model_type': 'random_forest',
+        'n_estimators': 10,
+        'max_depth': 3,
+        'random_state': 42
+    }
+
+
+def pytest_configure(config):
+    """Register custom markers."""
+    config.addinivalue_line(
+        "markers",
+        "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+    )
+    config.addinivalue_line(
+        "markers",
+        "integration: marks tests as integration tests"
+    )
+    config.addinivalue_line(
+        "markers",
+        "model: marks tests as model performance tests"
+    )
+\end{lstlisting}
+
+\section{Design Patterns for ML Systems}
+
+Design patterns provide proven solutions to common problems in ML system design. This section presents patterns specifically adapted for ML workflows.
+
+\subsection{Strategy Pattern for Model Selection}
+
+\begin{lstlisting}[style=python, caption=Strategy pattern for flexible model selection]
+# src/training/strategies.py
+"""Training strategies using Strategy pattern."""
+
+from abc import ABC, abstractmethod
+from typing import Dict, Any, Tuple
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from src.models.base import BaseModel
+
+
+class TrainingStrategy(ABC):
+    """Abstract base class for training strategies."""
+
+    @abstractmethod
+    def train(
+        self,
+        model: BaseModel,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> BaseModel:
+        """Execute training strategy."""
+        pass
+
+
+class SimpleTrainingStrategy(TrainingStrategy):
+    """Simple training without hyperparameter optimization."""
+
+    def train(
+        self,
+        model: BaseModel,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> BaseModel:
+        """Train model with default parameters."""
+        model.fit(X_train, y_train, validation_data=(X_val, y_val))
+        return model
+
+
+class GridSearchStrategy(TrainingStrategy):
+    """Grid search hyperparameter optimization."""
+
+    def __init__(self, param_grid: Dict[str, list], cv: int = 5):
+        """
+        Initialize grid search strategy.
+
+        Args:
+            param_grid: Parameter grid for search
+            cv: Number of cross-validation folds
+        """
+        self.param_grid = param_grid
+        self.cv = cv
+
+    def train(
+        self,
+        model: BaseModel,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> BaseModel:
+        """Train with grid search."""
+        # Use sklearn's GridSearchCV on underlying model
+        grid_search = GridSearchCV(
+            model.model,
+            self.param_grid,
+            cv=self.cv,
+            scoring='accuracy',
+            n_jobs=-1
+        )
+
+        grid_search.fit(X_train, y_train)
+
+        # Update model with best parameters
+        model.model = grid_search.best_estimator_
+        model.is_fitted = True
+        model.metadata['best_params'] = grid_search.best_params_
+        model.metadata['best_score'] = grid_search.best_score_
+
+        return model
+
+
+class EarlyStoppingStrategy(TrainingStrategy):
+    """Training with early stopping (for iterative models)."""
+
+    def __init__(
+        self,
+        patience: int = 5,
+        min_delta: float = 0.001
+    ):
+        """
+        Initialize early stopping strategy.
+
+        Args:
+            patience: Number of epochs to wait for improvement
+            min_delta: Minimum change to qualify as improvement
+        """
+        self.patience = patience
+        self.min_delta = min_delta
+
+    def train(
+        self,
+        model: BaseModel,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> BaseModel:
+        """Train with early stopping logic."""
+        # For sklearn models with iterative training
+        if hasattr(model.model, 'n_estimators'):
+            best_score = -np.inf
+            patience_counter = 0
+
+            for n_est in range(10, 201, 10):
+                model.model.set_params(n_estimators=n_est)
+                model.fit(X_train, y_train)
+
+                val_score = model.model.score(X_val, y_val)
+
+                if val_score > best_score + self.min_delta:
+                    best_score = val_score
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+
+                if patience_counter >= self.patience:
+                    print(f"Early stopping at {n_est} estimators")
+                    break
+
+            model.metadata['early_stopped_at'] = n_est
+            model.metadata['best_val_score'] = best_score
+
+        else:
+            # Fallback to simple training
+            model.fit(X_train, y_train, validation_data=(X_val, y_val))
+
+        return model
+
+
+class TrainingContext:
+    """Context that uses a training strategy."""
+
+    def __init__(self, strategy: TrainingStrategy):
+        """
+        Initialize with specific strategy.
+
+        Args:
+            strategy: Training strategy to use
+        """
+        self.strategy = strategy
+
+    def set_strategy(self, strategy: TrainingStrategy):
+        """Change strategy at runtime."""
+        self.strategy = strategy
+
+    def execute_training(
+        self,
+        model: BaseModel,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: pd.DataFrame,
+        y_val: pd.Series
+    ) -> BaseModel:
+        """Execute training using current strategy."""
+        return self.strategy.train(model, X_train, y_train, X_val, y_val)
+
+
+# Example usage
+if __name__ == "__main__":
+    from src.models import ModelFactory
+
+    # Create model
+    model = ModelFactory.create('sklearn', {
+        'model_type': 'random_forest',
+        'random_state': 42
+    })
+
+    # Sample data
+    from sklearn.datasets import make_classification
+    X, y = make_classification(n_samples=1000, random_state=42)
+    X_train, X_val = X[:800], X[800:]
+    y_train, y_val = y[:800], y[800:]
+
+    X_train = pd.DataFrame(X_train)
+    X_val = pd.DataFrame(X_val)
+    y_train = pd.Series(y_train)
+    y_val = pd.Series(y_val)
+
+    # Use different strategies
+    context = TrainingContext(SimpleTrainingStrategy())
+    model = context.execute_training(model, X_train, y_train, X_val, y_val)
+
+    # Switch to grid search
+    context.set_strategy(GridSearchStrategy(
+        param_grid={'n_estimators': [10, 50, 100], 'max_depth': [3, 5, 7]}
+    ))
+    model = context.execute_training(model, X_train, y_train, X_val, y_val)
+\end{lstlisting}
+
+\subsection{Observer Pattern for Training Callbacks}
+
+\begin{lstlisting}[style=python, caption=Observer pattern for monitoring training]
+# src/training/callbacks.py
+"""Training callbacks using Observer pattern."""
+
+from abc import ABC, abstractmethod
+from typing import Dict, Any, List
+import time
+from datetime import datetime
+
+
+class TrainingCallback(ABC):
+    """Abstract base class for training callbacks."""
+
+    @abstractmethod
+    def on_train_begin(self, logs: Dict[str, Any] = None):
+        """Called at the beginning of training."""
+        pass
+
+    @abstractmethod
+    def on_train_end(self, logs: Dict[str, Any] = None):
+        """Called at the end of training."""
+        pass
+
+    @abstractmethod
+    def on_epoch_begin(self, epoch: int, logs: Dict[str, Any] = None):
+        """Called at the beginning of an epoch."""
+        pass
+
+    @abstractmethod
+    def on_epoch_end(self, epoch: int, logs: Dict[str, Any] = None):
+        """Called at the end of an epoch."""
+        pass
+
+
+class LoggingCallback(TrainingCallback):
+    """Log training progress."""
+
+    def on_train_begin(self, logs: Dict[str, Any] = None):
+        """Log training start."""
+        print(f"[{datetime.now()}] Training started")
+        print(f"Configuration: {logs.get('config', {})}")
+
+    def on_train_end(self, logs: Dict[str, Any] = None):
+        """Log training completion."""
+        duration = logs.get('duration', 0)
+        print(f"[{datetime.now()}] Training completed in {duration:.2f}s")
+
+    def on_epoch_begin(self, epoch: int, logs: Dict[str, Any] = None):
+        """Log epoch start."""
+        print(f"\nEpoch {epoch}/{logs.get('total_epochs', '?')} started")
+
+    def on_epoch_end(self, epoch: int, logs: Dict[str, Any] = None):
+        """Log epoch metrics."""
+        metrics_str = ", ".join(
+            f"{k}={v:.4f}" for k, v in logs.items()
+            if k not in ['total_epochs']
+        )
+        print(f"Epoch {epoch} - {metrics_str}")
+
+
+class MetricTrackingCallback(TrainingCallback):
+    """Track metrics across epochs."""
+
+    def __init__(self):
+        self.history = {
+            'epoch': [],
+            'train_loss': [],
+            'val_loss': [],
+            'train_acc': [],
+            'val_acc': []
+        }
+
+    def on_train_begin(self, logs: Dict[str, Any] = None):
+        """Reset history."""
+        self.history = {k: [] for k in self.history.keys()}
+
+    def on_train_end(self, logs: Dict[str, Any] = None):
+        """Store final history."""
+        pass
+
+    def on_epoch_begin(self, epoch: int, logs: Dict[str, Any] = None):
+        """No action needed."""
+        pass
+
+    def on_epoch_end(self, epoch: int, logs: Dict[str, Any] = None):
+        """Record metrics."""
+        self.history['epoch'].append(epoch)
+        for key in ['train_loss', 'val_loss', 'train_acc', 'val_acc']:
+            value = logs.get(key, None)
+            self.history[key].append(value)
+
+
+class EarlyStoppingCallback(TrainingCallback):
+    """Stop training when metric stops improving."""
+
+    def __init__(
+        self,
+        monitor: str = 'val_loss',
+        patience: int = 5,
+        min_delta: float = 0.001,
+        mode: str = 'min'
+    ):
+        """
+        Initialize early stopping.
+
+        Args:
+            monitor: Metric to monitor
+            patience: Epochs to wait for improvement
+            min_delta: Minimum change to qualify as improvement
+            mode: 'min' or 'max' (whether lower or higher is better)
+        """
+        self.monitor = monitor
+        self.patience = patience
+        self.min_delta = min_delta
+        self.mode = mode
+
+        self.best_value = float('inf') if mode == 'min' else float('-inf')
+        self.wait = 0
+        self.stop_training = False
+
+    def on_train_begin(self, logs: Dict[str, Any] = None):
+        """Reset state."""
+        self.best_value = float('inf') if self.mode == 'min' else float('-inf')
+        self.wait = 0
+        self.stop_training = False
+
+    def on_train_end(self, logs: Dict[str, Any] = None):
+        """No action needed."""
+        pass
+
+    def on_epoch_begin(self, epoch: int, logs: Dict[str, Any] = None):
+        """No action needed."""
+        pass
+
+    def on_epoch_end(self, epoch: int, logs: Dict[str, Any] = None):
+        """Check if should stop."""
+        current_value = logs.get(self.monitor)
+        if current_value is None:
+            return
+
+        if self.mode == 'min':
+            improved = current_value < (self.best_value - self.min_delta)
+        else:
+            improved = current_value > (self.best_value + self.min_delta)
+
+        if improved:
+            self.best_value = current_value
+            self.wait = 0
+        else:
+            self.wait += 1
+            if self.wait >= self.patience:
+                self.stop_training = True
+                print(f"\nEarly stopping triggered at epoch {epoch}")
+
+
+class CallbackList:
+    """Manages multiple callbacks."""
+
+    def __init__(self, callbacks: List[TrainingCallback] = None):
+        """Initialize with list of callbacks."""
+        self.callbacks = callbacks or []
+
+    def append(self, callback: TrainingCallback):
+        """Add callback to list."""
+        self.callbacks.append(callback)
+
+    def on_train_begin(self, logs: Dict[str, Any] = None):
+        """Notify all callbacks."""
+        logs = logs or {}
+        for callback in self.callbacks:
+            callback.on_train_begin(logs)
+
+    def on_train_end(self, logs: Dict[str, Any] = None):
+        """Notify all callbacks."""
+        logs = logs or {}
+        for callback in self.callbacks:
+            callback.on_train_end(logs)
+
+    def on_epoch_begin(self, epoch: int, logs: Dict[str, Any] = None):
+        """Notify all callbacks."""
+        logs = logs or {}
+        for callback in self.callbacks:
+            callback.on_epoch_begin(epoch, logs)
+
+    def on_epoch_end(self, epoch: int, logs: Dict[str, Any] = None):
+        """Notify all callbacks."""
+        logs = logs or {}
+        for callback in self.callbacks:
+            callback.on_epoch_end(epoch, logs)
+
+    def should_stop(self) -> bool:
+        """Check if any callback requested stop."""
+        return any(
+            getattr(cb, 'stop_training', False)
+            for cb in self.callbacks
+        )
+\end{lstlisting}
+
+\section{Code Quality Tools and Practices}
+
+Maintaining high code quality requires automated tools and consistent practices. This section covers essential tools for ML codebases.
+
+\subsection{Type Hints and Static Analysis}
+
+\begin{lstlisting}[style=python, caption=Type hints for ML code]
+# src/models/typed_model.py
+"""Example of properly type-hinted ML code."""
+
+from typing import Union, Optional, Dict, Any, List, Tuple
+import numpy as np
+import pandas as pd
+from numpy.typing import NDArray
+from pathlib import Path
+
+
+# Type aliases for clarity
+Features = Union[NDArray[np.float64], pd.DataFrame]
+Target = Union[NDArray[np.int_], pd.Series]
+Predictions = NDArray[np.int_]
+Probabilities = NDArray[np.float64]
+
+
+class TypedModel:
+    """Model with comprehensive type hints."""
+
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """
+        Initialize model with configuration.
+
+        Args:
+            config: Model configuration dictionary
+        """
+        self.config: Dict[str, Any] = config
+        self.is_fitted: bool = False
+        self.feature_names_: Optional[List[str]] = None
+
+    def fit(
+        self,
+        X: Features,
+        y: Target,
+        sample_weight: Optional[NDArray[np.float64]] = None
+    ) -> "TypedModel":
+        """
+        Fit model to training data.
+
+        Args:
+            X: Training features
+            y: Training targets
+            sample_weight: Optional sample weights
+
+        Returns:
+            Fitted model instance
+
+        Raises:
+            ValueError: If X and y have incompatible shapes
+        """
+        # Type-based logic
+        if isinstance(X, pd.DataFrame):
+            self.feature_names_ = X.columns.tolist()
+
+        self.is_fitted = True
+        return self
+
+    def predict(self, X: Features) -> Predictions:
+        """
+        Generate predictions.
+
+        Args:
+            X: Feature matrix
+
+        Returns:
+            Prediction array
+
+        Raises:
+            ValueError: If model is not fitted
+        """
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before prediction")
+
+        # Implementation here
+        n_samples = len(X)
+        return np.zeros(n_samples, dtype=np.int_)
+
+    def predict_proba(self, X: Features) -> Probabilities:
+        """
+        Generate probability predictions.
+
+        Args:
+            X: Feature matrix
+
+        Returns:
+            Probability array of shape (n_samples, n_classes)
+        """
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before prediction")
+
+        # Implementation here
+        n_samples = len(X)
+        return np.zeros((n_samples, 2), dtype=np.float64)
+
+
+# Type-hinted utility functions
+def train_test_split_typed(
+    X: Features,
+    y: Target,
+    test_size: float = 0.2,
+    random_state: Optional[int] = None
+) -> Tuple[Features, Features, Target, Target]:
+    """
+    Type-safe train-test split.
+
+    Args:
+        X: Features
+        y: Targets
+        test_size: Fraction for test set
+        random_state: Random seed
+
+        Returns:
+        Tuple of (X_train, X_test, y_train, y_test)
+    """
+    # Implementation
+    pass
+
+
+def evaluate_model(
+    model: TypedModel,
+    X: Features,
+    y: Target,
+    metrics: List[str]
+) -> Dict[str, float]:
+    """
+    Evaluate model with specified metrics.
+
+    Args:
+        model: Fitted model
+        X: Features
+        y: True targets
+        metrics: List of metric names
+
+    Returns:
+        Dictionary mapping metric names to values
+    """
+    # Implementation
+    pass
+\end{lstlisting}
+
+\subsection{Configuration and linting setup}
+
+\begin{lstlisting}[style=python, caption=Pyproject.toml with tool configurations]
+# pyproject.toml
+[tool.black]
+line-length = 100
+target-version = ['py39']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip = [".gitignore", ".dockerignore"]
+skip_glob = ["*/migrations/*"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "sklearn.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pandas.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = """
+    --verbose
+    --cov=src
+    --cov-report=html
+    --cov-report=term-missing
+    --cov-fail-under=80
+"""
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks integration tests",
+    "model: marks model performance tests"
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__init__.py"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod"
+]
+\end{lstlisting}
+
+\begin{lstlisting}[style=shell, caption=Pre-commit hooks configuration]
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-json
+      - id: check-merge-conflict
+
+  - repo: https://github.com/psf/black
+    rev: 23.1.0
+    hooks:
+      - id: black
+        language_version: python3.9
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 6.0.0
+    hooks:
+      - id: flake8
+        args: ['--max-line-length=100', '--ignore=E203,W503']
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.0.1
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-all]
+        args: [--ignore-missing-imports]
+\end{lstlisting}
+
+\section{Reproducibility Frameworks}
+
+Reproducibility is critical for ML systems. This section presents frameworks for ensuring consistent, reproducible results.
+
+\subsection{Configuration Management}
+
+\begin{lstlisting}[style=python, caption=Comprehensive configuration system]
+# src/utils/config.py
+"""Configuration management for reproducible experiments."""
+
+from typing import Any, Dict, Optional
+from pathlib import Path
+import yaml
+import json
+from dataclasses import dataclass, asdict, field
+from datetime import datetime
+import hashlib
+
+
+@dataclass
+class DataConfig:
+    """Data configuration."""
+    train_path: str
+    val_path: str
+    test_path: Optional[str] = None
+    features: Optional[list] = None
+    target: str = "target"
+
+
+@dataclass
+class ModelConfig:
+    """Model configuration."""
+    model_type: str
+    model_class: str
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    random_state: int = 42
+
+
+@dataclass
+class TrainingConfig:
+    """Training configuration."""
+    epochs: int = 100
+    batch_size: int = 32
+    learning_rate: float = 0.001
+    early_stopping_patience: int = 10
+    checkpoint_dir: str = "models/checkpoints"
+
+
+@dataclass
+class ExperimentConfig:
+    """Complete experiment configuration."""
+    name: str
+    description: str
+    data: DataConfig
+    model: ModelConfig
+    training: TrainingConfig
+    seed: int = 42
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return asdict(self)
+
+    def to_yaml(self, path: Path) -> None:
+        """Save configuration to YAML file."""
+        with open(path, 'w') as f:
+            yaml.dump(self.to_dict(), f, default_flow_style=False)
+
+    def to_json(self, path: Path) -> None:
+        """Save configuration to JSON file."""
+        with open(path, 'w') as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def from_yaml(cls, path: Path) -> "ExperimentConfig":
+        """Load configuration from YAML file."""
+        with open(path, 'r') as f:
+            config_dict = yaml.safe_load(f)
+
+        return cls(
+            name=config_dict['name'],
+            description=config_dict['description'],
+            data=DataConfig(**config_dict['data']),
+            model=ModelConfig(**config_dict['model']),
+            training=TrainingConfig(**config_dict['training']),
+            seed=config_dict.get('seed', 42),
+            created_at=config_dict.get('created_at', datetime.now().isoformat())
+        )
+
+    def get_hash(self) -> str:
+        """
+        Get deterministic hash of configuration.
+        Useful for experiment tracking and caching.
+        """
+        # Convert to JSON string (deterministic ordering)
+        config_str = json.dumps(self.to_dict(), sort_keys=True)
+        return hashlib.md5(config_str.encode()).hexdigest()
+
+
+# Example configuration YAML
+EXAMPLE_CONFIG = """
+name: customer_churn_experiment_001
+description: Random Forest baseline for customer churn prediction
+
+data:
+  train_path: data/processed/train.csv
+  val_path: data/processed/val.csv
+  test_path: data/processed/test.csv
+  features: null  # Use all columns except target
+  target: churn
+
+model:
+  model_type: sklearn
+  model_class: random_forest
+  parameters:
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 5
+    class_weight: balanced
+  random_state: 42
+
+training:
+  epochs: 1  # For sklearn, single training pass
+  batch_size: 32
+  learning_rate: 0.001
+  early_stopping_patience: 10
+  checkpoint_dir: models/checkpoints/exp_001
+
+seed: 42
+"""
+\end{lstlisting}
+
+\subsection{Reproducible Training Pipeline}
+
+\begin{lstlisting}[style=python, caption=Fully reproducible training script]
+# scripts/train.py
+"""Reproducible training script."""
+
+import argparse
+import random
+import numpy as np
+import pandas as pd
+from pathlib import Path
+import logging
+import sys
+import os
+
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.utils.config import ExperimentConfig
+from src.models import ModelFactory
+from src.data.pipeline import DataPipeline, MissingValueImputer
+from src.training.callbacks import (
+    CallbackList,
+    LoggingCallback,
+    MetricTrackingCallback,
+    EarlyStoppingCallback
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+def set_seed(seed: int) -> None:
+    """
+    Set random seeds for reproducibility.
+
+    Args:
+        seed: Random seed value
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+
+    # For frameworks like TensorFlow/PyTorch
+    try:
+        import torch
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    except ImportError:
+        pass
+
+    try:
+        import tensorflow as tf
+        tf.random.set_seed(seed)
+    except ImportError:
+        pass
+
+
+def load_data(config: ExperimentConfig) -> tuple:
+    """
+    Load and prepare data.
+
+    Args:
+        config: Experiment configuration
+
+    Returns:
+        Tuple of (X_train, y_train, X_val, y_val)
+    """
+    logger.info("Loading data...")
+
+    # Load datasets
+    train_df = pd.read_csv(config.data.train_path)
+    val_df = pd.read_csv(config.data.val_path)
+
+    # Extract features and target
+    target_col = config.data.target
+
+    if config.data.features:
+        feature_cols = config.data.features
+    else:
+        feature_cols = [col for col in train_df.columns if col != target_col]
+
+    X_train = train_df[feature_cols]
+    y_train = train_df[target_col]
+    X_val = val_df[feature_cols]
+    y_val = val_df[target_col]
+
+    logger.info(f"Training set: {X_train.shape}")
+    logger.info(f"Validation set: {X_val.shape}")
+
+    return X_train, y_train, X_val, y_val
+
+
+def create_preprocessing_pipeline() -> DataPipeline:
+    """Create data preprocessing pipeline."""
+    return DataPipeline([
+        MissingValueImputer(strategy='median')
+    ])
+
+
+def train(config_path: Path, experiment: bool = False) -> None:
+    """
+    Execute reproducible training.
+
+    Args:
+        config_path: Path to configuration file
+        experiment: Whether this is an experiment run
+    """
+    # Load configuration
+    logger.info(f"Loading configuration from {config_path}")
+    config = ExperimentConfig.from_yaml(config_path)
+
+    # Set seeds for reproducibility
+    logger.info(f"Setting random seed: {config.seed}")
+    set_seed(config.seed)
+
+    # Create experiment directory
+    exp_dir = Path("experiments") / config.name
+    exp_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save configuration to experiment directory
+    config.to_yaml(exp_dir / "config.yaml")
+    config.to_json(exp_dir / "config.json")
+
+    logger.info(f"Experiment: {config.name}")
+    logger.info(f"Config hash: {config.get_hash()}")
+
+    # Load data
+    X_train, y_train, X_val, y_val = load_data(config)
+
+    # Create preprocessing pipeline
+    logger.info("Creating preprocessing pipeline...")
+    preprocess_pipeline = create_preprocessing_pipeline()
+
+    # Fit and transform data
+    X_train = preprocess_pipeline.fit_transform(X_train)
+    X_val = preprocess_pipeline.transform(X_val)
+
+    # Create model
+    logger.info("Creating model...")
+    model = ModelFactory.create(
+        config.model.model_type,
+        {
+            'model_type': config.model.model_class,
+            **config.model.parameters,
+            'random_state': config.model.random_state
+        }
+    )
+
+    # Create callbacks
+    callbacks = CallbackList([
+        LoggingCallback(),
+        MetricTrackingCallback(),
+        EarlyStoppingCallback(patience=config.training.early_stopping_patience)
+    ])
+
+    # Train model
+    logger.info("Training model...")
+    callbacks.on_train_begin({'config': config.to_dict()})
+
+    start_time = pd.Timestamp.now()
+    model.fit(X_train, y_train, validation_data=(X_val, y_val))
+    end_time = pd.Timestamp.now()
+
+    training_duration = (end_time - start_time).total_seconds()
+
+    callbacks.on_train_end({'duration': training_duration})
+
+    # Evaluate model
+    logger.info("Evaluating model...")
+    train_score = model.model.score(X_train, y_train)
+    val_score = model.model.score(X_val, y_val)
+
+    logger.info(f"Training accuracy: {train_score:.4f}")
+    logger.info(f"Validation accuracy: {val_score:.4f}")
+
+    # Save model
+    model_path = exp_dir / "model"
+    logger.info(f"Saving model to {model_path}")
+    model.save(model_path)
+
+    # Save metrics
+    metrics = {
+        'train_accuracy': float(train_score),
+        'val_accuracy': float(val_score),
+        'training_duration_seconds': training_duration,
+        'config_hash': config.get_hash()
+    }
+
+    with open(exp_dir / "metrics.json", 'w') as f:
+        json.dump(metrics, f, indent=2)
+
+    logger.info("Training completed successfully!")
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(description="Train ML model")
+    parser.add_argument(
+        '--config',
+        type=Path,
+        required=True,
+        help="Path to configuration file"
+    )
+    parser.add_argument(
+        '--experiment',
+        action='store_true',
+        help="Run as experiment (creates experiment directory)"
+    )
+
+    args = parser.parse_args()
+
+    train(args.config, args.experiment)
+
+
+if __name__ == "__main__":
+    main()
+\end{lstlisting}
+
+\subsection{Model and Experiment Versioning}
+
+\begin{lstlisting}[style=python, caption=Model versioning and experiment tracking]
+# src/utils/versioning.py
+"""Model and experiment versioning utilities."""
+
+from typing import Dict, Any, Optional, List
+from pathlib import Path
+from datetime import datetime
+import json
+import hashlib
+from dataclasses import dataclass, asdict
+
+
+@dataclass
+class ModelVersion:
+    """Represents a versioned model."""
+    version_id: str
+    model_path: Path
+    config_hash: str
+    created_at: str
+    metrics: Dict[str, float]
+    parent_version: Optional[str] = None
+    tags: Optional[List[str]] = None
+    notes: Optional[str] = None
+
+
+class ModelRegistry:
+    """
+    Central registry for tracking model versions.
+    Enables model lineage tracking and rollback.
+    """
+
+    def __init__(self, registry_path: Path):
+        """
+        Initialize model registry.
+
+        Args:
+            registry_path: Path to registry storage
+        """
+        self.registry_path = Path(registry_path)
+        self.registry_path.mkdir(parents=True, exist_ok=True)
+        self.index_file = self.registry_path / "index.json"
+        self.versions: Dict[str, ModelVersion] = {}
+        self._load_index()
+
+    def _load_index(self):
+        """Load registry index from disk."""
+        if self.index_file.exists():
+            with open(self.index_file, 'r') as f:
+                data = json.load(f)
+                self.versions = {
+                    k: ModelVersion(**v) for k, v in data.items()
+                }
+
+    def _save_index(self):
+        """Save registry index to disk."""
+        data = {k: asdict(v) for k, v in self.versions.items()}
+        # Convert Path objects to strings
+        for v in data.values():
+            v['model_path'] = str(v['model_path'])
+
+        with open(self.index_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    def register_model(
+        self,
+        model_path: Path,
+        config: Dict[str, Any],
+        metrics: Dict[str, float],
+        parent_version: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        notes: Optional[str] = None
+    ) -> str:
+        """
+        Register a new model version.
+
+        Args:
+            model_path: Path to saved model
+            config: Model configuration
+            metrics: Performance metrics
+            parent_version: ID of parent version (for lineage)
+            tags: Optional tags for categorization
+            notes: Optional notes about this version
+
+        Returns:
+            version_id: Unique version identifier
+        """
+        # Generate version ID
+        timestamp = datetime.now().isoformat()
+        config_str = json.dumps(config, sort_keys=True)
+        config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]
+        version_id = f"v_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{config_hash}"
+
+        # Create version record
+        version = ModelVersion(
+            version_id=version_id,
+            model_path=Path(model_path),
+            config_hash=config_hash,
+            created_at=timestamp,
+            metrics=metrics,
+            parent_version=parent_version,
+            tags=tags or [],
+            notes=notes
+        )
+
+        self.versions[version_id] = version
+        self._save_index()
+
+        return version_id
+
+    def get_version(self, version_id: str) -> Optional[ModelVersion]:
+        """Get specific model version."""
+        return self.versions.get(version_id)
+
+    def get_best_version(
+        self,
+        metric: str,
+        higher_is_better: bool = True
+    ) -> Optional[ModelVersion]:
+        """
+        Get best model version by metric.
+
+        Args:
+            metric: Metric name to compare
+            higher_is_better: Whether higher metric values are better
+
+        Returns:
+            Best model version or None
+        """
+        valid_versions = [
+            v for v in self.versions.values()
+            if metric in v.metrics
+        ]
+
+        if not valid_versions:
+            return None
+
+        return max(
+            valid_versions,
+            key=lambda v: v.metrics[metric] if higher_is_better
+            else -v.metrics[metric]
+        )
+
+    def get_lineage(self, version_id: str) -> List[ModelVersion]:
+        """
+        Get complete lineage of a model version.
+
+        Args:
+            version_id: Version to trace
+
+        Returns:
+            List of versions from root to specified version
+        """
+        lineage = []
+        current_id = version_id
+
+        while current_id is not None:
+            version = self.versions.get(current_id)
+            if version is None:
+                break
+            lineage.append(version)
+            current_id = version.parent_version
+
+        return list(reversed(lineage))
+
+    def list_versions(
+        self,
+        tags: Optional[List[str]] = None,
+        min_metric: Optional[Dict[str, float]] = None
+    ) -> List[ModelVersion]:
+        """
+        List model versions with optional filtering.
+
+        Args:
+            tags: Filter by tags
+            min_metric: Filter by minimum metric values
+
+        Returns:
+            List of matching model versions
+        """
+        versions = list(self.versions.values())
+
+        # Filter by tags
+        if tags:
+            versions = [
+                v for v in versions
+                if any(tag in (v.tags or []) for tag in tags)
+            ]
+
+        # Filter by metrics
+        if min_metric:
+            for metric, min_value in min_metric.items():
+                versions = [
+                    v for v in versions
+                    if metric in v.metrics and v.metrics[metric] >= min_value
+                ]
+
+        return sorted(versions, key=lambda v: v.created_at, reverse=True)
+
+
+# Example usage
+if __name__ == "__main__":
+    from pathlib import Path
+
+    # Initialize registry
+    registry = ModelRegistry(Path("model_registry"))
+
+    # Register first model version
+    v1 = registry.register_model(
+        model_path=Path("models/experiment_001/model.pkl"),
+        config={'model_type': 'random_forest', 'n_estimators': 100},
+        metrics={'accuracy': 0.85, 'f1_score': 0.82},
+        tags=['baseline', 'random_forest'],
+        notes="Initial baseline model"
+    )
+    print(f"Registered version: {v1}")
+
+    # Register improved version
+    v2 = registry.register_model(
+        model_path=Path("models/experiment_002/model.pkl"),
+        config={'model_type': 'random_forest', 'n_estimators': 200},
+        metrics={'accuracy': 0.88, 'f1_score': 0.85},
+        parent_version=v1,
+        tags=['improved', 'random_forest'],
+        notes="Increased estimators, improved performance"
+    )
+    print(f"Registered version: {v2}")
+
+    # Get best model
+    best = registry.get_best_version('accuracy', higher_is_better=True)
+    print(f"Best model: {best.version_id} with accuracy {best.metrics['accuracy']}")
+
+    # Get lineage
+    lineage = registry.get_lineage(v2)
+    print("\nModel lineage:")
+    for i, version in enumerate(lineage, 1):
+        print(f"  {i}. {version.version_id} - Accuracy: {version.metrics.get('accuracy')}")
+\end{lstlisting}
+
+\section{Documentation Best Practices}
+
+Production ML systems require comprehensive documentation. This section presents patterns for documenting models, experiments, and systems.
+
+\subsection{Model Cards}
+
+\begin{lstlisting}[style=python, caption=Automated model card generation]
+# src/utils/model_card.py
+"""Model card generation for ML model documentation."""
+
+from typing import Dict, Any, List, Optional
+from pathlib import Path
+from datetime import datetime
+from dataclasses import dataclass, field
+import json
+
+
+@dataclass
+class ModelCard:
+    """
+    Model card following Google's Model Cards framework.
+    Documents model details, intended use, performance, and limitations.
+    """
+
+    # Model Details
+    model_name: str
+    version: str
+    date: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
+    model_type: str = ""
+    model_architecture: str = ""
+    authors: List[str] = field(default_factory=list)
+
+    # Intended Use
+    intended_use: str = ""
+    intended_users: List[str] = field(default_factory=list)
+    out_of_scope_uses: List[str] = field(default_factory=list)
+
+    # Training Data
+    training_data_description: str = ""
+    training_data_size: Optional[int] = None
+    training_data_source: str = ""
+    preprocessing_steps: List[str] = field(default_factory=list)
+
+    # Evaluation Data
+    evaluation_data_description: str = ""
+    evaluation_data_size: Optional[int] = None
+
+    # Performance Metrics
+    metrics: Dict[str, float] = field(default_factory=dict)
+    performance_by_group: Dict[str, Dict[str, float]] = field(default_factory=dict)
+
+    # Ethical Considerations
+    sensitive_data: List[str] = field(default_factory=list)
+    potential_biases: List[str] = field(default_factory=list)
+    fairness_assessment: str = ""
+
+    # Caveats and Recommendations
+    caveats: List[str] = field(default_factory=list)
+    recommendations: List[str] = field(default_factory=list)
+
+    def to_markdown(self) -> str:
+        """Generate markdown documentation."""
+        md = f"# Model Card: {self.model_name}\n\n"
+        md += f"**Version:** {self.version}  \n"
+        md += f"**Date:** {self.date}  \n"
+        md += f"**Model Type:** {self.model_type}  \n\n"
+
+        if self.authors:
+            md += f"**Authors:** {', '.join(self.authors)}\n\n"
+
+        md += "## Model Details\n\n"
+        md += f"**Architecture:** {self.model_architecture}\n\n"
+
+        md += "## Intended Use\n\n"
+        md += f"{self.intended_use}\n\n"
+
+        if self.intended_users:
+            md += "**Primary Intended Users:**\n"
+            for user in self.intended_users:
+                md += f"- {user}\n"
+            md += "\n"
+
+        if self.out_of_scope_uses:
+            md += "**Out-of-Scope Uses:**\n"
+            for use in self.out_of_scope_uses:
+                md += f"- {use}\n"
+            md += "\n"
+
+        md += "## Training Data\n\n"
+        md += f"{self.training_data_description}\n\n"
+        if self.training_data_size:
+            md += f"**Dataset Size:** {self.training_data_size:,} samples\n\n"
+        if self.training_data_source:
+            md += f"**Source:** {self.training_data_source}\n\n"
+
+        if self.preprocessing_steps:
+            md += "**Preprocessing Steps:**\n"
+            for step in self.preprocessing_steps:
+                md += f"1. {step}\n"
+            md += "\n"
+
+        md += "## Evaluation\n\n"
+        md += f"{self.evaluation_data_description}\n\n"
+
+        if self.metrics:
+            md += "**Performance Metrics:**\n\n"
+            md += "| Metric | Value |\n"
+            md += "|--------|-------|\n"
+            for metric, value in self.metrics.items():
+                md += f"| {metric} | {value:.4f} |\n"
+            md += "\n"
+
+        if self.performance_by_group:
+            md += "**Performance by Group:**\n\n"
+            for group, group_metrics in self.performance_by_group.items():
+                md += f"**{group}:**\n\n"
+                md += "| Metric | Value |\n"
+                md += "|--------|-------|\n"
+                for metric, value in group_metrics.items():
+                    md += f"| {metric} | {value:.4f} |\n"
+                md += "\n"
+
+        md += "## Ethical Considerations\n\n"
+
+        if self.sensitive_data:
+            md += "**Sensitive Data:**\n"
+            for item in self.sensitive_data:
+                md += f"- {item}\n"
+            md += "\n"
+
+        if self.potential_biases:
+            md += "**Potential Biases:**\n"
+            for bias in self.potential_biases:
+                md += f"- {bias}\n"
+            md += "\n"
+
+        if self.fairness_assessment:
+            md += f"**Fairness Assessment:** {self.fairness_assessment}\n\n"
+
+        md += "## Caveats and Recommendations\n\n"
+
+        if self.caveats:
+            md += "**Caveats:**\n"
+            for caveat in self.caveats:
+                md += f"- {caveat}\n"
+            md += "\n"
+
+        if self.recommendations:
+            md += "**Recommendations:**\n"
+            for rec in self.recommendations:
+                md += f"- {rec}\n"
+            md += "\n"
+
+        return md
+
+    def save(self, path: Path):
+        """Save model card to markdown file."""
+        markdown = self.to_markdown()
+        with open(path, 'w') as f:
+            f.write(markdown)
+
+
+# Example usage
+if __name__ == "__main__":
+    card = ModelCard(
+        model_name="Customer Churn Predictor",
+        version="v1.2.0",
+        model_type="Random Forest Classifier",
+        model_architecture="Ensemble of 100 decision trees with max depth 10",
+        authors=["Data Science Team"],
+        intended_use="Predict customer churn risk for proactive retention campaigns",
+        intended_users=["Customer Success Team", "Marketing Team"],
+        out_of_scope_uses=[
+            "Individual customer credit decisions",
+            "Automated customer termination"
+        ],
+        training_data_description="Historical customer data from 2020-2023",
+        training_data_size=150000,
+        training_data_source="Internal CRM database",
+        preprocessing_steps=[
+            "Remove customers with <3 months tenure",
+            "Impute missing values using median strategy",
+            "Encode categorical features using one-hot encoding",
+            "Scale numerical features using StandardScaler"
+        ],
+        evaluation_data_description="Holdout test set from Q4 2023",
+        evaluation_data_size=30000,
+        metrics={
+            'accuracy': 0.8850,
+            'precision': 0.8245,
+            'recall': 0.7890,
+            'f1_score': 0.8064,
+            'roc_auc': 0.9123
+        },
+        performance_by_group={
+            'Tenure < 1 year': {'accuracy': 0.8234, 'f1_score': 0.7456},
+            'Tenure >= 1 year': {'accuracy': 0.9123, 'f1_score': 0.8567}
+        },
+        sensitive_data=[
+            "Customer age (used as feature)",
+            "Geographic location (used as feature)"
+        ],
+        potential_biases=[
+            "Model may perform worse on newer customers due to limited history",
+            "Geographic regions with fewer samples may have lower accuracy"
+        ],
+        fairness_assessment="Performance parity tested across age groups and regions. "
+                          "Largest accuracy gap is 5% between regions.",
+        caveats=[
+            "Model performance degrades on customers from regions not in training data",
+            "Should be retrained quarterly to maintain performance",
+            "Predictions are probabilistic and should inform, not replace, human judgment"
+        ],
+        recommendations=[
+            "Use predictions as one input to retention strategy, not sole decision maker",
+            "Monitor performance weekly and retrain if accuracy drops below 0.85",
+            "Review false positives monthly to identify process improvements",
+            "Conduct fairness audit every 6 months"
+        ]
+    )
+
+    # Save to file
+    card.save(Path("docs/model_cards/churn_predictor_v1.2.0.md"))
+    print("Model card saved successfully")
+\end{lstlisting}
+
+\subsection{API Documentation}
+
+\begin{lstlisting}[style=python, caption=Comprehensive docstring examples]
+# src/models/documented_model.py
+"""
+Example of well-documented ML code with comprehensive docstrings.
+Follows Google docstring style.
+"""
+
+from typing import Union, Optional, Tuple, List
+import numpy as np
+import pandas as pd
+from numpy.typing import NDArray
+
+
+class DocumentedModel:
+    """
+    Production-ready ML model with comprehensive documentation.
+
+    This model provides a unified interface for training and inference
+    with automatic feature validation and preprocessing.
+
+    Attributes:
+        config: Model configuration dictionary
+        is_fitted: Whether model has been trained
+        feature_names_: List of feature names from training
+        classes_: Unique class labels (for classification)
+        n_features_in_: Number of features seen during fit
+
+    Example:
+        Basic usage::
+
+            >>> from sklearn.datasets import make_classification
+            >>> X, y = make_classification(n_samples=1000, random_state=42)
+            >>> model = DocumentedModel({'max_depth': 5})
+            >>> model.fit(X, y)
+            >>> predictions = model.predict(X[:10])
+            >>> print(predictions.shape)
+            (10,)
+
+        With validation data::
+
+            >>> X_train, X_val = X[:800], X[800:]
+            >>> y_train, y_val = y[:800], y[800:]
+            >>> model.fit(X_train, y_train, validation_data=(X_val, y_val))
+            >>> print(model.metadata['validation_score'])
+            0.85
+
+    Note:
+        This model requires features to be preprocessed (scaled, encoded)
+        before training or inference.
+
+    .. versionadded:: 1.0.0
+    .. versionchanged:: 1.2.0
+       Added support for sample weights in fit method
+    """
+
+    def __init__(self, config: dict):
+        """
+        Initialize model with configuration.
+
+        Args:
+            config: Configuration dictionary with model parameters.
+                   Required keys depend on model_type.
+
+        Raises:
+            ValueError: If required configuration keys are missing
+
+        Example:
+            >>> config = {
+            ...     'model_type': 'random_forest',
+            ...     'n_estimators': 100,
+            ...     'max_depth': 10
+            ... }
+            >>> model = DocumentedModel(config)
+        """
+        self.config = config
+        self.is_fitted = False
+        self.feature_names_: Optional[List[str]] = None
+        self.classes_: Optional[NDArray] = None
+        self.n_features_in_: Optional[int] = None
+        self.metadata = {}
+
+    def fit(
+        self,
+        X: Union[NDArray[np.float64], pd.DataFrame],
+        y: Union[NDArray[np.int_], pd.Series],
+        validation_data: Optional[Tuple] = None,
+        sample_weight: Optional[NDArray[np.float64]] = None
+    ) -> "DocumentedModel":
+        """
+        Fit model to training data.
+
+        Trains the model on provided features and targets. Optionally
+        evaluates on validation set and applies sample weights.
+
+        Args:
+            X: Training features of shape (n_samples, n_features).
+               Can be numpy array or pandas DataFrame.
+            y: Training targets of shape (n_samples,).
+               For classification: integer class labels.
+               For regression: continuous values.
+            validation_data: Optional tuple of (X_val, y_val) for
+                           validation during training. If provided,
+                           validation metrics are stored in metadata.
+            sample_weight: Optional array of shape (n_samples,) with
+                         sample weights. Higher weights increase the
+                         importance of the corresponding samples.
+
+        Returns:
+            self: Fitted model instance (enables method chaining)
+
+        Raises:
+            ValueError: If X and y have incompatible shapes
+            ValueError: If sample_weight has wrong shape
+            RuntimeError: If model fitting fails
+
+        Example:
+            >>> X_train = np.random.randn(100, 5)
+            >>> y_train = np.random.randint(0, 2, 100)
+            >>> model = DocumentedModel({'model_type': 'logistic_regression'})
+            >>> model.fit(X_train, y_train)
+            DocumentedModel(...)
+
+            With validation::
+
+                >>> X_val = np.random.randn(20, 5)
+                >>> y_val = np.random.randint(0, 2, 20)
+                >>> model.fit(X_train, y_train, validation_data=(X_val, y_val))
+                DocumentedModel(...)
+
+        Note:
+            After fitting, the following attributes are set:
+            - is_fitted: True
+            - feature_names_: Feature names (if X is DataFrame)
+            - n_features_in_: Number of features
+            - classes_: Unique classes (for classification)
+
+        .. versionadded:: 1.0.0
+        .. versionchanged:: 1.2.0
+           Added sample_weight parameter
+        """
+        # Validate inputs
+        if len(X) != len(y):
+            raise ValueError(
+                f"X and y have incompatible shapes: {len(X)} vs {len(y)}"
+            )
+
+        if sample_weight is not None and len(sample_weight) != len(X):
+            raise ValueError(
+                f"sample_weight has wrong shape: {len(sample_weight)} vs {len(X)}"
+            )
+
+        # Extract feature names if DataFrame
+        if isinstance(X, pd.DataFrame):
+            self.feature_names_ = X.columns.tolist()
+
+        # Store training metadata
+        self.n_features_in_ = X.shape[1]
+        self.classes_ = np.unique(y)
+        self.is_fitted = True
+
+        # Implementation details...
+        return self
+
+    def predict(
+        self,
+        X: Union[NDArray[np.float64], pd.DataFrame]
+    ) -> NDArray[np.int_]:
+        """
+        Generate predictions for input features.
+
+        Args:
+            X: Features of shape (n_samples, n_features).
+               Must have same number of features as training data.
+
+        Returns:
+            Predictions of shape (n_samples,).
+            For classification: predicted class labels.
+            For regression: predicted values.
+
+        Raises:
+            ValueError: If model is not fitted
+            ValueError: If X has wrong number of features
+
+        Example:
+            >>> model.fit(X_train, y_train)
+            >>> predictions = model.predict(X_test)
+            >>> print(predictions[:5])
+            [0 1 1 0 1]
+
+        Warning:
+            Input features must be preprocessed the same way as
+            training data. Inconsistent preprocessing will lead
+            to degraded performance.
+
+        See Also:
+            predict_proba: Generate probability predictions
+            predict_log_proba: Generate log probability predictions
+
+        .. versionadded:: 1.0.0
+        """
+        if not self.is_fitted:
+            raise ValueError(
+                "Model must be fitted before calling predict(). "
+                "Call fit(X, y) first."
+            )
+
+        if X.shape[1] != self.n_features_in_:
+            raise ValueError(
+                f"X has {X.shape[1]} features but model expects "
+                f"{self.n_features_in_} features"
+            )
+
+        # Implementation details...
+        return np.zeros(len(X), dtype=np.int_)
+\end{lstlisting}
+
+\section{Continuous Integration for ML}
+
+Automating testing and deployment ensures consistent quality. This section demonstrates CI/CD patterns for ML systems.
+
+\subsection{GitHub Actions Workflow}
+
+\begin{lstlisting}[style=yaml, caption=GitHub Actions CI/CD pipeline]
+# .github/workflows/ml-ci.yml
+name: ML Pipeline CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run weekly model training
+    - cron: '0 0 * * 0'
+
+env:
+  PYTHON_VERSION: '3.9'
+  COVERAGE_THRESHOLD: 80
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+
+      - name: Run Black
+        run: black --check src/ tests/
+
+      - name: Run isort
+        run: isort --check src/ tests/
+
+      - name: Run flake8
+        run: flake8 src/ tests/ --max-line-length=100
+
+      - name: Run mypy
+        run: mypy src/ --ignore-missing-imports
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ -v \
+            --cov=src \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --cov-fail-under=${{ env.COVERAGE_THRESHOLD }}
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: true
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+
+      - name: Run integration tests
+        run: |
+          pytest tests/integration/ -v --timeout=300
+
+  model-tests:
+    name: Model Performance Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+
+      - name: Download test data
+        run: |
+          python scripts/download_test_data.py
+
+      - name: Run model performance tests
+        run: |
+          pytest tests/model/ -v \
+            --timeout=600 \
+            -m "not slow"
+
+  train-model:
+    name: Train and Validate Model
+    runs-on: ubuntu-latest
+    needs: [code-quality, unit-tests, integration-tests]
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+
+      - name: Download training data
+        run: |
+          python scripts/download_training_data.py
+
+      - name: Train model
+        run: |
+          python scripts/train.py \
+            --config config/production.yaml \
+            --output models/production
+
+      - name: Validate model performance
+        run: |
+          python scripts/validate_model.py \
+            --model models/production/model.pkl \
+            --threshold 0.85
+
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: trained-model
+          path: models/production/
+
+  deploy-model:
+    name: Deploy Model to Production
+    runs-on: ubuntu-latest
+    needs: train-model
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download model artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: trained-model
+          path: models/production/
+
+      - name: Deploy to model registry
+        run: |
+          python scripts/deploy_model.py \
+            --model models/production/model.pkl \
+            --environment production
+
+      - name: Notify deployment
+        run: |
+          echo "Model deployed to production"
+\end{lstlisting}
+
+\section{Exercises}
+
+\begin{exercise}[Project Structure Refactoring]
+Refactor a Jupyter notebook into a production-ready project structure:
+\begin{enumerate}
+    \item Take an existing ML notebook (or create one with a simple classification task)
+    \item Create the full project structure with proper directories
+    \item Extract data processing code into \texttt{src/data/}
+    \item Extract feature engineering into \texttt{src/features/}
+    \item Extract model code into \texttt{src/models/}
+    \item Create reusable, modular functions
+    \item Add setup.py and requirements.txt
+    \item Document the refactored code
+\end{enumerate}
+\textbf{Deliverable:} Structured project with modular code, tests, and documentation.
+\end{exercise}
+
+\begin{exercise}[Comprehensive Testing Suite]
+Build a complete testing suite for an ML pipeline:
+\begin{enumerate}
+    \item Implement unit tests for data preprocessing functions
+    \item Create integration tests for the full training pipeline
+    \item Add model performance tests with minimum thresholds
+    \item Write tests for model invariants (single sample, empty data, etc.)
+    \item Implement pytest fixtures for reusable test data
+    \item Configure pytest with coverage requirements (>80\%)
+    \item Set up continuous testing with GitHub Actions or similar
+\end{enumerate}
+\textbf{Deliverable:} Test suite with >80\% coverage and CI configuration.
+\end{exercise}
+
+\begin{exercise}[Design Pattern Implementation]
+Implement design patterns for ML workflows:
+\begin{enumerate}
+    \item Create a Factory pattern for model creation
+    \item Implement Strategy pattern for different training approaches
+    \item Build Observer pattern for training callbacks
+    \item Add Template Method pattern for evaluation pipelines
+    \item Document when and why to use each pattern
+\end{enumerate}
+\textbf{Deliverable:} Pattern implementations with usage examples and documentation.
+\end{exercise}
+
+\begin{exercise}[Code Quality Setup]
+Configure code quality tools for an ML project:
+\begin{enumerate}
+    \item Set up Black for code formatting
+    \item Configure isort for import sorting
+    \item Add flake8 for linting
+    \item Configure mypy for type checking
+    \item Add type hints to existing code
+    \item Set up pre-commit hooks
+    \item Configure pyproject.toml with all tool settings
+    \item Create Makefile for common tasks
+\end{enumerate}
+\textbf{Deliverable:} Fully configured project with automated code quality checks.
+\end{exercise}
+
+\begin{exercise}[Reproducible Training Pipeline]
+Create a fully reproducible training pipeline:
+\begin{enumerate}
+    \item Implement configuration management with dataclasses
+    \item Add seed setting for all random operations
+    \item Create config hash for experiment tracking
+    \item Build training script that logs all configuration
+    \item Implement model and data versioning
+    \item Add data validation checks
+    \item Create experiment tracking with MLflow or similar
+\end{enumerate}
+\textbf{Deliverable:} Reproducible pipeline that generates identical results across runs.
+\end{exercise}
+
+\begin{exercise}[Model Interface Abstraction]
+Design and implement a flexible model interface:
+\begin{enumerate}
+    \item Create abstract base class for models
+    \item Implement concrete classes for sklearn, XGBoost, and LightGBM
+    \item Add consistent save/load functionality
+    \item Implement feature importance extraction
+    \item Add metadata tracking
+    \item Create unified prediction interface
+    \item Write comprehensive tests for the interface
+\end{enumerate}
+\textbf{Deliverable:} Model abstraction layer with multiple implementations and tests.
+\end{exercise}
+
+\begin{exercise}[CI/CD Pipeline for ML]
+Set up continuous integration and deployment for ML:
+\begin{enumerate}
+    \item Configure GitHub Actions or GitLab CI
+    \item Add automated testing on each commit
+    \item Implement code quality checks in CI
+    \item Create automated model training on schedule
+    \item Add model performance validation gates
+    \item Implement automated deployment on passing tests
+    \item Set up notifications for failures
+\end{enumerate}
+\textbf{Deliverable:} Complete CI/CD pipeline configuration with automated workflows.
+\end{exercise}
+
+\section{Chapter Summary}
+
+This chapter presented comprehensive best practices for professional ML development, bridging the gap between research code and production systems. Key takeaways include:
+
+\begin{itemize}
+    \item \textbf{Project Structure:} Well-organized projects with clear separation of concerns enable collaboration and maintainability at scale.
+
+    \item \textbf{Modular Architecture:} Object-oriented design with base classes, factories, and composable components creates flexible, testable systems.
+
+    \item \textbf{Comprehensive Testing:} Multi-level testing strategies (unit, integration, model-specific) ensure reliability and catch regressions early.
+
+    \item \textbf{Design Patterns:} Adapting software design patterns to ML workflows (Strategy, Observer, Factory) provides proven solutions to common problems.
+
+    \item \textbf{Code Quality:} Automated tools (Black, isort, flake8, mypy) and pre-commit hooks maintain consistent, high-quality code.
+
+    \item \textbf{Reproducibility:} Configuration management, seed setting, and experiment tracking enable reproducible research and debugging.
+
+    \item \textbf{Type Safety:} Type hints improve code documentation, enable static analysis, and catch bugs before runtime.
+
+    \item \textbf{Automation:} Makefiles, CI/CD pipelines, and automated testing reduce manual work and ensure consistency.
+\end{itemize}
+
+The transition from experimental to production ML code requires discipline and structure. Organizations that invest in these practices report significantly improved development velocity, reduced bugs, and easier collaboration across teams. The patterns and tools presented in this chapter form the foundation for building reliable, maintainable ML systems at scale.

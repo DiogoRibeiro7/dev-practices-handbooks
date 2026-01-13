@@ -1,0 +1,3406 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Design and implement automated retraining pipeline architectures
+    \item Configure intelligent trigger mechanisms for model retraining
+    \item Implement incremental learning and online updating strategies
+    \item Handle concept drift and data drift in production systems
+    \item Balance model freshness against stability requirements
+    \item Build continuous learning systems for real-time adaptation
+    \item Automate model maintenance workflows end-to-end
+    \item Monitor and optimize retraining costs and performance
+\end{itemize}
+
+\section{Introduction}
+
+Machine learning models degrade over time as the world changes. Customer behavior shifts, market conditions evolve, and data distributions drift from training assumptions. Without systematic maintenance, production models become stale, accuracy drops, and business value erodes.
+
+Model maintenance encompasses the complete lifecycle of keeping models relevant and performant:
+
+\begin{itemize}
+    \item \textbf{Performance monitoring:} Continuous tracking of model metrics
+    \item \textbf{Drift detection:} Identifying when retraining is needed
+    \item \textbf{Automated retraining:} Triggering and executing model updates
+    \item \textbf{Validation:} Ensuring new models improve upon current ones
+    \item \textbf{Deployment:} Safely rolling out updated models
+    \item \textbf{Rollback:} Reverting problematic updates quickly
+\end{itemize}
+
+This chapter provides production-ready architectures and code for building robust model maintenance systems that keep ML applications healthy without manual intervention.
+
+\section{Automated Retraining Pipeline Architecture}
+
+\subsection{Core Components}
+
+A production retraining pipeline consists of multiple coordinated components working together to maintain model quality.
+
+\begin{lstlisting}[language=Python, caption=Complete Automated Retraining Pipeline]
+from typing import Dict, List, Optional, Any, Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+import pandas as pd
+import numpy as np
+from pathlib import Path
+import logging
+import json
+import pickle
+
+class RetrainingTrigger(Enum):
+    """Triggers that can initiate retraining"""
+    PERFORMANCE_DEGRADATION = "performance_degradation"
+    DATA_DRIFT = "data_drift"
+    CONCEPT_DRIFT = "concept_drift"
+    SCHEDULED = "scheduled"
+    MANUAL = "manual"
+    DATA_VOLUME = "data_volume"
+    TIME_BASED = "time_based"
+
+class ModelStatus(Enum):
+    """Model lifecycle status"""
+    TRAINING = "training"
+    VALIDATING = "validating"
+    STAGING = "staging"
+    PRODUCTION = "production"
+    ARCHIVED = "archived"
+    FAILED = "failed"
+
+@dataclass
+class RetrainingConfig:
+    """Configuration for retraining pipeline"""
+    model_name: str
+    model_type: str
+
+    # Trigger thresholds
+    performance_threshold: float = 0.05  # 5% degradation
+    drift_threshold: float = 0.15
+    min_data_points: int = 1000
+    max_days_without_retrain: int = 30
+
+    # Training settings
+    validation_split: float = 0.2
+    test_split: float = 0.1
+    max_training_time_hours: int = 24
+
+    # Deployment settings
+    canary_percentage: float = 0.1
+    canary_duration_hours: int = 24
+    auto_promote: bool = False
+
+    # Resource limits
+    max_memory_gb: int = 32
+    max_cpu_cores: int = 16
+    use_gpu: bool = False
+
+@dataclass
+class RetrainingEvent:
+    """Record of a retraining event"""
+    event_id: str
+    timestamp: datetime
+    trigger: RetrainingTrigger
+    model_version: str
+    metrics: Dict[str, float]
+    data_stats: Dict[str, Any]
+    training_duration: Optional[float] = None
+    success: bool = False
+    error_message: Optional[str] = None
+
+class DataCollector:
+    """
+    Collect and manage training data for retraining
+
+    Handles incremental data collection, quality checks,
+    and dataset versioning
+    """
+
+    def __init__(self, data_path: Path, max_samples: int = 1000000):
+        self.data_path = data_path
+        self.max_samples = max_samples
+        self.logger = logging.getLogger(__name__)
+
+    def collect_new_data(self,
+                        since: datetime,
+                        quality_checks: bool = True) -> pd.DataFrame:
+        """Collect new training data since timestamp"""
+
+        # In production, this would query your data warehouse
+        # For demo, simulate data collection
+        self.logger.info(f"Collecting data since {since}")
+
+        # Simulate fetching new data
+        new_data = self._fetch_from_source(since)
+
+        if quality_checks:
+            new_data = self._apply_quality_checks(new_data)
+
+        self.logger.info(f"Collected {len(new_data)} new samples")
+        return new_data
+
+    def _fetch_from_source(self, since: datetime) -> pd.DataFrame:
+        """
+        Fetch data from source.
+
+        Reference implementation: load a local Parquet/CSV snapshot if available;
+        otherwise generate a synthetic dataset so the example remains runnable.
+        """
+        try:
+            if self.data_path.exists():
+                self.logger.info(f"Loading data from {self.data_path}")
+                if self.data_path.suffix == ".parquet":
+                    df = pd.read_parquet(self.data_path)
+                else:
+                    df = pd.read_csv(self.data_path)
+            else:
+                self.logger.warning(
+                    f"{self.data_path} not found. Generating synthetic dataset for demo."
+                )
+                # Synthetic classification data with drift on timestamp
+                n_rows = min(self.max_samples, 10_000)
+                rng = np.random.default_rng(42)
+                df = pd.DataFrame(
+                    rng.normal(size=(n_rows, 10)),
+                    columns=[f"feature_{i}" for i in range(10)]
+                )
+                df["timestamp"] = pd.date_range(end=datetime.now(), periods=n_rows, freq="min")
+                df["target"] = (df.sum(axis=1) > 0).astype(int)
+
+            # Filter by timestamp if present
+            if "timestamp" in df.columns:
+                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+                df = df[df["timestamp"] >= since]
+
+            if df.empty:
+                raise ValueError("No data available after filtering by timestamp")
+
+            return df
+
+        except Exception as e:
+            self.logger.error(f"Failed to fetch data: {e}")
+            raise
+
+    def _apply_quality_checks(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply data quality checks"""
+
+        # Remove duplicates
+        initial_count = len(data)
+        data = data.drop_duplicates()
+
+        # Remove nulls in critical columns
+        data = data.dropna(subset=['target'])
+
+        # Remove outliers (example: using IQR)
+        for col in data.select_dtypes(include=[np.number]).columns:
+            Q1 = data[col].quantile(0.25)
+            Q3 = data[col].quantile(0.75)
+            IQR = Q3 - Q1
+            data = data[
+                (data[col] >= Q1 - 3*IQR) &
+                (data[col] <= Q3 + 3*IQR)
+            ]
+
+        removed = initial_count - len(data)
+        if removed > 0:
+            self.logger.warning(f"Removed {removed} samples in quality checks")
+
+        return data
+
+    def get_training_dataset(self,
+                           days_back: int = 90,
+                           include_validation: bool = True) -> Dict[str, pd.DataFrame]:
+        """Get complete training dataset"""
+
+        cutoff_date = datetime.now() - timedelta(days=days_back)
+        data = self.collect_new_data(cutoff_date)
+
+        # Limit to max samples
+        if len(data) > self.max_samples:
+            data = data.sample(n=self.max_samples, random_state=42)
+
+        if not include_validation:
+            return {'train': data}
+
+        # Split into train/val
+        from sklearn.model_selection import train_test_split
+        train, val = train_test_split(data, test_size=0.2, random_state=42)
+
+        return {
+            'train': train,
+            'validation': val
+        }
+
+class PerformanceEvaluator:
+    """
+    Evaluate model performance and compare versions
+
+    Determines if new model is better than current production model
+    """
+
+    def __init__(self, metrics: List[str] = None):
+        self.metrics = metrics or ['accuracy', 'precision', 'recall', 'f1']
+        self.logger = logging.getLogger(__name__)
+
+    def evaluate_model(self,
+                      model: Any,
+                      test_data: pd.DataFrame,
+                      target_col: str = 'target') -> Dict[str, float]:
+        """Evaluate model on test data"""
+
+        X_test = test_data.drop(columns=[target_col])
+        y_test = test_data[target_col]
+
+        predictions = model.predict(X_test)
+
+        from sklearn.metrics import (
+            accuracy_score, precision_score,
+            recall_score, f1_score
+        )
+
+        results = {
+            'accuracy': accuracy_score(y_test, predictions),
+            'precision': precision_score(y_test, predictions, average='weighted'),
+            'recall': recall_score(y_test, predictions, average='weighted'),
+            'f1': f1_score(y_test, predictions, average='weighted'),
+            'samples': len(test_data)
+        }
+
+        return results
+
+    def compare_models(self,
+                      new_metrics: Dict[str, float],
+                      current_metrics: Dict[str, float],
+                      primary_metric: str = 'f1',
+                      min_improvement: float = 0.01) -> Dict[str, Any]:
+        """Compare new model against current production model"""
+
+        comparison = {
+            'new_better': False,
+            'improvement': {},
+            'primary_metric': primary_metric,
+            'recommendation': 'keep_current'
+        }
+
+        for metric in self.metrics:
+            if metric in new_metrics and metric in current_metrics:
+                improvement = new_metrics[metric] - current_metrics[metric]
+                comparison['improvement'][metric] = improvement
+
+        # Check primary metric
+        if primary_metric in comparison['improvement']:
+            improvement = comparison['improvement'][primary_metric]
+
+            if improvement > min_improvement:
+                comparison['new_better'] = True
+                comparison['recommendation'] = 'promote_new'
+                self.logger.info(
+                    f"New model shows {improvement:.4f} improvement "
+                    f"in {primary_metric}"
+                )
+            elif improvement < -min_improvement:
+                comparison['recommendation'] = 'keep_current'
+                self.logger.warning(
+                    f"New model performs worse by {abs(improvement):.4f} "
+                    f"in {primary_metric}"
+                )
+            else:
+                comparison['recommendation'] = 'neutral'
+
+        return comparison
+
+class AutomatedRetrainingPipeline:
+    """
+    Complete automated retraining pipeline
+
+    Orchestrates data collection, training, evaluation,
+    and deployment of updated models
+    """
+
+    def __init__(self, config: RetrainingConfig):
+        self.config = config
+        self.logger = logging.getLogger(__name__)
+
+        self.data_collector = DataCollector(
+            data_path=Path(f"./data/{config.model_name}")
+        )
+        self.evaluator = PerformanceEvaluator()
+
+        self.retraining_history: List[RetrainingEvent] = []
+        self.last_retrain_time: Optional[datetime] = None
+
+    def should_retrain(self,
+                      current_metrics: Dict[str, float],
+                      drift_score: float,
+                      days_since_retrain: int) -> tuple[bool, RetrainingTrigger]:
+        """Determine if retraining should be triggered"""
+
+        # Check performance degradation
+        baseline_metric = 0.85  # Load from model registry
+        current_metric = current_metrics.get('f1', 0)
+
+        degradation = baseline_metric - current_metric
+        if degradation > self.config.performance_threshold:
+            return True, RetrainingTrigger.PERFORMANCE_DEGRADATION
+
+        # Check drift
+        if drift_score > self.config.drift_threshold:
+            return True, RetrainingTrigger.DATA_DRIFT
+
+        # Check time-based schedule
+        if days_since_retrain >= self.config.max_days_without_retrain:
+            return True, RetrainingTrigger.SCHEDULED
+
+        return False, None
+
+    def execute_retraining(self,
+                          trigger: RetrainingTrigger,
+                          current_model: Any = None) -> RetrainingEvent:
+        """Execute complete retraining workflow"""
+
+        event_id = f"{self.config.model_name}_{datetime.now().isoformat()}"
+        event = RetrainingEvent(
+            event_id=event_id,
+            timestamp=datetime.now(),
+            trigger=trigger,
+            model_version=f"v{len(self.retraining_history) + 1}",
+            metrics={},
+            data_stats={}
+        )
+
+        try:
+            self.logger.info(
+                f"Starting retraining for {self.config.model_name} "
+                f"(trigger: {trigger.value})"
+            )
+
+            # Step 1: Collect training data
+            datasets = self.data_collector.get_training_dataset(
+                days_back=90,
+                include_validation=True
+            )
+
+            event.data_stats = {
+                'train_samples': len(datasets['train']),
+                'validation_samples': len(datasets['validation'])
+            }
+
+            # Step 2: Train new model
+            start_time = datetime.now()
+            new_model = self._train_model(datasets['train'])
+            event.training_duration = (datetime.now() - start_time).total_seconds()
+
+            # Step 3: Evaluate new model
+            new_metrics = self.evaluator.evaluate_model(
+                new_model,
+                datasets['validation']
+            )
+            event.metrics = new_metrics
+
+            # Step 4: Compare with current model
+            if current_model is not None:
+                current_metrics = self.evaluator.evaluate_model(
+                    current_model,
+                    datasets['validation']
+                )
+
+                comparison = self.evaluator.compare_models(
+                    new_metrics,
+                    current_metrics
+                )
+
+                if comparison['recommendation'] != 'promote_new':
+                    self.logger.warning(
+                        "New model not better than current - skipping deployment"
+                    )
+                    event.success = False
+                    event.error_message = "Model did not improve"
+                    return event
+
+            # Step 5: Save new model
+            self._save_model(new_model, event.model_version)
+
+            event.success = True
+            self.last_retrain_time = datetime.now()
+
+            self.logger.info(
+                f"Retraining completed successfully: {event.model_version} "
+                f"(F1: {new_metrics['f1']:.4f})"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Retraining failed: {str(e)}")
+            event.success = False
+            event.error_message = str(e)
+
+        finally:
+            self.retraining_history.append(event)
+
+        return event
+
+    def _train_model(self, train_data: pd.DataFrame) -> Any:
+        """
+        Train a new model using a simple, configurable baseline.
+
+        Reference implementation: RandomForest with sensible defaults that can
+        be overridden via RetrainingConfig.model_type if extended.
+        """
+        from sklearn.ensemble import RandomForestClassifier
+        from sklearn.model_selection import train_test_split
+        from sklearn.metrics import f1_score
+
+        # Basic validation
+        if "target" not in train_data.columns:
+            raise ValueError("Training data must include 'target' column")
+
+        X = train_data.drop(columns=["target"])
+        y = train_data["target"]
+
+        # Simple hold-out for quick sanity during training
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+
+        model = RandomForestClassifier(
+            n_estimators=200,
+            max_depth=None,
+            min_samples_split=2,
+            random_state=42,
+            n_jobs=-1
+        )
+        model.fit(X_train, y_train)
+
+        # Quick validation to fail fast on obviously bad models
+        val_f1 = f1_score(y_val, model.predict(X_val), average="weighted")
+        self.logger.info(f"Validation F1 during retraining: {val_f1:.4f}")
+
+        return model
+
+    def _save_model(self, model: Any, version: str):
+        """Save model to storage"""
+
+        model_path = Path(f"./models/{self.config.model_name}/{version}")
+        model_path.mkdir(parents=True, exist_ok=True)
+
+        with open(model_path / "model.pkl", 'wb') as f:
+            pickle.dump(model, f)
+
+        self.logger.info(f"Model saved: {model_path}")
+
+# Example usage
+config = RetrainingConfig(
+    model_name="churn_predictor",
+    model_type="classification",
+    performance_threshold=0.05,
+    drift_threshold=0.15,
+    max_days_without_retrain=30
+)
+
+pipeline = AutomatedRetrainingPipeline(config)
+
+# Check if retraining needed
+current_metrics = {'f1': 0.78, 'accuracy': 0.82}
+drift_score = 0.18
+days_since_retrain = 15
+
+should_retrain, trigger = pipeline.should_retrain(
+    current_metrics,
+    drift_score,
+    days_since_retrain
+)
+
+if should_retrain:
+    event = pipeline.execute_retraining(trigger)
+    print(f"Retraining completed: {event.success}")
+    print(f"New model metrics: {event.metrics}")
+\end{lstlisting}
+
+\section{Trigger Mechanisms for Retraining}
+
+\subsection{Multi-Criteria Trigger System}
+
+Production systems need sophisticated triggers that balance multiple signals to avoid both over-retraining (wasting resources) and under-retraining (allowing degradation).
+
+\begin{lstlisting}[language=Python, caption=Advanced Retraining Trigger System]
+from typing import Dict, List, Tuple, Optional
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import numpy as np
+from scipy import stats
+
+@dataclass
+class TriggerThreshold:
+    """Threshold configuration for a trigger"""
+    metric_name: str
+    threshold_value: float
+    comparison: str  # 'gt', 'lt', 'gte', 'lte'
+    window_size: int = 1  # Number of consecutive violations
+    severity: str = 'medium'  # 'low', 'medium', 'high', 'critical'
+
+@dataclass
+class TriggerEvaluation:
+    """Result of trigger evaluation"""
+    triggered: bool
+    trigger_type: RetrainingTrigger
+    severity: str
+    confidence: float
+    details: Dict[str, Any]
+    timestamp: datetime = field(default_factory=datetime.now)
+
+class RetrainingTriggerManager:
+    """
+    Manage complex retraining trigger logic
+
+    Combines multiple signals (performance, drift, time, data volume)
+    with configurable thresholds and cooldown periods
+    """
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.trigger_history: List[TriggerEvaluation] = []
+        self.last_retrain_time: Optional[datetime] = None
+        self.cooldown_hours = 24  # Minimum time between retrains
+
+        # Configure trigger thresholds
+        self.thresholds = {
+            RetrainingTrigger.PERFORMANCE_DEGRADATION: [
+                TriggerThreshold('accuracy', 0.05, 'gt', window_size=3, severity='high'),
+                TriggerThreshold('f1_score', 0.07, 'gt', window_size=2, severity='critical'),
+            ],
+            RetrainingTrigger.DATA_DRIFT: [
+                TriggerThreshold('psi_score', 0.2, 'gte', severity='medium'),
+                TriggerThreshold('ks_statistic', 0.1, 'gte', severity='medium'),
+            ],
+            RetrainingTrigger.DATA_VOLUME: [
+                TriggerThreshold('new_samples', 10000, 'gte', severity='low'),
+            ],
+        }
+
+        # Metric history for windowed evaluation
+        self.metric_history: Dict[str, List[float]] = {}
+
+    def evaluate_triggers(self,
+                         current_metrics: Dict[str, float],
+                         baseline_metrics: Dict[str, float],
+                         drift_metrics: Dict[str, float],
+                         data_stats: Dict[str, int]) -> List[TriggerEvaluation]:
+        """Evaluate all trigger conditions"""
+
+        evaluations = []
+
+        # Check if in cooldown period
+        if self._in_cooldown():
+            self.logger.info("In cooldown period - skipping trigger evaluation")
+            return evaluations
+
+        # 1. Performance degradation triggers
+        perf_eval = self._evaluate_performance_triggers(
+            current_metrics,
+            baseline_metrics
+        )
+        if perf_eval:
+            evaluations.append(perf_eval)
+
+        # 2. Data drift triggers
+        drift_eval = self._evaluate_drift_triggers(drift_metrics)
+        if drift_eval:
+            evaluations.append(drift_eval)
+
+        # 3. Data volume triggers
+        volume_eval = self._evaluate_volume_triggers(data_stats)
+        if volume_eval:
+            evaluations.append(volume_eval)
+
+        # 4. Time-based triggers
+        time_eval = self._evaluate_time_triggers()
+        if time_eval:
+            evaluations.append(time_eval)
+
+        # Store trigger evaluations
+        self.trigger_history.extend(evaluations)
+
+        return evaluations
+
+    def _in_cooldown(self) -> bool:
+        """Check if we're in cooldown period after last retrain"""
+        if self.last_retrain_time is None:
+            return False
+
+        time_since_retrain = datetime.now() - self.last_retrain_time
+        return time_since_retrain < timedelta(hours=self.cooldown_hours)
+
+    def _evaluate_performance_triggers(self,
+                                      current: Dict[str, float],
+                                      baseline: Dict[str, float]) -> Optional[TriggerEvaluation]:
+        """Evaluate performance degradation triggers"""
+
+        thresholds = self.thresholds[RetrainingTrigger.PERFORMANCE_DEGRADATION]
+        violations = []
+
+        for threshold in thresholds:
+            metric = threshold.metric_name
+            if metric not in current or metric not in baseline:
+                continue
+
+            degradation = baseline[metric] - current[metric]
+
+            # Update metric history
+            if metric not in self.metric_history:
+                self.metric_history[metric] = []
+            self.metric_history[metric].append(degradation)
+
+            # Keep only window_size recent values
+            self.metric_history[metric] = \
+                self.metric_history[metric][-threshold.window_size:]
+
+            # Check if threshold violated for entire window
+            recent_values = self.metric_history[metric]
+            if len(recent_values) >= threshold.window_size:
+                if threshold.comparison == 'gt':
+                    violated = all(v > threshold.threshold_value for v in recent_values)
+                elif threshold.comparison == 'gte':
+                    violated = all(v >= threshold.threshold_value for v in recent_values)
+                elif threshold.comparison == 'lt':
+                    violated = all(v < threshold.threshold_value for v in recent_values)
+                else:  # lte
+                    violated = all(v <= threshold.threshold_value for v in recent_values)
+
+                if violated:
+                    violations.append({
+                        'metric': metric,
+                        'degradation': np.mean(recent_values),
+                        'threshold': threshold.threshold_value,
+                        'severity': threshold.severity
+                    })
+
+        if violations:
+            # Use highest severity
+            max_severity = max(v['severity'] for v in violations)
+
+            return TriggerEvaluation(
+                triggered=True,
+                trigger_type=RetrainingTrigger.PERFORMANCE_DEGRADATION,
+                severity=max_severity,
+                confidence=len(violations) / len(thresholds),
+                details={'violations': violations}
+            )
+
+        return None
+
+    def _evaluate_drift_triggers(self,
+                                drift_metrics: Dict[str, float]) -> Optional[TriggerEvaluation]:
+        """Evaluate data drift triggers"""
+
+        thresholds = self.thresholds[RetrainingTrigger.DATA_DRIFT]
+        violations = []
+
+        for threshold in thresholds:
+            metric = threshold.metric_name
+            if metric not in drift_metrics:
+                continue
+
+            value = drift_metrics[metric]
+
+            # Check threshold
+            violated = False
+            if threshold.comparison == 'gte':
+                violated = value >= threshold.threshold_value
+            elif threshold.comparison == 'gt':
+                violated = value > threshold.threshold_value
+
+            if violated:
+                violations.append({
+                    'metric': metric,
+                    'value': value,
+                    'threshold': threshold.threshold_value,
+                    'severity': threshold.severity
+                })
+
+        if violations:
+            max_severity = max(v['severity'] for v in violations)
+
+            return TriggerEvaluation(
+                triggered=True,
+                trigger_type=RetrainingTrigger.DATA_DRIFT,
+                severity=max_severity,
+                confidence=min(1.0, len(violations) * 0.5),
+                details={'violations': violations}
+            )
+
+        return None
+
+    def _evaluate_volume_triggers(self,
+                                 data_stats: Dict[str, int]) -> Optional[TriggerEvaluation]:
+        """Evaluate data volume triggers"""
+
+        thresholds = self.thresholds[RetrainingTrigger.DATA_VOLUME]
+
+        for threshold in thresholds:
+            if threshold.metric_name in data_stats:
+                value = data_stats[threshold.metric_name]
+
+                if threshold.comparison == 'gte' and value >= threshold.threshold_value:
+                    return TriggerEvaluation(
+                        triggered=True,
+                        trigger_type=RetrainingTrigger.DATA_VOLUME,
+                        severity=threshold.severity,
+                        confidence=min(1.0, value / threshold.threshold_value),
+                        details={'new_samples': value}
+                    )
+
+        return None
+
+    def _evaluate_time_triggers(self) -> Optional[TriggerEvaluation]:
+        """Evaluate time-based triggers"""
+
+        if self.last_retrain_time is None:
+            # Never retrained before
+            return TriggerEvaluation(
+                triggered=True,
+                trigger_type=RetrainingTrigger.SCHEDULED,
+                severity='low',
+                confidence=1.0,
+                details={'reason': 'initial_training'}
+            )
+
+        days_since_retrain = (datetime.now() - self.last_retrain_time).days
+
+        # Monthly retraining schedule
+        if days_since_retrain >= 30:
+            return TriggerEvaluation(
+                triggered=True,
+                trigger_type=RetrainingTrigger.SCHEDULED,
+                severity='medium',
+                confidence=1.0,
+                details={'days_since_retrain': days_since_retrain}
+            )
+
+        return None
+
+    def should_retrain(self,
+                      evaluations: List[TriggerEvaluation]) -> Tuple[bool, Optional[TriggerEvaluation]]:
+        """Decide if retraining should proceed based on trigger evaluations"""
+
+        if not evaluations:
+            return False, None
+
+        # Filter to triggered evaluations
+        triggered = [e for e in evaluations if e.triggered]
+
+        if not triggered:
+            return False, None
+
+        # Priority order: critical > high > medium > low
+        severity_order = {'critical': 4, 'high': 3, 'medium': 2, 'low': 1}
+
+        # Sort by severity and confidence
+        triggered.sort(
+            key=lambda x: (severity_order.get(x.severity, 0), x.confidence),
+            reverse=True
+        )
+
+        primary_trigger = triggered[0]
+
+        self.logger.info(
+            f"Retraining triggered: {primary_trigger.trigger_type.value} "
+            f"(severity: {primary_trigger.severity}, "
+            f"confidence: {primary_trigger.confidence:.2f})"
+        )
+
+        return True, primary_trigger
+
+    def record_retrain(self):
+        """Record that retraining occurred"""
+        self.last_retrain_time = datetime.now()
+
+        # Clear metric history after retrain
+        self.metric_history.clear()
+
+# Example usage
+trigger_manager = RetrainingTriggerManager()
+
+# Simulate monitoring cycle
+current_metrics = {
+    'accuracy': 0.79,
+    'f1_score': 0.76
+}
+
+baseline_metrics = {
+    'accuracy': 0.85,
+    'f1_score': 0.84
+}
+
+drift_metrics = {
+    'psi_score': 0.25,
+    'ks_statistic': 0.12
+}
+
+data_stats = {
+    'new_samples': 12000
+}
+
+# Evaluate triggers
+evaluations = trigger_manager.evaluate_triggers(
+    current_metrics,
+    baseline_metrics,
+    drift_metrics,
+    data_stats
+)
+
+# Check if should retrain
+should_retrain, primary_trigger = trigger_manager.should_retrain(evaluations)
+
+if should_retrain:
+    print(f"Triggering retraining due to: {primary_trigger.trigger_type.value}")
+    print(f"Severity: {primary_trigger.severity}")
+    print(f"Details: {primary_trigger.details}")
+
+    # Execute retraining...
+    trigger_manager.record_retrain()
+\end{lstlisting}
+
+\section{Incremental Learning and Online Updating}
+
+\subsection{Incremental Training Strategies}
+
+Incremental learning allows models to learn from new data without full retraining, reducing computational costs and enabling faster adaptation.
+
+\begin{lstlisting}[language=Python, caption=Incremental Learning System]
+from typing import Dict, List, Optional, Any
+import numpy as np
+import pandas as pd
+from sklearn.base import BaseEstimator
+from datetime import datetime
+import logging
+
+class IncrementalLearner:
+    """
+    Manage incremental model updates
+
+    Supports partial_fit for online learning algorithms and
+    implements sliding window strategies for batch models
+    """
+
+    def __init__(self,
+                 base_model: BaseEstimator,
+                 update_strategy: str = 'sliding_window',
+                 window_size: int = 10000,
+                 update_frequency: int = 1000):
+        """
+        Initialize incremental learner
+
+        Parameters:
+        - base_model: Model supporting partial_fit or incremental training
+        - update_strategy: 'sliding_window', 'cumulative', or 'temporal_weighting'
+        - window_size: Max samples to keep in training buffer
+        - update_frequency: Trigger update every N new samples
+        """
+        self.model = base_model
+        self.update_strategy = update_strategy
+        self.window_size = window_size
+        self.update_frequency = update_frequency
+
+        self.training_buffer: List[Dict[str, Any]] = []
+        self.samples_since_update = 0
+        self.total_updates = 0
+
+        self.logger = logging.getLogger(__name__)
+
+    def add_sample(self, features: Dict[str, Any], label: Any):
+        """Add new labeled sample to training buffer"""
+
+        self.training_buffer.append({
+            'features': features,
+            'label': label,
+            'timestamp': datetime.now()
+        })
+
+        # Maintain window size
+        if len(self.training_buffer) > self.window_size:
+            if self.update_strategy == 'sliding_window':
+                # Remove oldest sample
+                self.training_buffer.pop(0)
+            elif self.update_strategy == 'cumulative':
+                # Keep all but downsample old data
+                self._downsample_old_data()
+
+        self.samples_since_update += 1
+
+        # Check if update needed
+        if self.samples_since_update >= self.update_frequency:
+            self.update_model()
+
+    def _downsample_old_data(self):
+        """Downsample older data to maintain buffer size"""
+
+        # Keep all recent data
+        recent_cutoff = len(self.training_buffer) - self.window_size // 2
+        recent_data = self.training_buffer[recent_cutoff:]
+
+        # Sample from older data
+        old_data = self.training_buffer[:recent_cutoff]
+        old_sample_size = self.window_size - len(recent_data)
+
+        if len(old_data) > old_sample_size:
+            import random
+            old_data = random.sample(old_data, old_sample_size)
+
+        self.training_buffer = old_data + recent_data
+
+    def update_model(self):
+        """Update model with buffered samples"""
+
+        if not self.training_buffer:
+            return
+
+        self.logger.info(
+            f"Updating model with {len(self.training_buffer)} samples "
+            f"(update #{self.total_updates + 1})"
+        )
+
+        # Prepare training data
+        X = pd.DataFrame([s['features'] for s in self.training_buffer])
+        y = pd.Series([s['label'] for s in self.training_buffer])
+
+        # Apply temporal weighting if configured
+        if self.update_strategy == 'temporal_weighting':
+            sample_weights = self._calculate_temporal_weights()
+        else:
+            sample_weights = None
+
+        # Update model
+        if hasattr(self.model, 'partial_fit'):
+            # Online learning algorithm
+            if sample_weights is not None:
+                self.model.partial_fit(X, y, sample_weight=sample_weights)
+            else:
+                self.model.partial_fit(X, y)
+        else:
+            # Retrain on windowed data
+            if sample_weights is not None:
+                self.model.fit(X, y, sample_weight=sample_weights)
+            else:
+                self.model.fit(X, y)
+
+        self.total_updates += 1
+        self.samples_since_update = 0
+
+        self.logger.info(f"Model update completed (total updates: {self.total_updates})")
+
+    def _calculate_temporal_weights(self) -> np.ndarray:
+        """Calculate sample weights based on recency"""
+
+        if not self.training_buffer:
+            return np.array([])
+
+        # Recent samples get higher weight
+        ages = np.arange(len(self.training_buffer))
+        weights = np.exp(-ages / (self.window_size / 3))
+
+        # Normalize
+        weights = weights / weights.sum() * len(weights)
+
+        return weights
+
+    def predict(self, features: Dict[str, Any]) -> Any:
+        """Make prediction using current model"""
+        X = pd.DataFrame([features])
+        return self.model.predict(X)[0]
+
+class OnlineModelUpdater:
+    """
+    Complete online model update system
+
+    Handles continuous model updates with performance tracking
+    and automatic rollback on degradation
+    """
+
+    def __init__(self,
+                 model: BaseEstimator,
+                 validation_window: int = 1000,
+                 performance_threshold: float = 0.05):
+        self.learner = IncrementalLearner(model, update_strategy='temporal_weighting')
+        self.validation_window = validation_window
+        self.performance_threshold = performance_threshold
+
+        self.validation_buffer: List[Dict] = []
+        self.performance_history: List[float] = []
+        self.model_checkpoints: List[Any] = []
+
+        self.logger = logging.getLogger(__name__)
+
+    def process_prediction(self,
+                          features: Dict[str, Any],
+                          prediction: Any,
+                          ground_truth: Optional[Any] = None):
+        """Process prediction and optionally update model"""
+
+        if ground_truth is not None:
+            # Add to validation buffer
+            self.validation_buffer.append({
+                'features': features,
+                'prediction': prediction,
+                'ground_truth': ground_truth,
+                'timestamp': datetime.now()
+            })
+
+            # Maintain validation window
+            if len(self.validation_buffer) > self.validation_window:
+                self.validation_buffer.pop(0)
+
+            # Add to training buffer
+            self.learner.add_sample(features, ground_truth)
+
+            # Evaluate performance periodically
+            if len(self.validation_buffer) >= self.validation_window:
+                self._evaluate_performance()
+
+    def _evaluate_performance(self):
+        """Evaluate current model performance"""
+
+        if len(self.validation_buffer) < 100:
+            return
+
+        # Calculate accuracy on validation buffer
+        correct = sum(
+            1 for sample in self.validation_buffer
+            if sample['prediction'] == sample['ground_truth']
+        )
+        accuracy = correct / len(self.validation_buffer)
+
+        self.performance_history.append(accuracy)
+
+        # Check for degradation
+        if len(self.performance_history) >= 2:
+            recent_avg = np.mean(self.performance_history[-5:])
+            baseline_avg = np.mean(self.performance_history[:10])
+
+            degradation = baseline_avg - recent_avg
+
+            if degradation > self.performance_threshold:
+                self.logger.warning(
+                    f"Performance degradation detected: {degradation:.4f} "
+                    f"(recent: {recent_avg:.4f}, baseline: {baseline_avg:.4f})"
+                )
+
+                # Consider rollback or full retrain
+                self._handle_degradation()
+
+    def _handle_degradation(self):
+        """Handle detected performance degradation"""
+
+        self.logger.info("Initiating full retraining due to degradation")
+
+        # In production, this would trigger automated retraining pipeline
+        # For now, just log the event
+        pass
+
+# Example: Online learning for classification
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.linear_model import SGDClassifier
+
+# SGDClassifier supports partial_fit for online learning
+online_model = SGDClassifier(
+    loss='log_loss',
+    learning_rate='adaptive',
+    eta0=0.01,
+    random_state=42
+)
+
+updater = OnlineModelUpdater(
+    model=online_model,
+    validation_window=1000,
+    performance_threshold=0.05
+)
+
+# Simulate online predictions with delayed ground truth
+for i in range(5000):
+    features = {
+        'feature_1': np.random.randn(),
+        'feature_2': np.random.randn()
+    }
+
+    # Make prediction
+    if i > 100:  # After initial training
+        prediction = updater.learner.predict(features)
+    else:
+        prediction = 0
+
+    # Simulate delayed ground truth (e.g., user feedback)
+    ground_truth = np.random.choice([0, 1])
+
+    # Process prediction with ground truth
+    updater.process_prediction(features, prediction, ground_truth)
+
+    if i % 1000 == 0:
+        print(f"Processed {i} samples, total updates: {updater.learner.total_updates}")
+\end{lstlisting}
+
+\section{Concept Drift Handling Strategies}
+
+\subsection{Detecting and Adapting to Concept Drift}
+
+Concept drift occurs when the relationship between features and target changes over time, requiring model adaptation.
+
+\begin{lstlisting}[language=Python, caption=Concept Drift Detection and Handling]
+from typing import Dict, List, Tuple, Optional
+import numpy as np
+import pandas as pd
+from scipy import stats
+from collections import deque
+from datetime import datetime, timedelta
+
+class ConceptDriftDetector:
+    """
+    Detect concept drift in model predictions
+
+    Uses multiple statistical tests to identify when the target
+    distribution or feature-target relationship changes
+    """
+
+    def __init__(self,
+                 reference_window: int = 1000,
+                 detection_window: int = 500,
+                 warning_threshold: float = 0.05,
+                 drift_threshold: float = 0.01):
+        self.reference_window = reference_window
+        self.detection_window = detection_window
+        self.warning_threshold = warning_threshold
+        self.drift_threshold = drift_threshold
+
+        self.reference_data: deque = deque(maxlen=reference_window)
+        self.current_data: deque = deque(maxlen=detection_window)
+
+        self.drift_detected = False
+        self.warning_detected = False
+
+        self.logger = logging.getLogger(__name__)
+
+    def add_sample(self, features: np.ndarray, prediction: float, label: float):
+        """Add new sample for drift detection"""
+
+        sample = {
+            'features': features,
+            'prediction': prediction,
+            'label': label,
+            'error': abs(prediction - label),
+            'timestamp': datetime.now()
+        }
+
+        # Add to current window
+        self.current_data.append(sample)
+
+        # Move to reference once current window is full
+        if len(self.current_data) >= self.detection_window:
+            if len(self.reference_data) < self.reference_window:
+                # Still building reference
+                self.reference_data.extend(list(self.current_data))
+                self.current_data.clear()
+            else:
+                # Check for drift
+                self._check_drift()
+
+    def _check_drift(self) -> Tuple[bool, bool]:
+        """Check for concept drift using multiple tests"""
+
+        if len(self.reference_data) < self.reference_window:
+            return False, False
+
+        if len(self.current_data) < self.detection_window:
+            return False, False
+
+        # Extract errors from both windows
+        ref_errors = np.array([s['error'] for s in self.reference_data])
+        curr_errors = np.array([s['error'] for s in self.current_data])
+
+        # 1. Kolmogorov-Smirnov test for error distribution
+        ks_stat, ks_pvalue = stats.ks_2samp(ref_errors, curr_errors)
+
+        # 2. Mean error comparison using t-test
+        t_stat, t_pvalue = stats.ttest_ind(ref_errors, curr_errors)
+
+        # 3. Page-Hinkley test for cumulative drift
+        ph_drift = self._page_hinkley_test(curr_errors)
+
+        # Evaluate results
+        drift_signals = 0
+
+        if ks_pvalue < self.drift_threshold:
+            drift_signals += 1
+            self.logger.warning(
+                f"KS test detected distribution change: "
+                f"statistic={ks_stat:.4f}, p-value={ks_pvalue:.6f}"
+            )
+
+        if t_pvalue < self.drift_threshold:
+            drift_signals += 1
+            self.logger.warning(
+                f"T-test detected mean change: "
+                f"ref_mean={ref_errors.mean():.4f}, "
+                f"curr_mean={curr_errors.mean():.4f}, "
+                f"p-value={t_pvalue:.6f}"
+            )
+
+        if ph_drift:
+            drift_signals += 1
+            self.logger.warning("Page-Hinkley test detected drift")
+
+        # Determine drift status
+        if drift_signals >= 2:
+            self.drift_detected = True
+            self.warning_detected = False
+            self.logger.error(f"CONCEPT DRIFT DETECTED ({drift_signals} signals)")
+
+            # Reset reference window to current data
+            self._reset_reference_window()
+
+            return True, False
+
+        elif drift_signals == 1:
+            self.warning_detected = True
+            self.drift_detected = False
+            self.logger.warning("Drift warning - monitoring closely")
+            return False, True
+
+        else:
+            self.drift_detected = False
+            self.warning_detected = False
+            return False, False
+
+    def _page_hinkley_test(self, errors: np.ndarray,
+                          delta: float = 0.005,
+                          lambda_: float = 50) -> bool:
+        """
+        Page-Hinkley test for detecting mean shifts
+
+        Cumulative test that's sensitive to gradual drift
+        """
+
+        mean_error = errors.mean()
+        cumsum = 0
+        min_cumsum = 0
+
+        for error in errors:
+            cumsum += error - mean_error - delta
+
+            if cumsum < min_cumsum:
+                min_cumsum = cumsum
+
+            ph_value = cumsum - min_cumsum
+
+            if ph_value > lambda_:
+                return True
+
+        return False
+
+    def _reset_reference_window(self):
+        """Reset reference window after drift detected"""
+
+        # Use current window as new reference
+        self.reference_data.clear()
+        self.reference_data.extend(list(self.current_data))
+        self.current_data.clear()
+
+        self.logger.info("Reference window reset with recent data")
+
+class AdaptiveDriftHandler:
+    """
+    Handle concept drift with adaptive strategies
+
+    Implements multiple adaptation strategies:
+    - Ensemble of time-weighted models
+    - Dynamic model selection
+    - Gradual forgetting
+    """
+
+    def __init__(self, base_model_class, n_ensemble: int = 5):
+        self.base_model_class = base_model_class
+        self.n_ensemble = n_ensemble
+
+        # Ensemble of models with different recency
+        self.ensemble: List[Dict] = []
+        self.drift_detector = ConceptDriftDetector()
+
+        # Initialize ensemble
+        for i in range(n_ensemble):
+            self.ensemble.append({
+                'model': base_model_class(),
+                'age': 0,
+                'weight': 1.0 / n_ensemble,
+                'performance': []
+            })
+
+        self.logger = logging.getLogger(__name__)
+
+    def train_ensemble(self, X: pd.DataFrame, y: pd.Series):
+        """Train ensemble with temporal weighting"""
+
+        n_samples = len(X)
+
+        for i, member in enumerate(self.ensemble):
+            # Each model trained on different time window
+            window_size = n_samples // (i + 1)
+            start_idx = max(0, n_samples - window_size)
+
+            X_subset = X.iloc[start_idx:]
+            y_subset = y.iloc[start_idx:]
+
+            # Apply temporal weighting
+            sample_weights = np.linspace(0.5, 1.0, len(X_subset))
+
+            member['model'].fit(X_subset, y_subset, sample_weight=sample_weights)
+            member['age'] = 0
+
+            self.logger.info(
+                f"Trained ensemble member {i} on {len(X_subset)} samples"
+            )
+
+    def predict(self, features: pd.DataFrame) -> np.ndarray:
+        """Predict using weighted ensemble"""
+
+        predictions = []
+
+        for member in self.ensemble:
+            pred = member['model'].predict(features)
+            predictions.append(pred * member['weight'])
+
+        # Weighted average
+        final_pred = np.sum(predictions, axis=0)
+
+        return final_pred
+
+    def update_on_drift(self, X_new: pd.DataFrame, y_new: pd.Series):
+        """Update ensemble when drift detected"""
+
+        self.logger.info("Updating ensemble due to drift detection")
+
+        # Retire oldest model
+        self.ensemble.pop()
+
+        # Add new model trained on recent data
+        new_model = {
+            'model': self.base_model_class(),
+            'age': 0,
+            'weight': 0.3,  # Higher weight for newest model
+            'performance': []
+        }
+        new_model['model'].fit(X_new, y_new)
+
+        self.ensemble.insert(0, new_model)
+
+        # Reweight ensemble
+        total_weight = sum(m['weight'] for m in self.ensemble)
+        for member in self.ensemble:
+            member['weight'] /= total_weight
+
+        self.logger.info("Ensemble updated with new model")
+
+    def adapt_weights(self, validation_errors: List[np.ndarray]):
+        """Adapt ensemble weights based on recent performance"""
+
+        if len(validation_errors) < len(self.ensemble):
+            return
+
+        # Calculate performance for each ensemble member
+        for i, member in enumerate(self.ensemble):
+            errors = validation_errors[i]
+            performance = 1.0 / (1.0 + errors.mean())
+            member['performance'].append(performance)
+
+        # Update weights based on recent performance
+        recent_performance = [
+            np.mean(m['performance'][-10:]) if m['performance'] else 0.5
+            for m in self.ensemble
+        ]
+
+        # Softmax weighting
+        exp_perf = np.exp(np.array(recent_performance))
+        new_weights = exp_perf / exp_perf.sum()
+
+        for i, member in enumerate(self.ensemble):
+            member['weight'] = new_weights[i]
+
+        self.logger.info(f"Updated ensemble weights: {new_weights}")
+
+# Example usage
+from sklearn.ensemble import RandomForestClassifier
+
+# Create adaptive drift handler
+handler = AdaptiveDriftHandler(
+    base_model_class=lambda: RandomForestClassifier(n_estimators=50),
+    n_ensemble=3
+)
+
+# Simulate streaming data with concept drift
+np.random.seed(42)
+
+# Generate initial data
+X_train = pd.DataFrame(np.random.randn(1000, 5))
+y_train = (X_train.sum(axis=1) > 0).astype(int)
+
+# Train ensemble
+handler.train_ensemble(X_train, y_train)
+
+# Simulate concept drift after 500 samples
+for batch in range(10):
+    # Generate batch with drift
+    if batch < 5:
+        # Original concept
+        X_batch = pd.DataFrame(np.random.randn(100, 5))
+        y_batch = (X_batch.sum(axis=1) > 0).astype(int)
+    else:
+        # Drifted concept (inverted relationship)
+        X_batch = pd.DataFrame(np.random.randn(100, 5))
+        y_batch = (X_batch.sum(axis=1) < 0).astype(int)
+
+    # Make predictions
+    predictions = handler.predict(X_batch)
+
+    # Add samples to drift detector
+    for i in range(len(X_batch)):
+        handler.drift_detector.add_sample(
+            X_batch.iloc[i].values,
+            predictions[i],
+            y_batch.iloc[i]
+        )
+
+    # Check for drift
+    if handler.drift_detector.drift_detected:
+        print(f"Drift detected at batch {batch}")
+        handler.update_on_drift(X_batch, y_batch)
+\end{lstlisting}
+
+\subsection{Multi-Strategy Drift Adaptation}
+
+Different types of drift require different adaptation strategies. A robust system should employ multiple approaches.
+
+\begin{lstlisting}[language=Python, caption=Multi-Strategy Drift Adaptation Framework]
+from typing import Dict, List, Optional, Any
+from enum import Enum
+import numpy as np
+import pandas as pd
+from datetime import datetime
+import logging
+
+class DriftType(Enum):
+    """Types of drift that can occur"""
+    SUDDEN = "sudden"  # Abrupt change
+    GRADUAL = "gradual"  # Slow evolution
+    INCREMENTAL = "incremental"  # Step-wise changes
+    RECURRING = "recurring"  # Cyclical patterns
+    NONE = "none"
+
+class DriftAdaptationStrategy(Enum):
+    """Adaptation strategies for different drift types"""
+    RETRAIN_FULL = "retrain_full"
+    RETRAIN_INCREMENTAL = "retrain_incremental"
+    ENSEMBLE_UPDATE = "ensemble_update"
+    WINDOW_SLIDE = "window_slide"
+    NONE = "none"
+
+class DriftCharacterizer:
+    """
+    Characterize the type and severity of drift
+
+    Analyzes drift patterns to select appropriate adaptation strategy
+    """
+
+    def __init__(self, history_window: int = 100):
+        self.history_window = history_window
+        self.drift_history: List[Dict] = []
+        self.logger = logging.getLogger(__name__)
+
+    def characterize_drift(self,
+                          error_history: List[float],
+                          timestamps: List[datetime]) -> Dict[str, Any]:
+        """Characterize drift type and severity"""
+
+        if len(error_history) < 10:
+            return {
+                'drift_type': DriftType.NONE,
+                'severity': 0.0,
+                'recommended_strategy': DriftAdaptationStrategy.NONE
+            }
+
+        errors = np.array(error_history)
+
+        # Calculate error rate of change
+        error_diff = np.diff(errors)
+
+        # Detect sudden drift (abrupt change)
+        sudden_threshold = 3 * np.std(errors)
+        sudden_changes = np.abs(error_diff) > sudden_threshold
+
+        if np.any(sudden_changes):
+            drift_type = DriftType.SUDDEN
+            severity = np.max(np.abs(error_diff)) / np.mean(errors)
+            strategy = DriftAdaptationStrategy.RETRAIN_FULL
+
+        # Detect gradual drift (trend)
+        elif self._detect_trend(errors):
+            drift_type = DriftType.GRADUAL
+            # Calculate trend severity
+            from scipy.stats import linregress
+            slope, _, _, _, _ = linregress(range(len(errors)), errors)
+            severity = abs(slope) / np.mean(errors)
+            strategy = DriftAdaptationStrategy.RETRAIN_INCREMENTAL
+
+        # Detect recurring drift (seasonality)
+        elif self._detect_seasonality(errors, timestamps):
+            drift_type = DriftType.RECURRING
+            severity = 0.5
+            strategy = DriftAdaptationStrategy.ENSEMBLE_UPDATE
+
+        else:
+            drift_type = DriftType.NONE
+            severity = 0.0
+            strategy = DriftAdaptationStrategy.NONE
+
+        result = {
+            'drift_type': drift_type,
+            'severity': severity,
+            'recommended_strategy': strategy,
+            'timestamp': datetime.now()
+        }
+
+        self.drift_history.append(result)
+
+        self.logger.info(
+            f"Drift characterization: {drift_type.value} "
+            f"(severity: {severity:.3f}, strategy: {strategy.value})"
+        )
+
+        return result
+
+    def _detect_trend(self, errors: np.ndarray,
+                     significance: float = 0.05) -> bool:
+        """Detect monotonic trend using Mann-Kendall test"""
+
+        from scipy.stats import kendalltau
+
+        n = len(errors)
+        tau, p_value = kendalltau(range(n), errors)
+
+        return p_value < significance and abs(tau) > 0.3
+
+    def _detect_seasonality(self,
+                           errors: np.ndarray,
+                           timestamps: List[datetime]) -> bool:
+        """Detect seasonal/recurring patterns"""
+
+        if len(errors) < 50:
+            return False
+
+        # Simple autocorrelation check
+        from scipy.signal import find_peaks
+
+        # Compute autocorrelation
+        autocorr = np.correlate(errors - errors.mean(),
+                               errors - errors.mean(),
+                               mode='full')
+        autocorr = autocorr[len(autocorr)//2:]
+        autocorr = autocorr / autocorr[0]
+
+        # Find peaks in autocorrelation
+        peaks, _ = find_peaks(autocorr[1:], height=0.3)
+
+        # If significant peaks found, likely seasonal
+        return len(peaks) > 0
+
+class AdaptiveRetrainingOrchestrator:
+    """
+    Orchestrate adaptive retraining based on drift characteristics
+
+    Selects and executes appropriate adaptation strategy
+    """
+
+    def __init__(self, base_model, config: RetrainingConfig):
+        self.base_model = base_model
+        self.config = config
+
+        self.drift_characterizer = DriftCharacterizer()
+        self.drift_detector = ConceptDriftDetector()
+        self.adaptive_handler = AdaptiveDriftHandler(
+            base_model_class=lambda: base_model.__class__()
+        )
+
+        self.error_history: List[float] = []
+        self.timestamp_history: List[datetime] = []
+
+        self.logger = logging.getLogger(__name__)
+
+    def process_batch(self,
+                     X: pd.DataFrame,
+                     y_pred: np.ndarray,
+                     y_true: np.ndarray):
+        """Process batch of predictions and adapt if needed"""
+
+        # Calculate batch error
+        batch_error = np.mean(np.abs(y_pred - y_true))
+
+        self.error_history.append(batch_error)
+        self.timestamp_history.append(datetime.now())
+
+        # Keep history bounded
+        max_history = 1000
+        if len(self.error_history) > max_history:
+            self.error_history = self.error_history[-max_history:]
+            self.timestamp_history = self.timestamp_history[-max_history:]
+
+        # Check for drift
+        for i in range(len(X)):
+            self.drift_detector.add_sample(
+                X.iloc[i].values,
+                y_pred[i],
+                y_true[i]
+            )
+
+        # If drift detected, characterize and adapt
+        if self.drift_detector.drift_detected:
+            self._handle_detected_drift(X, y_true)
+
+    def _handle_detected_drift(self, X: pd.DataFrame, y: np.ndarray):
+        """Handle detected drift with appropriate strategy"""
+
+        # Characterize drift
+        characterization = self.drift_characterizer.characterize_drift(
+            self.error_history,
+            self.timestamp_history
+        )
+
+        drift_type = characterization['drift_type']
+        severity = characterization['severity']
+        strategy = characterization['recommended_strategy']
+
+        self.logger.warning(
+            f"Executing adaptation strategy: {strategy.value} "
+            f"for {drift_type.value} drift (severity: {severity:.3f})"
+        )
+
+        # Execute strategy
+        if strategy == DriftAdaptationStrategy.RETRAIN_FULL:
+            self._execute_full_retrain(X, y, severity)
+
+        elif strategy == DriftAdaptationStrategy.RETRAIN_INCREMENTAL:
+            self._execute_incremental_retrain(X, y)
+
+        elif strategy == DriftAdaptationStrategy.ENSEMBLE_UPDATE:
+            self._execute_ensemble_update(X, y)
+
+        elif strategy == DriftAdaptationStrategy.WINDOW_SLIDE:
+            self._execute_window_slide(X, y)
+
+    def _execute_full_retrain(self, X: pd.DataFrame, y: np.ndarray,
+                             severity: float):
+        """Execute full model retraining"""
+
+        self.logger.info("Executing full model retrain")
+
+        # Collect larger dataset for full retrain
+        # In production, fetch from data warehouse
+        train_data = X  # Placeholder
+
+        # Retrain from scratch
+        self.base_model.fit(train_data, y)
+
+        # Reset drift detector
+        self.drift_detector = ConceptDriftDetector()
+
+        self.logger.info("Full retrain completed")
+
+    def _execute_incremental_retrain(self, X: pd.DataFrame, y: np.ndarray):
+        """Execute incremental model update"""
+
+        self.logger.info("Executing incremental retrain")
+
+        if hasattr(self.base_model, 'partial_fit'):
+            self.base_model.partial_fit(X, y)
+        else:
+            # For models without partial_fit, use warm start
+            self.base_model.fit(X, y)
+
+        self.logger.info("Incremental retrain completed")
+
+    def _execute_ensemble_update(self, X: pd.DataFrame, y: np.ndarray):
+        """Update ensemble for recurring drift"""
+
+        self.logger.info("Executing ensemble update")
+
+        self.adaptive_handler.update_on_drift(X, pd.Series(y))
+
+        self.logger.info("Ensemble update completed")
+
+    def _execute_window_slide(self, X: pd.DataFrame, y: np.ndarray):
+        """Slide training window for continuous adaptation"""
+
+        self.logger.info("Executing window slide")
+
+        # Use only recent data
+        window_size = self.config.min_data_points
+
+        if len(X) > window_size:
+            X_recent = X.iloc[-window_size:]
+            y_recent = y[-window_size:]
+        else:
+            X_recent = X
+            y_recent = y
+
+        self.base_model.fit(X_recent, y_recent)
+
+        self.logger.info("Window slide completed")
+
+# Example: Comprehensive drift handling
+from sklearn.ensemble import GradientBoostingRegressor
+
+# Create orchestrator
+model = GradientBoostingRegressor(n_estimators=100)
+config = RetrainingConfig(
+    model_name="adaptive_model",
+    model_type="regression"
+)
+
+orchestrator = AdaptiveRetrainingOrchestrator(model, config)
+
+# Simulate streaming data with different drift types
+np.random.seed(42)
+
+for batch_idx in range(20):
+    # Generate data with evolving distribution
+    if batch_idx < 5:
+        # Normal data
+        X = pd.DataFrame(np.random.randn(100, 5))
+        y_true = X.sum(axis=1).values + np.random.randn(100) * 0.1
+
+    elif batch_idx < 10:
+        # Gradual drift
+        shift = (batch_idx - 5) * 0.2
+        X = pd.DataFrame(np.random.randn(100, 5) + shift)
+        y_true = X.sum(axis=1).values + np.random.randn(100) * 0.1
+
+    elif batch_idx < 15:
+        # Sudden drift
+        X = pd.DataFrame(np.random.randn(100, 5) * 2)
+        y_true = X.sum(axis=1).values * -1 + np.random.randn(100) * 0.1
+
+    else:
+        # Back to normal (recurring)
+        X = pd.DataFrame(np.random.randn(100, 5))
+        y_true = X.sum(axis=1).values + np.random.randn(100) * 0.1
+
+    # Make predictions
+    if batch_idx > 0:
+        y_pred = orchestrator.base_model.predict(X)
+    else:
+        # Initial training
+        orchestrator.base_model.fit(X, y_true)
+        y_pred = orchestrator.base_model.predict(X)
+
+    # Process batch
+    orchestrator.process_batch(X, y_pred, y_true)
+
+    print(f"Batch {batch_idx}: Error = {np.mean(np.abs(y_pred - y_true)):.4f}")
+\end{lstlisting}
+
+\section{Model Freshness vs Stability Trade-offs}
+
+\subsection{Balancing Update Frequency and Model Stability}
+
+Frequent retraining keeps models fresh but can introduce instability, unexpected behavior changes, and increased costs. Finding the right balance requires understanding your application's requirements.
+
+\begin{lstlisting}[language=Python, caption=Freshness-Stability Trade-off Manager]
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import numpy as np
+import logging
+
+@dataclass
+class StabilityMetrics:
+    """Track model stability over time"""
+    prediction_variance: float  # Variance in predictions between versions
+    behavioral_consistency: float  # How consistent model behavior is
+    rollback_rate: float  # Rate of rollbacks due to issues
+    deployment_success_rate: float  # Successful deployments
+    avg_time_to_rollback: float  # Time to detect and rollback issues
+
+@dataclass
+class FreshnessMetrics:
+    """Track model freshness indicators"""
+    data_staleness_days: float  # Days since training data cutoff
+    drift_score: float  # Current drift magnitude
+    performance_gap: float  # Gap from baseline performance
+    new_data_volume: int  # New samples since last retrain
+    feature_coverage: float  # Coverage of feature space
+
+class FreshnessStabilityManager:
+    """
+    Manage trade-off between model freshness and stability
+
+    Adaptively adjusts retraining frequency based on
+    application requirements and observed stability
+    """
+
+    def __init__(self,
+                 min_retrain_interval_days: int = 7,
+                 max_retrain_interval_days: int = 30,
+                 stability_weight: float = 0.5):
+        """
+        Parameters:
+        - min_retrain_interval_days: Minimum days between retrains
+        - max_retrain_interval_days: Maximum days before forced retrain
+        - stability_weight: Weight for stability vs freshness (0-1)
+          0 = prioritize freshness, 1 = prioritize stability
+        """
+        self.min_interval = timedelta(days=min_retrain_interval_days)
+        self.max_interval = timedelta(days=max_retrain_interval_days)
+        self.stability_weight = stability_weight
+
+        self.last_retrain_time: Optional[datetime] = None
+        self.stability_history: List[StabilityMetrics] = []
+        self.freshness_history: List[FreshnessMetrics] = []
+
+        # Adaptive interval
+        self.current_interval = timedelta(
+            days=(min_retrain_interval_days + max_retrain_interval_days) / 2
+        )
+
+        self.logger = logging.getLogger(__name__)
+
+    def should_retrain(self,
+                      current_freshness: FreshnessMetrics,
+                      current_stability: StabilityMetrics) -> Tuple[bool, str]:
+        """Determine if retraining should occur"""
+
+        if self.last_retrain_time is None:
+            return True, "Initial training required"
+
+        time_since_retrain = datetime.now() - self.last_retrain_time
+
+        # Always retrain if max interval exceeded
+        if time_since_retrain >= self.max_interval:
+            return True, f"Maximum interval exceeded ({self.max_interval.days} days)"
+
+        # Never retrain if within minimum interval
+        if time_since_retrain < self.min_interval:
+            return False, f"Within minimum interval ({self.min_interval.days} days)"
+
+        # Calculate freshness and stability scores
+        freshness_score = self._calculate_freshness_score(current_freshness)
+        stability_score = self._calculate_stability_score(current_stability)
+
+        # Weighted decision
+        retrain_score = (
+            (1 - self.stability_weight) * (1 - freshness_score) +  # Need for freshness
+            self.stability_weight * stability_score  # Confidence in stability
+        )
+
+        # Adapt interval based on stability
+        self._adapt_retraining_interval(current_stability)
+
+        # Retrain if score indicates need
+        threshold = 0.5
+        should_retrain = retrain_score > threshold
+
+        reason = (
+            f"Retrain score: {retrain_score:.3f} "
+            f"(freshness: {freshness_score:.3f}, stability: {stability_score:.3f})"
+        )
+
+        if should_retrain:
+            self.logger.info(f"Retraining recommended: {reason}")
+        else:
+            self.logger.info(f"Skipping retrain: {reason}")
+
+        return should_retrain, reason
+
+    def _calculate_freshness_score(self, metrics: FreshnessMetrics) -> float:
+        """Calculate freshness score (0=stale, 1=fresh)"""
+
+        # Multiple freshness indicators
+        scores = []
+
+        # 1. Data staleness (0-1, lower is fresher)
+        staleness_score = 1.0 - min(1.0, metrics.data_staleness_days / 30.0)
+        scores.append(staleness_score)
+
+        # 2. Drift score (0-1, lower is better)
+        drift_score = 1.0 - min(1.0, metrics.drift_score / 0.5)
+        scores.append(drift_score)
+
+        # 3. Performance gap (0-1, smaller gap is better)
+        perf_score = 1.0 - min(1.0, metrics.performance_gap / 0.1)
+        scores.append(perf_score)
+
+        # 4. New data availability (0-1, more data is better)
+        data_score = min(1.0, metrics.new_data_volume / 10000.0)
+        scores.append(data_score * 0.5)  # Lower weight
+
+        # Average freshness
+        return np.mean(scores)
+
+    def _calculate_stability_score(self, metrics: StabilityMetrics) -> float:
+        """Calculate stability score (0=unstable, 1=stable)"""
+
+        scores = []
+
+        # 1. Low prediction variance is good
+        variance_score = 1.0 - min(1.0, metrics.prediction_variance / 0.1)
+        scores.append(variance_score)
+
+        # 2. High behavioral consistency is good
+        scores.append(metrics.behavioral_consistency)
+
+        # 3. Low rollback rate is good
+        rollback_score = 1.0 - min(1.0, metrics.rollback_rate)
+        scores.append(rollback_score)
+
+        # 4. High deployment success is good
+        scores.append(metrics.deployment_success_rate)
+
+        return np.mean(scores)
+
+    def _adapt_retraining_interval(self, stability: StabilityMetrics):
+        """Adapt retraining interval based on stability"""
+
+        # If system is stable, can retrain more frequently
+        stability_score = self._calculate_stability_score(stability)
+
+        if stability_score > 0.8:
+            # High stability - can be more aggressive with updates
+            self.current_interval = max(
+                self.min_interval,
+                self.current_interval - timedelta(days=1)
+            )
+        elif stability_score < 0.5:
+            # Low stability - be more conservative
+            self.current_interval = min(
+                self.max_interval,
+                self.current_interval + timedelta(days=2)
+            )
+
+        self.logger.info(
+            f"Adapted retraining interval to {self.current_interval.days} days "
+            f"based on stability score {stability_score:.3f}"
+        )
+
+    def record_retrain(self,
+                      freshness: FreshnessMetrics,
+                      stability: StabilityMetrics):
+        """Record retraining event"""
+
+        self.last_retrain_time = datetime.now()
+        self.freshness_history.append(freshness)
+        self.stability_history.append(stability)
+
+        # Keep history bounded
+        max_history = 100
+        if len(self.stability_history) > max_history:
+            self.stability_history = self.stability_history[-max_history:]
+            self.freshness_history = self.freshness_history[-max_history:]
+
+class PredictionStabilityTracker:
+    """
+    Track prediction stability across model versions
+
+    Monitors how predictions change when models are updated
+    """
+
+    def __init__(self, sample_size: int = 1000):
+        self.sample_size = sample_size
+        self.reference_predictions: Optional[np.ndarray] = None
+        self.reference_features: Optional[pd.DataFrame] = None
+        self.logger = logging.getLogger(__name__)
+
+    def set_reference(self, model, features: pd.DataFrame):
+        """Set reference predictions from current model"""
+
+        # Sample features for stability tracking
+        if len(features) > self.sample_size:
+            sample_indices = np.random.choice(
+                len(features),
+                self.sample_size,
+                replace=False
+            )
+            self.reference_features = features.iloc[sample_indices].copy()
+        else:
+            self.reference_features = features.copy()
+
+        # Get reference predictions
+        self.reference_predictions = model.predict(self.reference_features)
+
+        self.logger.info(
+            f"Set reference predictions for {len(self.reference_features)} samples"
+        )
+
+    def measure_stability(self, new_model) -> Dict[str, float]:
+        """Measure prediction stability of new model vs reference"""
+
+        if self.reference_predictions is None:
+            return {
+                'prediction_variance': 0.0,
+                'behavioral_consistency': 1.0,
+                'avg_prediction_change': 0.0
+            }
+
+        # Get new predictions
+        new_predictions = new_model.predict(self.reference_features)
+
+        # Calculate stability metrics
+        prediction_changes = np.abs(new_predictions - self.reference_predictions)
+
+        # For classification, measure agreement
+        if len(np.unique(self.reference_predictions)) < 10:
+            agreement = np.mean(new_predictions == self.reference_predictions)
+            behavioral_consistency = agreement
+            avg_change = 1.0 - agreement
+        else:
+            # For regression, measure relative change
+            relative_changes = prediction_changes / (
+                np.abs(self.reference_predictions) + 1e-6
+            )
+            avg_change = np.mean(relative_changes)
+            behavioral_consistency = 1.0 - min(1.0, avg_change)
+
+        prediction_variance = np.var(prediction_changes)
+
+        metrics = {
+            'prediction_variance': float(prediction_variance),
+            'behavioral_consistency': float(behavioral_consistency),
+            'avg_prediction_change': float(np.mean(prediction_changes)),
+            'max_prediction_change': float(np.max(prediction_changes)),
+            'pct_changed_predictions': float(
+                np.mean(prediction_changes > 0.01) * 100
+            )
+        }
+
+        self.logger.info(
+            f"Stability metrics: consistency={metrics['behavioral_consistency']:.3f}, "
+            f"variance={metrics['prediction_variance']:.6f}"
+        )
+
+        return metrics
+
+# Example: Managing freshness-stability trade-off
+from sklearn.ensemble import RandomForestClassifier
+import pandas as pd
+
+# Create manager with balanced approach
+manager = FreshnessStabilityManager(
+    min_retrain_interval_days=7,
+    max_retrain_interval_days=30,
+    stability_weight=0.5  # Equal weight to freshness and stability
+)
+
+# Create stability tracker
+stability_tracker = PredictionStabilityTracker()
+
+# Initialize with reference model
+reference_model = RandomForestClassifier(n_estimators=100, random_state=42)
+X_ref = pd.DataFrame(np.random.randn(1000, 10))
+y_ref = (X_ref.sum(axis=1) > 0).astype(int)
+reference_model.fit(X_ref, y_ref)
+
+stability_tracker.set_reference(reference_model, X_ref)
+
+# Simulate model updates over time
+manager.last_retrain_time = datetime.now() - timedelta(days=15)
+
+for day in range(30):
+    current_time = datetime.now() - timedelta(days=30-day)
+
+    # Simulate freshness metrics
+    freshness = FreshnessMetrics(
+        data_staleness_days=(current_time - manager.last_retrain_time).days,
+        drift_score=0.05 + (day * 0.01),  # Increasing drift
+        performance_gap=0.02 + (day * 0.002),
+        new_data_volume=day * 500,
+        feature_coverage=0.95
+    )
+
+    # Train new model to check stability
+    X_new = pd.DataFrame(np.random.randn(1000, 10) + day * 0.01)
+    y_new = (X_new.sum(axis=1) > 0).astype(int)
+    new_model = RandomForestClassifier(n_estimators=100, random_state=42+day)
+    new_model.fit(X_new, y_new)
+
+    # Measure stability
+    stability_metrics_dict = stability_tracker.measure_stability(new_model)
+
+    stability = StabilityMetrics(
+        prediction_variance=stability_metrics_dict['prediction_variance'],
+        behavioral_consistency=stability_metrics_dict['behavioral_consistency'],
+        rollback_rate=0.05,
+        deployment_success_rate=0.95,
+        avg_time_to_rollback=2.0
+    )
+
+    # Check if should retrain
+    should_retrain, reason = manager.should_retrain(freshness, stability)
+
+    if should_retrain:
+        print(f"Day {day}: RETRAINING - {reason}")
+        manager.record_retrain(freshness, stability)
+        # Update reference
+        stability_tracker.set_reference(new_model, X_new)
+    else:
+        print(f"Day {day}: Skipping - {reason}")
+\end{lstlisting}
+
+\subsection{Cost-Aware Retraining Scheduling}
+
+Retraining has real costs in compute resources, engineering time, and potential business disruption. A production system must optimize these costs.
+
+\begin{lstlisting}[language=Python, caption=Cost-Aware Retraining Scheduler]
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+from datetime import datetime, timedelta, time
+import numpy as np
+
+@dataclass
+class RetrainingCost:
+    """Model retraining cost components"""
+    compute_cost_usd: float  # Direct compute costs
+    engineer_hours: float  # Human review time
+    opportunity_cost_usd: float  # Lost revenue if model offline
+    data_pipeline_cost_usd: float  # Cost to fetch/process data
+    validation_cost_usd: float  # A/B test or canary costs
+
+    @property
+    def total_cost(self) -> float:
+        return (self.compute_cost_usd +
+                self.opportunity_cost_usd +
+                self.data_pipeline_cost_usd +
+                self.validation_cost_usd)
+
+@dataclass
+class RetrainingBenefit:
+    """Expected benefits from retraining"""
+    performance_improvement: float  # Expected metric improvement
+    revenue_impact_usd: float  # Expected revenue impact
+    risk_reduction: float  # Reduced risk from drift
+    confidence: float  # Confidence in benefit estimates
+
+class CostAwareScheduler:
+    """
+    Schedule retraining considering costs and benefits
+
+    Optimizes timing and frequency to maximize ROI
+    """
+
+    def __init__(self,
+                 cost_model: Dict[str, float],
+                 business_hours: Tuple[time, time] = (time(9), time(17)),
+                 preferred_days: List[int] = [1, 2, 3]):  # Tue, Wed, Thu
+        """
+        Parameters:
+        - cost_model: Cost parameters for retraining operations
+        - business_hours: Hours to avoid retraining (higher opportunity cost)
+        - preferred_days: Preferred days of week (0=Monday, 6=Sunday)
+        """
+        self.cost_model = cost_model
+        self.business_hours = business_hours
+        self.preferred_days = preferred_days
+
+        self.scheduled_retrains: List[datetime] = []
+        self.logger = logging.getLogger(__name__)
+
+    def estimate_retrain_cost(self,
+                             training_samples: int,
+                             estimated_duration_hours: float,
+                             scheduled_time: datetime) -> RetrainingCost:
+        """Estimate cost of retraining operation"""
+
+        # Compute cost scales with data volume and duration
+        base_compute_cost = self.cost_model.get('base_compute_cost', 10.0)
+        cost_per_hour = self.cost_model.get('compute_cost_per_hour', 5.0)
+        compute_cost = base_compute_cost + (cost_per_hour * estimated_duration_hours)
+
+        # Data pipeline cost
+        cost_per_sample = self.cost_model.get('cost_per_sample', 0.0001)
+        data_cost = training_samples * cost_per_sample
+
+        # Engineer oversight
+        engineer_hourly_rate = self.cost_model.get('engineer_hourly_rate', 150.0)
+        engineer_hours = 2.0  # Review and validation
+        engineer_cost = engineer_hours * engineer_hourly_rate
+
+        # Opportunity cost depends on timing
+        opportunity_cost = self._calculate_opportunity_cost(
+            scheduled_time,
+            estimated_duration_hours
+        )
+
+        # Validation cost (canary deployment)
+        validation_cost = self.cost_model.get('canary_cost', 20.0)
+
+        return RetrainingCost(
+            compute_cost_usd=compute_cost + engineer_cost,
+            engineer_hours=engineer_hours,
+            opportunity_cost_usd=opportunity_cost,
+            data_pipeline_cost_usd=data_cost,
+            validation_cost_usd=validation_cost
+        )
+
+    def _calculate_opportunity_cost(self,
+                                   scheduled_time: datetime,
+                                   duration_hours: float) -> float:
+        """Calculate opportunity cost based on timing"""
+
+        # Higher cost during business hours
+        revenue_per_hour = self.cost_model.get('revenue_per_hour', 1000.0)
+        downtime_fraction = self.cost_model.get('downtime_fraction', 0.1)
+
+        # Check if deployment overlaps with business hours
+        start_time = scheduled_time.time()
+        business_start, business_end = self.business_hours
+
+        if business_start <= start_time <= business_end:
+            # Business hours - higher opportunity cost
+            multiplier = 1.0
+        else:
+            # Off-hours - lower opportunity cost
+            multiplier = 0.2
+
+        opportunity_cost = (
+            revenue_per_hour *
+            duration_hours *
+            downtime_fraction *
+            multiplier
+        )
+
+        return opportunity_cost
+
+    def estimate_retrain_benefit(self,
+                                current_performance: float,
+                                expected_improvement: float,
+                                confidence: float = 0.7) -> RetrainingBenefit:
+        """Estimate expected benefit from retraining"""
+
+        # Convert performance improvement to revenue impact
+        # This would be calibrated based on your business metrics
+        revenue_per_point = self.cost_model.get('revenue_per_performance_point', 5000.0)
+
+        revenue_impact = expected_improvement * revenue_per_point * confidence
+
+        # Risk reduction value (avoiding drift-related failures)
+        risk_reduction_value = self.cost_model.get('risk_reduction_value', 1000.0)
+
+        return RetrainingBenefit(
+            performance_improvement=expected_improvement,
+            revenue_impact_usd=revenue_impact + risk_reduction_value,
+            risk_reduction=0.2,  # 20% risk reduction
+            confidence=confidence
+        )
+
+    def calculate_roi(self,
+                     cost: RetrainingCost,
+                     benefit: RetrainingBenefit,
+                     time_horizon_days: int = 30) -> Dict[str, float]:
+        """Calculate ROI for retraining decision"""
+
+        # Project benefits over time horizon
+        total_benefit = benefit.revenue_impact_usd
+
+        # Subtract costs
+        total_cost = cost.total_cost
+
+        # Calculate ROI
+        roi = ((total_benefit - total_cost) / total_cost) * 100 if total_cost > 0 else 0
+
+        # Net present value (simplified)
+        npv = total_benefit - total_cost
+
+        return {
+            'roi_percent': roi,
+            'npv_usd': npv,
+            'total_cost': total_cost,
+            'total_benefit': total_benefit,
+            'payback_days': (total_cost / total_benefit * time_horizon_days)
+                           if total_benefit > 0 else float('inf')
+        }
+
+    def find_optimal_time(self,
+                         earliest: datetime,
+                         latest: datetime) -> datetime:
+        """Find optimal time slot for retraining"""
+
+        # Generate candidate times
+        candidates = []
+        current = earliest
+
+        while current <= latest:
+            # Prefer off-hours
+            if current.time() < self.business_hours[0] or \
+               current.time() > self.business_hours[1]:
+                # Prefer specific days
+                if current.weekday() in self.preferred_days:
+                    score = 1.0
+                else:
+                    score = 0.5
+            else:
+                score = 0.1  # Discourage business hours
+
+            candidates.append((current, score))
+            current += timedelta(hours=1)
+
+        # Sort by score and return best
+        candidates.sort(key=lambda x: x[1], reverse=True)
+
+        optimal_time = candidates[0][0] if candidates else earliest
+
+        self.logger.info(
+            f"Optimal retraining time: {optimal_time} "
+            f"(score: {candidates[0][1]:.2f})"
+        )
+
+        return optimal_time
+
+    def should_retrain_now(self,
+                          current_performance: float,
+                          expected_improvement: float,
+                          training_samples: int,
+                          duration_hours: float = 2.0) -> Tuple[bool, Dict]:
+        """Decide if retraining should proceed based on ROI"""
+
+        now = datetime.now()
+
+        # Find optimal time
+        optimal_time = self.find_optimal_time(
+            earliest=now,
+            latest=now + timedelta(days=7)
+        )
+
+        # Estimate costs and benefits
+        cost = self.estimate_retrain_cost(
+            training_samples,
+            duration_hours,
+            optimal_time
+        )
+
+        benefit = self.estimate_retrain_benefit(
+            current_performance,
+            expected_improvement
+        )
+
+        # Calculate ROI
+        roi_metrics = self.calculate_roi(cost, benefit)
+
+        # Decision: retrain if positive NPV and ROI > 100%
+        should_retrain = (
+            roi_metrics['npv_usd'] > 0 and
+            roi_metrics['roi_percent'] > 100
+        )
+
+        decision = {
+            'should_retrain': should_retrain,
+            'optimal_time': optimal_time,
+            'cost': cost,
+            'benefit': benefit,
+            'roi_metrics': roi_metrics,
+            'recommendation': 'RETRAIN' if should_retrain else 'SKIP'
+        }
+
+        self.logger.info(
+            f"Retraining decision: {decision['recommendation']} "
+            f"(ROI: {roi_metrics['roi_percent']:.1f}%, NPV: ${roi_metrics['npv_usd']:.2f})"
+        )
+
+        return should_retrain, decision
+
+# Example: Cost-aware scheduling
+cost_model = {
+    'base_compute_cost': 10.0,
+    'compute_cost_per_hour': 5.0,
+    'cost_per_sample': 0.0001,
+    'engineer_hourly_rate': 150.0,
+    'canary_cost': 20.0,
+    'revenue_per_hour': 1000.0,
+    'downtime_fraction': 0.1,
+    'revenue_per_performance_point': 5000.0,
+    'risk_reduction_value': 1000.0
+}
+
+scheduler = CostAwareScheduler(
+    cost_model=cost_model,
+    business_hours=(time(9), time(17)),
+    preferred_days=[1, 2, 3]  # Tue-Thu
+)
+
+# Evaluate retraining decision
+should_retrain, decision = scheduler.should_retrain_now(
+    current_performance=0.85,
+    expected_improvement=0.03,  # 3% improvement expected
+    training_samples=50000,
+    duration_hours=2.5
+)
+
+print(f"\nRetraining Decision: {decision['recommendation']}")
+print(f"Optimal Time: {decision['optimal_time']}")
+print(f"Total Cost: ${decision['cost'].total_cost:.2f}")
+print(f"Expected Benefit: ${decision['benefit'].revenue_impact_usd:.2f}")
+print(f"ROI: {decision['roi_metrics']['roi_percent']:.1f}%")
+print(f"Payback Period: {decision['roi_metrics']['payback_days']:.1f} days")
+\end{lstlisting}
+
+\section{Continuous Learning Systems}
+
+\subsection{Real-Time Model Adaptation}
+
+Continuous learning systems maintain models that adapt in real-time to streaming data, enabling immediate response to changing patterns without batch retraining.
+
+\begin{lstlisting}[language=Python, caption=Continuous Learning System Architecture]
+from typing import Dict, List, Optional, Callable, Tuple
+from dataclasses import dataclass, field
+from datetime import datetime
+from collections import deque
+import numpy as np
+import pandas as pd
+from threading import Thread, Lock
+from queue import Queue
+import time
+import logging
+
+@dataclass
+class LearningEvent:
+    """Single learning event in continuous system"""
+    features: Dict[str, Any]
+    prediction: Optional[Any] = None
+    ground_truth: Optional[Any] = None
+    timestamp: datetime = field(default_factory=datetime.now)
+    feedback_delay_seconds: Optional[float] = None
+
+class ContinuousLearningBuffer:
+    """
+    Thread-safe buffer for continuous learning
+
+    Manages streaming predictions and delayed ground truth
+    """
+
+    def __init__(self, max_buffer_size: int = 10000):
+        self.max_buffer_size = max_buffer_size
+        self.events: deque = deque(maxlen=max_buffer_size)
+        self.lock = Lock()
+
+        self.total_predictions = 0
+        self.total_labels_received = 0
+
+        self.logger = logging.getLogger(__name__)
+
+    def add_prediction(self, event_id: str, features: Dict, prediction: Any):
+        """Add prediction event"""
+
+        with self.lock:
+            event = LearningEvent(
+                features=features,
+                prediction=prediction,
+                timestamp=datetime.now()
+            )
+
+            self.events.append((event_id, event))
+            self.total_predictions += 1
+
+    def add_ground_truth(self, event_id: str, ground_truth: Any) -> bool:
+        """Add ground truth for existing prediction"""
+
+        with self.lock:
+            # Find matching prediction
+            for i, (eid, event) in enumerate(self.events):
+                if eid == event_id and event.ground_truth is None:
+                    # Calculate feedback delay
+                    delay = (datetime.now() - event.timestamp).total_seconds()
+                    event.ground_truth = ground_truth
+                    event.feedback_delay_seconds = delay
+
+                    self.total_labels_received += 1
+
+                    self.logger.debug(
+                        f"Received ground truth for {event_id} "
+                        f"(delay: {delay:.1f}s)"
+                    )
+
+                    return True
+
+        return False
+
+    def get_labeled_batch(self, batch_size: int = 100) -> List[Tuple[Dict, Any, Any]]:
+        """Get batch of labeled examples for training"""
+
+        labeled = []
+
+        with self.lock:
+            for event_id, event in self.events:
+                if event.ground_truth is not None and event.prediction is not None:
+                    labeled.append((
+                        event.features,
+                        event.prediction,
+                        event.ground_truth
+                    ))
+
+                if len(labeled) >= batch_size:
+                    break
+
+        return labeled
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get buffer statistics"""
+
+        with self.lock:
+            labeled_count = sum(
+                1 for _, event in self.events
+                if event.ground_truth is not None
+            )
+
+            avg_delay = np.mean([
+                event.feedback_delay_seconds
+                for _, event in self.events
+                if event.feedback_delay_seconds is not None
+            ]) if labeled_count > 0 else 0
+
+        return {
+            'buffer_size': len(self.events),
+            'total_predictions': self.total_predictions,
+            'total_labels': self.total_labels_received,
+            'labeled_in_buffer': labeled_count,
+            'avg_feedback_delay_seconds': avg_delay
+        }
+
+class ContinuousLearningEngine:
+    """
+    Complete continuous learning engine
+
+    Manages real-time model updates with performance monitoring
+    and automatic quality control
+    """
+
+    def __init__(self,
+                 model,
+                 update_interval_seconds: int = 60,
+                 min_batch_size: int = 100,
+                 performance_check_interval: int = 1000):
+        """
+        Parameters:
+        - model: Base model supporting partial_fit or incremental learning
+        - update_interval_seconds: Time between model updates
+        - min_batch_size: Minimum samples before update
+        - performance_check_interval: Check performance every N predictions
+        """
+        self.model = model
+        self.update_interval = update_interval_seconds
+        self.min_batch_size = min_batch_size
+        self.performance_check_interval = performance_check_interval
+
+        self.buffer = ContinuousLearningBuffer()
+        self.model_lock = Lock()
+
+        # Performance tracking
+        self.recent_errors: deque = deque(maxlen=1000)
+        self.performance_history: List[Dict] = []
+
+        # Control flags
+        self.running = False
+        self.update_thread: Optional[Thread] = None
+
+        self.logger = logging.getLogger(__name__)
+
+    def start(self):
+        """Start continuous learning background thread"""
+
+        if self.running:
+            self.logger.warning("Continuous learning already running")
+            return
+
+        self.running = True
+        self.update_thread = Thread(target=self._update_loop, daemon=True)
+        self.update_thread.start()
+
+        self.logger.info("Continuous learning started")
+
+    def stop(self):
+        """Stop continuous learning"""
+
+        self.running = False
+
+        if self.update_thread:
+            self.update_thread.join(timeout=5)
+
+        self.logger.info("Continuous learning stopped")
+
+    def predict(self, event_id: str, features: Dict) -> Any:
+        """Make prediction and store for later learning"""
+
+        # Make prediction with current model
+        with self.model_lock:
+            X = pd.DataFrame([features])
+            prediction = self.model.predict(X)[0]
+
+        # Store in buffer
+        self.buffer.add_prediction(event_id, features, prediction)
+
+        # Check performance periodically
+        if self.buffer.total_predictions % self.performance_check_interval == 0:
+            self._check_performance()
+
+        return prediction
+
+    def provide_feedback(self, event_id: str, ground_truth: Any):
+        """Provide ground truth feedback for prediction"""
+
+        success = self.buffer.add_ground_truth(event_id, ground_truth)
+
+        if not success:
+            self.logger.warning(
+                f"Could not find prediction for event {event_id}"
+            )
+
+    def _update_loop(self):
+        """Background loop for continuous model updates"""
+
+        self.logger.info("Update loop started")
+
+        while self.running:
+            try:
+                # Wait for update interval
+                time.sleep(self.update_interval)
+
+                # Get labeled batch
+                batch = self.buffer.get_labeled_batch(self.min_batch_size)
+
+                if len(batch) >= self.min_batch_size:
+                    self._update_model(batch)
+                else:
+                    self.logger.debug(
+                        f"Insufficient labeled samples: {len(batch)} "
+                        f"< {self.min_batch_size}"
+                    )
+
+            except Exception as e:
+                self.logger.error(f"Error in update loop: {e}")
+
+    def _update_model(self, batch: List[Tuple[Dict, Any, Any]]):
+        """Update model with new batch"""
+
+        self.logger.info(f"Updating model with {len(batch)} samples")
+
+        # Prepare training data
+        X = pd.DataFrame([features for features, _, _ in batch])
+        y = pd.Series([label for _, _, label in batch])
+
+        # Calculate current batch error
+        predictions = [pred for _, pred, _ in batch]
+        errors = [abs(pred - label) for pred, label in zip(predictions, y)]
+        batch_error = np.mean(errors)
+
+        self.recent_errors.extend(errors)
+
+        # Update model
+        try:
+            with self.model_lock:
+                if hasattr(self.model, 'partial_fit'):
+                    self.model.partial_fit(X, y)
+                else:
+                    # Fall back to full fit (not ideal for continuous learning)
+                    self.model.fit(X, y)
+
+            self.logger.info(
+                f"Model updated successfully (batch error: {batch_error:.4f})"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Model update failed: {e}")
+
+    def _check_performance(self):
+        """Check and log current performance"""
+
+        if len(self.recent_errors) < 100:
+            return
+
+        stats = self.buffer.get_stats()
+
+        avg_error = np.mean(list(self.recent_errors))
+        error_std = np.std(list(self.recent_errors))
+
+        performance = {
+            'timestamp': datetime.now(),
+            'avg_error': avg_error,
+            'error_std': error_std,
+            'predictions': stats['total_predictions'],
+            'labels_received': stats['total_labels'],
+            'label_rate': (stats['total_labels'] / stats['total_predictions']
+                          if stats['total_predictions'] > 0 else 0)
+        }
+
+        self.performance_history.append(performance)
+
+        self.logger.info(
+            f"Performance check: avg_error={avg_error:.4f}, "
+            f"label_rate={performance['label_rate']:.2%}"
+        )
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get current system metrics"""
+
+        buffer_stats = self.buffer.get_stats()
+
+        metrics = {
+            'buffer': buffer_stats,
+            'model_updates': len(self.performance_history),
+            'recent_avg_error': (np.mean(list(self.recent_errors))
+                                if self.recent_errors else 0),
+            'running': self.running
+        }
+
+        return metrics
+
+# Example: Continuous learning system
+from sklearn.linear_model import SGDRegressor
+import uuid
+
+# Create continuous learning engine
+model = SGDRegressor(
+    learning_rate='adaptive',
+    eta0=0.01,
+    random_state=42
+)
+
+# Initial training
+X_init = pd.DataFrame(np.random.randn(1000, 5))
+y_init = X_init.sum(axis=1) + np.random.randn(1000) * 0.1
+model.fit(X_init, y_init)
+
+# Start continuous learning
+engine = ContinuousLearningEngine(
+    model=model,
+    update_interval_seconds=5,  # Update every 5 seconds
+    min_batch_size=50
+)
+
+engine.start()
+
+# Simulate streaming predictions with delayed feedback
+print("Starting continuous learning simulation...")
+
+try:
+    for i in range(500):
+        # Generate features
+        features = {f'feature_{j}': np.random.randn() for j in range(5)}
+
+        # Make prediction
+        event_id = str(uuid.uuid4())
+        prediction = engine.predict(event_id, features)
+
+        # Simulate delayed ground truth (e.g., user feedback)
+        # In real system, this would come from user actions
+        ground_truth = sum(features.values()) + np.random.randn() * 0.1
+
+        # Simulate random delay in feedback (50% get feedback)
+        if np.random.random() < 0.5:
+            # Immediate feedback
+            engine.provide_feedback(event_id, ground_truth)
+        elif np.random.random() < 0.3:
+            # Delayed feedback simulation (would be async in production)
+            time.sleep(0.1)
+            engine.provide_feedback(event_id, ground_truth)
+
+        # Small delay between predictions
+        time.sleep(0.01)
+
+        # Print metrics periodically
+        if i % 100 == 0:
+            metrics = engine.get_metrics()
+            print(f"\nIteration {i}:")
+            print(f"  Buffer size: {metrics['buffer']['buffer_size']}")
+            print(f"  Labels received: {metrics['buffer']['total_labels']}")
+            print(f"  Model updates: {metrics['model_updates']}")
+            print(f"  Recent error: {metrics['recent_avg_error']:.4f}")
+
+finally:
+    # Stop engine
+    engine.stop()
+    print("\nContinuous learning stopped")
+\end{lstlisting}
+
+\subsection{Champion-Challenger Framework}
+
+Production continuous learning systems often use champion-challenger patterns to safely test new models while maintaining a stable baseline.
+
+\begin{lstlisting}[language=Python, caption=Champion-Challenger Continuous Learning]
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import numpy as np
+import pandas as pd
+import logging
+
+@dataclass
+class ModelPerformance:
+    """Track model performance metrics"""
+    model_id: str
+    predictions: int = 0
+    correct: int = 0
+    total_error: float = 0.0
+    recent_errors: List[float] = field(default_factory=list)
+
+    @property
+    def accuracy(self) -> float:
+        return self.correct / self.predictions if self.predictions > 0 else 0
+
+    @property
+    def avg_error(self) -> float:
+        return self.total_error / self.predictions if self.predictions > 0 else 0
+
+class ChampionChallengerSystem:
+    """
+    Manage multiple model versions with champion-challenger pattern
+
+    Champion serves production traffic while challengers are evaluated
+    on a small percentage to identify better models
+    """
+
+    def __init__(self,
+                 champion_model,
+                 challenger_traffic_pct: float = 0.1,
+                 evaluation_window: int = 1000,
+                 promotion_threshold: float = 0.02):
+        """
+        Parameters:
+        - champion_model: Current production model
+        - challenger_traffic_pct: Percentage of traffic for challengers
+        - evaluation_window: Samples to evaluate before promotion decision
+        - promotion_threshold: Min improvement required for promotion
+        """
+        self.champion = champion_model
+        self.champion_id = "champion_v1"
+
+        self.challengers: Dict[str, Any] = {}
+        self.challenger_traffic_pct = challenger_traffic_pct
+        self.evaluation_window = evaluation_window
+        self.promotion_threshold = promotion_threshold
+
+        # Performance tracking
+        self.performance: Dict[str, ModelPerformance] = {
+            self.champion_id: ModelPerformance(model_id=self.champion_id)
+        }
+
+        self.total_predictions = 0
+
+        self.logger = logging.getLogger(__name__)
+
+    def add_challenger(self, challenger_id: str, model):
+        """Add new challenger model"""
+
+        self.challengers[challenger_id] = model
+        self.performance[challenger_id] = ModelPerformance(model_id=challenger_id)
+
+        self.logger.info(f"Added challenger: {challenger_id}")
+
+    def predict(self, features: Dict) -> Tuple[Any, str]:
+        """
+        Make prediction using champion or challenger
+
+        Returns: (prediction, model_id)
+        """
+
+        self.total_predictions += 1
+
+        # Decide which model to use
+        if self.challengers and np.random.random() < self.challenger_traffic_pct:
+            # Use random challenger
+            challenger_id = np.random.choice(list(self.challengers.keys()))
+            model = self.challengers[challenger_id]
+            model_id = challenger_id
+        else:
+            # Use champion
+            model = self.champion
+            model_id = self.champion_id
+
+        # Make prediction
+        X = pd.DataFrame([features])
+        prediction = model.predict(X)[0]
+
+        return prediction, model_id
+
+    def record_outcome(self, model_id: str, prediction: Any, ground_truth: Any):
+        """Record prediction outcome for performance tracking"""
+
+        if model_id not in self.performance:
+            return
+
+        perf = self.performance[model_id]
+        perf.predictions += 1
+
+        error = abs(prediction - ground_truth)
+        perf.total_error += error
+        perf.recent_errors.append(error)
+
+        # Keep only recent errors
+        if len(perf.recent_errors) > self.evaluation_window:
+            perf.recent_errors = perf.recent_errors[-self.evaluation_window:]
+
+        # For classification, track accuracy
+        if prediction == ground_truth:
+            perf.correct += 1
+
+        # Check if should evaluate for promotion
+        if perf.predictions % self.evaluation_window == 0:
+            self._evaluate_promotion(model_id)
+
+    def _evaluate_promotion(self, challenger_id: str):
+        """Evaluate if challenger should be promoted to champion"""
+
+        if challenger_id == self.champion_id:
+            return
+
+        challenger_perf = self.performance[challenger_id]
+        champion_perf = self.performance[self.champion_id]
+
+        # Need minimum samples for both
+        if (challenger_perf.predictions < self.evaluation_window or
+            champion_perf.predictions < self.evaluation_window):
+            return
+
+        # Compare performance
+        challenger_error = np.mean(challenger_perf.recent_errors)
+        champion_error = np.mean(champion_perf.recent_errors)
+
+        improvement = champion_error - challenger_error
+
+        self.logger.info(
+            f"Evaluation: {challenger_id} vs {self.champion_id}: "
+            f"challenger_error={challenger_error:.4f}, "
+            f"champion_error={champion_error:.4f}, "
+            f"improvement={improvement:.4f}"
+        )
+
+        # Promote if improvement exceeds threshold
+        if improvement > self.promotion_threshold:
+            self._promote_challenger(challenger_id)
+
+    def _promote_challenger(self, challenger_id: str):
+        """Promote challenger to champion"""
+
+        self.logger.info(f"PROMOTING {challenger_id} to champion")
+
+        # Old champion becomes archived
+        old_champion_id = self.champion_id
+
+        # Promote challenger
+        self.champion = self.challengers[challenger_id]
+        self.champion_id = challenger_id
+
+        # Remove from challengers
+        del self.challengers[challenger_id]
+
+        # Reset performance tracking
+        self.performance[challenger_id] = ModelPerformance(
+            model_id=challenger_id
+        )
+
+    def get_leaderboard(self) -> List[Dict]:
+        """Get current model performance leaderboard"""
+
+        leaderboard = []
+
+        for model_id, perf in self.performance.items():
+            if perf.predictions == 0:
+                continue
+
+            status = "CHAMPION" if model_id == self.champion_id else "CHALLENGER"
+
+            leaderboard.append({
+                'model_id': model_id,
+                'status': status,
+                'predictions': perf.predictions,
+                'avg_error': perf.avg_error,
+                'recent_error': (np.mean(perf.recent_errors)
+                               if perf.recent_errors else 0),
+                'accuracy': perf.accuracy
+            })
+
+        # Sort by recent error
+        leaderboard.sort(key=lambda x: x['recent_error'])
+
+        return leaderboard
+
+# Example: Champion-Challenger system
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.linear_model import Ridge
+
+# Create champion model
+champion = GradientBoostingRegressor(n_estimators=50, random_state=42)
+X_train = pd.DataFrame(np.random.randn(1000, 5))
+y_train = X_train.sum(axis=1) + np.random.randn(1000) * 0.1
+champion.fit(X_train, y_train)
+
+# Create system
+cc_system = ChampionChallengerSystem(
+    champion_model=champion,
+    challenger_traffic_pct=0.2,  # 20% to challengers
+    evaluation_window=500,
+    promotion_threshold=0.01
+)
+
+# Add challenger models
+challenger1 = RandomForestRegressor(n_estimators=50, random_state=42)
+challenger1.fit(X_train, y_train)
+cc_system.add_challenger("random_forest_v1", challenger1)
+
+challenger2 = Ridge(alpha=1.0)
+challenger2.fit(X_train, y_train)
+cc_system.add_challenger("ridge_v1", challenger2)
+
+# Simulate streaming predictions
+print("Testing Champion-Challenger system...\n")
+
+for i in range(2000):
+    # Generate sample
+    features = {f'feature_{j}': np.random.randn() for j in range(5)}
+    ground_truth = sum(features.values()) + np.random.randn() * 0.1
+
+    # Make prediction
+    prediction, model_id = cc_system.predict(features)
+
+    # Record outcome
+    cc_system.record_outcome(model_id, prediction, ground_truth)
+
+    # Print leaderboard periodically
+    if (i + 1) % 500 == 0:
+        print(f"\n=== After {i+1} predictions ===")
+        leaderboard = cc_system.get_leaderboard()
+
+        for rank, entry in enumerate(leaderboard, 1):
+            print(
+                f"{rank}. {entry['status']:10s} {entry['model_id']:20s} "
+                f"| Predictions: {entry['predictions']:4d} "
+                f"| Recent Error: {entry['recent_error']:.4f}"
+            )
+\end{lstlisting}
+
+\section{Practical Exercises}
+
+\subsection{Exercise 1: Build an Automated Retraining Pipeline}
+
+Implement a complete automated retraining pipeline with monitoring, triggers, and deployment.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Monitor model performance in production
+    \item Detect when retraining is needed based on performance degradation
+    \item Automatically collect training data from the past 90 days
+    \item Train new model and evaluate against current champion
+    \item Deploy new model if it shows >2\% improvement
+    \item Send notifications on retraining events (success/failure)
+    \item Log all retraining events with metrics and outcomes
+\end{itemize}
+
+\textbf{Dataset:} Use an e-commerce conversion prediction dataset with daily updates.
+
+\textbf{Expected Output:}
+\begin{itemize}
+    \item Working retraining pipeline that runs on schedule or trigger
+    \item Dashboard showing retraining history and model performance over time
+    \item Alert system for retraining failures or performance issues
+    \item Model registry tracking all versions with metadata
+\end{itemize}
+
+\textbf{Hints:}
+\begin{itemize}
+    \item Use the \texttt{AutomatedRetrainingPipeline} class as a starting point
+    \item Integrate with a workflow orchestrator (Airflow, Prefect, or simple cron)
+    \item Store models in versioned storage (S3, GCS, or local with git-lfs)
+    \item Use email/Slack webhooks for notifications
+    \item Track metrics in a database or file-based store
+\end{itemize}
+
+\subsection{Exercise 2: Implement Multi-Trigger Retraining Logic}
+
+Create a sophisticated trigger system that combines multiple signals to make intelligent retraining decisions.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Implement performance degradation triggers (accuracy, precision, recall, F1)
+    \item Add data drift triggers using PSI and KS statistics
+    \item Include time-based triggers (monthly, or X days since last retrain)
+    \item Implement data volume triggers (retrain when N new samples available)
+    \item Add cooldown period to prevent excessive retraining
+    \item Weight triggers by severity (critical, high, medium, low)
+    \item Combine multiple trigger signals for final decision
+\end{itemize}
+
+\textbf{Expected Output:}
+\begin{itemize}
+    \item \texttt{RetrainingTriggerManager} class with configurable thresholds
+    \item Trigger evaluation logs showing which conditions fired
+    \item Visualization of trigger history and patterns
+    \item Configuration file for easy threshold adjustment
+\end{itemize}
+
+\textbf{Test Scenarios:}
+\begin{enumerate}
+    \item Gradual performance degradation over 2 weeks
+    \item Sudden concept drift (performance drops 10\% overnight)
+    \item Accumulation of 50,000 new training samples
+    \item 30 days elapsed since last retrain with stable performance
+    \item Multiple triggers firing simultaneously
+\end{enumerate}
+
+\subsection{Exercise 3: Build an Incremental Learning System}
+
+Implement an online learning system that updates continuously from streaming data.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Use streaming data with delayed feedback labels
+    \item Implement sliding window strategy for training data
+    \item Support both \texttt{partial\_fit} and full retraining approaches
+    \item Track performance on hold-out validation set
+    \item Implement temporal weighting (recent data weighted more)
+    \item Add automatic rollback on performance degradation
+    \item Monitor and log update frequency and batch sizes
+\end{itemize}
+
+\textbf{Models to Test:}
+\begin{itemize}
+    \item SGDClassifier (supports partial\_fit)
+    \item SGDRegressor (supports partial\_fit)
+    \item PassiveAggressiveClassifier
+    \item MultinomialNB (for text classification)
+\end{itemize}
+
+\textbf{Expected Output:}
+\begin{itemize}
+    \item Incremental learning system processing streaming data
+    \item Performance comparison: incremental vs. periodic full retraining
+    \item Analysis of update frequency vs. model quality trade-off
+    \item Memory usage profiling for different buffer sizes
+\end{itemize}
+
+\subsection{Exercise 4: Implement Concept Drift Detection}
+
+Build a comprehensive drift detection system using multiple statistical tests.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Implement Kolmogorov-Smirnov test for distribution drift
+    \item Add Page-Hinkley test for gradual drift
+    \item Use ADWIN (Adaptive Windowing) for change detection
+    \item Implement ensemble drift detector (combine multiple tests)
+    \item Detect both feature drift and concept drift
+    \item Characterize drift type (sudden, gradual, recurring)
+    \item Trigger appropriate adaptation strategy based on drift type
+\end{itemize}
+
+\textbf{Test Datasets:}
+\begin{enumerate}
+    \item Synthetic data with known drift points
+    \item Weather prediction with seasonal patterns
+    \item Financial time series with market regime changes
+    \item User behavior data with gradual trend shifts
+\end{enumerate}
+
+\textbf{Expected Output:}
+\begin{itemize}
+    \item Drift detection accuracy (precision/recall for drift events)
+    \item Time-to-detection for different drift types
+    \item False positive rate analysis
+    \item Comparison of different drift detection methods
+    \item Visualization showing detected drift points
+\end{itemize}
+
+\subsection{Exercise 5: Optimize Freshness-Stability Trade-off}
+
+Develop a system that adaptively balances model freshness against stability requirements.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Track both freshness metrics (data age, drift score) and stability metrics (prediction variance, rollback rate)
+    \item Implement adaptive retraining interval that adjusts based on stability
+    \item Add prediction stability tracker that compares model versions
+    \item Create configurable freshness-stability weight parameter
+    \item Log all retraining decisions with justifications
+    \item Measure business impact of different configurations
+\end{itemize}
+
+\textbf{Scenarios to Test:}
+\begin{enumerate}
+    \item High-churn environment (prioritize freshness)
+    \item Regulated environment (prioritize stability)
+    \item Balanced scenario (equal weight)
+    \item Varying data drift rates over time
+\end{enumerate}
+
+\textbf{Metrics to Track:}
+\begin{itemize}
+    \item Average model age (staleness)
+    \item Prediction variance between model versions
+    \item Number of rollbacks required
+    \item Overall model performance over time
+    \item Retraining frequency and costs
+\end{itemize}
+
+\textbf{Expected Output:}
+\begin{itemize}
+    \item Optimal freshness-stability configuration for each scenario
+    \item Analysis showing trade-off curves
+    \item Recommendation system for weight selection
+    \item Cost-benefit analysis of different strategies
+\end{itemize}
+
+\subsection{Exercise 6: Build a Cost-Aware Retraining Scheduler}
+
+Create an intelligent scheduler that optimizes retraining timing for cost and business impact.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Estimate retraining costs (compute, data pipeline, engineering)
+    \item Calculate expected benefits (performance improvement, revenue impact)
+    \item Compute ROI for retraining decisions
+    \item Find optimal time windows (avoid business hours, prefer off-peak)
+    \item Consider opportunity costs of model downtime
+    \item Implement multi-day lookahead scheduling
+    \item Add budget constraints and cost tracking
+\end{itemize}
+
+\textbf{Cost Model Components:}
+\begin{itemize}
+    \item Compute cost: based on training time and instance type
+    \item Data pipeline cost: based on data volume processed
+    \item Engineering oversight: human review and validation time
+    \item Opportunity cost: potential revenue impact during deployment
+    \item Validation cost: A/B testing or canary deployment costs
+\end{itemize}
+
+\textbf{Expected Output:}
+\begin{itemize}
+    \item Scheduler that recommends optimal retraining times
+    \item ROI calculations for each retraining decision
+    \item Cost tracking dashboard
+    \item Schedule optimization showing cost savings vs. naive scheduling
+    \item Budget forecasting for monthly retraining costs
+\end{itemize}
+
+\subsection{Exercise 7: Implement a Continuous Learning System with Champion-Challenger}
+
+Build a production-ready continuous learning system with safe model updates.
+
+\textbf{Requirements:}
+\begin{itemize}
+    \item Implement thread-safe continuous learning buffer
+    \item Handle delayed feedback labels (predictions now, labels later)
+    \item Run background model update thread
+    \item Implement champion-challenger pattern for safe updates
+    \item Route small percentage of traffic to challenger models
+    \item Automatically promote challenger if performance improves
+    \item Include automatic rollback on degradation
+    \item Track and compare performance of all model versions
+\end{itemize}
+
+\textbf{System Components:}
+\begin{enumerate}
+    \item \textbf{Prediction Service:} Serves real-time predictions, tracks events
+    \item \textbf{Feedback Collector:} Receives delayed ground truth labels
+    \item \textbf{Learning Buffer:} Thread-safe storage for training events
+    \item \textbf{Update Engine:} Periodic model updates from buffered data
+    \item \textbf{Model Registry:} Manages champion and challenger models
+    \item \textbf{Traffic Router:} Splits traffic between models for evaluation
+    \item \textbf{Performance Monitor:} Tracks and compares model performance
+    \item \textbf{Promotion Logic:} Decides when to promote challengers
+\end{enumerate}
+
+\textbf{Expected Output:}
+\begin{itemize}
+    \item Working continuous learning system processing streaming data
+    \item Demonstration of automatic model promotion
+    \item Performance comparison: champion vs. challengers over time
+    \item Analysis of different traffic split percentages
+    \item Latency and throughput benchmarks
+    \item Safety analysis: rollback time, degradation detection delay
+\end{itemize}
+
+\textbf{Advanced Extensions:}
+\begin{itemize}
+    \item Multi-armed bandit for dynamic traffic allocation
+    \item Bayesian optimization for challenger hyperparameters
+    \item Distributed learning across multiple workers
+    \item Integration with feature store for consistent features
+    \item A/B test statistical significance testing
+\end{itemize}
+
+\section{Summary}
+
+Model maintenance and retraining are critical for keeping ML systems healthy in production. This chapter covered:
+
+\textbf{Automated Retraining Pipelines:}
+\begin{itemize}
+    \item Complete pipeline architecture with data collection, training, evaluation, and deployment
+    \item Automated orchestration and error handling
+    \item Integration with model registries and deployment systems
+\end{itemize}
+
+\textbf{Intelligent Trigger Mechanisms:}
+\begin{itemize}
+    \item Multi-criteria triggers combining performance, drift, time, and data volume signals
+    \item Configurable thresholds with severity levels
+    \item Cooldown periods to prevent excessive retraining
+    \item Trigger evaluation and decision logic
+\end{itemize}
+
+\textbf{Incremental and Online Learning:}
+\begin{itemize}
+    \item Streaming data processing with delayed feedback
+    \item Sliding window and temporal weighting strategies
+    \item Online learning algorithms using partial\_fit
+    \item Performance monitoring and automatic rollback
+\end{itemize}
+
+\textbf{Concept Drift Handling:}
+\begin{itemize}
+    \item Statistical drift detection methods (KS test, Page-Hinkley, ADWIN)
+    \item Drift characterization (sudden, gradual, recurring)
+    \item Adaptive strategies for different drift types
+    \item Ensemble approaches for robust adaptation
+\end{itemize}
+
+\textbf{Freshness vs. Stability Trade-offs:}
+\begin{itemize}
+    \item Balancing model currency against behavioral consistency
+    \item Adaptive retraining intervals based on stability
+    \item Prediction stability tracking across versions
+    \item Application-specific optimization
+\end{itemize}
+
+\textbf{Cost-Aware Scheduling:}
+\begin{itemize}
+    \item ROI-based retraining decisions
+    \item Cost modeling for compute, data, and opportunity costs
+    \item Optimal timing to minimize business impact
+    \item Budget constraints and forecasting
+\end{itemize}
+
+\textbf{Continuous Learning Systems:}
+\begin{itemize}
+    \item Real-time model adaptation from streaming data
+    \item Thread-safe buffering and background updates
+    \item Champion-challenger pattern for safe deployment
+    \item Automatic promotion based on performance
+\end{itemize}
+
+\textbf{Key Takeaways:}
+
+\begin{enumerate}
+    \item \textbf{Automate Everything:} Manual retraining doesn't scale. Build automated pipelines with proper monitoring and error handling.
+
+    \item \textbf{Use Multiple Signals:} Don't rely on a single trigger. Combine performance metrics, drift detection, data volume, and time-based schedules.
+
+    \item \textbf{Start Conservative:} Begin with longer retraining intervals and stricter promotion criteria. Relax constraints as you gain confidence in your system.
+
+    \item \textbf{Monitor Continuously:} Track both model performance and system health. Set up alerts for anomalies and failures.
+
+    \item \textbf{Handle Drift Adaptively:} Different types of drift require different responses. Characterize drift patterns and adapt accordingly.
+
+    \item \textbf{Balance Trade-offs:} Consider freshness vs. stability, cost vs. performance, and automation vs. control. Optimize for your specific business needs.
+
+    \item \textbf{Test Safely:} Use champion-challenger patterns, canary deployments, and automatic rollbacks to minimize risk.
+
+    \item \textbf{Measure Business Impact:} Connect retraining decisions to business metrics. Calculate ROI to justify infrastructure investment.
+\end{enumerate}
+
+Production ML systems require ongoing maintenance. The patterns and code in this chapter provide a foundation for building robust, automated retraining systems that keep your models performing well as the world changes.
+

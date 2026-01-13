@@ -536,7 +536,7 @@ class FeatureInteractionDiscovery:
                 ))
 
         logger.info(f"Found {len(self.significant_interactions)} significant interactions "
-                   f"(α={self.significance_level}, correction={self.correction_method})")
+                   f"(alpha={self.significance_level}, correction={self.correction_method})")
 
         return result
 
@@ -2162,7 +2162,7 @@ class FeatureMonitor:
         cursor = conn.cursor()
 
         # Feature metrics table
-        cursor.execute('''
+        cursor.execute("'
             CREATE TABLE IF NOT EXISTS feature_metrics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 feature_name TEXT NOT NULL,
@@ -2175,10 +2175,10 @@ class FeatureMonitor:
                 skewness REAL,
                 kurtosis REAL
             )
-        ''')
+        "')
 
         # Drift alerts table
-        cursor.execute('''
+        cursor.execute("'
             CREATE TABLE IF NOT EXISTS drift_alerts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 feature_name TEXT NOT NULL,
@@ -2190,18 +2190,18 @@ class FeatureMonitor:
                 reference_stats TEXT,
                 current_stats TEXT
             )
-        ''')
+        "')
 
         # Create indices
-        cursor.execute('''
+        cursor.execute("'
             CREATE INDEX IF NOT EXISTS idx_feature_metrics_name_time
             ON feature_metrics(feature_name, timestamp)
-        ''')
+        "')
 
-        cursor.execute('''
+        cursor.execute("'
             CREATE INDEX IF NOT EXISTS idx_drift_alerts_name_time
             ON drift_alerts(feature_name, timestamp)
-        ''')
+        "')
 
         conn.commit()
         conn.close()
@@ -2286,11 +2286,11 @@ class FeatureMonitor:
                 "kurtosis": None
             }
 
-        cursor.execute('''
+        cursor.execute("'
             INSERT INTO feature_metrics
             (feature_name, timestamp, mean, std, min, max, missing_pct, skewness, kurtosis)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
+        "', (
             feature_name,
             timestamp.isoformat(),
             stats["mean"],
@@ -2375,12 +2375,12 @@ class FeatureMonitor:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute('''
+        cursor.execute("'
             INSERT INTO drift_alerts
             (feature_name, timestamp, drift_score, p_value, test_method,
              severity, reference_stats, current_stats)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
+        "', (
             alert.feature_name,
             alert.timestamp.isoformat(),
             alert.drift_score,
@@ -2401,11 +2401,11 @@ class FeatureMonitor:
 
         cutoff_date = datetime.now() - timedelta(days=days)
 
-        query = '''
+        query = "'
             SELECT * FROM drift_alerts
             WHERE feature_name = ? AND timestamp >= ?
             ORDER BY timestamp DESC
-        '''
+        "'
 
         df = pd.read_sql_query(query, conn, params=(feature_name, cutoff_date.isoformat()))
         conn.close()
@@ -2419,11 +2419,11 @@ class FeatureMonitor:
 
         cutoff_date = datetime.now() - timedelta(days=days)
 
-        query = '''
+        query = "'
             SELECT * FROM feature_metrics
             WHERE feature_name = ? AND timestamp >= ?
             ORDER BY timestamp DESC
-        '''
+        "'
 
         df = pd.read_sql_query(query, conn, params=(feature_name, cutoff_date.isoformat()))
         conn.close()
@@ -2480,7 +2480,7 @@ After deploying the new model with engineered features:
 
 \subsection{Production Monitoring Saves the Day}
 
-Two months post-deployment, the FeatureMonitor detected drift in the "days\_since\_last\_purchase" feature (p-value = 0.003, KS statistic = 0.21). Investigation revealed that a marketing campaign had significantly changed purchase frequency patterns.
+Two months post-deployment, the FeatureMonitor detected drift in the ``days\_since\_last\_purchase`` feature (p-value = 0.003, KS statistic = 0.21). Investigation revealed that a marketing campaign had significantly changed purchase frequency patterns.
 
 The team retrained the model with updated reference distributions and prevented a potential 15\% drop in CTR that would have occurred if the drift had gone undetected.
 
@@ -2591,9 +2591,9 @@ MedPredict developed a hospital readmission prediction model with remarkable off
 After weeks of investigation, the team discovered multiple leakage sources:
 
 \begin{enumerate}
-    \item \textbf{Temporal leakage}: Features included "total medications prescribed" -- but this was computed from the ENTIRE hospital stay, including medications prescribed AFTER the readmission decision point
-    \item \textbf{Lab result leakage}: "Average lab result stability" was calculated over a 7-day window that included days AFTER discharge
-    \item \textbf{Implicit target leakage}: "Number of follow-up appointments scheduled" was highly predictive -- because patients likely to be readmitted were proactively scheduled for more follow-ups by doctors
+    \item \textbf{Temporal leakage}: Features included ``total medications prescribed`` -- but this was computed from the ENTIRE hospital stay, including medications prescribed AFTER the readmission decision point
+    \item \textbf{Lab result leakage}: ``Average lab result stability`` was calculated over a 7-day window that included days AFTER discharge
+    \item \textbf{Implicit target leakage}: ``Number of follow-up appointments scheduled`` was highly predictive -- because patients likely to be readmitted were proactively scheduled for more follow-ups by doctors
     \item \textbf{Data preprocessing leakage}: Missing value imputation used mean from entire dataset, including future test set patients
     \item \textbf{Feature selection leakage}: Feature importance was calculated on the full dataset before train/test split
 \end{enumerate}
@@ -2701,9 +2701,9 @@ GlobalBank operated 47 different ML models across fraud detection, credit risk, 
 \textbf{The Chaos}
 
 \begin{itemize}
-    \item "Customer lifetime value" was computed 12 different ways by 12 teams
-    \item "Days since last transaction" existed in 8 variants with subtle differences
-    \item Shared features (e.g., "account age") were recomputed in each model's pipeline
+    \item ``Customer lifetime value`` was computed 12 different ways by 12 teams
+    \item ``Days since last transaction`` existed in 8 variants with subtle differences
+    \item Shared features (e.g., ``account age``) were recomputed in each model's pipeline
     \item No versioning: Features changed without notice, breaking downstream models
     \item Total compute cost for redundant feature computation: \$380K/year
 \end{itemize}
@@ -2840,7 +2840,7 @@ class EnterpriseFeatureStore:
 \textbf{The Migration Challenges}
 
 \begin{enumerate}
-    \item \textbf{Reconciling definitions}: "Customer lifetime value" had 12 implementations; teams had to agree on canonical version
+    \item \textbf{Reconciling definitions}: ``Customer lifetime value`` had 12 implementations; teams had to agree on canonical version
     \item \textbf{Backward compatibility}: Couldn't break existing models; needed versioning and migration paths
     \item \textbf{Performance regression}: Some teams had optimized local pipelines; feature store added latency
     \item \textbf{Cultural resistance}: Teams reluctant to give up control and depend on shared infrastructure
@@ -3228,7 +3228,7 @@ class FeatureGovernance:
         cursor = conn.cursor()
 
         # Feature registry
-        cursor.execute('''
+        cursor.execute("'
             CREATE TABLE IF NOT EXISTS feature_registry (
                 feature_id TEXT PRIMARY KEY,
                 feature_name TEXT NOT NULL,
@@ -3241,10 +3241,10 @@ class FeatureGovernance:
                 sla_freshness_minutes INTEGER,
                 sla_completeness_pct REAL
             )
-        ''')
+        "')
 
         # Access log
-        cursor.execute('''
+        cursor.execute("'
             CREATE TABLE IF NOT EXISTS feature_access_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 feature_id TEXT NOT NULL,
@@ -3254,10 +3254,10 @@ class FeatureGovernance:
                 row_count INTEGER,
                 FOREIGN KEY(feature_id) REFERENCES feature_registry(feature_id)
             )
-        ''')
+        "')
 
         # Data quality metrics
-        cursor.execute('''
+        cursor.execute("'
             CREATE TABLE IF NOT EXISTS feature_quality_metrics (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 feature_id TEXT NOT NULL,
@@ -3268,7 +3268,7 @@ class FeatureGovernance:
                 freshness_minutes INTEGER,
                 FOREIGN KEY(feature_id) REFERENCES feature_registry(feature_id)
             )
-        ''')
+        "')
 
         conn.commit()
         conn.close()
@@ -3285,12 +3285,12 @@ class FeatureGovernance:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute('''
+        cursor.execute("'
             INSERT OR REPLACE INTO feature_registry
             (feature_id, feature_name, feature_view, owner, description,
              created_at, last_updated, sla_freshness_minutes, sla_completeness_pct)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
+        "', (
             feature_id, feature_name, feature_view, owner, description,
             datetime.now().isoformat(), datetime.now().isoformat(),
             sla_freshness_minutes, sla_completeness_pct
@@ -3308,11 +3308,11 @@ class FeatureGovernance:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
-        cursor.execute('''
+        cursor.execute("'
             INSERT INTO feature_access_log
             (feature_id, accessed_by, access_type, timestamp, row_count)
             VALUES (?, ?, ?, ?, ?)
-        ''', (
+        "', (
             feature_id, accessed_by, access_type,
             datetime.now().isoformat(), row_count
         ))
@@ -3325,10 +3325,10 @@ class FeatureGovernance:
         conn = sqlite3.connect(self.db_path)
 
         # Get SLA requirements
-        sla_query = '''
+        sla_query = "'
             SELECT sla_freshness_minutes, sla_completeness_pct
             FROM feature_registry WHERE feature_id = ?
-        '''
+        "'
         sla_df = pd.read_sql_query(sla_query, conn, params=(feature_id,))
 
         if len(sla_df) == 0:
@@ -3338,11 +3338,11 @@ class FeatureGovernance:
         sla_completeness = sla_df.iloc[0]['sla_completeness_pct']
 
         # Get latest quality metrics
-        metrics_query = '''
+        metrics_query = "'
             SELECT * FROM feature_quality_metrics
             WHERE feature_id = ?
             ORDER BY timestamp DESC LIMIT 1
-        '''
+        "'
         metrics_df = pd.read_sql_query(metrics_query, conn, params=(feature_id,))
 
         conn.close()

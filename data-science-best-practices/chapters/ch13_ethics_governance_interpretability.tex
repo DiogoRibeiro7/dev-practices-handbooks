@@ -2,11 +2,11 @@
 
 \section{Introduction}
 
-A hiring algorithm with 85\% accuracy seems successful—until analysis reveals it recommends male candidates 80\% of the time despite equal qualifications. A credit scoring model performs well on aggregate metrics but systematically denies loans to qualified applicants from specific zip codes. These are not edge cases—they are common failures when ML systems lack ethical guardrails, governance frameworks, and interpretability.
+A hiring algorithm with 85\% accuracy seems successful---until analysis reveals it recommends male candidates 80\% of the time despite equal qualifications. A credit scoring model performs well on aggregate metrics but systematically denies loans to qualified applicants from specific zip codes. These are not edge cases---they are common failures when ML systems lack ethical guardrails, governance frameworks, and interpretability.
 
 \subsection{The Ethics Crisis in ML}
 
-Consider Amazon's recruiting tool, which learned to penalize resumes containing the word "women's" (as in "women's chess club") because historical hiring data showed gender bias. The system was trained on 10 years of male-dominated hiring decisions, encoding societal biases into algorithmic recommendations. The tool was scrapped after the bias was discovered, but not before it influenced hiring decisions.
+Consider Amazon's recruiting tool, which learned to penalize resumes containing the word ``women's`` (as in ``women's chess club``) because historical hiring data showed gender bias. The system was trained on 10 years of male-dominated hiring decisions, encoding societal biases into algorithmic recommendations. The tool was scrapped after the bias was discovered, but not before it influenced hiring decisions.
 
 \subsection{Why Ethics and Governance Matter}
 
@@ -20,7 +20,7 @@ ML systems make consequential decisions affecting people's lives:
     \item \textbf{Education}: Systems recommend courses, predict success, allocate scholarships
 \end{itemize}
 
-These decisions require fairness, transparency, and accountability—properties that don't emerge from optimizing accuracy alone.
+These decisions require fairness, transparency, and accountability---properties that don't emerge from optimizing accuracy alone.
 
 \subsection{The Cost of Unethical ML}
 
@@ -3507,9 +3507,9 @@ YOUR RIGHTS UNDER CCPA:
    for exercising your CCPA rights.
 
 TO EXERCISE YOUR RIGHTS:
-- Email: privacy@{self.business_name.lower().replace(' ', '')}.com
+- Email: privacy@{self.business_name.lower().replace(' ', ")}.com
 - Phone: 1-800-XXX-XXXX
-- Web: https://www.{self.business_name.lower().replace(' ', '')}.com/ccpa-request
+- Web: https://www.{self.business_name.lower().replace(' ', ")}.com/ccpa-request
 
 We will respond to verifiable requests within 45 days.
         """
@@ -4233,14 +4233,14 @@ A large tech company deployed a resume screening ML model to filter candidates:
 
 \begin{itemize}
     \item Trained on 5 years of historical hiring data (2015-2020)
-    \item Model achieved 88\% accuracy predicting "hired vs not hired"
+    \item Model achieved 88\% accuracy predicting ``hired vs not hired``
     \item Deployed to screen 100,000 applications annually
 \end{itemize}
 
 After 6 months, an internal audit revealed:
 \begin{itemize}
     \item Model recommended male candidates 2.3x more than females
-    \item Penalized resumes mentioning "women's" organizations
+    \item Penalized resumes mentioning ``women's`` organizations
     \item Favored candidates from specific universities (predominantly male)
     \item 73\% demographic parity violation for gender
     \item Legal exposure: potential \$15M class action lawsuit
@@ -4511,7 +4511,7 @@ After 18 months, a ProPublica investigation revealed systemic discrimination:
 \begin{itemize}
     \item \textbf{Racial Disparities}: Black applicants with identical credit scores to white applicants were denied 2.1x more frequently
     \item \textbf{Geographic Redlining}: Applicants from specific zip codes (predominantly minority) systematically denied regardless of qualifications
-    \item \textbf{Proxy Features}: Model heavily weighted "neighborhood risk score" (79\% correlated with race)
+    \item \textbf{Proxy Features}: Model heavily weighted ``neighborhood risk score`` (79\% correlated with race)
     \item \textbf{False Positive Disparity}: False rejection rate for Black applicants: 43\% vs 23\% for white applicants
     \item \textbf{Financial Impact}: Estimated \$180M in wrongfully denied loans
     \item \textbf{Legal Exposure}: \$68M class action settlement + DOJ investigation
@@ -4525,13 +4525,13 @@ Multiple regulatory violations:
 \begin{itemize}
     \item Failed to provide adverse action notices explaining denial reasons
     \item No mechanism for consumers to contest automated decisions
-    \item Penalty: \$1,000 per violation + attorney fees (500,000 applications × \$1,000 = \$500M potential exposure)
+    \item Penalty: \$1,000 per violation + attorney fees (500,000 applications $	imes$ \$1,000 = \$500M potential exposure)
 \end{itemize}
 
 \textbf{Equal Credit Opportunity Act (ECOA) Regulation B}:
 \begin{itemize}
     \item Prohibited discrimination based on race, color, religion, national origin
-    \item Use of "neighborhood risk score" constituted proxy discrimination
+    \item Use of ``neighborhood risk score`` constituted proxy discrimination
     \item Penalty: Actual damages + punitive damages up to \$10,000 per violation
 \end{itemize}
 
@@ -4547,7 +4547,7 @@ Multiple regulatory violations:
 \textbf{Technical Failures}:
 \begin{itemize}
     \item Training data contained historical discrimination (redlining from 1960s-1990s encoded in default patterns)
-    \item No intersectional fairness testing (race × income × geography)
+    \item No intersectional fairness testing (race $	imes$ income $	imes$ geography)
     \item Feature engineering created proxies for protected attributes
     \item No causal analysis of feature relationships with race
 \end{itemize}
@@ -4880,7 +4880,7 @@ Science journal investigation (Obermeyer et al., 2019) revealed severe racial bi
 \textbf{Historical Inequity Encoded}:
 \begin{itemize}
     \item Training data reflected decades of healthcare disparities
-    \item Model learned that Black patients "cost less" and assigned lower risk scores
+    \item Model learned that Black patients ``cost less`` and assigned lower risk scores
     \item Failed to account for structural barriers to care access
 \end{itemize}
 
@@ -5127,7 +5127,7 @@ A property insurance company deployed an ML model for pricing and underwriting h
 State insurance commissioner investigation revealed systematic discrimination:
 \begin{itemize}
     \item \textbf{Geographic Discrimination}: Premiums in minority-majority zip codes averaged 60\% higher for equivalent homes
-    \item \textbf{Proxy Redlining}: Model used "neighborhood risk score" (83\% correlated with racial composition)
+    \item \textbf{Proxy Redlining}: Model used ``neighborhood risk score`` (83\% correlated with racial composition)
     \item \textbf{Disparate Impact}: Black homeowners paid average \$2,100/year vs \$1,300/year for white homeowners with identical homes and claims history
     \item \textbf{Coverage Denial}: 2.8x higher denial rate in predominantly minority neighborhoods
     \item \textbf{Financial Harm}: \$340M in excess premiums charged to minority homeowners over 5 years
@@ -5513,7 +5513,7 @@ Build AutoML system that:
 
 Implement intersectional fairness testing for a lending model:
 \begin{itemize}
-    \item Test fairness across race × gender × income intersections
+    \item Test fairness across race $	imes$ gender $	imes$ income intersections
     \item Identify subgroups with disparities > 20\%
     \item Compute statistical significance of disparities
     \item Generate visual heatmap of intersectional metrics
@@ -5604,7 +5604,7 @@ Build attention analysis system for text classification model:
 
 Implement TCAV for image classification model:
 \begin{itemize}
-    \item Define 5 human-interpretable concepts (e.g., "striped", "wooden")
+    \item Define 5 human-interpretable concepts (e.g., ``striped``, ``wooden``)
     \item Collect positive and negative examples for each concept
     \item Learn Concept Activation Vectors (CAVs) using linear classifiers
     \item Compute TCAV scores with statistical significance testing
@@ -5677,10 +5677,10 @@ Implement complete ethical AI pipeline for high-stakes application:
 
 \subsection{Interpretability}
 \begin{itemize}
-    \item \textbf{LIME is Unstable—Add Stability Analysis}: Standard LIME varies across runs due to sampling. Run 10+ times, compute Spearman correlation of rankings. Only trust explanations with correlation $> 0.7$.
+    \item \textbf{LIME is Unstable---Add Stability Analysis}: Standard LIME varies across runs due to sampling. Run 10+ times, compute Spearman correlation of rankings. Only trust explanations with correlation $> 0.7$.
     \item \textbf{SHAP for Global, LIME for Local}: SHAP provides stable global feature importance. Use LIME for local explanations when SHAP is too slow. Always report confidence intervals for LIME weights.
     \item \textbf{Attention $\neq$ Explanation}: High attention weights show what the model focuses on, not why. Combine attention visualization with gradient-based attribution for transformer interpretability.
-    \item \textbf{Concept-Based Explanations for Non-Experts}: TCAV maps predictions to human concepts (e.g., "striped", "wooden") instead of features (e.g., pixel values). Use for stakeholder communication. Only trust concepts with $p < 0.05$.
+    \item \textbf{Concept-Based Explanations for Non-Experts}: TCAV maps predictions to human concepts (e.g., ``striped``, ``wooden``) instead of features (e.g., pixel values). Use for stakeholder communication. Only trust concepts with $p < 0.05$.
     \item \textbf{Distillation Enables Interpretability}: Complex ensembles can be distilled into decision trees with $> 85\%$ fidelity. Extract human-readable rules for audit and regulatory review. Report compression ratio and fidelity explicitly.
 \end{itemize}
 
@@ -5711,4 +5711,4 @@ Implement complete ethical AI pipeline for high-stakes application:
     \item \textbf{Continuous Learning}: Regulations evolve (EU AI Act, US algorithmic accountability bills). Fairness metrics expand (counterfactual, causal). Stay current through research, conferences, and legal counsel.
 \end{itemize}
 
-Ethics and governance are not constraints on ML—they are enablers that build trust, prevent harm, and ensure ML systems deliver value responsibly. The costs of ethical AI failures are enormous: financial (\$68M-\$200M+ settlements), reputational (ProPublica investigations), and regulatory (license suspension, loss of federal funding). Investing in comprehensive fairness testing, regulatory compliance, and interpretability protects both users and organizations. In high-stakes domains, ethical AI is not optional—it's the only sustainable path forward.
+Ethics and governance are not constraints on ML---they are enablers that build trust, prevent harm, and ensure ML systems deliver value responsibly. The costs of ethical AI failures are enormous: financial (\$68M-\$200M+ settlements), reputational (ProPublica investigations), and regulatory (license suspension, loss of federal funding). Investing in comprehensive fairness testing, regulatory compliance, and interpretability protects both users and organizations. In high-stakes domains, ethical AI is not optional---it's the only sustainable path forward.

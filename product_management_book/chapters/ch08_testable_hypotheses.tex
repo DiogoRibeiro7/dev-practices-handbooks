@@ -1,0 +1,259 @@
+\chapter{Writing Testable Hypotheses, Not Just Features}
+\label{ch:testable-hypotheses}
+
+Treating product work like a science experiment helps teams separate fact from assumption. Hypotheses make beliefs explicit, experiments test them, and evidence guides iteration. This chapter shows how to craft hypotheses that survive scrutiny and how to run experiments that inform decisions rather than merely confirm biases.
+
+\section{The Scientific Method in Product Development}
+\label{sec:scientific-method}
+
+The scientific method maps neatly to product development: observe, hypothesize, experiment, analyze, and repeat. It discourages hero opinions and anchors decisions in evidence. Research from a 2022 Harvard Business Review study shows that teams with rigorous experimentation cultures outperform peers by 30\% in growth metrics, underscoring the value of this discipline.
+
+\subsection{Observation and Question}
+Everything starts with a question informed by user research, telemetry, or market signals. ``Why do trial users churn on day three?'' is more actionable than ``Improve activation.'' Requirements should note the observations that prompted the work.
+
+\subsection{Hypothesis Formation}
+A good hypothesis proposes a causal claim with a reason. For example, ``If we surface contextual tips after the third failed login, then completion rates will increase because users lack guidance.'' The ``because'' forces articulation of mechanism.
+
+\subsection{Experiment Design}
+Experiments must control for confounding variables. Identify the primary metric, guardrails, sample size, and duration before launching. Power calculations or simulation can ensure the experiment detects meaningful effects.
+
+\subsection{Analysis and Conclusion}
+After running the test, analyze results objectively. Document whether the hypothesis held, how strong the evidence was, and what decisions follow. Resist the urge to cherry-pick segments to confirm expectations.
+
+\section{Anatomy of a Testable Hypothesis}
+\label{sec:hypothesis-anatomy}
+
+Hypotheses should be specific, measurable, and falsifiable. A template helps maintain rigor.
+
+\subsection{The If-Then-Because Structure}
+Using ``If we do X, then Y will happen, because Z'' connects action, outcome, and rationale. This format exposes logical gaps and ensures each hypothesis includes a mechanism rather than a wish.
+
+\subsection{Operational Definitions}
+Define every variable precisely. ``Activation'' might mean ``user completes onboarding flow and triggers first API call.'' Without operational definitions, experiments yield ambiguous interpretations.
+
+\subsection{Success Criteria}
+Specify thresholds for declaring success. Include both statistical significance (e.g., p \textless{} 0.05) and practical significance (e.g., at least 3\% lift). Document guardrail metrics to ensure improvements do not come at unacceptable cost.
+
+\subsection{Falsifiability}
+Hypotheses must be disprovable. If results cannot invalidate the idea, it is not a hypothesis. Writing down ``This hypothesis fails if lift is \textless{} 2\% or latency exceeds 100\,ms'' keeps teams honest.
+
+\section{Types of Hypotheses in Product Development}
+\label{sec:hypothesis-types}
+
+Different problems call for different hypothesis types.
+
+\subsection{Descriptive Hypotheses}
+These describe current behavior (``We believe 40\% of sign-ups never complete onboarding''). They guide measurement work and inform priorities.
+
+\subsection{Causal Hypotheses}
+Causal hypotheses assert that changing X will cause Y. They are suited to UX changes, incentive tweaks, or algorithm updates. Verification typically requires randomized experiments.
+
+\subsection{Comparative Hypotheses}
+Comparative statements pit alternatives against each other (``Model architecture A will outperform B on recall''). They enable bake-offs and multi-armed bandit approaches.
+
+\subsection{Predictive Hypotheses}
+Predictive hypotheses forecast future metrics, such as ``The churn model will achieve ROC-AUC of 0.87 on next quarter's data.'' Validation involves backtests, cross-validation, and live shadow tests.
+
+\section{From Feature Specs to Hypotheses}
+\label{sec:features-to-hypotheses}
+
+Reframing traditional requirements as hypotheses shifts attention from shipping features to delivering impact.
+
+\subsection{Traditional Feature Specification}
+Feature specs often describe UI components or API responses without stating why they matter. Stakeholders assume the feature will work, turning review discussions into bikeshedding over details.
+
+\subsection{Hypothesis-Driven Specification}
+A hypothesis-driven spec might read: ``If we add a personalized checklist to onboarding, then activation will increase by 10\% because users understand the next step.'' The spec includes instrumentation requirements and experiment design.
+
+\subsection{Example Transformations}
+\begin{itemize}
+    \item \textbf{New feature request:} Instead of ``Add dark mode,'' use ``If we add dark mode, nightly active time will increase 5\% among power users because glare currently limits usage.''
+    \item \textbf{Performance optimization:} ``If we cache recommendations locally, P95 response time will drop below 150\,ms, improving conversion because users abandon slow pages.''
+    \item \textbf{ML improvement:} ``If we incorporate recency features, fraud recall will rise 3 points without exceeding 2\% false positives because fraudsters reuse patterns.''
+\end{itemize}
+
+\section{Designing Experiments}
+\label{sec:experiment-design}
+
+Experiment design determines whether hypotheses receive meaningful tests.
+
+\subsection{Controlled Experiments (A/B Tests)}
+Randomized control designs isolate the effect of the change. Requirements should note assignment strategy, stratification needs, and guardrails.
+
+\subsection{Quasi-Experimental Designs}
+When randomization is impossible, we rely on techniques like difference-in-differences, synthetic controls, or regression discontinuity. Requirements must describe assumptions and validation steps.
+
+\subsection{Observational Studies}
+Sometimes historical data is all we have. Observational analyses using propensity scores or causal forests can yield insights but require careful documentation of limitations.
+
+\subsection{Minimum Viable Experiments}
+Not every hypothesis warrants a multi-week A/B test. Wizard-of-Oz prototypes, concierge tests, or qualitative studies can cheaply test core assumptions before investing heavily.
+
+\section{Statistical Rigor in Hypothesis Testing}
+\label{sec:statistical-rigor}
+
+Understanding basic statistics keeps teams from drawing false conclusions.
+
+\subsection{Null and Alternative Hypotheses}
+Every test implicitly compares a null (no effect) against an alternative (effect present). Requirements should state both hypotheses and the acceptable Type I/II error rates.
+
+\subsection{Sample Size and Duration}
+Under-powered experiments waste time. Include minimum detectable effect, variance estimates, and required sample sizes. Document whether sequential testing or Bayesian approaches are used.
+
+\subsection{Multiple Testing Problems}
+Running many experiments increases false positives. Requirements should specify correction methods or experiment platforms that control error rates. Avoid peeking unless the methodology supports it.
+
+\subsection{Practical Significance vs. Statistical Significance}
+A statistically significant 0.2\% lift might not justify engineering effort. Pair p-values with effect sizes, confidence intervals, and business impact estimates.
+
+\section{Interpreting Results and Making Decisions}
+\label{sec:interpreting-results}
+
+Data must connect to action.
+
+\subsection{Positive Results}
+When a hypothesis is supported, document rollout plans, monitoring requirements, and follow-up experiments. Treat launch as the start of operational learning, not the end.
+
+\subsection{Negative Results}
+Rejected hypotheses illuminate which paths not to pursue. Capture learnings, retire assumptions, and revisit the problem framing.
+
+\subsection{Ambiguous Results}
+Mixed signals demand additional analysis. Requirements should outline secondary metrics or segmentation analyses to inform next steps rather than leaving ambiguity unresolved.
+
+\subsection{Unexpected Results}
+Surprising outcomes can unlock innovation. Investigate outliers, replicate findings, and consider whether the hypothesis should be revised or if a new question emerged.
+
+\section{Building a Hypothesis-Driven Culture}
+\label{sec:hypothesis-culture}
+
+Hypothesis-driven work thrives when the organization rewards learning.
+
+\subsection{Rewarding Rigorous Thinking}
+Celebrate well-designed experiments even when results are negative. Include experiment quality in performance reviews and roadmaps.
+
+\subsection{Educating Teams}
+Provide training on experimental design, statistics, and interpretation. Pair PMs with data scientists for peer reviews. Maintain internal playbooks with examples.
+
+\subsection{Infrastructure for Experimentation}
+Invest in tooling: feature-flag platforms, experiment analysis pipelines, and metric catalogs. Lowering the cost of experimentation increases the number of hypotheses teams can test responsibly.
+
+\section{Examples: Hypothesis-Driven Development}
+\label{sec:hypothesis-examples}
+
+Examples illustrate how hypotheses move from idea to action.
+
+\subsection{Example 1: UI Redesign}
+Hypothesis: ``If we simplify the checkout flow to two screens, completion will rise by 8\% because users abandon when forced to create accounts early.'' An A/B test confirmed a 9\% lift, leading to global rollout.
+
+\subsection{Example 2: Recommendation Algorithm}
+Hypothesis: ``If we switch to sequence-aware embeddings, click-through rate will increase by 4\% because contextual relevance matters.'' Offline evaluation showed recall gains, and an online experiment validated a 3.7\% lift, prompting migration.
+
+\subsection{Example 3: Pricing Strategy}
+Hypothesis: ``If we offer usage-based pricing to high-volume customers, revenue per account will grow 6\% without increasing churn because these customers value flexibility.'' A phased rollout with guardrails showed a 5.5\% lift and stable churn, leading to broader adoption.
+
+\section{Experiment Planning Toolkit}
+\label{sec:hypothesis-tooling}
+
+Chapter~\ref{sec:experiment-design} is now supported by \texttt{tools/experiment\_planner.py}, which automates:
+\begin{itemize}
+    \item Hypothesis worksheets guided by prompts (problem, expected signal, guardrails, decision criteria).
+    \item Sample-size and power calculations given baseline conversion, minimum detectable effect, alpha, and power targets.
+    \item Experiment tracking templates (JSON tables) for primary/secondary metrics across checkpoints.
+    \item Statistical analysis report templates that capture results, interpretation, and recommendations.
+\end{itemize}
+
+\begin{lstlisting}[language=bash,caption={Using the experiment planning CLI (examples verified with Python 3.13 and the tools bundled in this repo).}]
+# Hypothesis + sample size
+python tools/experiment_planner.py --mode hypothesis \
+  --problem "Activation drop during onboarding" \
+  --signal "Activation rate" --guardrail "Churn, CSAT"
+python tools/experiment_planner.py --mode sample \
+  --alpha 0.05 --power 0.8 --baseline 0.2 --mde 0.03
+
+# Tracking + analysis report
+python tools/experiment_planner.py --mode tracking \
+  --metrics "Activation" "Retention" --checkpoints "Week1" "Week2"
+python tools/experiment_planner.py --mode report \
+  --report-name "Onboarding Experiment"
+\end{lstlisting}
+
+Outputs are written to \texttt{tools/generated/}, ready to paste into PRDs, experiment tickets, or post-analysis docs.
+
+\section{Industry Scenarios}
+\label{sec:hypotheses-examples}
+
+\paragraph{Fintech.} A neobank tested ``If we pre-fill loan applications from payroll data, completion rates rise because friction drops'' and ran an A/B test with guardrails on default rates. Success stemmed from explicitly stating the causal mechanism and rollback triggers. A fee-notification experiment failed when the hypothesis simply said ``Users like clarity''—no measurable outcome meant inconclusive data and executive frustration.
+
+\paragraph{Healthcare.} A virtual-care startup hypothesized ``If nurses receive symptom checklists before calls, triage accuracy improves because they capture structured data,'' measuring misclassification rates and patient satisfaction. Another team hypothesized ``AI assistant will help doctors'' without defining behaviors; the vague statement led to scope creep and no production decision.
+
+\paragraph{E-commerce.} A retailer posited ``If we show inventory scarcity for limited items, conversion increases because urgency nudges action,'' tracking both conversion lift and returns as guardrails, which revealed a sustainable tactic. A contrasting ``Personalize homepage'' hypothesis lacked a concrete mechanism or metric, causing endless iteration with no learning.
+
+\section{Summary}
+\label{sec:hypotheses-summary}
+
+Writing testable hypotheses refocuses product work on learning and impact. By pairing structured hypotheses with rigorous experiments, teams can make confident decisions even when navigating uncertainty. The next chapter deepens the discussion with statistical techniques for evaluating acceptance criteria.
+
+\subsection{Action Checklist}
+\begin{enumerate}
+    \item Rewrite upcoming backlog items as explicit hypotheses using the If-Then-Because structure.
+    \item Define primary metric, guardrail metric, and decision criteria before scheduling an experiment.
+    \item Store hypotheses in a shared log with status (untested, running, validated, invalidated).
+\end{enumerate}
+
+\paragraph{Try this now (5 min).} Choose one assumption about your product and express it as ``If we do X, then Y will happen, because Z.'' Add the success threshold and share it with your team to align on the next test.
+
+\section{Day in the Life: Rowan Runs a Learning Loop}
+Rowan spends the morning prepping for a pricing experiment. Instead of arguing in circles, Rowan gathers marketing, finance, and engineering to write the hypothesis together: ``If we highlight bundled shipping during checkout, conversion of multi-item carts will increase from 24\% to 28\% because the perceived value offsets shipping friction.'' The team defines guardrails (refund rate, CS complaints) and pre-registers the analysis. After launch, Rowan blocks time daily to review telemetry and posts quick Loom updates showing the hypothesis status. When results come back flat, the group closes the loop with leadership, noting the falsified assumption and teeing up the next experiment. The discipline turns a potential blame game into rapid learning.
+
+\section{Visual Guide}
+\label{sec:hypothesis-visuals}
+\begin{itemize}
+    \item \textbf{Experiment Loop Flowchart}—define hypothesis $\rightarrow$ set metrics $\rightarrow$ build instrumentation $\rightarrow$ run test $\rightarrow$ analyze $\rightarrow$ decide. Highlight guardrail checks and rollback moments.
+    \item \textbf{Hypothesis Log Template}—visual mockup showing columns for ``If,'' ``Then,'' ``Because,'' metrics, status, and decisions, referencing Rowan’s workflow.
+    \item \textbf{Before/After Graph}—compare a vanity experiment (no metrics) vs. the structured hypothesis, showing improved clarity and faster decisions.
+\end{itemize}
+
+\section{Interactive Elements}
+\label{sec:hypothesis-interactive}
+\begin{itemize}
+    \item \textbf{Self-Assessment}—quiz on hypothesis quality scoring specificity, measurability, and falsifiability of current backlog items.
+    \item \textbf{Reflection Prompt}—``List the last three assumptions you validated or invalidated.'' Note what evidence you used.
+    \item \textbf{Pause and Practice}—fillable hypothesis log starter kit for readers to track at least two live experiments.
+    \item \textbf{Implementation Planner}—template for instituting hypothesis reviews (cadence, owners, metrics, decision criteria).
+\end{itemize}
+
+\section{Implementation Snapshot}
+\label{sec:hypothesis-snapshot}
+\begin{itemize}
+    \item \textbf{Time investment}—one sprint to introduce the hypothesis log, run training, and require experiments to use the template.
+    \item \textbf{ROI timeline}—Experiment velocity and decision clarity typically improve within 4--6 weeks.
+    \item \textbf{Risk mitigation}—Clear hypotheses reduce confirmation bias and make it obvious when to stop or pivot, saving budget.
+    \item \textbf{Competitive advantage}—Teams that validate assumptions quickly can seize market opportunities ahead of slower peers.
+    \item \textbf{Cost of inaction}—Without structured hypotheses, teams chase pet projects, burn data-science cycles, and lose stakeholder trust.
+\end{itemize}
+\section{Industry Adaptations}
+\label{sec:hypotheses-industry}
+\paragraph{Regulated Industries.} Hypotheses must be paired with compliance approvals and data-governance plans. Document which sandbox or anonymized datasets will be used and how results feed into validation or filing processes.
+
+\paragraph{Startups vs. Enterprises.} Startups can run scrappier experiments but should still capture hypotheses in a shared log to avoid memory-based decisions. Enterprises can integrate hypotheses into stage-gate reviews, ensuring each gate demands evidence rather than opinion.
+
+\paragraph{B2B vs. B2C.} B2B hypotheses often hinge on customer-behavior change across accounts; include account-selection criteria and partner readiness. B2C tests need robust sample-size planning and user segmentation to avoid diluting signals across large populations.
+
+\paragraph{Hardware-Software Integration.} Hypotheses should include both digital and physical instrumentation—e.g., ``If firmware syncs every 6 hours, then battery life improves by X because radio usage drops.'' Plan controlled environments or lab setups for hardware components.
+\section{Warning Signs and Recovery}
+\label{sec:hypotheses-warning}
+\begin{description}
+    \item[\textbf{Warning sign}] Experiments launch with vague goals like ``improve engagement'' and lack falsifiable statements.
+    \item[\textbf{Recovery}] Force every experiment proposal through the If-Then-Because template and gate development until metrics are specified.
+    \item[\textbf{Warning sign}] Teams cherry-pick segments post hoc to declare victory.
+    \item[\textbf{Recovery}] Require pre-registered analysis plans and peer review before looking at results; if exploratory analysis is needed, clearly label it as such and schedule a follow-up confirmatory test.
+\end{description}
+
+\section{Triple-Lens Takeaways}
+\label{sec:hypotheses-triple}
+
+\begin{description}
+    \item[\textbf{Busy PM}] Lean on the If-Then-Because template and the planning tool to crank out experiment briefs quickly and keep stakeholders aligned on success/failure definitions.
+    \item[\textbf{Technical Lead}] Use the operational definition and sample-size guidance to ensure experiments capture the right telemetry, control confounders, and feed directly into deployment decisions.
+    \item[\textbf{Executive}] Review the hypothesis portfolio at a glance: the chapter’s hypothesis types map cleanly to investment bets, making it easier to see which strategic assumptions are being validated.
+\end{description}

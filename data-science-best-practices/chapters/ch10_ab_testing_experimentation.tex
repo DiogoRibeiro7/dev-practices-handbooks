@@ -4,7 +4,7 @@
 
 A/B testing validates whether a new ML model genuinely improves outcomes or merely optimizes for training metrics. A recommendation model with 92\% offline accuracy might decrease user engagement by 15\% in production. A fraud detection model with higher AUC might generate more false positives, damaging customer experience. The only way to measure real-world impact is rigorous experimentation.
 
-However, traditional A/B testing—while essential—leaves value on the table. Fixed-allocation experiments assign 50\% of traffic to an inferior model throughout the entire test duration. If the new model improves conversion from 10\% to 12\%, half your users still experience the worse experience for weeks. This is where \textit{multi-armed bandit algorithms} provide a powerful alternative: they learn which variant performs best while automatically shifting traffic toward better-performing options, minimizing regret during the learning process.
+However, traditional A/B testing---while essential---leaves value on the table. Fixed-allocation experiments assign 50\% of traffic to an inferior model throughout the entire test duration. If the new model improves conversion from 10\% to 12\%, half your users still experience the worse experience for weeks. This is where \textit{multi-armed bandit algorithms} provide a powerful alternative: they learn which variant performs best while automatically shifting traffic toward better-performing options, minimizing regret during the learning process.
 
 \subsection{The A/B Testing Imperative}
 
@@ -32,7 +32,7 @@ At the heart of online experimentation lies a fundamental trade-off:
     \item \textbf{Exploration}: Test variants with uncertain performance to gather information, potentially improving long-term outcomes
 \end{itemize}
 
-Traditional A/B testing uses pure exploration—fixed allocation regardless of observed performance—until the experiment concludes. This maximizes statistical validity but wastes traffic on inferior variants. Multi-armed bandit algorithms dynamically balance exploration and exploitation, reducing \textit{regret}: the opportunity cost of not always choosing the best arm.
+Traditional A/B testing uses pure exploration---fixed allocation regardless of observed performance---until the experiment concludes. This maximizes statistical validity but wastes traffic on inferior variants. Multi-armed bandit algorithms dynamically balance exploration and exploitation, reducing \textit{regret}: the opportunity cost of not always choosing the best arm.
 
 \textbf{Regret} is formally defined as:
 
@@ -1129,8 +1129,8 @@ Instead of fixed allocation, the team implements Thompson Sampling, which:
 \textbf{Week 1 Results:}
 \begin{itemize}
     \item Algorithm A: 8.5\% CTR (15,000 impressions)
-    \item Algorithm B: 7.2\% CTR (8,000 impressions) — clearly worse, traffic reduced
-    \item Algorithm C: 9.8\% CTR (12,000 impressions) — promising, traffic increasing
+    \item Algorithm B: 7.2\% CTR (8,000 impressions) --- clearly worse, traffic reduced
+    \item Algorithm C: 9.8\% CTR (12,000 impressions) --- promising, traffic increasing
 \end{itemize}
 
 \textbf{Week 4 Final Allocation:}
@@ -2064,13 +2064,13 @@ class BiasDetector:
 
 \section{Bayesian A/B Testing}
 
-Bayesian methods provide an alternative framework to frequentist hypothesis testing, offering intuitive probability statements about treatment effects, continuous learning from data, and natural incorporation of prior knowledge. Unlike p-values that answer "how likely is this data under the null hypothesis?", Bayesian posteriors answer "what is the probability that treatment B is better than A?"
+Bayesian methods provide an alternative framework to frequentist hypothesis testing, offering intuitive probability statements about treatment effects, continuous learning from data, and natural incorporation of prior knowledge. Unlike p-values that answer ``how likely is this data under the null hypothesis?``, Bayesian posteriors answer ``what is the probability that treatment B is better than A?``
 
 \subsection{Why Bayesian Methods for A/B Testing?}
 
 \textbf{Advantages over Frequentist Approaches:}
 \begin{itemize}
-    \item \textbf{Direct Probability Statements}: $P(\text{B better than A} | \text{data}) = 0.95$ is clearer than "p=0.03"
+    \item \textbf{Direct Probability Statements}: $P(\text{B better than A} | \text{data}) = 0.95$ is clearer than ``p=0.03``
     \item \textbf{No Peeking Problem}: Continuous monitoring without inflating error rates
     \item \textbf{Prior Knowledge Integration}: Incorporate domain expertise, historical data, or business constraints
     \item \textbf{Natural Decision Framework}: Probability of superiority maps directly to risk tolerance
@@ -2090,7 +2090,7 @@ Bayesian methods provide an alternative framework to frequentist hypothesis test
 
 \textbf{The Setup:}
 
-A fintech company tested a new credit risk model (Model B) against their production model (Model A). The ML team claimed Model B would reduce default rates by 20-30\% based on offline metrics. However, the risk management team was skeptical—previous "breakthrough" models had failed in production.
+A fintech company tested a new credit risk model (Model B) against their production model (Model A). The ML team claimed Model B would reduce default rates by 20-30\% based on offline metrics. However, the risk management team was skeptical---previous ``breakthrough`` models had failed in production.
 
 \textbf{Initial Frequentist Analysis:}
 \begin{itemize}
@@ -2106,7 +2106,7 @@ A fintech company tested a new credit risk model (Model B) against their product
     \item Waiting 12+ months for 20K loans meant delaying potential \$2M/year in reduced losses
     \item But deploying on inconclusive evidence risked regulatory scrutiny and actual losses
     \item ML team insisted Model B was superior despite p=0.18
-    \item Risk team wanted "statistical proof" before deployment
+    \item Risk team wanted ``statistical proof`` before deployment
 \end{itemize}
 
 \textbf{Bayesian Analysis with Skeptical Prior:}
@@ -3273,9 +3273,9 @@ After just 1 week with 1,500 users per arm, Sarah checks the results:
     \item Difference: 2.6pp (p = 0.048)
 \end{itemize}
 
-\textbf{Sarah's Reaction:} "It's significant! p < 0.05! Let's ship it now and save 5 weeks!"
+\textbf{Sarah's Reaction:} ``It's significant! p < 0.05! Let's ship it now and save 5 weeks!``
 
-\textbf{The Data Scientist's Warning:} "This is a classic peeking problem. We're at 18\% of planned sample size. If we make decisions at this point, our effective Type I error rate is much higher than 5\%."
+\textbf{The Data Scientist's Warning:} ``This is a classic peeking problem. We're at 18\% of planned sample size. If we make decisions at this point, our effective Type I error rate is much higher than 5\%.``
 
 \subsubsection{Weeks 2-4: The Roller Coaster}
 
@@ -3296,7 +3296,7 @@ Sarah checks results every Monday despite warnings:
 \caption{Weekly results showing variance in early estimates}
 \end{table}
 
-Week 1's "significant" result was noise. By Week 3, Sarah is panicking: "Should we stop for futility? We're wasting traffic on a test that won't win!"
+Week 1's ``significant`` result was noise. By Week 3, Sarah is panicking: ``Should we stop for futility? We're wasting traffic on a test that won't win!``
 
 \subsubsection{The Solution: Group Sequential Design}
 
@@ -4257,7 +4257,7 @@ Conditional Power & Intuitive futility & Subjective threshold & Resource constra
 
 \section{Factorial Experimental Designs and Interaction Effects}
 
-Factorial designs test multiple factors simultaneously, enabling efficient estimation of both main effects and interactions. Unlike one-factor-at-a-time (OFAT) testing, factorial experiments reveal how factors combine—critical for ML systems where features often interact in complex ways.
+Factorial designs test multiple factors simultaneously, enabling efficient estimation of both main effects and interactions. Unlike one-factor-at-a-time (OFAT) testing, factorial experiments reveal how factors combine---critical for ML systems where features often interact in complex ways.
 
 \subsection{Why Factorial Designs Matter for ML}
 
@@ -4277,7 +4277,7 @@ Traditional A/B testing compares single treatments: model A vs model B. But ML s
     \item Features A+B together: +8\% conversion (not 3\%!)
 \end{itemize}
 
-This is a \textit{positive interaction}—the combined effect exceeds the sum of individual effects. Factorial designs detect and quantify such synergies.
+This is a \textit{positive interaction}---the combined effect exceeds the sum of individual effects. Factorial designs detect and quantify such synergies.
 
 \subsection{Real-World Scenario: The Feature Interaction Surprise}
 
@@ -4301,7 +4301,7 @@ The ML team runs two separate A/B tests:
 \textbf{Test 2 (Autoplay):}
 \begin{itemize}
     \item Control (B0): 45 min/day
-    \item Treatment (B1): 46 min/day (+1 min, +2.2\%, p=0.08 — not significant!)
+    \item Treatment (B1): 46 min/day (+1 min, +2.2\%, p=0.08 --- not significant!)
 \end{itemize}
 
 \textbf{Decision:} Ship personalized thumbnails (A1), don't ship autoplay (B1). Expected gain: +2 min/day.
@@ -4320,9 +4320,9 @@ That's +10 min over baseline (A0+B0=45 min), not the expected +2 min. The featur
 \toprule
 & \textbf{B0 (No Autoplay)} & \textbf{B1 (Autoplay)} & \textbf{Main Effect A} \\
 \midrule
-\textbf{A0 (Generic)} & 45 min & 46 min & — \\
-\textbf{A1 (Personalized)} & 47 min & 55 min & — \\
-\textbf{Main Effect B} & — & — & — \\
+\textbf{A0 (Generic)} & 45 min & 46 min & --- \\
+\textbf{A1 (Personalized)} & 47 min & 55 min & --- \\
+\textbf{Main Effect B} & --- & --- & --- \\
 \bottomrule
 \end{tabular}
 \caption{Watch time (min/day) for all four treatment combinations}
@@ -4336,7 +4336,7 @@ That's +10 min over baseline (A0+B0=45 min), not the expected +2 min. The featur
     \item \textbf{Interaction effect}: $(55) - (45 + 5.5 + 4.5) = 0$ min
 \end{itemize}
 
-Wait—there's no interaction by this calculation! The 10 min gain IS the sum of main effects. But the separate tests showed +2 min and +1 min (non-significant). What happened?
+Wait---there's no interaction by this calculation! The 10 min gain IS the sum of main effects. But the separate tests showed +2 min and +1 min (non-significant). What happened?
 
 \subsubsection{The Root Cause}
 
@@ -4358,7 +4358,7 @@ But there IS an interaction because the effect of B depends on A:
     \item Effect of B when A=1: 55 - 47 = +8 min
 \end{itemize}
 
-Autoplay adds 1 min with generic thumbnails but 8 min with personalized thumbnails—a 7 min interaction effect!
+Autoplay adds 1 min with generic thumbnails but 8 min with personalized thumbnails---a 7 min interaction effect!
 
 \subsubsection{The Cost}
 
@@ -4369,7 +4369,7 @@ By testing sequentially, the team:
     \item Missed \$2.5M in ad revenue from increased watch time
 \end{itemize}
 
-\subsubsection{The Solution: 2×2 Factorial Design}
+\subsubsection{The Solution: 2$	imes$2 Factorial Design}
 
 A factorial design tests all four combinations simultaneously:
 
@@ -4385,7 +4385,7 @@ B only & A0 (Generic) & B1 (On) & 10,000 & 46 min \\
 A+B & A1 (Personal) & B1 (On) & 10,000 & 55 min \\
 \bottomrule
 \end{tabular}
-\caption{2×2 factorial design with all treatment combinations}
+\caption{2$	imes$2 factorial design with all treatment combinations}
 \end{table}
 
 \textbf{Benefits:}
@@ -4400,7 +4400,7 @@ A+B & A1 (Personal) & B1 (On) & 10,000 & 55 min \\
 
 \subsection{Mathematical Foundations of Factorial Designs}
 
-\subsubsection{2×2 Factorial Model}
+\subsubsection{2$	imes$2 Factorial Model}
 
 For two binary factors A and B, the response Y is modeled as:
 
@@ -5230,7 +5230,7 @@ class ClusterRandomizer:
 
 \section{Network Experiments and Spillover Effects}
 
-Network experiments occur when experimental units influence each other through social, physical, or algorithmic connections. In such settings, the fundamental assumption of traditional A/B testing—\textit{stable unit treatment value assumption (SUTVA)}—is violated, leading to biased causal estimates and invalid statistical inference.
+Network experiments occur when experimental units influence each other through social, physical, or algorithmic connections. In such settings, the fundamental assumption of traditional A/B testing---\textit{stable unit treatment value assumption (SUTVA)}---is violated, leading to biased causal estimates and invalid statistical inference.
 
 \subsection{The Interference Problem}
 
@@ -5275,7 +5275,7 @@ The team analyzes the data after 1 week:
 \toprule
 \textbf{Segment} & \textbf{Daily Active Minutes} & \textbf{Change vs Control} \\
 \midrule
-Control (no feature) & 28 min & — \\
+Control (no feature) & 28 min & --- \\
 Treatment (has feature) & 35 min & +7 min (+25\%) \\
 \bottomrule
 \end{tabular}
@@ -5300,14 +5300,14 @@ Pure Treatment & Yes & 50\% & 35 min \\
 \caption{Results segmented by network exposure}
 \end{table}
 
-\textbf{The Problem:} "Control" users with treated friends are experiencing \textbf{spillover effects}:
+\textbf{The Problem:} ``Control`` users with treated friends are experiencing \textbf{spillover effects}:
 \begin{itemize}
     \item Pure control (no treated friends): 25 min
     \item Spillover control (treated friends): 30 min (+5 min)
     \item Treatment users: 35 min
 \end{itemize}
 
-The initial analysis compared "treatment" (35 min) to "mixed control" (28 min), which includes both pure control and spillover control. This \textit{underestimates} the true treatment effect!
+The initial analysis compared ``treatment`` (35 min) to ``mixed control`` (28 min), which includes both pure control and spillover control. This \textit{underestimates} the true treatment effect!
 
 \subsubsection{The Root Cause: Network Interference}
 
@@ -5320,8 +5320,8 @@ Collaborative posting creates spillover through two mechanisms:
 
 With 50\% random assignment, the average user has ~50\% of friends treated. This means:
 \begin{itemize}
-    \item Very few "pure control" users (all friends in control)
-    \item Very few "pure treatment" users (all friends in treatment)
+    \item Very few ``pure control`` users (all friends in control)
+    \item Very few ``pure treatment`` users (all friends in treatment)
     \item Most users experience partial spillover
 \end{itemize}
 
@@ -5353,11 +5353,11 @@ At 100\% treatment:
     \item Net effect: +5 min
 \end{itemize}
 
-The product team feels misled: "You said +7 min, we only got +5 min!"
+The product team feels misled: ``You said +7 min, we only got +5 min!``
 
 \subsubsection{The Solution: Graph Cluster Randomization}
 
-Instead of randomizing individuals, randomize \textbf{graph clusters}—densely connected groups with few inter-cluster edges.
+Instead of randomizing individuals, randomize \textbf{graph clusters}---densely connected groups with few inter-cluster edges.
 
 \textbf{Improved Design:}
 \begin{enumerate}
@@ -6266,9 +6266,9 @@ Revenue/user/month & \$8.20 & \$9.50 & +\$1.30 (+16\%) & 0.008 \\
 
 The product team is split:
 \begin{itemize}
-    \item \textbf{Growth team}: "Ship it! +16\% revenue is huge. That's \$2.6M annually!"
-    \item \textbf{Engagement team}: "Don't ship! Users are listening less. They'll churn long-term."
-    \item \textbf{CEO}: "What's the \textit{net} business impact? Will we make more money or lose users?"
+    \item \textbf{Growth team}: ``Ship it! +16\% revenue is huge. That's \$2.6M annually!``
+    \item \textbf{Engagement team}: ``Don't ship! Users are listening less. They'll churn long-term.``
+    \item \textbf{CEO}: ``What's the \textit{net} business impact? Will we make more money or lose users?``
 \end{itemize}
 
 \subsubsection{Root Cause Analysis}
@@ -6311,17 +6311,17 @@ The team performs a comprehensive cost-benefit analysis:
 
 \textbf{Short-Term Revenue (Year 1):}
 \begin{itemize}
-    \item Model A: 200K users × 3.2\% conversion × \$120/year = \$768K
-    \item Model B: 200K users × 4.1\% conversion × \$120/year = \$984K
+    \item Model A: 200K users $\times$ 3.2\% conversion $\times$ \$120/year = \$768K
+    \item Model B: 200K users $\times$ 4.1\% conversion $\times$ \$120/year = \$984K
     \item \textbf{Gain}: +\$216K (+28\%)
 \end{itemize}
 
 \textbf{Long-Term User Loss (3-Year LTV):}
 \begin{itemize}
     \item Retention drop: -3pp (-4\%)
-    \item Annual churn increase: -3pp × 200K = 6,000 users/year
-    \item Average LTV per user: \$180 (3 years × \$60/year average)
-    \item \textbf{Loss}: 6,000 users × \$180 = \$1.08M over 3 years
+    \item Annual churn increase: -3pp $\times$ 200K = 6,000 users/year
+    \item Average LTV per user: \$180 (3 years $\times$ \$60/year average)
+    \item \textbf{Loss}: 6,000 users $\times$ \$180 = \$1.08M over 3 years
 \end{itemize}
 
 \textbf{Net Present Value (3 years, 10\% discount rate):}
@@ -6346,10 +6346,10 @@ Instead of binary ship/don't-ship, the team implements \textbf{segment-targeted 
 
 \textbf{Blended Business Impact:}
 \begin{itemize}
-    \item Conversion: 3.2\% → 3.7\% (+15.6\% blended)
-    \item Listening time: 65 min → 63 min (-3\% blended)
-    \item Retention: 82\% → 81\% (-1.2\% blended)
-    \item Revenue: \$8.20 → \$9.00 (+9.8\% blended)
+    \item Conversion: 3.2\% $\to$ 3.7\% (+15.6\% blended)
+    \item Listening time: 65 min $\to$ 63 min (-3\% blended)
+    \item Retention: 82\% $\to$ 81\% (-1.2\% blended)
+    \item Revenue: \$8.20 $\to$ \$9.00 (+9.8\% blended)
     \item \textbf{3-year NPV}: +\$850K (positive!)
 \end{itemize}
 
@@ -6374,7 +6374,7 @@ Given $K$ business metrics $Y_1, \ldots, Y_K$, we seek treatment that maximizes:
 
 where $f_k(z) = \mathbb{E}[Y_k | Z = z]$ is the expected value of metric $k$ under treatment $z$.
 
-Typically, metrics conflict: improving $f_1$ decreases $f_2$. Solutions lie on the \textbf{Pareto frontier}—points where improving one metric requires sacrificing another.
+Typically, metrics conflict: improving $f_1$ decreases $f_2$. Solutions lie on the \textbf{Pareto frontier}---points where improving one metric requires sacrificing another.
 
 \subsubsection{Weighted Utility Function}
 
@@ -7105,7 +7105,7 @@ class SegmentAnalyzer:
 
 \section{Experimentation Platform Architecture}
 
-Building production-grade A/B testing requires more than individual statistical methods—it requires an integrated platform that orchestrates experiment lifecycle, automates analysis, and provides extensibility for new methods. This section presents a comprehensive architecture integrating all techniques covered in this chapter.
+Building production-grade A/B testing requires more than individual statistical methods---it requires an integrated platform that orchestrates experiment lifecycle, automates analysis, and provides extensibility for new methods. This section presents a comprehensive architecture integrating all techniques covered in this chapter.
 
 \subsection{Platform Design Principles}
 
@@ -9200,7 +9200,7 @@ class RiskAssessment:
                 category=RiskCategory.CUSTOMER_IMPACT,
                 level=RiskLevel.CRITICAL if traffic > 0.5 else RiskLevel.HIGH,
                 description=f"Very large user impact: {users:,} users affected",
-                mitigation="Consider gradual ramp: 5% → 10% → 25% → 50%",
+                mitigation="Consider gradual ramp: 5% -> 10% -> 25% -> 50%",
                 requires_approval_from=['VP_Product', 'Chief_Risk_Officer']
             ))
         elif users >= self.high_user_count_threshold:
@@ -9340,7 +9340,7 @@ class RiskAssessment:
         # High user count recommendations
         if users > self.critical_user_count_threshold:
             recommendations.append(
-                "Implement gradual traffic ramp: 5% → 10% → 25% → 50% with 24hr holds"
+                "Implement gradual traffic ramp: 5% -> 10% -> 25% -> 50% with 24hr holds"
             )
             recommendations.append(
                 "Set up real-time alerting for all guardrail metrics"
@@ -10235,12 +10235,12 @@ KEY FINDINGS:
         # Add top findings
         for metric_arm, interp in list(interpretation.items())[:3]:
             metric = metric_arm.rsplit('_', 1)[0]
-            summary += f"  • {metric}: {interp}\n"
+            summary += f"  - {metric}: {interp}\n"
 
         if recommendation.estimated_impact:
-            summary += "\nESTIMATED BUSINESS IMPACT:\n"
-            for impact_type, value in recommendation.estimated_impact.items():
-                summary += f"  • {impact_type}: ${value:,.0f}\n"
+                    summary += "\nESTIMATED BUSINESS IMPACT:\n"
+                    for impact_type, value in recommendation.estimated_impact.items():
+                        summary += f"  - {impact_type}: ${value:,.0f}\n"
 
         summary += f"\nNEXT STEPS:\n"
         for i, step in enumerate(recommendation.next_steps, 1):
@@ -10249,7 +10249,7 @@ KEY FINDINGS:
         if recommendation.risks:
             summary += f"\nRISKS TO CONSIDER:\n"
             for risk in recommendation.risks:
-                summary += f"  ⚠ {risk}\n"
+                summary += f"  [!] {risk}\n"
 
         return summary
 
@@ -10312,16 +10312,16 @@ DETAILED FINDINGS:
 """
 
         for metric_arm, interp in interpretation.items():
-            summary += f"  • {interp}\n"
+                    summary += f"  - {interp}\n"
 
         if recommendation.estimated_impact:
             summary += f"\nBUSINESS IMPACT:\n"
             for impact_type, value in recommendation.estimated_impact.items():
-                summary += f"  • {impact_type}: ${value:,.0f}\n"
+                summary += f"  - {impact_type}: ${value:,.0f}\n"
 
         summary += f"\nWHAT'S NEXT:\n"
         for step in recommendation.next_steps:
-            summary += f"  → {step}\n"
+            summary += f"  -> {step}\n"
 
         return summary
 \end{lstlisting}
@@ -10330,7 +10330,7 @@ DETAILED FINDINGS:
 
 \begin{lstlisting}[language=Python, caption={End-to-End Governance Workflow}]
 # ============================================================
-# Complete workflow: Proposal → Approval → Launch → Report
+# Complete workflow: Proposal -> Approval -> Launch -> Report
 # ============================================================
 
 # Step 1: Initialize governance system
@@ -10416,13 +10416,13 @@ print(report['summary'])
 decision = platform.make_decision(results)
 
 if decision['overall_decision'] == 'DEPLOY':
-    print("\n✅ Deploying variant based on results")
+    print("\n[OK] Deploying variant based on results")
     # Deploy via feature flag system
 elif decision['overall_decision'] == 'DO_NOT_DEPLOY':
-    print("\n❌ Not deploying - results do not support launch")
+    print("\n[X] Not deploying - results do not support launch")
     # Keep current experience
 else:
-    print("\n⏸ Inconclusive - continuing test")
+    print("\n[PAUSE] Inconclusive - continuing test")
     # Extend test duration
 
 # Step 9: Generate governance report
@@ -10463,7 +10463,7 @@ Key benefits for organizations:
 
 \section{Causal Inference from Observational Data}
 
-While randomized experiments provide gold-standard causal estimates, many critical business and policy questions cannot be addressed through A/B testing—either due to ethical constraints, infeasibility, or the need to evaluate past interventions. Advanced causal inference methods enable rigorous causal estimation from observational data when randomization is impossible.
+While randomized experiments provide gold-standard causal estimates, many critical business and policy questions cannot be addressed through A/B testing---either due to ethical constraints, infeasibility, or the need to evaluate past interventions. Advanced causal inference methods enable rigorous causal estimation from observational data when randomization is impossible.
 
 \subsection{Real-World Scenario: The Natural Experiment}
 
@@ -10473,14 +10473,14 @@ A major e-commerce platform wanted to measure the causal impact of their recomme
 
 \begin{itemize}
     \item \textbf{Ethical concern}: Withholding recommendations from 50\% of users seemed unfair
-    \item \textbf{Business risk}: Management refused to "turn off" recommendations for millions of users
+    \item \textbf{Business risk}: Management refused to ``turn off`` recommendations for millions of users
     \item \textbf{Network effects}: Users influence each other, violating SUTVA
-    \item \textbf{Historical question}: "What was the impact over the \textit{past} 2 years?"
+    \item \textbf{Historical question}: ``What was the impact over the \textit{past} 2 years?``
 \end{itemize}
 
 \textbf{The Natural Experiment:}
 
-In March 2022, a software bug accidentally disabled recommendations for users in **Germany only** for 3 weeks before being discovered. The data science team recognized this as a natural experiment—an unplanned event that created quasi-random variation.
+In March 2022, a software bug accidentally disabled recommendations for users in **Germany only** for 3 weeks before being discovered. The data science team recognized this as a natural experiment---an unplanned event that created quasi-random variation.
 
 \textbf{Why This Works as Causal Identification:}
 
@@ -10557,8 +10557,8 @@ Armed with causal evidence, the team presented to leadership:
 
 \begin{itemize}
     \item \textbf{Causal Effect}: Recommendations drive +23\% of purchases
-    \item \textbf{Annual Value}: 23\% × \$8B GMV = \textbf{\$1.84B in incremental GMV}
-    \item \textbf{ROI}: Recommendation system costs \$12M/year → \textbf{154x ROI}
+    \item \textbf{Annual Value}: $23\% \times \$8\text{B GMV} = \$1.84\text{B in incremental GMV}$
+    \item \textbf{ROI}: Recommendation system costs \$12M/year $\to$ \textbf{154x ROI}
     \item \textbf{Decision}: Secured \$50M budget for recommendation R\&D expansion
 \end{itemize}
 
@@ -10576,7 +10576,7 @@ This **underestimates** the impact because Germany had lower baseline. DiD accou
 \textbf{Lessons Learned:}
 \begin{itemize}
     \item Natural experiments can provide causal estimates when A/B tests are infeasible
-    \item Parallel trends assumption is critical—must validate, not assume
+    \item Parallel trends assumption is critical---must validate, not assume
     \item Robustness checks (placebo tests, synthetic control, event study) build confidence
     \item Observational methods require more careful analysis than randomized experiments
     \item Clear causal evidence (\$1.84B impact) justified major investment
@@ -10772,7 +10772,7 @@ class SyntheticControl:
             else:
                 donor_pool.remove(donor)  # Remove if lengths don't match
 
-        donor_pre_matrix = np.array(donor_pre_matrix).T  # Time × Donors
+        donor_pre_matrix = np.array(donor_pre_matrix).T  # Time $	imes$ Donors
         donor_post_matrix = np.array(donor_post_matrix).T
 
         # Optional: Include covariates
@@ -10829,7 +10829,7 @@ class SyntheticControl:
 
         Args:
             X_treated: Characteristics of treated unit
-            X_donors: Characteristics matrix of donors (Features × Donors)
+            X_donors: Characteristics matrix of donors (Features $	imes$ Donors)
 
         Returns:
             Optimal weights
@@ -11087,7 +11087,7 @@ class DifferenceInDifferences:
         """
         Test parallel trends assumption in pre-period.
 
-        Regresses outcome on treatment × time interaction in pre-period.
+        Regresses outcome on treatment $	imes$ time interaction in pre-period.
         Parallel trends hold if interaction is not significant.
         """
         # Pre-treatment data only
@@ -11101,7 +11101,7 @@ class DifferenceInDifferences:
             (pre_data[time_col] - pre_data[time_col].min()).dt.days
         )
 
-        # Test treatment × time interaction
+        # Test treatment $	imes$ time interaction
         formula = f"{outcome_col} ~ {treatment_col} * time_numeric + C({unit_col})"
 
         try:
@@ -11629,7 +11629,7 @@ class RegressionDiscontinuity:
         # Get optimal bandwidth
         optimal_bw = self._optimal_bandwidth(data, outcome_col, running_centered)
 
-        # Test range: 0.5 × optimal to 2 × optimal
+        # Test range: 0.5 $	imes$ optimal to 2 $	imes$ optimal
         bandwidths = np.linspace(optimal_bw * 0.5, optimal_bw * 2, n_bandwidths)
 
         results = []
@@ -12333,7 +12333,7 @@ class ExperimentDurationPlanner:
         # Final recommendations
         if seasonal_risk == 'low':
             recommendations.append(
-                f"✅ No major seasonality conflicts. Proceed with {start_date.strftime('%Y-%m-%d')} start."
+                f"[OK] No major seasonality conflicts. Proceed with {start_date.strftime('%Y-%m-%d')} start."
             )
 
         return DurationPlan(
@@ -13272,7 +13272,7 @@ The choice of experimental methodology depends on your specific context:
 
 \textbf{1. Planning Phase}
 \begin{itemize}
-    \item Conduct power analysis \textit{before} launching experiments—underpowered tests waste resources and produce inconclusive results
+    \item Conduct power analysis \textit{before} launching experiments---underpowered tests waste resources and produce inconclusive results
     \item Define success metrics and minimum detectable effects (MDE) aligned with business impact thresholds
     \item Calculate required sample sizes with Bonferroni correction when testing multiple metrics simultaneously
     \item Document pre-registered analysis plans to prevent p-hacking and HARKing (Hypothesizing After Results are Known)
@@ -13283,7 +13283,7 @@ The choice of experimental methodology depends on your specific context:
 \begin{itemize}
     \item Use stratified randomization for important covariates (user segment, country, device type) to improve precision
     \item Validate balance across treatment arms using standardized mean differences (SMD $<$ 0.1 acceptable)
-    \item Run A/A tests to validate infrastructure before launching real experiments—catches 60-80\% of implementation bugs
+    \item Run A/A tests to validate infrastructure before launching real experiments---catches 60-80\% of implementation bugs
     \item Check for systematic assignment bias (time-of-day effects, day-of-week patterns, delayed activation)
     \item For network experiments, use graph cluster randomization with modularity $>$ 0.3 to minimize spillover
 \end{itemize}
@@ -13293,7 +13293,7 @@ The choice of experimental methodology depends on your specific context:
     \item Apply Bonferroni correction: $\alpha_{adjusted} = \alpha / n_{tests}$ for family-wise error rate control
     \item Alternative: Benjamini-Hochberg procedure for false discovery rate (FDR) control when testing many hypotheses
     \item For sequential testing, use O'Brien-Fleming boundaries (conservative early, aggressive late) or Pocock (uniform)
-    \item Never "peek" at results without sequential testing correction—10 peeks inflate Type I error to 40\%
+    \item Never ``peek`` at results without sequential testing correction---10 peeks inflate Type I error to 40\%
     \item Distinguish between primary metrics (hypothesis-driven) and secondary metrics (exploratory)
 \end{itemize}
 
@@ -13309,9 +13309,9 @@ The choice of experimental methodology depends on your specific context:
 \textbf{5. Business Integration}
 \begin{itemize}
     \item Calculate NPV, not just statistical significance: $\text{NPV} = \sum_{t=0}^{T} \frac{R_t - C_t}{(1+r)^t}$ including churn effects
-    \item Define multi-objective constraints (e.g., "revenue must not decrease" while optimizing engagement)
+    \item Define multi-objective constraints (e.g., ``revenue must not decrease`` while optimizing engagement)
     \item Use weighted utility functions when trading off metrics: $U = \sum w_k f_k$ with stakeholder-aligned weights
-    \item Conduct segment-specific ROI analysis—blended deployment often dominates uniform rollout
+    \item Conduct segment-specific ROI analysis---blended deployment often dominates uniform rollout
     \item Monitor long-term effects: 30-40\% of short-term wins reverse after 3+ months due to novelty effects
 \end{itemize}
 
@@ -13328,7 +13328,7 @@ The choice of experimental methodology depends on your specific context:
     \item \textbf{Ignoring Interaction Effects}
     \begin{itemize}
         \item \textit{Mistake}: Testing features sequentially instead of factorially
-        \item \textit{Impact}: Miss synergies—the video platform missed \$2.5M from 10-minute interaction effect
+        \item \textit{Impact}: Miss synergies---the video platform missed \$2.5M from 10-minute interaction effect
         \item \textit{Solution}: Use $2^k$ or fractional factorial designs when testing $\geq 2$ features
     \end{itemize}
 
@@ -13420,7 +13420,7 @@ The following scenarios illustrate critical experimental challenges that frequen
 
 \subsubsection{Scenario 5: The Interference Incident}
 
-\textbf{Context:} Ride-sharing platform tests driver incentive (surge bonus). City-level randomization: treatment cities offer +20\% surge pay. Results show +5\% driver supply (p=0.08, inconclusive). But treatment cities share borders with control cities. Drivers migrate from control to treatment cities during surge periods, depleting control supply and inflating treatment metrics. Spatial interference violated randomization integrity. Reanalysis using buffer zones (exclude drivers within 50 miles of treatment boundaries) shows true effect: +18\% supply increase (p<0.001). Implementation: staggered rollout with geographic buffers, measuring spillover explicitly. Lesson: when treatment can physically or digitally "leak" across units, use spatial/temporal buffers or measure interference directly.
+\textbf{Context:} Ride-sharing platform tests driver incentive (surge bonus). City-level randomization: treatment cities offer +20\% surge pay. Results show +5\% driver supply (p=0.08, inconclusive). But treatment cities share borders with control cities. Drivers migrate from control to treatment cities during surge periods, depleting control supply and inflating treatment metrics. Spatial interference violated randomization integrity. Reanalysis using buffer zones (exclude drivers within 50 miles of treatment boundaries) shows true effect: +18\% supply increase (p<0.001). Implementation: staggered rollout with geographic buffers, measuring spillover explicitly. Lesson: when treatment can physically or digitally ``leak`` across units, use spatial/temporal buffers or measure interference directly.
 
 \subsection{Comprehensive Practice Exercises}
 
@@ -13438,7 +13438,7 @@ Build Bayesian A/B test for conversion rates using Beta-Binomial conjugacy. Impl
 
 \subsubsection{Exercise 4: Design Factorial Experiment with Interactions}
 
-Create $2^3$ factorial design testing email subject line, sender name, and CTA button. Simulate data with interaction: subject$\times$CTA effect is +8pp for "Urgent" subject with "Act Now" button, but -2pp for "Friendly" subject with "Act Now". Use ANOVA to detect interactions. Show full factorial requires 1/8 sample size vs three separate A/B tests.
+Create $2^3$ factorial design testing email subject line, sender name, and CTA button. Simulate data with interaction: subject$\times$CTA effect is +8pp for ``Urgent`` subject with ``Act Now`` button, but -2pp for ``Friendly`` subject with ``Act Now``. Use ANOVA to detect interactions. Show full factorial requires 1/8 sample size vs three separate A/B tests.
 
 \subsubsection{Exercise 5: Implement Cluster Randomization with ICC}
 
@@ -13470,7 +13470,7 @@ Design approval workflow with risk assessment. Classify experiments by risk (leg
 
 \subsubsection{Exercise 12: Design Automated Result Interpretation}
 
-Build system that interprets experiment results and generates recommendations. Check statistical significance, practical significance (MDE threshold), covariate balance, heterogeneity, and confidence level. Output: "Deploy to all users" (high confidence), "Deploy to segment X" (medium confidence), "Do not deploy" (low confidence), or "Extend experiment" (inconclusive). Include caveats: novelty effects, seasonality, external validity.
+Build system that interprets experiment results and generates recommendations. Check statistical significance, practical significance (MDE threshold), covariate balance, heterogeneity, and confidence level. Output: ``Deploy to all users`` (high confidence), ``Deploy to segment X`` (medium confidence), ``Do not deploy`` (low confidence), or ``Extend experiment`` (inconclusive). Include caveats: novelty effects, seasonality, external validity.
 
 \subsubsection{Exercise 13: Implement Synthetic Control Analysis}
 
@@ -13608,7 +13608,7 @@ Choosing the right experimental approach is critical for valid inference. Use th
 
 \subsection{Final Thoughts}
 
-Rigorous experimentation is what separates data-driven organizations from those that merely use data to justify pre-existing beliefs. The techniques in this chapter—from proper randomization and power analysis to multi-armed bandits, sequential testing, and network-aware methods—form the foundation of trustworthy causal inference in ML systems.
+Rigorous experimentation is what separates data-driven organizations from those that merely use data to justify pre-existing beliefs. The techniques in this chapter---from proper randomization and power analysis to multi-armed bandits, sequential testing, and network-aware methods---form the foundation of trustworthy causal inference in ML systems.
 
 The cost of poor experimentation is measurable and substantial. As we've seen through the scenarios:
 \begin{itemize}
@@ -13628,4 +13628,4 @@ Conversely, the value of proper methods is equally clear:
     \item Business-metric frameworks: Segment-specific deployment turning -\$409K into +\$850K
 \end{itemize}
 
-As ML systems become more sophisticated, so too must our experimental methodologies. The difference between a statistically significant result and a causally valid, business-justified deployment decision often determines whether ML initiatives create or destroy value. Invest in the infrastructure, skills, and processes to experiment rigorously—the ROI compounds exponentially as your organization scales its ML capabilities.
+As ML systems become more sophisticated, so too must our experimental methodologies. The difference between a statistically significant result and a causally valid, business-justified deployment decision often determines whether ML initiatives create or destroy value. Invest in the infrastructure, skills, and processes to experiment rigorously---the ROI compounds exponentially as your organization scales its ML capabilities.

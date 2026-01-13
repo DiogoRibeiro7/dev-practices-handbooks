@@ -1,0 +1,314 @@
+\documentclass[11pt,openany]{book}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tcolorbox}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+
+% Page geometry
+\geometry{
+  a4paper,
+  left=1.5in,
+  right=1in,
+  top=1in,
+  bottom=1in,
+  headheight=14pt
+}
+
+% Hyperref setup
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  filecolor=magenta,
+  urlcolor=cyan,
+  citecolor=green,
+  pdftitle={Code Collaboration Best Practices},
+  pdfauthor={Professional Development Handbook},
+  pdfsubject={Software Engineering},
+  pdfkeywords={git, code review, pull requests, collaboration}
+}
+
+% Code listing styles
+\definecolor{codebg}{RGB}{248,248,248}
+\definecolor{codeframe}{RGB}{220,220,220}
+\definecolor{keywordcolor}{RGB}{0,0,255}
+\definecolor{stringcolor}{RGB}{163,21,21}
+\definecolor{commentcolor}{RGB}{0,128,0}
+
+\lstdefinestyle{shell}{
+  language=bash,
+  basicstyle=\small\ttfamily,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  showstringspaces=false,
+  numbers=none,
+  xleftmargin=2em,
+  framexleftmargin=2em,
+  captionpos=b
+}
+
+\lstdefinestyle{code}{
+  basicstyle=\small\ttfamily,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  showstringspaces=false,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{keywordcolor}\bfseries,
+  stringstyle=\color{stringcolor},
+  commentstyle=\color{commentcolor}\itshape,
+  xleftmargin=2em,
+  framexleftmargin=2em,
+  captionpos=b
+}
+
+\lstdefinestyle{markdown}{
+  basicstyle=\small\ttfamily,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  showstringspaces=false,
+  numbers=none,
+  xleftmargin=2em,
+  framexleftmargin=2em,
+  captionpos=b
+}
+
+% Custom boxes for tips, warnings, and notes
+\newtcolorbox{tipbox}{
+  colback=blue!5!white,
+  colframe=blue!75!black,
+  title=\textbf{Tip},
+  fonttitle=\bfseries
+}
+
+\newtcolorbox{warningbox}{
+  colback=red!5!white,
+  colframe=red!75!black,
+  title=\textbf{Warning},
+  fonttitle=\bfseries
+}
+
+\newtcolorbox{notebox}{
+  colback=green!5!white,
+  colframe=green!75!black,
+  title=\textbf{Note},
+  fonttitle=\bfseries
+}
+
+% Header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\thepage}
+\fancyhead[RE]{\nouppercase{\leftmark}}
+\fancyhead[LO]{\nouppercase{\rightmark}}
+
+% Title page
+\title{
+  {\Huge\textbf{Code Collaboration Best Practices}}\\[1em]
+  {\Large A Comprehensive Handbook for Modern Software Teams}
+}
+\author{Professional Development Handbook Series}
+\date{\today}
+
+% Begin document
+\begin{document}
+
+\frontmatter
+\maketitle
+
+\tableofcontents
+\listoffigures
+\listoftables
+
+\chapter*{Preface}
+\addcontentsline{toc}{chapter}{Preface}
+
+Software engineering is fundamentally a team sport. While individual technical skills matter, the ability to collaborate effectively often determines whether projects succeed or fail. This handbook provides systematic frameworks for the three pillars of code collaboration: commit craft, pull request excellence, and review mastery.
+
+Unlike general software engineering texts, this book focuses exclusively on the collaboration layer---the practices that enable teams to ship high-quality code efficiently. These practices are tool-agnostic principles that apply whether you use Git, GitHub, GitLab, Bitbucket, or proprietary version control systems.
+
+\textbf{Who This Book Is For:}
+
+\begin{itemize}
+  \item Individual contributors learning to work effectively in teams
+  \item Senior engineers mentoring junior developers
+  \item Engineering managers establishing team standards
+  \item DevOps and platform teams implementing automation
+  \item Technical leads scaling collaboration practices across organizations
+\end{itemize}
+
+\textbf{What You'll Learn:}
+
+\begin{itemize}
+  \item How to write commits that accelerate debugging and enable automation
+  \item Techniques for creating pull requests that reviewers can understand in minutes
+  \item Methods for providing code review feedback that improves code and builds team culture
+  \item Automation strategies that enforce standards without slowing development
+  \item Metrics and continuous improvement practices for collaboration health
+\end{itemize}
+
+\textbf{How to Use This Book:}
+
+Each chapter follows a consistent structure: concepts, examples, anti-patterns, best practices, and exercises. Code examples use real-world scenarios from production systems. Exercises provide hands-on practice applying concepts to your own repositories.
+
+Read chapters 1--9 sequentially to build foundational skills. Chapters 10--14 can be consulted as reference material when implementing specific practices or solving particular problems.
+
+The final chapter provides ready-to-use templates, checklists, and automation scripts you can adopt immediately in your team.
+
+\mainmatter
+
+% Include chapters
+\include{chapters/ch01_introduction}
+\include{chapters/ch02_atomic_commits}
+\include{chapters/ch03_commit_messages}
+\include{chapters/ch04_advanced_commits}
+\include{chapters/ch05_pr_creation}
+\include{chapters/ch06_pr_documentation}
+\include{chapters/ch07_review_fundamentals}
+\include{chapters/ch08_constructive_feedback}
+\include{chapters/ch09_review_psychology}
+\include{chapters/ch10_automation}
+\include{chapters/ch11_advanced_patterns}
+\include{chapters/ch12_continuous_improvement}
+\include{chapters/ch13_case_studies}
+\include{chapters/ch14_templates}
+
+\backmatter
+
+\chapter*{Conclusion: Sustaining the Collaboration Flywheel}
+\addcontentsline{toc}{chapter}{Conclusion: Sustaining the Collaboration Flywheel}
+
+Collaboration is a system, not a checklist. The practices in this handbook---from atomic commits to review psychology and automation---work because teams revisit them constantly, measure their impact, and refine them in the open. Excellence emerges when every engineer treats collaboration standards as code: versioned, reviewed, and improved together.
+
+\section*{Start with Experiments, End with Culture}
+Begin with one disciplined habit in each pillar (commits, PRs, reviews) and run it like an experiment. Announce the hypothesis, collect metrics, and share outcomes in retros. When the habit sticks, codify it in templates or bots so it survives turnover. When it fails, document the lesson so the next attempt starts stronger. Over time, these experiments graduate into norms, and norms become culture.
+
+\section*{Invest in Storytelling and Recognition}
+People adopt practices they believe in. Share stories of collaboration wins---PRs that averted incidents, reviewers who mentored juniors, automation that caught regressions. Celebrate these moments in demos, newsletters, or retrospectives. Recognition turns good behavior into collective identity and motivates skeptics to try new habits.
+
+\section*{Keep the Data Visible}
+Metrics anchor improvement. Track cycle time, review latency, flag cleanup, and retrospective action items. Use dashboards as conversation starters rather than scorecards. When data reveals friction, respond with empathy: adjust tooling, rebalance reviewer load, or provide training. Making data visible keeps leadership invested and ensures collaboration work stays prioritized.
+
+\section*{Scale Through Enablement}
+As teams grow, enablement becomes the multiplier. Provide onboarding paths that teach commit craft, run review shadowing programs, and maintain internal playbooks for migrations or audits. Assign stewards for templates and bots so updates stay coordinated. Empower inner-source contributors with clear contribution agreements. Enablement turns collaboration from heroics into infrastructure.
+
+\section*{Future-Proof the Flywheel}
+Technology, regulations, and team composition will change. Protect the flywheel by scheduling regular collaboration retros, budgeting for tooling refreshes, and rotating ownership of improvement initiatives. When crises hit---incidents, layoffs, pivots---lean on the flywheel: atomic commits accelerate incident response, well-documented PRs keep knowledge flowing, and psychologically safe reviews help teams recover.
+
+This handbook is your launchpad, not a finish line. Ship a new template, refactor your review rituals, rewrite a commit policy---then do it again. The next commit, the next PR, the next review is an opportunity to practice the culture you want. Make it deliberate, make it shared, make it excellent.
+
+\appendix
+
+\chapter{Quick Reference Guides}
+
+\section{Commit Message Template}
+\begin{lstlisting}[style=shell]
+type(scope): brief summary (50 chars max)
+
+Detailed explanation of why this change was needed.
+Include context that won't be obvious from the diff.
+
+- Key point 1
+- Key point 2
+
+Refs: #123
+\end{lstlisting}
+
+\section{PR Description Template}
+\begin{lstlisting}[style=markdown]
+## Summary
+[Brief description of changes]
+
+## Motivation
+[Why this change is needed]
+
+## Implementation Details
+[Key technical decisions and approach]
+
+## Testing
+- [ ] Unit tests added/updated
+- [ ] Integration tests added/updated
+- [ ] Manual testing completed
+
+## Screenshots/Evidence
+[Visual proof for UI changes or logs for backend changes]
+
+## Checklist
+- [ ] Code follows team style guide
+- [ ] Documentation updated
+- [ ] Breaking changes documented
+- [ ] Migrations included (if applicable)
+\end{lstlisting}
+
+\section{Review Checklist}
+\begin{enumerate}
+  \item \textbf{Correctness}: Does the code do what it claims?
+  \item \textbf{Security}: Are there injection risks, auth issues, or data leaks?
+  \item \textbf{Performance}: Are there obvious inefficiencies?
+  \item \textbf{Maintainability}: Can future developers understand this?
+  \item \textbf{Testing}: Are edge cases covered?
+  \item \textbf{Documentation}: Are complex parts explained?
+\end{enumerate}
+
+\chapter{Glossary}
+
+\begin{description}
+  \item[Atomic Commit] A commit containing only related changes that achieve one logical purpose
+  \item[Conventional Commits] A commit message format specification using structured prefixes (feat, fix, etc.)
+  \item[PR Cycle Time] Time from pull request creation to merge
+  \item[Code Review] Systematic examination of code changes by peers before integration
+  \item[Git Bisect] Binary search through commit history to identify bug introduction
+  \item[Squash Merge] Combining all commits in a PR into a single commit when merging
+  \item[Draft PR] Pull request marked as work-in-progress to gather early feedback
+  \item[LGTM] "Looks Good To Me" - approval in code review
+  \item[Nit] Minor, non-blocking suggestion in code review
+  \item[WIP] Work In Progress
+\end{description}
+
+\chapter{Further Resources}
+
+\section{Books}
+\begin{itemize}
+  \item \textit{The Art of Readable Code} by Dustin Boswell and Trevor Foucher
+  \item \textit{Working Effectively with Legacy Code} by Michael Feathers
+  \item \textit{Accelerate} by Nicole Forsgren, Jez Humble, and Gene Kim
+  \item \textit{Team Topologies} by Matthew Skelton and Manuel Pais
+\end{itemize}
+
+\section{Online Resources}
+\begin{itemize}
+  \item Conventional Commits: \url{https://www.conventionalcommits.org}
+  \item GitHub Flow: \url{https://docs.github.com/en/get-started/quickstart/github-flow}
+  \item Google Engineering Practices: \url{https://google.github.io/eng-practices/}
+  \item Git Documentation: \url{https://git-scm.com/doc}
+\end{itemize}
+
+\section{Tools}
+\begin{itemize}
+  \item Commitlint: Enforce commit message conventions
+  \item Danger: Automate common code review tasks
+  \item Pre-commit: Git hook framework for linting and formatting
+  \item Trunk: Modern CI/CD and code quality platform
+  \item SonarQube: Continuous code quality inspection
+\end{itemize}
+
+\end{document}

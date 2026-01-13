@@ -1,0 +1,385 @@
+\documentclass[12pt,a4paper]{book}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage[hidelinks,hypertexnames=false]{hyperref}
+\usepackage{cleveref}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{listings}
+\usepackage{listingsutf8}
+\usepackage{xcolor}
+\usepackage{natbib}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows,positioning,fit,calc,backgrounds}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% Page setup
+\geometry{margin=1in}
+\setlength{\headheight}{14.5pt}
+\setlength{\emergencystretch}{4em} % help LaTeX stretch lines to avoid overfull hboxes
+\hfuzz=2pt % suppress tiny overfull hbox warnings
+\raggedbottom % avoid forcing vertical stretch that triggers underfull vboxes
+\sloppy % favor line breaks over overfull boxes
+% Widen TOC page number boxes to avoid overfull boxes with long roman numerals
+\makeatletter
+\renewcommand{\@pnumwidth}{3em}
+\renewcommand{\@tocrmarg}{4em}
+\makeatother
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\thepage}
+\fancyhead[LO]{\nouppercase{\rightmark}}
+\fancyhead[RE]{\nouppercase{\leftmark}}
+
+% Color definitions
+\definecolor{shellgray}{gray}{0.95}
+\definecolor{keywordblue}{RGB}{39,92,158}
+\definecolor{codegreen}{RGB}{0,128,0}
+\definecolor{codepurple}{RGB}{128,0,128}
+\definecolor{codegray}{RGB}{128,128,128}
+\definecolor{backcolour}{RGB}{245,245,245}
+
+% YAML language definition for listings
+\lstdefinelanguage{YAML}{
+    keywords={true,false,null,yes,no},
+    keywordstyle=\color{keywordblue}\bfseries,
+    sensitive=false,
+    comment=[l]{\#},
+    commentstyle=\color{codegreen}\itshape,
+    stringstyle=\color{codepurple}
+}
+
+% Python code listing style
+\lstdefinestyle{python}{
+    language=Python,
+    basicstyle=\ttfamily\footnotesize,
+    backgroundcolor=\color{backcolour},
+    frame=single,
+    breaklines=true,
+    numbers=left,
+    numberstyle=\tiny\color{codegray},
+    keywordstyle=\color{keywordblue}\bfseries,
+    commentstyle=\color{codegreen}\itshape,
+    stringstyle=\color{codepurple},
+    showstringspaces=false,
+    columns=fullflexible,
+    keepspaces=true,
+    captionpos=b
+}
+
+% Shell/Bash code listing style
+\lstdefinestyle{shell}{
+    basicstyle=\ttfamily\footnotesize,
+    backgroundcolor=\color{shellgray},
+    frame=single,
+    breaklines=true,
+    numbers=left,
+    numberstyle=\tiny\color{codegray},
+    keywordstyle=\color{keywordblue},
+    showstringspaces=false,
+    columns=fullflexible,
+    keepspaces=true,
+    captionpos=b
+}
+
+% YAML code listing style
+\lstdefinestyle{yaml}{
+    language=YAML,
+    basicstyle=\ttfamily\footnotesize,
+    backgroundcolor=\color{backcolour},
+    frame=single,
+    columns=fullflexible,
+    keepspaces=true,
+    showstringspaces=false,
+    breaklines=true,
+    captionpos=b,
+    keywords={true,false,null,yes,no},
+    keywordstyle=\color{keywordblue}\bfseries,
+    comment=[l]{\#},
+    commentstyle=\color{codegreen}\itshape
+}
+
+% Docker code listing style
+\lstdefinestyle{docker}{
+    basicstyle=\ttfamily\footnotesize,
+    backgroundcolor=\color{backcolour},
+    frame=single,
+    breaklines=true,
+    numbers=left,
+    numberstyle=\tiny\color{codegray},
+    keywordstyle=\color{keywordblue}\bfseries,
+    commentstyle=\color{codegreen}\itshape,
+    showstringspaces=false,
+    captionpos=b
+}
+
+% Set default style and UTF-8 handling for listings
+\lstset{
+    style=python,
+    inputencoding=utf8,
+    extendedchars=true,
+    literate={
+        {±}{{$\pm$}}1
+        {²}{{$^2$}}1
+        {é}{{\'e}}1
+        {α}{{$\alpha$}}1
+        {δ}{{$\delta$}}1
+        {ε}{{$\epsilon$}}1
+        {λ}{{$\lambda$}}1
+        {—}{{---}}1
+        {→}{{$\to$}}1
+        {≈}{{$\approx$}}1
+        {─}{{-}}1
+        {│}{{|}}1
+        {└}{{\textbackslash}}1
+        {├}{{|-}}1
+        {✓}{{\checkmark}}1
+        {✗}{{x}}1
+    }
+}
+
+% Theorem environments
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[chapter]
+\newtheorem{example}{Example}[chapter]
+\newtheorem{exercise}{Exercise}[chapter]
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{proposition}{Proposition}[chapter]
+\newtheorem{lemma}{Lemma}[chapter]
+\newtheorem{corollary}{Corollary}[chapter]
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[chapter]
+\newtheorem{note}{Note}[chapter]
+
+% Custom environments for best practices and warnings
+\newenvironment{bestpractice}
+  {\begin{quote}\noindent\textbf{Best Practice:}\itshape}
+  {\end{quote}}
+
+\newenvironment{warning}
+  {\begin{quote}\noindent\textbf{Warning:}\itshape}
+  {\end{quote}}
+
+\newenvironment{casestudy}
+  {\begin{quote}\noindent\textbf{Case Study:}\itshape}
+  {\end{quote}}
+
+% Title page information
+\title{Machine Learning Engineering:\\Training Pipeline Architecture and Best Practices}
+\author{Diogo Ribeiro\\
+        ESMAD - Instituto Politécnico do Porto}
+\date{\today}
+
+\begin{document}
+
+\frontmatter
+\maketitle
+
+\tableofcontents
+\listoffigures
+\listoftables
+\listofalgorithms
+
+\chapter{Preface}
+\input{chapters/preface}
+
+\input{chapters/unified_case_study}
+
+\mainmatter
+
+% Part I: Foundations
+\part{Foundations of ML Engineering}
+
+% Chapter 1: Introduction
+\chapter{Introduction to ML Engineering}
+\label{ch:introduction}
+\input{chapters/chapter01_introduction}
+
+% Chapter 2: ML Lifecycle Overview
+\chapter{The Machine Learning Lifecycle}
+\label{ch:ml_lifecycle}
+\input{chapters/chapter02_ml_lifecycle}
+
+% Chapter 3: Training Pipeline Design Patterns
+\chapter{Training Pipeline Design Patterns}
+\label{ch:training_pipelines}
+\input{chapters/chapter03_dev_environment}
+
+% Part II: Data Engineering for ML
+\part{Data Engineering for ML}
+
+% Chapter 4: Data Pipeline Architecture
+\chapter{Data Pipeline Architecture}
+\label{ch:data_pipelines}
+\input{chapters/chapter04_data_pipelines}
+
+% Chapter 5: Data Quality and Validation
+\chapter{Data Quality and Validation}
+\label{ch:data_quality}
+\input{chapters/chapter05_data_quality}
+
+% Chapter 6: Feature Stores
+\chapter{Feature Engineering and Feature Stores}
+\label{ch:feature_stores}
+\input{chapters/chapter06_feature_stores}
+
+% Part III: Training Pipeline Architecture
+\part{Training Pipeline Architecture}
+
+% Chapter 7: Model Development
+\chapter{Model Development Best Practices}
+\label{ch:model_development}
+\input{chapters/chapter07_model_development}
+
+% Chapter 8: Experiment Tracking
+\chapter{Experiment Tracking and Management}
+\label{ch:experiment_tracking}
+\input{chapters/chapter08_experiment_tracking}
+
+% Chapter 9: Training at Scale
+\chapter{Distributed Training and Optimization}
+\label{ch:distributed_training}
+\input{chapters/chapter09_distributed_training}
+
+% Chapter 10: Hyperparameter Optimization
+\chapter{Hyperparameter Optimization}
+\label{ch:hyperparameter_optimization}
+\input{chapters/chapter10_hyperparameter_optimization}
+
+% Part IV: Model Deployment and Serving
+\part{Model Deployment and Serving}
+
+% Chapter 11: Model Serving Architecture
+\chapter{Model Serving Architecture}
+\label{ch:model_serving}
+\input{chapters/chapter11_model_serving}
+
+% Chapter 12: Deployment Strategies
+\chapter{Deployment Strategies and Patterns}
+\label{ch:deployment_strategies}
+\input{chapters/chapter12_deployment_strategies}
+
+% Chapter 13: Model Versioning
+\chapter{Model Versioning and Registry}
+\label{ch:model_versioning}
+\input{chapters/chapter13_model_versioning}
+
+% Part V: Production ML Operations
+\part{Production ML Operations}
+
+% Chapter 14: Monitoring and Observability
+\chapter{ML Monitoring and Observability}
+\label{ch:monitoring}
+\input{chapters/chapter14_monitoring}
+
+% Chapter 15: Model Maintenance
+\chapter{Model Maintenance and Retraining}
+\label{ch:model_maintenance}
+\input{chapters/chapter15_model_maintenance}
+
+% Chapter 16: Performance Optimization
+\chapter{Model Performance Optimization}
+\label{ch:performance_optimization}
+\input{chapters/chapter16_performance_optimization}
+
+% Part VI: MLOps and Automation
+\part{MLOps and Automation}
+
+% Chapter 17: CI/CD for ML
+\chapter{CI/CD Pipelines for Machine Learning}
+\label{ch:cicd}
+\input{chapters/chapter17_cicd}
+
+% Chapter 18: Infrastructure as Code
+\chapter{Infrastructure as Code for ML}
+\label{ch:infrastructure}
+\input{chapters/chapter18_infrastructure}
+
+% Chapter 19: MLOps Platforms
+\chapter{MLOps Platforms and Tools}
+\label{ch:mlops_platforms}
+\input{chapters/chapter19_mlops_platforms}
+
+% Part VII: Advanced Topics
+\part{Advanced Topics and Best Practices}
+
+% Chapter 20: Model Governance
+\chapter{Model Governance and Compliance}
+\label{ch:governance}
+\input{chapters/chapter20_governance}
+
+% Chapter 21: Security
+\chapter{Security in ML Systems}
+\label{ch:security}
+\input{chapters/chapter21_security}
+
+% Chapter 22: Cost Optimization
+\chapter{Cost Optimization in ML Infrastructure}
+\label{ch:cost_optimization}
+\input{chapters/chapter22_cost_optimization}
+
+% Part VIII: Case Studies and Integration
+\part{Case Studies and Integration}
+
+% Chapter 23: Real-World Case Studies
+\chapter{Industry Case Studies}
+\label{ch:case_studies}
+\input{chapters/chapter23_case_studies}
+
+% Chapter 24: Building End-to-End Systems
+\chapter{Building End-to-End ML Systems}
+\label{ch:end_to_end}
+\input{chapters/chapter24_end_to_end}
+
+% Chapter 25: Future of ML Engineering
+\chapter{Future Trends in ML Engineering}
+\label{ch:future_trends}
+\input{chapters/chapter25_future_trends}
+
+\backmatter
+
+% Appendices
+\appendix
+
+\chapter{Setup Guides and Installation}
+\label{app:setup}
+\input{appendices/appendix_setup}
+
+\chapter{Code Examples and Templates}
+\label{app:code}
+\input{appendices/appendix_code}
+
+\chapter{Tools and Frameworks Comparison}
+\label{app:tools}
+\input{appendices/appendix_tools}
+
+\chapter{Mathematical Foundations}
+\label{app:math}
+\input{appendices/appendix_math}
+
+\chapter{Glossary}
+\label{app:glossary}
+\input{appendices/appendix_glossary}
+
+\chapter{Code Style Guide}
+\label{app:code_style}
+\input{appendices/appendix_code_style}
+
+% Bibliography
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

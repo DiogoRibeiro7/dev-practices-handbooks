@@ -2,7 +2,7 @@
 
 \section{Introduction}
 
-Modern enterprise data systems process billions of events daily—user clicks, transaction completions, sensor readings, service logs. Traditional batch ETL pipelines, running hourly or daily, cannot meet the latency requirements of real-time ML applications. A fraud detection model that receives transaction features 6 hours after the purchase is worthless. A recommendation system that updates daily loses revenue to competitors updating in real-time. The difference between batch and event-driven architectures is the difference between reactive and proactive business intelligence.
+Modern enterprise data systems process billions of events daily---user clicks, transaction completions, sensor readings, service logs. Traditional batch ETL pipelines, running hourly or daily, cannot meet the latency requirements of real-time ML applications. A fraud detection model that receives transaction features 6 hours after the purchase is worthless. A recommendation system that updates daily loses revenue to competitors updating in real-time. The difference between batch and event-driven architectures is the difference between reactive and proactive business intelligence.
 
 Event-driven data pipelines are the nervous system of real-time ML infrastructure. They transform discrete business events into continuous feature streams, enabling models to make predictions on fresh data with sub-second latency. However, building reliable event-driven systems is fundamentally different from batch processing. Out-of-order events, network partitions, schema evolution, and exactly-once semantics introduce complexity that trivializes batch ETL challenges.
 
@@ -152,7 +152,7 @@ Apache Kafka is the industry-standard distributed message broker for event-drive
 
 \textbf{Core components:}
 \begin{itemize}
-    \item \textbf{Topics}: Logical channels for event streams (e.g., "user-events", "transactions")
+    \item \textbf{Topics}: Logical channels for event streams (e.g., ``user-events``, ``transactions``)
     \item \textbf{Partitions}: Topics split into ordered, immutable partitions for parallelism
     \item \textbf{Brokers}: Servers that store and serve partition data
     \item \textbf{Producers}: Applications that publish events to topics
@@ -1242,7 +1242,7 @@ An e-commerce company needs real-time revenue visibility across:
     \item 3 time windows (last 15 minutes, last hour, last 24 hours)
 \end{itemize}
 
-Total: 15 × 50 × 5 × 3 = 11,250 real-time aggregations
+Total: 15 $	imes$ 50 $	imes$ 5 $	imes$ 3 = 11,250 real-time aggregations
 
 \textbf{Business requirements:}
 \begin{itemize}
@@ -1759,7 +1759,7 @@ finally:
 
 \section{Error Handling and Fault Tolerance}
 
-Event-driven data pipelines operate in hostile environments: networks partition, services crash, dependencies timeout, messages arrive corrupted. Unlike batch ETL where failures trigger human intervention, event-driven systems must recover automatically—processing millions of events daily with minimal supervision. The difference between naive error handling and production-grade fault tolerance is the difference between 99\% uptime and 99.99\% uptime, between occasional data loss and guaranteed processing.
+Event-driven data pipelines operate in hostile environments: networks partition, services crash, dependencies timeout, messages arrive corrupted. Unlike batch ETL where failures trigger human intervention, event-driven systems must recover automatically---processing millions of events daily with minimal supervision. The difference between naive error handling and production-grade fault tolerance is the difference between 99\% uptime and 99.99\% uptime, between occasional data loss and guaranteed processing.
 
 Production event pipelines require defense-in-depth: retry strategies for transient failures, circuit breakers for cascading failures, dead letter queues for poison messages, and exponential backoff to prevent thundering herds. However, incorrect error handling creates new failure modes: infinite retry loops waste resources, premature circuit breaker trips cause false outages, and poorly configured backoff strategies amplify traffic spikes.
 
@@ -1788,12 +1788,12 @@ Consider a real-time fraud detection system processing 50,000 transactions per s
     \item Stream processors retry failed enrichment calls immediately (no backoff)
     \item Retry storm amplifies database load: 50K TPS becomes 150K TPS query load
     \item Database connection pool exhausted (100 connections saturated)
-    \item All enrichment calls now fail with "connection pool exhausted"
+    \item All enrichment calls now fail with ``connection pool exhausted``
 \end{itemize}
 
 \textbf{14:37 - Second cascade:}
 \begin{itemize}
-    \item Stream processors have no circuit breaker—continue hammering database
+    \item Stream processors have no circuit breaker---continue hammering database
     \item Kafka consumer lag increases: 0 seconds → 30 seconds → 5 minutes
     \item ML service receives backlog of stale events (fraud patterns drift in 5 minutes)
     \item False positive rate doubles: 2\% → 4\% (manual review team overwhelmed)
@@ -1801,7 +1801,7 @@ Consider a real-time fraud detection system processing 50,000 transactions per s
 
 \textbf{14:40 - Third cascade:}
 \begin{itemize}
-    \item Failed events have no dead letter queue—processors retry indefinitely
+    \item Failed events have no dead letter queue---processors retry indefinitely
     \item Memory usage escalates as retry queues grow unbounded
     \item Stream processors start OOM crashing and restarting
     \item Kafka rebalances trigger on every crash (processing halts during rebalance)
@@ -2200,7 +2200,7 @@ except Exception as e:
 
 \subsection{CircuitBreaker: Dependency Protection}
 
-Circuit breakers prevent cascading failures by detecting failing dependencies and temporarily stopping requests. When error rate exceeds threshold, circuit "opens" and fails fast instead of waiting for timeouts. After cooldown period, circuit "half-opens" to test recovery.
+Circuit breakers prevent cascading failures by detecting failing dependencies and temporarily stopping requests. When error rate exceeds threshold, circuit ``opens`` and fails fast instead of waiting for timeouts. After cooldown period, circuit ``half-opens`` to test recovery.
 
 \textbf{States:}
 \begin{itemize}
@@ -3019,8 +3019,8 @@ Consider a real-time recommendation system serving 100 million daily users:
 \begin{itemize}
     \item Mobile app deployment introduces bug: click timestamps in milliseconds instead of seconds
     \item Example: \texttt{timestamp: 1699876543000} (year 53844) instead of \texttt{1699876543} (Nov 2023)
-    \item Stream processor has no timestamp validation—accepts future dates
-    \item Feature computation calculates "time since last click" as negative values
+    \item Stream processor has no timestamp validation---accepts future dates
+    \item Feature computation calculates ``time since last click`` as negative values
     \item Engagement features corrupted: \texttt{minutes\_since\_last\_click: -1.7e12}
 \end{itemize}
 
@@ -3028,7 +3028,7 @@ Consider a real-time recommendation system serving 100 million daily users:
 \begin{itemize}
     \item ML model trained on features in range [0, 1440] (max 24 hours)
     \item Receives features with values like \texttt{-1.7e12, -8.5e11, -3.2e13}
-    \item Model has no input validation—processes corrupt features
+    \item Model has no input validation---processes corrupt features
     \item Predictions become random (model outside training distribution)
     \item Recommendation quality collapses: CTR drops from 8\% to 1.2\%
 \end{itemize}
@@ -3038,8 +3038,8 @@ Consider a real-time recommendation system serving 100 million daily users:
     \item Homepage shows irrelevant recommendations (winter coats in summer, baby products to singles)
     \item Customer engagement plummets: session duration -60\%, bounce rate +40\%
     \item Revenue impact: GMV down 35\% (\$2.9M/hour loss rate)
-    \item Customer support tickets surge: "Why am I seeing these products?"
-    \item No automatic quality gates triggered—system "working normally"
+    \item Customer support tickets surge: ``Why am I seeing these products?``
+    \item No automatic quality gates triggered---system ``working normally``
 \end{itemize}
 
 \textbf{09:45 - Downstream cascade:}
@@ -3048,7 +3048,7 @@ Consider a real-time recommendation system serving 100 million daily users:
     \item Batch model training job starts at 10:00 using corrupt data
     \item Training detects NaN values (from overflow), crashes
     \item ML engineers investigate, discover 30 minutes of corrupt features
-    \item All downstream features tainted—requires full reprocessing
+    \item All downstream features tainted---requires full reprocessing
 \end{itemize}
 
 \textbf{10:30 - Discovery and response:}
@@ -3994,7 +3994,7 @@ for message in consumer:
 
 \subsection{DataApproximator: Emergency Operations}
 
-When all fallback strategies fail, data approximation provides "good enough" values to maintain critical business functions.
+When all fallback strategies fail, data approximation provides ``good enough`` values to maintain critical business functions.
 
 \begin{lstlisting}[style=python, caption={Data Approximation Strategies}]
 from typing import Dict, Any, Optional, List
@@ -4331,7 +4331,7 @@ class QualityMetrics:
 
 \section{Disaster Recovery and Automated Backup}
 
-Fault tolerance handles transient failures, but disasters require complete system restoration. Production event-driven pipelines process billions of dollars in transactions daily—a catastrophic failure without backup means permanent data loss and business continuity failure. Unlike batch systems where data lives in databases, event-driven systems must backup streaming state, Kafka topics, feature stores, and processing checkpoints across multiple regions.
+Fault tolerance handles transient failures, but disasters require complete system restoration. Production event-driven pipelines process billions of dollars in transactions daily---a catastrophic failure without backup means permanent data loss and business continuity failure. Unlike batch systems where data lives in databases, event-driven systems must backup streaming state, Kafka topics, feature stores, and processing checkpoints across multiple regions.
 
 The difference between recovery time objective (RTO) and actual recovery time is often the difference between controlled failover and business-ending outage. A pipeline with 1-hour RTO that actually takes 6 hours to restore fails regulatory requirements, breaks SLAs, and loses customer trust. Production DR systems require automated backup procedures, cross-region replication, validated restore processes, and quarterly disaster recovery drills.
 
@@ -4363,7 +4363,7 @@ Consider a high-frequency trading platform processing market data and executing 
     \item Kafka replication to secondary region exists, but...
     \item Stream processor state not backed up (processing 2GB of in-memory windowed aggregations)
     \item Feature store last backup: 6 hours old (daily backup at 18:00)
-    \item On-call engineer paged: "Kafka cluster unreachable"
+    \item On-call engineer paged: ``Kafka cluster unreachable``
 \end{itemize}
 
 \textbf{23:50 - Initial assessment:}
@@ -4388,7 +4388,7 @@ Consider a high-frequency trading platform processing market data and executing 
 
 \textbf{01:30 - Escalation:}
 \begin{itemize}
-    \item CTO paged: "Cannot meet 4:00 AM market open deadline"
+    \item CTO paged: ``Cannot meet 4:00 AM market open deadline``
     \item Business impact assessment:
         \begin{itemize}
             \item Asian market hours: 4:00 AM - 8:00 AM (4 hours offline)
@@ -4411,7 +4411,7 @@ Consider a high-frequency trading platform processing market data and executing 
 \begin{itemize}
     \item Platform still offline (50\% through manual rebuild)
     \item Missed trading opportunities: \$800K (estimated)
-    \item Client notifications: "Technical difficulties, trading suspended"
+    \item Client notifications: ``Technical difficulties, trading suspended``
     \item Regulatory reporting: Exchange notifications required
 \end{itemize}
 
@@ -4428,7 +4428,7 @@ Consider a high-frequency trading platform processing market data and executing 
 \begin{itemize}
     \item Revenue loss: \$2.1M (missed Asian and early European trading)
     \item Regulatory fines: \$150K (delayed exchange notifications)
-    \item Engineering costs: \$45K (overnight emergency response, 6 engineers × 8 hours)
+    \item Engineering costs: \$45K (overnight emergency response, 6 engineers $	imes$ 8 hours)
     \item Client trust: 3 institutional clients suspended trading (investigating alternatives)
     \item SLA breach: 99.99\% uptime requirement violated (quarterly penalties: \$500K)
 \end{itemize}
@@ -6032,8 +6032,8 @@ Parallel processing multiplies throughput by distributing work across multiple w
 \textbf{Parallelism Overhead:}
 \begin{itemize}
     \item \textbf{Thread creation}: 1-10ms per thread
-    \item \textbf{Context switching}: 1-100μs per switch
-    \item \textbf{Synchronization}: 100ns-1μs per lock acquisition
+    \item \textbf{Context switching}: 1-100\ensuremath{\mu}s per switch
+    \item \textbf{Synchronization}: 100ns-1\ensuremath{\mu}s per lock acquisition
     \item \textbf{Communication}: Variable (shared memory < IPC < network)
 \end{itemize}
 
@@ -6043,7 +6043,7 @@ Parallel processing multiplies throughput by distributing work across multiple w
 \end{equation}
 
 For I/O-bound tasks (wait time >> compute time), optimal workers = 2-4x CPU cores.
-For CPU-bound tasks (wait time ≈ 0), optimal workers = CPU cores.
+For CPU-bound tasks (wait time \ensuremath{\approx} 0), optimal workers = CPU cores.
 
 \subsection{ParallelProcessor: Dynamic Worker Allocation}
 
@@ -6106,7 +6106,7 @@ class ParallelProcessor:
 
     Performance characteristics:
     - Throughput: Linear scaling up to CPU core count
-    - Latency: Queue depth × batch time
+    - Latency: Queue depth $	imes$ batch time
     - Overhead: ~5% for coordination
     """
 
@@ -6211,7 +6211,7 @@ class ParallelProcessor:
             return
 
         logger.info(
-            f"Scaling workers: {self.current_workers} → {target_workers}"
+            f"Scaling workers: {self.current_workers} -> {target_workers}"
         )
 
         # Shutdown existing executor
@@ -7492,7 +7492,7 @@ monitor.stop()
 
 \section{Caching and Data Compression}
 
-Event-driven pipelines repeatedly access reference data: customer profiles, product catalogs, feature vectors, lookup tables. Fetching this data from databases on every event creates latency spikes and database bottlenecks. Production pipelines use intelligent caching to reduce database load by 90\%, cutting latency from 50ms to 500μs. However, naive caching creates new failure modes: cache stampedes overwhelm databases during invalidation, stale data causes incorrect results, and unbounded caches exhaust memory.
+Event-driven pipelines repeatedly access reference data: customer profiles, product catalogs, feature vectors, lookup tables. Fetching this data from databases on every event creates latency spikes and database bottlenecks. Production pipelines use intelligent caching to reduce database load by 90\%, cutting latency from 50ms to 500\ensuremath{\mu}s. However, naive caching creates new failure modes: cache stampedes overwhelm databases during invalidation, stale data causes incorrect results, and unbounded caches exhaust memory.
 
 Data compression reduces network bandwidth and storage costs by 70-90\%, but poor compression choices hurt performance. JSON consumes 10x more bandwidth than Protobuf for the same data. Compressing already-compressed data wastes CPU. Production systems require intelligent compression selection based on data type, access patterns, and performance requirements.
 
@@ -7512,7 +7512,7 @@ Consider a real-time personalization engine serving product recommendations:
 \textbf{Normal operation:}
 \begin{itemize}
     \item Cache hit rate 95\% → 25K database queries/second (well within capacity)
-    \item Average latency: 2ms (500μs cache hit, 50ms cache miss)
+    \item Average latency: 2ms (500\ensuremath{\mu}s cache hit, 50ms cache miss)
     \item Database CPU: 40\%
     \item System healthy
 \end{itemize}
@@ -7551,7 +7551,7 @@ Consider a real-time personalization engine serving product recommendations:
     \item Timeout triggers retry logic
     \item Retry amplifies database load: 125K/sec → 250K/sec
     \item Database connections exhausted
-    \item Connection errors: "FATAL: sorry, too many clients already"
+    \item Connection errors: ``FATAL: sorry, too many clients already``
     \item Personalization requests failing: 0\% → 30\% → 60\%
 \end{itemize}
 
@@ -8120,7 +8120,7 @@ class CompressionOptimizer:
         )
 
         logger.debug(
-            f"Compressed {original_size} → {compressed_size} bytes "
+            f"Compressed {original_size} -> {compressed_size} bytes "
             f"({compression_ratio:.1%} ratio) using {algorithm.value} "
             f"in {compression_time_ms:.2f}ms"
         )
@@ -8286,7 +8286,7 @@ event_json = json.dumps(event).encode('utf-8')
 
 compressed, result = compressor.compress(event_json)
 logger.info(
-    f"JSON compression: {result.original_size} → {result.compressed_size} bytes "
+    f"JSON compression: {result.original_size} -> {result.compressed_size} bytes "
     f"({result.compression_ratio:.1%}), algorithm={result.algorithm.value}"
 )
 
@@ -8594,7 +8594,7 @@ class QueryOptimizer:
 
         # Check for common function patterns that break index usage
         functions = ['UPPER(', 'LOWER(', 'DATE(', 'YEAR(', 'CAST(']
-        where_clause = query.split('WHERE', 1)[-1] if 'WHERE' in query.upper() else ''
+        where_clause = query.split('WHERE', 1)[-1] if 'WHERE' in query.upper() else "
 
         for func in functions:
             if func in where_clause.upper():
@@ -8647,7 +8647,7 @@ class QueryOptimizer:
     def _extract_where_columns(self, query: str) -> Set[str]:
         """Extract column names from WHERE clause."""
         # Simplified extraction (production would use proper SQL parsing)
-        where_clause = query.split('WHERE', 1)[-1] if 'WHERE' in query.upper() else ''
+        where_clause = query.split('WHERE', 1)[-1] if 'WHERE' in query.upper() else "
         columns = set()
 
         # Extract column names before comparison operators
@@ -9086,7 +9086,7 @@ class IndexManager:
 
     def _extract_query_columns(self, query: str) -> List[str]:
         """Extract column names from query WHERE clause."""
-        where_clause = query.split('WHERE', 1)[-1] if 'WHERE' in query.upper() else ''
+        where_clause = query.split('WHERE', 1)[-1] if 'WHERE' in query.upper() else "
 
         columns = []
         for part in where_clause.split():
@@ -10873,15 +10873,15 @@ Enterprise data platforms increasingly adopt the modern data stack, combining da
     \item \textbf{Scale explosion}: 15,000 tables, 2.3 million columns, 450 data pipelines
     \item \textbf{No centralized catalog}: Metadata scattered across wikis, Slack, tribal knowledge
     \item \textbf{Zero data lineage}: No one knew which tables fed which dashboards
-    \item \textbf{Shadow documentation}: 12 different "data dictionaries" in various states of decay
+    \item \textbf{Shadow documentation}: 12 different ``data dictionaries`` in various states of decay
     \item \textbf{Discovery paralysis}: Engineers spent 40\% of time searching for data
 \end{itemize}
 
 \textbf{The Incident (March 15, 2024):}
 
 \begin{itemize}
-    \item \textbf{08:00}: Product team needs "active customer count" for Q1 board presentation
-    \item \textbf{08:15}: Data analyst finds 23 tables with "customer" in the name
+    \item \textbf{08:00}: Product team needs ``active customer count`` for Q1 board presentation
+    \item \textbf{08:15}: Data analyst finds 23 tables with ``customer`` in the name
     \begin{itemize}
         \item \texttt{customers}, \texttt{customers\_v2}, \texttt{customers\_clean}, \texttt{customers\_final}
         \item \texttt{dim\_customer}, \texttt{customer\_master}, \texttt{active\_customers}
@@ -10898,7 +10898,7 @@ Enterprise data platforms increasingly adopt the modern data stack, combining da
         \item No one documented the decommissioning of \texttt{customers\_v2}
     \end{itemize}
     \item \textbf{16:00}: CEO presents wrong numbers to board
-    \item \textbf{18:00}: Board meeting adjourned for "data quality concerns"
+    \item \textbf{18:00}: Board meeting adjourned for ``data quality concerns``
 \end{itemize}
 
 \textbf{The Investigation:}
@@ -10906,20 +10906,20 @@ Enterprise data platforms increasingly adopt the modern data stack, combining da
 \begin{itemize}
     \item \textbf{Data discovery costs}: Engineers waste 15 hours/week searching for data
     \begin{itemize}
-        \item 800 engineers × 15 hours × \$100/hour = \$1.2M/week = \$62M/year
+        \item 800 engineers $	imes$ 15 hours $	imes$ \$100/hour = \$1.2M/week = \$62M/year
     \end{itemize}
     \item \textbf{Incorrect data usage}: 34\% of queries used deprecated tables
     \begin{itemize}
         \item Led to incorrect business decisions costing estimated \$8M
     \end{itemize}
-    \item \textbf{Duplicate work}: 18 teams independently reimplemented "customer segmentation"
+    \item \textbf{Duplicate work}: 18 teams independently reimplemented ``customer segmentation``
     \begin{itemize}
-        \item 18 different definitions of "active customer"
+        \item 18 different definitions of ``active customer``
         \item Engineering cost: \$500K in wasted effort
     \end{itemize}
     \item \textbf{Compliance risk}: GDPR PII scattered across unknown tables
     \begin{itemize}
-        \item Unable to fulfill "right to deletion" requests
+        \item Unable to fulfill ``right to deletion`` requests
         \item Potential fines: €20M or 4\% of revenue
     \end{itemize}
 \end{itemize}
@@ -11216,7 +11216,7 @@ class LakehouseIntegrator:
             if rename_columns:
                 for old_name, new_name in rename_columns.items():
                     update.rename_column(old_name, new_name)
-                    self.logger.info(f"Renamed: {old_name} → {new_name}")
+                    self.logger.info(f"Renamed: {old_name} -> {new_name}")
 
             # Drop columns
             if drop_columns:
@@ -11465,7 +11465,7 @@ class RealtimeAnalyzer:
                 host=config['clickhouse']['host'],
                 port=config['clickhouse'].get('port', 8123),
                 username=config['clickhouse'].get('username', 'default'),
-                password=config['clickhouse'].get('password', '')
+                password=config['clickhouse'].get('password', ")
             )
             self.logger.info("ClickHouse client initialized")
 
@@ -12708,7 +12708,7 @@ class LineageTracker:
             created_at=edge.created_at.isoformat()
         )
 
-        self.logger.info(f"Added lineage: {source_id} → {target_id}")
+        self.logger.info(f"Added lineage: {source_id} -> {target_id}")
 
     def get_upstream_lineage(self, asset_identifier: str,
                             depth: int = 5) -> Dict[str, Any]:
@@ -12989,7 +12989,7 @@ Modern data platforms require sophisticated patterns for real-time synchronizati
 \textbf{The Incident (September 2024):}
 
 \begin{itemize}
-    \item \textbf{Month 1}: "Big bang" migration planned (2-week maintenance window)
+    \item \textbf{Month 1}: ``Big bang`` migration planned (2-week maintenance window)
     \item \textbf{Month 2}: Stakeholders reject 2-week downtime (\$120M lost revenue)
     \item \textbf{Month 3}: Attempt phased migration without CDC
     \begin{itemize}
@@ -13560,7 +13560,7 @@ class DataVirtualizer:
             schema=config.get('trino_schema', 'runtime'),
             auth=BasicAuthentication(
                 config.get('trino_user', 'admin'),
-                config.get('trino_password', '')
+                config.get('trino_password', ")
             ) if config.get('trino_password') else None
         )
 
@@ -13587,7 +13587,7 @@ class DataVirtualizer:
         """Set data residency rule for compliance."""
         self.residency_rules[table_pattern] = allowed_regions
         self.logger.info(
-            f"Set residency rule: {table_pattern} → {allowed_regions}"
+            f"Set residency rule: {table_pattern} -> {allowed_regions}"
         )
 
     def execute_query(self, query: str,
@@ -14523,7 +14523,7 @@ class DataVersionManager:
             if current_field.type != new_field.type:
                 result.breaking_changes.append(
                     f"Type changed for '{field_name}': "
-                    f"{current_field.type} → {new_field.type}"
+                    f"{current_field.type} -> {new_field.type}"
                 )
                 result.compatible_with_previous = False
 
@@ -14912,7 +14912,7 @@ Modern data platforms must balance two critical imperatives: protecting user pri
         \item Full names, email addresses, phone numbers in logs
         \item IP addresses stored indefinitely (GDPR requires time limits)
         \item Medical conditions in plaintext (HIPAA/GDPR violation)
-        \item No data minimization (collecting data "just in case")
+        \item No data minimization (collecting data ``just in case``)
     \end{itemize}
     \item \textbf{Day 2, 10:00}: Second finding: Data sharing with third parties
     \begin{itemize}
@@ -14922,7 +14922,7 @@ Modern data platforms must balance two critical imperatives: protecting user pri
     \end{itemize}
     \item \textbf{Day 2, 16:00}: Third finding: Right to deletion not implemented
     \begin{itemize}
-        \item User deletion requests queued for "eventual processing"
+        \item User deletion requests queued for ``eventual processing``
         \item Data replicated across 15 different systems (no centralized deletion)
         \item Backups retained indefinitely (GDPR requires deletion from backups too)
         \item 2,847 pending deletion requests (oldest: 11 months)
@@ -14960,7 +14960,7 @@ Modern data platforms must balance two critical imperatives: protecting user pri
 Implemented privacy-preserving pipeline in 10 days:
 
 \begin{enumerate}
-    \item \textbf{Differential Privacy} (ε=1.0): Add calibrated noise to analytics queries
+    \item \textbf{Differential Privacy} (\ensuremath{\varepsilon}=1.0): Add calibrated noise to analytics queries
     \item \textbf{K-Anonymization} (k=5): Ensure 5+ users per cohort in reports
     \item \textbf{Pseudonymization}: Replace identifiers with irreversible hashes
     \item \textbf{Data Masking}: Email → \texttt{f***@example.com}, Phone → \texttt{***-***-1234}
@@ -15232,7 +15232,7 @@ class PrivacyPreservingPipeline:
         return np.random.laplace(0, scale)
 
     def _gaussian_noise(self, epsilon: float, delta: float, sensitivity: float) -> float:
-        """Generate Gaussian noise for (ε, δ)-differential privacy."""
+        """Generate Gaussian noise for (epsilon, delta)-differential privacy."""
         sigma = np.sqrt(2 * np.log(1.25 / delta)) * sensitivity / epsilon
         return np.random.normal(0, sigma)
 
@@ -15677,7 +15677,7 @@ class DataAnonymizer:
             return phone
 
         # Extract last 4 digits
-        digits = re.sub(r'\D', '', str(phone))
+        digits = re.sub(r'\D', ", str(phone))
         if len(digits) >= 4:
             return f"***-***-{digits[-4:]}"
         return '***-***-****'
@@ -15688,7 +15688,7 @@ class DataAnonymizer:
             return ssn
 
         # Extract last 4 digits
-        digits = re.sub(r'\D', '', str(ssn))
+        digits = re.sub(r'\D', ", str(ssn))
         if len(digits) >= 4:
             return f"***-**-{digits[-4:]}"
         return '***-**-****'
@@ -15699,7 +15699,7 @@ class DataAnonymizer:
             return cc
 
         # Extract last 4 digits
-        digits = re.sub(r'\D', '', str(cc))
+        digits = re.sub(r'\D', ", str(cc))
         if len(digits) >= 4:
             return f"****-****-****-{digits[-4:]}"
         return '****-****-****-****'
@@ -16698,7 +16698,7 @@ Consider a large e-commerce company with centralized data platform:
 
 \textbf{Result:}
 \begin{itemize}
-    \item 4 different "sources of truth" for customer data
+    \item 4 different ``sources of truth`` for customer data
     \item \$500K/year in duplicate infrastructure
     \item Data quality incidents costing \$2M annually
     \item 12-week average time to answer cross-domain questions
@@ -16707,8 +16707,8 @@ Consider a large e-commerce company with centralized data platform:
 \textbf{Data mesh solution:}
 \begin{itemize}
     \item Each domain owns their analytical data as products
-    \item Marketing owns "Customer 360" data product with SLA guarantees
-    \item Finance owns "Transaction Ledger" data product with ACID compliance
+    \item Marketing owns ``Customer 360`` data product with SLA guarantees
+    \item Finance owns ``Transaction Ledger`` data product with ACID compliance
     \item Central platform provides tools (Kafka, schema registry, monitoring)
     \item Federated governance ensures privacy, security, and quality standards
     \item Domains discover and consume each other's data products through catalog
@@ -18239,7 +18239,7 @@ With data mesh implementation:
 
 \section{Containerized Pipeline Architecture with Kubernetes}
 
-Traditional VM-based data pipelines suffer from slow deployment cycles, resource inefficiency, and operational complexity. A data engineering team managing 50 pipelines across 20 VMs faces: 30-minute deployment times, 40\% average resource utilization, manual scaling requiring 2-hour response time, and environment inconsistencies causing "works on my machine" failures.
+Traditional VM-based data pipelines suffer from slow deployment cycles, resource inefficiency, and operational complexity. A data engineering team managing 50 pipelines across 20 VMs faces: 30-minute deployment times, 40\% average resource utilization, manual scaling requiring 2-hour response time, and environment inconsistencies causing ``works on my machine`` failures.
 
 \textbf{Kubernetes} transforms pipeline deployment through containerization and orchestration, providing: sub-minute deployments, automatic scaling based on workload, declarative configuration with version control, and consistent environments from development to production.
 
@@ -21742,7 +21742,7 @@ Build a comprehensive data lineage tracking system capturing column-level depend
     \item Automated lineage extraction from SQL queries using parser
     \item Column-level lineage: track which source columns affect each output column
     \item Cross-system tracking: databases, data lakes, warehouses, ML models
-    \item Impact analysis: "If I change this column, what breaks downstream?"
+    \item Impact analysis: ``If I change this column, what breaks downstream?``
     \item Root cause analysis: trace data quality issues to upstream sources
     \item Lineage graph storage using Neo4j for efficient graph queries
     \item Visualization UI showing upstream dependencies and downstream consumers
@@ -21803,8 +21803,8 @@ Create a privacy-preserving data pipeline implementing differential privacy, k-a
 
 \textbf{Implementation requirements:}
 \begin{itemize}
-    \item Differential privacy: ε=1.0 privacy budget for user-level aggregations
-    \item K-anonymity: ensure k≥5 for quasi-identifiers (age, zip code)
+    \item Differential privacy: \ensuremath{\varepsilon}=1.0 privacy budget for user-level aggregations
+    \item K-anonymity: ensure k\ensuremath{\geq}5 for quasi-identifiers (age, zip code)
     \item Data masking: redact PII patterns (emails, phones, SSNs)
     \item Pseudonymization: irreversible SHA-256 hashing of user identifiers
     \item Automated PII detection: scan for 15 PII patterns using regex + NER
@@ -21820,7 +21820,7 @@ Design a comprehensive monitoring system for data pipelines. Implement metrics c
 \textbf{Implementation requirements:}
 \begin{itemize}
     \item Metrics: Prometheus collecting throughput, latency, error rate, queue depth
-    \item SLIs: availability ≥99.9\%, latency p99 <500ms, freshness <5min, quality >95\%
+    \item SLIs: availability \ensuremath{\geq}99.9\%, latency p99 <500ms, freshness <5min, quality >95\%
     \item SLO-based alerting: error budget consumption, multi-window burn rates
     \item Distributed tracing: Jaeger tracking requests across 10+ microservices
     \item Log aggregation: ELK stack with 7-day retention, 10TB/day indexed
@@ -21841,7 +21841,7 @@ Implement a comprehensive data versioning system with semantic versioning, schem
     \item Automated rollback: revert to previous version within 5 minutes
     \item Compatibility matrix: test all consumer versions against all schema versions
     \item Time-travel queries: query data as of specific timestamp or version
-    \item Version tagging: tag versions with business meaning (e.g., "Q4-2024-report")
+    \item Version tagging: tag versions with business meaning (e.g., ``Q4-2024-report``)
     \item Deprecation policy: 90-day notice before removing deprecated fields
 \end{itemize}
 
@@ -22238,7 +22238,7 @@ delivery speed and operational simplicity.
 
 Success metrics measured 3 months post-launch:
 - **Latency:** p99 feature freshness <5 minutes (target: <3 minutes)
-- **Accuracy:** Fraud detection precision ≥95% (current: 87%)
+- **Accuracy:** Fraud detection precision \ensuremath{\geq}95\% (current: 87\%)
 - **Cost:** Infrastructure cost <$6K/month (target: <$5K)
 - **Reliability:** 99.9% uptime (zero data loss)
 
@@ -22386,16 +22386,16 @@ Assess your organization's pipeline engineering maturity and identify improvemen
     \item Pipelines are one-off Python scripts run manually or via cron
     \item No version control or limited Git usage
     \item Failure recovery requires manual intervention
-    \item No monitoring beyond "did it run?"
+    \item No monitoring beyond ``did it run?``
     \item Knowledge siloed in individual engineers
     \item Changes made directly in production
 \end{itemize}
 
 \textbf{Indicators you're at this level:}
 \begin{itemize}
-    \item "The pipeline broke and only Sarah knows how to fix it"
-    \item "We run this script every Monday, but not sure what it does"
-    \item "Last week's data is wrong but we can't reprocess it"
+    \item ``The pipeline broke and only Sarah knows how to fix it``
+    \item ``We run this script every Monday, but not sure what it does``
+    \item ``Last week's data is wrong but we can't reprocess it``
 \end{itemize}
 
 \textbf{Path to Level 2:}
@@ -22421,9 +22421,9 @@ Assess your organization's pipeline engineering maturity and identify improvemen
 
 \textbf{Indicators you're at this level:}
 \begin{itemize}
-    \item "Airflow sends us alerts when pipelines fail"
-    \item "We can reprocess historical data by manually triggering DAG"
-    \item "Pipeline code is in Git but tests are sparse"
+    \item ``Airflow sends us alerts when pipelines fail``
+    \item ``We can reprocess historical data by manually triggering DAG``
+    \item ``Pipeline code is in Git but tests are sparse``
 \end{itemize}
 
 \textbf{Path to Level 3:}
@@ -22451,9 +22451,9 @@ Assess your organization's pipeline engineering maturity and identify improvemen
 
 \textbf{Indicators you're at this level:}
 \begin{itemize}
-    \item "We have pipeline templates that new teams use"
-    \item "Tests catch 80\% of bugs before production"
-    \item "We track SLOs for freshness, quality, and availability"
+    \item ``We have pipeline templates that new teams use``
+    \item ``Tests catch 80\% of bugs before production``
+    \item ``We track SLOs for freshness, quality, and availability``
 \end{itemize}
 
 \textbf{Path to Level 4:}
@@ -22481,9 +22481,9 @@ Assess your organization's pipeline engineering maturity and identify improvemen
 
 \textbf{Indicators you're at this level:}
 \begin{itemize}
-    \item "Marketing team owns and operates their customer data products"
-    \item "We have 50+ data products registered in our catalog"
-    \item "Policy violations are caught automatically in CI/CD"
+    \item ``Marketing team owns and operates their customer data products``
+    \item ``We have 50+ data products registered in our catalog``
+    \item ``Policy violations are caught automatically in CI/CD``
 \end{itemize}
 
 \textbf{Path to Level 5:}
@@ -22511,9 +22511,9 @@ Assess your organization's pipeline engineering maturity and identify improvemen
 
 \textbf{Indicators you're at this level:}
 \begin{itemize}
-    \item "Our system predicted and prevented an outage before it happened"
-    \item "Cost optimization saved 40\% without manual intervention"
-    \item "We run chaos experiments weekly to validate fault tolerance"
+    \item ``Our system predicted and prevented an outage before it happened``
+    \item ``Cost optimization saved 40\% without manual intervention``
+    \item ``We run chaos experiments weekly to validate fault tolerance``
 \end{itemize}
 
 \textbf{Maintain excellence:}
@@ -22648,7 +22648,7 @@ Common pipeline issues and systematic approaches to resolution:
 \textbf{Symptoms:}
 \begin{itemize}
     \item Pipeline fails intermittently (works 80\% of time)
-    \item Errors: "Connection timeout", "429 Rate Limit Exceeded"
+    \item Errors: ``Connection timeout``, ``429 Rate Limit Exceeded``
     \item Manual retries usually succeed
 \end{itemize}
 
@@ -22706,7 +22706,7 @@ Common pipeline issues and systematic approaches to resolution:
 
 \textbf{Symptoms:}
 \begin{itemize}
-    \item Pipeline killed with "OutOfMemory" error
+    \item Pipeline killed with ``OutOfMemory`` error
     \item Memory usage gradually increases over time (memory leak)
     \item System becomes unresponsive before crash
 \end{itemize}

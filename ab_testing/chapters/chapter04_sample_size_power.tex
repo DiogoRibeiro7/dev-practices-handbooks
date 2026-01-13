@@ -1,0 +1,1688 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Calculate required sample sizes for different types of A/B tests
+    \item Understand the relationship between sample size, effect size, and statistical power
+    \item Apply power analysis to determine experiment feasibility
+    \item Create and interpret power curves
+    \item Account for practical constraints in sample size determination
+    \item Implement sample size calculators in Python and R
+    \item Make informed decisions about minimum detectable effects
+\end{itemize}
+
+\section{Introduction}
+
+"How many users do we need?" is perhaps the most common question in A/B testing. Too few, and we waste time running inconclusive experiments. Too many, and we delay decisions unnecessarily or expose users to potentially inferior variants longer than needed.
+
+Sample size calculation transforms this practical question into a rigorous statistical framework. By specifying what we want to detect and how confident we need to be, we determine exactly how much data is required. This chapter develops the theory and practice of sample size determination, from fundamental formulas to real-world constraints that complicate the textbook approach.
+
+\section{Power Analysis Fundamentals}
+
+Statistical power is the probability of detecting an effect when it truly exists. Understanding power is essential for designing effective experiments.
+
+\subsection{Definition of Statistical Power}
+
+\begin{definition}[Statistical Power]
+Statistical power is the probability of correctly rejecting the null hypothesis when the alternative hypothesis is true:
+\begin{equation}
+\text{Power} = 1 - \beta = P(\text{Reject } H_0 \mid H_1 \text{ true})
+\end{equation}
+
+where $\beta$ is the probability of a Type II error (false negative).
+\end{definition}
+
+Power answers the question: "If there really is an effect of size $\delta$, what's the probability our experiment will detect it?"
+
+\begin{example}[Interpreting Power]
+Power = 0.80 means:
+\begin{itemize}
+    \item If the true treatment effect is $\delta$, we have an 80\% chance of obtaining $p < \alpha$
+    \item Equivalently, 20\% chance of missing the effect (Type II error)
+    \item If we ran 100 such experiments where an effect exists, ~80 would correctly declare significance
+\end{itemize}
+\end{example}
+
+\subsection{Factors Affecting Power}
+
+Four interrelated factors determine statistical power:
+
+\begin{enumerate}
+    \item \textbf{Effect Size ($\delta$)}: Larger effects are easier to detect
+    \begin{itemize}
+        \item Power increases with $\delta$
+        \item Detecting 10\% lift requires less data than 1\% lift
+    \end{itemize}
+
+    \item \textbf{Sample Size ($n$)}: More data increases power
+    \begin{itemize}
+        \item Power increases with $\sqrt{n}$
+        \item Doubling power requires roughly 4× sample size
+    \end{itemize}
+
+    \item \textbf{Significance Level ($\alpha$)}: Higher $\alpha$ increases power
+    \begin{itemize}
+        \item Relaxing from $\alpha = 0.01$ to $0.05$ increases power
+        \item Tradeoff: more false positives
+    \end{itemize}
+
+    \item \textbf{Variance ($\sigma^2$)}: Lower variance increases power
+    \begin{itemize}
+        \item Variance reduction techniques boost power without more data
+        \item Covered in Chapter \ref{ch:advanced_designs}
+    \end{itemize}
+\end{enumerate}
+
+\begin{theorem}[Power Relationships]
+For comparing two proportions with equal sample sizes:
+\begin{equation}
+\text{Power} = \Phi\left(\frac{\delta\sqrt{n}}{2\sqrt{p(1-p)}} - z_{1-\alpha/2}\right)
+\end{equation}
+
+where $p = (p_1 + p_2)/2$, $\delta = p_2 - p_1$, and $\Phi$ is the standard normal CDF.
+
+Key insights:
+\begin{itemize}
+    \item Power increases with effect size $\delta$
+    \item Power increases with $\sqrt{n}$ (not linearly!)
+    \item Power decreases as $\alpha$ becomes more stringent
+    \item Power depends on baseline rate $p$ (highest at $p = 0.5$)
+\end{itemize}
+\end{theorem}
+
+\subsection{The Type I and Type II Error Tradeoff}
+
+Sample size determination involves balancing two types of errors:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\hline
+\textbf{Reality} & \textbf{Fail to Reject $H_0$} & \textbf{Reject $H_0$} \\
+\hline
+$H_0$ true & Correct decision (1-$\alpha$) & \textbf{Type I Error} ($\alpha$) \\
+$H_1$ true & \textbf{Type II Error} ($\beta$) & Correct decision (1-$\beta$) \\
+\hline
+\end{tabular}
+\caption{Type I and Type II errors in hypothesis testing}
+\end{table}
+
+\textbf{Conventional choices:}
+\begin{itemize}
+    \item $\alpha = 0.05$: Willing to accept 5\% false positive rate
+    \item Power = 0.80: Willing to accept 20\% false negative rate
+\end{itemize}
+
+\textbf{Why power = 0.80 is standard:} This represents a 4:1 tradeoff between Type II and Type I errors ($\beta/\alpha = 0.20/0.05 = 4$). In most contexts, missing a real effect is considered 4× worse than claiming a spurious one.
+
+\textbf{When to use higher power:}
+\begin{itemize}
+    \item High implementation costs (difficult to change later)
+    \item Regulatory requirements
+    \item Mission-critical features
+    \item One-shot opportunities
+\end{itemize}
+
+\subsection{Power Curves and Interpretation}
+
+Power curves visualize how power depends on various parameters, providing intuition about experimental design tradeoffs.
+
+\lstset{language=Python, caption=Power Curves for Proportions, label=lst:power_curves}
+\begin{lstlisting}
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+from typing import Tuple, List
+
+sns.set_style("whitegrid")
+
+def calculate_power_proportions(p1: float, p2: float, n: int,
+                                alpha: float = 0.05,
+                                alternative: str = 'two-sided') -> float:
+    """
+    Calculate statistical power for two-sample proportion test.
+
+    Parameters:
+    -----------
+    p1 : float
+        Control proportion
+    p2 : float
+        Treatment proportion
+    n : int
+        Sample size per group
+    alpha : float
+        Significance level
+    alternative : str
+        'two-sided' or 'one-sided'
+
+    Returns:
+    --------
+    float : Statistical power
+    """
+    # Effect size
+    delta = p2 - p1
+
+    # Pooled proportion under H0
+    p_bar = (p1 + p2) / 2
+
+    # Standard error under H0
+    se_null = np.sqrt(2 * p_bar * (1 - p_bar) / n)
+
+    # Standard error under H1
+    se_alt = np.sqrt((p1 * (1 - p1) + p2 * (1 - p2)) / n)
+
+    # Critical value
+    if alternative == 'two-sided':
+        z_crit = stats.norm.ppf(1 - alpha/2)
+    else:
+        z_crit = stats.norm.ppf(1 - alpha)
+
+    # Non-centrality parameter
+    ncp = delta / se_alt
+
+    # Power calculation
+    if alternative == 'two-sided':
+        power = 1 - stats.norm.cdf(z_crit - ncp) + stats.norm.cdf(-z_crit - ncp)
+    else:
+        power = 1 - stats.norm.cdf(z_crit - ncp)
+
+    return power
+
+
+def plot_power_curves(p1: float = 0.10, alpha: float = 0.05,
+                     save_path: str = None):
+    """
+    Generate comprehensive power curve visualizations.
+
+    Parameters:
+    -----------
+    p1 : float
+        Baseline conversion rate
+    alpha : float
+        Significance level
+    save_path : str
+        Optional path to save figure
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+
+    # 1. Power vs Sample Size for different effect sizes
+    ax1 = axes[0, 0]
+    sample_sizes = np.arange(100, 10001, 100)
+    relative_lifts = [0.05, 0.10, 0.20, 0.30]
+
+    for lift in relative_lifts:
+        p2 = p1 * (1 + lift)
+        powers = [calculate_power_proportions(p1, p2, n, alpha) for n in sample_sizes]
+        ax1.plot(sample_sizes, powers, linewidth=2.5,
+                label=f'{lift:.0%} relative lift', alpha=0.8)
+
+    ax1.axhline(0.8, color='red', linestyle='--', linewidth=2,
+               label='Target power = 0.80')
+    ax1.set_xlabel('Sample Size (per group)', fontsize=12)
+    ax1.set_ylabel('Statistical Power', fontsize=12)
+    ax1.set_title(f'Power vs Sample Size (baseline = {p1:.1%}, α = {alpha})',
+                 fontsize=13, fontweight='bold')
+    ax1.legend(fontsize=10)
+    ax1.grid(alpha=0.3)
+    ax1.set_ylim([0, 1])
+
+    # 2. Power vs Effect Size for different sample sizes
+    ax2 = axes[0, 1]
+    relative_lifts = np.linspace(0.01, 0.50, 100)
+    sample_sizes_to_plot = [500, 1000, 2000, 5000]
+
+    for n in sample_sizes_to_plot:
+        powers = []
+        for lift in relative_lifts:
+            p2 = p1 * (1 + lift)
+            power = calculate_power_proportions(p1, p2, n, alpha)
+            powers.append(power)
+        ax2.plot(relative_lifts * 100, powers, linewidth=2.5,
+                label=f'n = {n:,}', alpha=0.8)
+
+    ax2.axhline(0.8, color='red', linestyle='--', linewidth=2,
+               label='Target power = 0.80')
+    ax2.set_xlabel('Relative Lift (%)', fontsize=12)
+    ax2.set_ylabel('Statistical Power', fontsize=12)
+    ax2.set_title(f'Power vs Effect Size (baseline = {p1:.1%}, α = {alpha})',
+                 fontsize=13, fontweight='bold')
+    ax2.legend(fontsize=10)
+    ax2.grid(alpha=0.3)
+    ax2.set_ylim([0, 1])
+
+    # 3. Power vs Baseline Rate for fixed relative lift
+    ax3 = axes[1, 0]
+    baselines = np.linspace(0.01, 0.50, 100)
+    relative_lift = 0.10
+    sample_sizes_to_plot = [1000, 2000, 5000, 10000]
+
+    for n in sample_sizes_to_plot:
+        powers = []
+        for p1_var in baselines:
+            p2 = p1_var * (1 + relative_lift)
+            power = calculate_power_proportions(p1_var, p2, n, alpha)
+            powers.append(power)
+        ax3.plot(baselines * 100, powers, linewidth=2.5,
+                label=f'n = {n:,}', alpha=0.8)
+
+    ax3.axhline(0.8, color='red', linestyle='--', linewidth=2,
+               label='Target power = 0.80')
+    ax3.set_xlabel('Baseline Conversion Rate (%)', fontsize=12)
+    ax3.set_ylabel('Statistical Power', fontsize=12)
+    ax3.set_title(f'Power vs Baseline Rate ({relative_lift:.0%} relative lift, α = {alpha})',
+                 fontsize=13, fontweight='bold')
+    ax3.legend(fontsize=10)
+    ax3.grid(alpha=0.3)
+    ax3.set_ylim([0, 1])
+
+    # 4. Required Sample Size vs Effect Size
+    ax4 = axes[1, 1]
+    relative_lifts = np.linspace(0.05, 0.50, 50)
+    target_powers = [0.70, 0.80, 0.90]
+
+    for target_power in target_powers:
+        required_n = []
+        for lift in relative_lifts:
+            p2 = p1 * (1 + lift)
+            # Binary search for required n
+            n_low, n_high = 10, 100000
+            while n_high - n_low > 1:
+                n_mid = (n_low + n_high) // 2
+                power = calculate_power_proportions(p1, p2, n_mid, alpha)
+                if power < target_power:
+                    n_low = n_mid
+                else:
+                    n_high = n_mid
+            required_n.append(n_high)
+
+        ax4.plot(relative_lifts * 100, required_n, linewidth=2.5,
+                label=f'Power = {target_power:.0%}', alpha=0.8)
+
+    ax4.set_xlabel('Relative Lift (%)', fontsize=12)
+    ax4.set_ylabel('Required Sample Size (per group)', fontsize=12)
+    ax4.set_title(f'Sample Size Requirements (baseline = {p1:.1%}, α = {alpha})',
+                 fontsize=13, fontweight='bold')
+    ax4.legend(fontsize=10)
+    ax4.grid(alpha=0.3)
+    ax4.set_yscale('log')
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.show()
+
+    # Print key insights
+    print("="*80)
+    print("Power Analysis Insights")
+    print("="*80)
+
+    # Calculate some specific examples
+    print(f"\nBaseline conversion rate: {p1:.1%}")
+    print(f"Significance level: α = {alpha}")
+    print("\nSample size required for 80% power:\n")
+
+    for lift in [0.05, 0.10, 0.20]:
+        p2 = p1 * (1 + lift)
+        # Binary search
+        n_low, n_high = 10, 100000
+        while n_high - n_low > 1:
+            n_mid = (n_low + n_high) // 2
+            power = calculate_power_proportions(p1, p2, n_mid, alpha)
+            if power < 0.80:
+                n_low = n_mid
+            else:
+                n_high = n_mid
+
+        print(f"  {lift:>5.0%} lift ({p1:.1%} -> {p2:.1%}): {n_high:>6,} users/group")
+
+# Generate power curves
+print("Generating power curve visualizations...\n")
+plot_power_curves(p1=0.10, alpha=0.05, save_path='power_curves.pdf')
+\end{lstlisting}
+
+\section{Sample Size Formulas}
+
+Sample size formulas translate desired power, significance level, and effect size into required data volume. We derive formulas for the most common metrics.
+
+\subsection{Sample Size for Proportions (Conversion Rates)}
+
+The most common A/B test compares conversion rates between two groups.
+
+\subsubsection{Two-Sample Test for Proportions}
+
+\textbf{Test:} $H_0: p_1 = p_2$ vs. $H_1: p_1 \neq p_2$
+
+\textbf{Assumptions:}
+\begin{itemize}
+    \item Two independent samples
+    \item Equal sample sizes $n_1 = n_2 = n$
+    \item Two-sided test
+\end{itemize}
+
+\begin{theorem}[Sample Size for Proportions]
+The required sample size per group is:
+\begin{equation}
+n = \frac{(z_{1-\alpha/2} + z_{1-\beta})^2 \cdot [p_1(1-p_1) + p_2(1-p_2)]}{(p_2 - p_1)^2}
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $z_{1-\alpha/2}$ is the $(1-\alpha/2)$ quantile of standard normal (e.g., 1.96 for $\alpha = 0.05$)
+    \item $z_{1-\beta}$ is the $(1-\beta)$ quantile of standard normal (e.g., 0.84 for power = 0.80)
+    \item $p_1, p_2$ are the control and treatment proportions
+\end{itemize}
+\end{theorem}
+
+\begin{proof}[Derivation (sketch)]
+Under $H_0$, the test statistic follows:
+\begin{equation}
+Z_0 = \frac{\hat{p}_2 - \hat{p}_1}{\sqrt{\bar{p}(1-\bar{p})(1/n + 1/n)}} \sim \mathcal{N}(0, 1)
+\end{equation}
+
+Under $H_1$ with true difference $\delta = p_2 - p_1$:
+\begin{equation}
+Z_1 = \frac{\hat{p}_2 - \hat{p}_1 - \delta}{\sqrt{p_1(1-p_1)/n + p_2(1-p_2)/n}} \sim \mathcal{N}(0, 1)
+\end{equation}
+
+For power $1-\beta$, we require:
+\begin{equation}
+P(|Z_0| > z_{1-\alpha/2} \mid H_1) = 1 - \beta
+\end{equation}
+
+This occurs when:
+\begin{equation}
+\frac{\delta}{\sqrt{(p_1(1-p_1) + p_2(1-p_2))/n}} = z_{1-\alpha/2} + z_{1-\beta}
+\end{equation}
+
+Solving for $n$ yields the formula above.
+\end{proof}
+
+\begin{example}[Sample Size Calculation]
+An e-commerce site wants to test a new checkout flow:
+\begin{itemize}
+    \item Current conversion rate: $p_1 = 0.10$ (10\%)
+    \item Minimum detectable effect: 10\% relative lift → $p_2 = 0.11$ (11\%)
+    \item Significance level: $\alpha = 0.05$
+    \item Desired power: $1 - \beta = 0.80$
+\end{itemize}
+
+\begin{align}
+n &= \frac{(1.96 + 0.84)^2 \cdot [0.10(0.90) + 0.11(0.89)]}{(0.11 - 0.10)^2} \\
+  &= \frac{7.84 \cdot [0.09 + 0.0979]}{0.0001} \\
+  &= \frac{7.84 \cdot 0.1879}{0.0001} \\
+  &= 14,732
+\end{align}
+
+\textbf{Required:} 14,732 users per group (29,464 total).
+
+At 1,000 users/day, this experiment takes ~30 days.
+\end{example}
+
+\lstset{language=Python, caption=Sample Size Calculator for Proportions, label=lst:sample_size_proportions}
+\begin{lstlisting}
+def sample_size_proportions(p1: float, p2: float,
+                           alpha: float = 0.05,
+                           power: float = 0.80,
+                           ratio: float = 1.0) -> dict:
+    """
+    Calculate required sample size for two-proportion test.
+
+    Parameters:
+    -----------
+    p1 : float
+        Control proportion
+    p2 : float
+        Treatment proportion
+    alpha : float
+        Significance level (default 0.05)
+    power : float
+        Statistical power (default 0.80)
+    ratio : float
+        Ratio n2/n1 (default 1.0 for equal allocation)
+
+    Returns:
+    --------
+    dict : Sample sizes and related statistics
+    """
+    from scipy import stats
+
+    # Critical values
+    z_alpha = stats.norm.ppf(1 - alpha/2)  # Two-sided
+    z_beta = stats.norm.ppf(power)
+
+    # Effect size
+    delta = p2 - p1
+    if delta == 0:
+        raise ValueError("p1 and p2 must be different")
+
+    # Sample size calculation
+    if ratio == 1.0:
+        # Equal allocation (more efficient)
+        numerator = (z_alpha + z_beta)**2 * (p1*(1-p1) + p2*(1-p2))
+        denominator = delta**2
+        n1 = numerator / denominator
+        n2 = n1
+    else:
+        # Unequal allocation
+        p_avg = (p1 + ratio * p2) / (1 + ratio)
+        numerator = (z_alpha * np.sqrt((1+ratio)*p_avg*(1-p_avg)) +
+                    z_beta * np.sqrt(p1*(1-p1) + ratio*p2*(1-p2)))**2
+        denominator = ratio * delta**2
+        n1 = numerator / denominator
+        n2 = ratio * n1
+
+    # Round up
+    n1 = int(np.ceil(n1))
+    n2 = int(np.ceil(n2))
+
+    # Calculate actual power with these sample sizes
+    se = np.sqrt(p1*(1-p1)/n1 + p2*(1-p2)/n2)
+    ncp = delta / se
+    actual_power = 1 - stats.norm.cdf(z_alpha - ncp) + stats.norm.cdf(-z_alpha - ncp)
+
+    return {
+        'n1': n1,
+        'n2': n2,
+        'n_total': n1 + n2,
+        'p1': p1,
+        'p2': p2,
+        'absolute_difference': delta,
+        'relative_lift': delta / p1,
+        'alpha': alpha,
+        'requested_power': power,
+        'actual_power': actual_power,
+        'z_alpha': z_alpha,
+        'z_beta': z_beta
+    }
+
+
+def sample_size_table(p1: float, relative_lifts: List[float],
+                     alpha: float = 0.05, power: float = 0.80):
+    """
+    Generate table of sample sizes for different effect sizes.
+
+    Parameters:
+    -----------
+    p1 : float
+        Baseline conversion rate
+    relative_lifts : List[float]
+        List of relative lifts to evaluate
+    alpha : float
+        Significance level
+    power : float
+        Desired power
+    """
+    print("="*90)
+    print(f"Sample Size Requirements (baseline = {p1:.1%}, α = {alpha}, power = {power:.0%})")
+    print("="*90)
+    print(f"{'Relative Lift':<15} {'Absolute':<12} {'p2':<10} "
+          f"{'n per group':<15} {'Total n':<12} {'Duration (days)':>15}")
+    print("-"*90)
+
+    for lift in relative_lifts:
+        p2 = p1 * (1 + lift)
+        result = sample_size_proportions(p1, p2, alpha, power)
+
+        # Assume 1000 users per day per group
+        duration = np.ceil(result['n1'] / 1000)
+
+        print(f"{lift:>14.1%} {result['absolute_difference']:>11.4f} "
+              f"{p2:>9.3f} {result['n1']:>14,} {result['n_total']:>11,} "
+              f"{duration:>14.0f}")
+
+    print("="*90)
+    print("Assumes 1,000 users per day per group")
+    print()
+
+
+# Example usage
+print("\n" + "="*80)
+print("Sample Size Calculations for A/B Testing")
+print("="*80 + "\n")
+
+# Example 1: E-commerce checkout
+print("Example 1: E-commerce Checkout Optimization")
+print("-"*80)
+result = sample_size_proportions(p1=0.10, p2=0.11, alpha=0.05, power=0.80)
+print(f"Baseline conversion: {result['p1']:.1%}")
+print(f"Target conversion:   {result['p2']:.1%}")
+print(f"Relative lift:       {result['relative_lift']:.1%}")
+print(f"Required n per group: {result['n1']:,}")
+print(f"Total required n:     {result['n_total']:,}")
+print(f"Actual power:         {result['actual_power']:.3f}")
+print()
+
+# Example 2: Generate table
+print("Example 2: Sample Size Table for Different Effect Sizes")
+print("-"*80)
+sample_size_table(p1=0.10,
+                 relative_lifts=[0.05, 0.10, 0.15, 0.20, 0.25, 0.30],
+                 alpha=0.05,
+                 power=0.80)
+
+# Example 3: Compare different power levels
+print("Example 3: Impact of Power Requirements")
+print("-"*80)
+p1, p2 = 0.10, 0.12
+print(f"Baseline: {p1:.1%}, Target: {p2:.1%} ({(p2-p1)/p1:.0%} lift)\n")
+print(f"{'Power':<10} {'n per group':<15} {'Total n':<12}")
+print("-"*40)
+for power in [0.70, 0.75, 0.80, 0.85, 0.90]:
+    result = sample_size_proportions(p1, p2, power=power)
+    print(f"{power:<10.0%} {result['n1']:<14,} {result['n_total']:<11,}")
+\end{lstlisting}
+
+\subsection{Sample Size for Means (Continuous Metrics)}
+
+When testing continuous outcomes like revenue, session duration, or engagement scores, we use formulas for comparing means.
+
+\begin{theorem}[Sample Size for Means]
+For testing $H_0: \mu_1 = \mu_2$ vs. $H_1: \mu_1 \neq \mu_2$ with equal sample sizes:
+\begin{equation}
+n = \frac{2(z_{1-\alpha/2} + z_{1-\beta})^2 \sigma^2}{(\mu_2 - \mu_1)^2}
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $\sigma^2$ is the common variance (assumed equal in both groups)
+    \item $\mu_1, \mu_2$ are the control and treatment means
+\end{itemize}
+
+For unequal variances (Welch's t-test):
+\begin{equation}
+n_1 = \frac{(z_{1-\alpha/2} + z_{1-\beta})^2 (\sigma_1^2 + \sigma_2^2 / r)}{(\mu_2 - \mu_1)^2}
+\end{equation}
+
+where $r = n_2/n_1$ is the allocation ratio.
+\end{theorem}
+
+\textbf{Cohen's d effect size:}
+
+Often we specify effect size in standardized units:
+\begin{equation}
+d = \frac{\mu_2 - \mu_1}{\sigma}
+\end{equation}
+
+Then:
+\begin{equation}
+n = \frac{2(z_{1-\alpha/2} + z_{1-\beta})^2}{d^2}
+\end{equation}
+
+\textbf{Cohen's conventions:}
+\begin{itemize}
+    \item Small effect: $d = 0.2$
+    \item Medium effect: $d = 0.5$
+    \item Large effect: $d = 0.8$
+\end{itemize}
+
+\begin{example}[Sample Size for Revenue]
+Testing pricing change:
+\begin{itemize}
+    \item Current average revenue per user: \$50
+    \item Standard deviation: \$30
+    \item Minimum detectable increase: \$5 (10\%)
+    \item $\alpha = 0.05$, power = 0.80
+\end{itemize}
+
+\begin{align}
+n &= \frac{2(1.96 + 0.84)^2 \cdot 30^2}{5^2} \\
+  &= \frac{2 \cdot 7.84 \cdot 900}{25} \\
+  &= \frac{14,112}{25} \\
+  &= 565
+\end{align}
+
+Required: 565 users per group (1,130 total).
+
+Cohen's d: $d = 5/30 = 0.167$ (small effect).
+\end{example}
+
+\lstset{language=Python, caption=Sample Size Calculator for Means, label=lst:sample_size_means}
+\begin{lstlisting}
+def sample_size_means(mu1: float, mu2: float, sigma: float,
+                     alpha: float = 0.05,
+                     power: float = 0.80,
+                     ratio: float = 1.0) -> dict:
+    """
+    Calculate required sample size for two-sample t-test.
+
+    Parameters:
+    -----------
+    mu1 : float
+        Control mean
+    mu2 : float
+        Treatment mean
+    sigma : float
+        Common standard deviation
+    alpha : float
+        Significance level
+    power : float
+        Statistical power
+    ratio : float
+        Ratio n2/n1
+
+    Returns:
+    --------
+    dict : Sample sizes and effect size measures
+    """
+    from scipy import stats
+
+    # Critical values
+    z_alpha = stats.norm.ppf(1 - alpha/2)
+    z_beta = stats.norm.ppf(power)
+
+    # Effect size
+    delta = mu2 - mu1
+    if delta == 0:
+        raise ValueError("mu1 and mu2 must be different")
+
+    cohens_d = delta / sigma
+
+    # Sample size
+    if ratio == 1.0:
+        n1 = 2 * (z_alpha + z_beta)**2 * sigma**2 / delta**2
+        n2 = n1
+    else:
+        n1 = (1 + 1/ratio) * (z_alpha + z_beta)**2 * sigma**2 / delta**2
+        n2 = ratio * n1
+
+    n1 = int(np.ceil(n1))
+    n2 = int(np.ceil(n2))
+
+    # Actual power
+    se = sigma * np.sqrt(1/n1 + 1/n2)
+    ncp = delta / se
+    actual_power = 1 - stats.norm.cdf(z_alpha - ncp) + stats.norm.cdf(-z_alpha - ncp)
+
+    return {
+        'n1': n1,
+        'n2': n2,
+        'n_total': n1 + n2,
+        'mu1': mu1,
+        'mu2': mu2,
+        'sigma': sigma,
+        'absolute_difference': delta,
+        'relative_difference': delta / mu1,
+        'cohens_d': cohens_d,
+        'effect_size_interpretation': interpret_cohens_d(abs(cohens_d)),
+        'alpha': alpha,
+        'requested_power': power,
+        'actual_power': actual_power
+    }
+
+
+def interpret_cohens_d(d: float) -> str:
+    """Interpret Cohen's d effect size."""
+    if d < 0.2:
+        return "Negligible"
+    elif d < 0.5:
+        return "Small"
+    elif d < 0.8:
+        return "Medium"
+    else:
+        return "Large"
+
+
+# Example usage
+print("\n" + "="*80)
+print("Sample Size for Continuous Metrics")
+print("="*80 + "\n")
+
+# Example 1: Revenue per user
+print("Example 1: Revenue Per User")
+print("-"*80)
+result = sample_size_means(mu1=50, mu2=55, sigma=30, alpha=0.05, power=0.80)
+print(f"Control mean:     ${result['mu1']:.2f}")
+print(f"Treatment mean:   ${result['mu2']:.2f}")
+print(f"Standard dev:     ${result['sigma']:.2f}")
+print(f"Absolute diff:    ${result['absolute_difference']:.2f}")
+print(f"Relative diff:    {result['relative_difference']:.1%}")
+print(f"Cohen's d:        {result['cohens_d']:.3f} ({result['effect_size_interpretation']})")
+print(f"Required n/group: {result['n1']:,}")
+print(f"Total required n: {result['n_total']:,}")
+print(f"Actual power:     {result['actual_power']:.3f}")
+print()
+
+# Example 2: Session duration
+print("Example 2: Session Duration (seconds)")
+print("-"*80)
+result = sample_size_means(mu1=180, mu2=200, sigma=120, alpha=0.05, power=0.80)
+print(f"Control mean:     {result['mu1']:.0f}s")
+print(f"Treatment mean:   {result['mu2']:.0f}s")
+print(f"Increase:         {result['absolute_difference']:.0f}s ({result['relative_difference']:.1%})")
+print(f"Cohen's d:        {result['cohens_d']:.3f} ({result['effect_size_interpretation']})")
+print(f"Required n/group: {result['n1']:,}")
+print()
+
+# Example 3: Effect size table
+print("Example 3: Sample Size by Effect Size (sigma = 30)")
+print("-"*80)
+print(f"{'Cohen\\'s d':<12} {'Interpretation':<15} {'Delta mu':<10} "
+      f"{'n per group':<15} {'Total n':<12}")
+print("-"*70)
+
+for d in [0.1, 0.2, 0.3, 0.5, 0.8]:
+    delta = d * 30  # sigma = 30
+    result = sample_size_means(mu1=100, mu2=100+delta, sigma=30)
+    print(f"{d:<12.1f} {result['effect_size_interpretation']:<15} "
+          f"{delta:<10.1f} {result['n1']:<14,} {result['n_total']:<11,}")
+\end{lstlisting}
+
+\subsection{Sample Size for Survival Data}
+
+For time-to-event outcomes (e.g., time to purchase, churn time), sample size depends on the expected number of events rather than just sample size.
+
+\begin{theorem}[Sample Size for Survival Analysis]
+For comparing two survival curves using the log-rank test:
+\begin{equation}
+n = \frac{(z_{1-\alpha/2} + z_{1-\beta})^2}{p_1 p_2 (\log(HR))^2}
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $HR$ is the hazard ratio (treatment/control)
+    \item $p_1, p_2$ are proportions in each group
+    \item The formula gives total number of \textit{events} needed
+\end{itemize}
+
+Total sample size depends on event rate:
+\begin{equation}
+N = \frac{n}{\text{event rate}}
+\end{equation}
+\end{theorem}
+
+\subsection{Sample Size for Ratio Metrics}
+
+Ratio metrics (e.g., revenue per user, clicks per session) require special handling due to their non-normal distributions.
+
+\textbf{Delta method approximation:}
+
+For ratio $R = X/Y$ where $X$ and $Y$ are correlated:
+\begin{equation}
+\text{Var}(R) \approx \frac{1}{\mu_Y^2}\left[\text{Var}(X) + R^2\text{Var}(Y) - 2R\text{Cov}(X,Y)\right]
+\end{equation}
+
+Sample size calculation uses this variance in the standard means formula, but often requires pilot data to estimate covariances.
+
+\textbf{Practical approach:} Bootstrap or simulate from pilot data to estimate variance, then use means formula.
+
+\section{Practical Considerations}
+
+Textbook formulas provide starting points, but real-world experiments require additional considerations.
+
+\subsection{Minimum Detectable Effect (MDE)}
+
+The minimum detectable effect is the smallest effect size your experiment can reliably detect given sample size, power, and significance level constraints.
+
+\begin{definition}[Minimum Detectable Effect]
+Given fixed $n$, $\alpha$, and power, the MDE is the effect size $\delta$ satisfying:
+\begin{equation}
+\text{Power}(\delta, n, \alpha) = 1 - \beta
+\end{equation}
+\end{definition}
+
+\textbf{Why MDE matters:}
+\begin{itemize}
+    \item Experiments can only detect effects $\geq$ MDE reliably
+    \item Smaller effects may exist but will appear non-significant
+    \item MDE should align with minimum practically important difference
+\end{itemize}
+
+\begin{example}[MDE Calculation]
+Given:
+\begin{itemize}
+    \item Available sample: 5,000 users per group
+    \item Baseline conversion: 10\%
+    \item $\alpha = 0.05$, power = 0.80
+\end{itemize}
+
+Solve for MDE by inverting sample size formula:
+\begin{equation}
+\delta = \sqrt{\frac{(z_{1-\alpha/2} + z_{1-\beta})^2 [p_1(1-p_1) + p_2(1-p_2)]}{n}}
+\end{equation}
+
+With $p_2 = p_1 + \delta$ and $n = 5000$, we solve iteratively to find MDE $\approx 0.0165$ (1.65 percentage points), corresponding to 16.5\% relative lift.
+
+\textbf{Interpretation:} This experiment can reliably detect effects of 16.5\% or larger, but will likely miss smaller effects.
+\end{example}
+
+\lstset{language=Python, caption=MDE Calculator, label=lst:mde_calculator}
+\begin{lstlisting}
+def calculate_mde(p1: float, n: int,
+                 alpha: float = 0.05,
+                 power: float = 0.80) -> dict:
+    """
+    Calculate minimum detectable effect given sample size.
+
+    Parameters:
+    -----------
+    p1 : float
+        Baseline conversion rate
+    n : int
+        Sample size per group
+    alpha : float
+        Significance level
+    power : float
+        Desired power
+
+    Returns:
+    --------
+    dict : MDE statistics
+    """
+    from scipy import stats
+
+    z_alpha = stats.norm.ppf(1 - alpha/2)
+    z_beta = stats.norm.ppf(power)
+
+    # Binary search for MDE
+    delta_low, delta_high = 0.0001, 1.0
+    epsilon = 0.0001
+
+    while delta_high - delta_low > epsilon:
+        delta_mid = (delta_low + delta_high) / 2
+        p2 = p1 + delta_mid
+
+        # Calculate power for this effect size
+        actual_power = calculate_power_proportions(p1, p2, n, alpha)
+
+        if actual_power < power:
+            delta_low = delta_mid
+        else:
+            delta_high = delta_mid
+
+    mde_absolute = delta_high
+    mde_relative = mde_absolute / p1
+
+    return {
+        'p1': p1,
+        'n_per_group': n,
+        'mde_absolute': mde_absolute,
+        'mde_relative': mde_relative,
+        'p2': p1 + mde_absolute,
+        'alpha': alpha,
+        'power': power
+    }
+
+
+def mde_sensitivity_analysis(p1: float, sample_sizes: List[int],
+                            alpha: float = 0.05, power: float = 0.80):
+    """
+    Analyze how MDE changes with sample size.
+    """
+    print("="*80)
+    print(f"MDE Sensitivity Analysis (baseline = {p1:.1%}, α = {alpha}, power = {power:.0%})")
+    print("="*80)
+    print(f"{'n per group':<15} {'MDE (abs)':<12} {'MDE (rel)':<12} "
+          f"{'p2':<10} {'Feasibility':<20}")
+    print("-"*80)
+
+    for n in sample_sizes:
+        result = calculate_mde(p1, n, alpha, power)
+        feasibility = assess_mde_feasibility(result['mde_relative'])
+
+        print(f"{n:<14,} {result['mde_absolute']:<11.4f} "
+              f"{result['mde_relative']:<11.1%} {result['p2']:<9.3f} {feasibility:<20}")
+
+    print("="*80 + "\n")
+
+
+def assess_mde_feasibility(mde_relative: float) -> str:
+    """Assess whether MDE is practically feasible."""
+    if mde_relative < 0.05:
+        return "Very ambitious"
+    elif mde_relative < 0.10:
+        return "Ambitious"
+    elif mde_relative < 0.20:
+        return "Moderate"
+    else:
+        return "Conservative"
+
+
+# Example usage
+print("\n" + "="*80)
+print("Minimum Detectable Effect (MDE) Analysis")
+print("="*80 + "\n")
+
+# Example 1: What can we detect with available traffic?
+print("Example 1: MDE for Given Sample Size")
+print("-"*80)
+result = calculate_mde(p1=0.10, n=5000, alpha=0.05, power=0.80)
+print(f"Baseline conversion:  {result['p1']:.1%}")
+print(f"Sample size per group: {result['n_per_group']:,}")
+print(f"MDE (absolute):       {result['mde_absolute']:.4f} ({result['mde_absolute']*100:.2f} pp)")
+print(f"MDE (relative):       {result['mde_relative']:.1%}")
+print(f"Detectable p2:        ≥ {result['p2']:.3f}")
+print()
+
+# Example 2: Sensitivity analysis
+print("Example 2: How MDE Changes with Sample Size")
+print("-"*80)
+mde_sensitivity_analysis(
+    p1=0.10,
+    sample_sizes=[1000, 2000, 5000, 10000, 20000, 50000],
+    alpha=0.05,
+    power=0.80
+)
+
+# Visualization
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Plot 1: MDE vs sample size
+sample_sizes = np.logspace(2.5, 5, 50)
+mdes_abs = []
+mdes_rel = []
+
+for n in sample_sizes:
+    n_int = int(n)
+    result = calculate_mde(p1=0.10, n=n_int, alpha=0.05, power=0.80)
+    mdes_abs.append(result['mde_absolute'])
+    mdes_rel.append(result['mde_relative'])
+
+axes[0].plot(sample_sizes, np.array(mdes_abs)*100, linewidth=2.5, color='steelblue')
+axes[0].set_xlabel('Sample Size (per group)', fontsize=12)
+axes[0].set_ylabel('MDE (percentage points)', fontsize=12)
+axes[0].set_title('Minimum Detectable Effect vs Sample Size\n(baseline = 10%, α=0.05, power=0.80)',
+                 fontsize=12, fontweight='bold')
+axes[0].set_xscale('log')
+axes[0].grid(alpha=0.3)
+
+axes[1].plot(sample_sizes, np.array(mdes_rel)*100, linewidth=2.5, color='coral')
+axes[1].set_xlabel('Sample Size (per group)', fontsize=12)
+axes[1].set_ylabel('MDE (relative lift %)', fontsize=12)
+axes[1].set_title('Relative MDE vs Sample Size\n(baseline = 10%, α=0.05, power=0.80)',
+                 fontsize=12, fontweight='bold')
+axes[1].set_xscale('log')
+axes[1].grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('mde_analysis.pdf', dpi=300, bbox_inches='tight')
+plt.show()
+\end{lstlisting}
+
+\subsection{Business Significance vs. Statistical Significance}
+
+Statistical significance ($p < 0.05$) doesn't imply business significance. Sample size planning must consider minimum \textit{practically important} differences.
+
+\textbf{Framework for determining MDE:}
+
+\begin{enumerate}
+    \item \textbf{Business value:} What's the smallest improvement worth implementing?
+    \begin{itemize}
+        \item Consider implementation costs
+        \item Account for risks
+        \item Factor in opportunity costs
+    \end{itemize}
+
+    \item \textbf{Statistical feasibility:} Can we detect that difference with available traffic?
+    \begin{itemize}
+        \item Calculate required sample size
+        \item Estimate experiment duration
+        \item Assess if timeline is acceptable
+    \end{itemize}
+
+    \item \textbf{Reconciliation:} If desired MDE requires impractical sample size:
+    \begin{itemize}
+        \item Increase traffic allocation
+        \item Run experiment longer
+        \item Accept lower power
+        \item Reconsider if test is worthwhile
+    \end{itemize}
+\end{enumerate}
+
+\begin{example}[Business vs. Statistical Significance]
+E-commerce company testing checkout redesign:
+
+\textbf{Business analysis:}
+\begin{itemize}
+    \item Current conversion: 10\%
+    \item Average order value: \$100
+    \item Monthly users: 100,000
+    \item Implementation cost: \$50,000
+\end{itemize}
+
+\textbf{Break-even calculation:}
+\begin{itemize}
+    \item Need \$50,000 / (\$100 × 100,000/month) = 5\% conversion lift to break even in 1 month
+    \item Absolute lift: 0.5 percentage points
+    \item This becomes minimum practically important difference
+\end{itemize}
+
+\textbf{Sample size for 0.5pp lift:}
+\begin{itemize}
+    \item $n = 14,732$ per group (from earlier calculation)
+    \item At 50,000 users/month per group: ~9 days
+    \item Feasible!
+\end{itemize}
+
+If implementation cost were \$500,000, break-even requires 50\% lift—likely infeasible.
+\end{example}
+
+\subsection{Cost-Benefit Analysis of Sample Sizes}
+
+Larger samples increase power but have costs: longer experiments, more users exposed to potentially inferior variants, delayed decisions.
+
+\textbf{Cost factors:}
+\begin{itemize}
+    \item \textbf{Opportunity cost:} Delayed rollout of winning variant
+    \item \textbf{Exposure cost:} Users experiencing losing variant
+    \item \textbf{Resource cost:} Engineering time, infrastructure
+\end{itemize}
+
+\textbf{Benefit factors:}
+\begin{itemize}
+    \item \textbf{Reduced Type II error:} Lower risk of missing beneficial changes
+    \item \textbf{More precise estimates:} Better understanding of effect magnitude
+    \item \textbf{Subgroup analysis:} Sufficient power for heterogeneous effects
+\end{itemize}
+
+\textbf{Optimal sample size balances these factors.} Standard power = 0.80 represents conventional wisdom, but context-specific optimization may justify different choices.
+
+\subsection{Duration Estimation}
+
+Sample size determines experiment duration given traffic volume.
+
+\begin{equation}
+\text{Duration (days)} = \frac{n_{\text{total}}}{\text{users per day} \times \text{allocation fraction}}
+\end{equation}
+
+\textbf{Considerations:}
+\begin{itemize}
+    \item \textbf{Day-of-week effects:} Run full weekly cycles
+    \item \textbf{Seasonality:} Avoid atypical periods
+    \item \textbf{Minimum duration:} At least 1 week to capture patterns
+    \item \textbf{Maximum duration:} Product changes, external events limit feasibility
+\end{itemize}
+
+\begin{example}[Duration Calculation]
+Required sample: 20,000 per group (40,000 total)
+
+\textbf{Scenario 1: High traffic site}
+\begin{itemize}
+    \item Daily users: 50,000
+    \item 50/50 split: 25,000 per group per day
+    \item Duration: 20,000 / 25,000 = 0.8 days
+    \item \textbf{Decision:} Run for 1 week to capture weekly patterns
+\end{itemize}
+
+\textbf{Scenario 2: Medium traffic site}
+\begin{itemize}
+    \item Daily users: 2,000
+    \item 50/50 split: 1,000 per group per day
+    \item Duration: 20,000 / 1,000 = 20 days
+    \item \textbf{Decision:} Acceptable, run for 3 weeks (21 days)
+\end{itemize}
+
+\textbf{Scenario 3: Low traffic site}
+\begin{itemize}
+    \item Daily users: 200
+    \item 50/50 split: 100 per group per day
+    \item Duration: 20,000 / 100 = 200 days
+    \item \textbf{Decision:} Infeasible! Consider:
+    \begin{itemize}
+        \item Accept larger MDE (smaller sample)
+        \item Lower power requirement
+        \item Don't run experiment (too uncertain)
+    \end{itemize}
+\end{itemize}
+\end{example}
+
+\section{Advanced Topics}
+
+\subsection{Unequal Sample Sizes}
+
+Sometimes unequal allocation is optimal or necessary.
+
+\textbf{Reasons for unequal allocation:}
+\begin{itemize}
+    \item Limited traffic to treatment variant
+    \item Risk mitigation (keep most users on proven control)
+    \item Cost asymmetry (treatment is expensive)
+\end{itemize}
+
+\begin{theorem}[Optimal Allocation Ratio]
+For fixed total sample size $N = n_1 + n_2$, power is maximized when:
+\begin{equation}
+\frac{n_2}{n_1} = \frac{\sigma_2}{\sigma_1}
+\end{equation}
+
+For proportions with similar rates, equal allocation (1:1) is nearly optimal.
+
+For highly unequal allocation, efficiency loss is:
+\begin{equation}
+\text{Efficiency} = \frac{4r}{(1+r)^2}
+\end{equation}
+
+where $r = n_2/n_1$.
+\end{theorem}
+
+\begin{example}[Allocation Efficiency]
+\begin{itemize}
+    \item 1:1 (50/50): Efficiency = 1.00 (optimal)
+    \item 2:1 (67/33): Efficiency = 0.89 (11\% loss)
+    \item 3:1 (75/25): Efficiency = 0.75 (25\% loss)
+    \item 9:1 (90/10): Efficiency = 0.36 (64\% loss!)
+\end{itemize}
+
+\textbf{Practical recommendation:} Avoid allocation more extreme than 2:1 unless necessary. Efficiency loss outweighs most benefits.
+\end{example}
+
+\subsection{Sequential Testing Implications}
+
+Classical sample size formulas assume:
+\begin{itemize}
+    \item Fixed sample size determined in advance
+    \item Single analysis at experiment conclusion
+\end{itemize}
+
+\textbf{Sequential testing} (peeking at results, stopping early) inflates Type I error rate. Naïve peeking can increase $\alpha$ from 0.05 to 0.30!
+
+\textbf{Solutions:}
+\begin{itemize}
+    \item \textbf{Alpha spending:} Adjust significance thresholds for multiple looks
+    \item \textbf{Sequential probability ratio test (SPRT):} Optimal sequential procedure
+    \item \textbf{Group sequential design:} Pre-specified analysis points with adjusted $\alpha$
+\end{itemize}
+
+Sample sizes for sequential testing are \textbf{not} determined by classical formulas. Chapter \ref{ch:advanced_designs} covers sequential methods.
+
+\subsection{Multiple Metrics Considerations}
+
+Testing multiple metrics simultaneously requires adjustment for multiple comparisons.
+
+\textbf{Approaches:}
+\begin{enumerate}
+    \item \textbf{Primary metric only:} Design for power on single most important metric
+    \begin{itemize}
+        \item Simple, clear decision rule
+        \item Risk: Miss effects on other metrics
+    \end{itemize}
+
+    \item \textbf{Family-wise error rate (FWER):} Control probability of any false positive
+    \begin{itemize}
+        \item Bonferroni: Increase sample size by factor of $\sqrt{m}$ for $m$ metrics
+        \item Very conservative
+    \end{itemize}
+
+    \item \textbf{False discovery rate (FDR):} Control expected proportion of false discoveries
+    \begin{itemize}
+        \item More powerful than FWER
+        \item Appropriate when some false positives acceptable
+    \end{itemize}
+
+    \item \textbf{Guardrail metrics:} Primary metric at $\alpha = 0.05$, secondary metrics at $\alpha = 0.10$ or $0.20$
+    \begin{itemize}
+        \item Practical compromise
+        \item Flags potential issues without requiring huge samples
+    \end{itemize}
+\end{enumerate}
+
+\textbf{Practical recommendation:} Design for adequate power on primary metric. Use secondary metrics as diagnostics with less stringent thresholds. See Chapter \ref{ch:multiple} for comprehensive treatment.
+
+\section{Implementation Tools}
+
+\subsection{Python Implementation}
+
+We've developed comprehensive functions. Here's a unified calculator:
+
+\lstset{language=Python, caption=Comprehensive Sample Size Calculator, label=lst:comprehensive_calculator}
+\begin{lstlisting}
+class ABTestCalculator:
+    """
+    Comprehensive A/B test sample size and power calculator.
+    """
+
+    def __init__(self, alpha: float = 0.05, power: float = 0.80):
+        """
+        Initialize calculator with default parameters.
+
+        Parameters:
+        -----------
+        alpha : float
+            Significance level (default 0.05)
+        power : float
+            Statistical power (default 0.80)
+        """
+        self.alpha = alpha
+        self.power = power
+
+    def sample_size_proportions(self, p1: float, p2: float,
+                               ratio: float = 1.0) -> dict:
+        """Calculate sample size for proportion test."""
+        return sample_size_proportions(p1, p2, self.alpha, self.power, ratio)
+
+    def sample_size_means(self, mu1: float, mu2: float, sigma: float,
+                         ratio: float = 1.0) -> dict:
+        """Calculate sample size for means test."""
+        return sample_size_means(mu1, mu2, sigma, self.alpha, self.power, ratio)
+
+    def calculate_power(self, p1: float, p2: float, n: int) -> float:
+        """Calculate power for given parameters."""
+        return calculate_power_proportions(p1, p2, n, self.alpha)
+
+    def calculate_mde(self, p1: float, n: int) -> dict:
+        """Calculate minimum detectable effect."""
+        return calculate_mde(p1, n, self.alpha, self.power)
+
+    def recommend_sample_size(self, p1: float, desired_lift: float,
+                            traffic_per_day: int,
+                            max_duration_days: int = 30) -> dict:
+        """
+        Provide sample size recommendation with practical constraints.
+
+        Parameters:
+        -----------
+        p1 : float
+            Baseline conversion rate
+        desired_lift : float
+            Desired relative lift to detect
+        traffic_per_day : int
+            Available users per day
+        max_duration_days : int
+            Maximum acceptable experiment duration
+
+        Returns:
+        --------
+        dict : Recommendation with feasibility assessment
+        """
+        p2 = p1 * (1 + desired_lift)
+
+        # Calculate required sample size
+        result = self.sample_size_proportions(p1, p2)
+
+        # Calculate duration
+        users_per_group_per_day = traffic_per_day / 2
+        duration_days = np.ceil(result['n1'] / users_per_group_per_day)
+
+        # Feasibility assessment
+        feasible = duration_days <= max_duration_days
+
+        # If not feasible, calculate achievable MDE
+        if not feasible:
+            max_n = int(users_per_group_per_day * max_duration_days)
+            achievable_mde = self.calculate_mde(p1, max_n)
+        else:
+            achievable_mde = None
+
+        return {
+            'required_n_per_group': result['n1'],
+            'required_total_n': result['n_total'],
+            'duration_days': int(duration_days),
+            'duration_weeks': int(np.ceil(duration_days / 7)),
+            'feasible': feasible,
+            'achievable_mde': achievable_mde,
+            'recommendation': self._generate_recommendation(
+                feasible, duration_days, max_duration_days, achievable_mde
+            ),
+            'details': result
+        }
+
+    def _generate_recommendation(self, feasible: bool, duration: float,
+                                max_duration: float, achievable_mde: dict) -> str:
+        """Generate human-readable recommendation."""
+        if feasible:
+            return (f"Experiment is FEASIBLE. Run for {int(np.ceil(duration/7))} weeks "
+                   f"({int(duration)} days) to achieve desired power.")
+        else:
+            if achievable_mde:
+                return (f"Experiment NOT FEASIBLE within {max_duration} days. "
+                       f"Can only detect {achievable_mde['mde_relative']:.1%} lift "
+                       f"with available traffic. Consider: (1) Accepting larger MDE, "
+                       f"(2) Running longer, (3) Increasing traffic allocation, "
+                       f"(4) Not running experiment.")
+            else:
+                return "Experiment NOT FEASIBLE. Insufficient traffic."
+
+
+# Example: Comprehensive analysis
+print("\n" + "="*80)
+print("Comprehensive A/B Test Sample Size Analysis")
+print("="*80 + "\n")
+
+# Initialize calculator
+calc = ABTestCalculator(alpha=0.05, power=0.80)
+
+# Scenario: E-commerce checkout optimization
+print("Scenario: E-commerce Checkout Redesign")
+print("-"*80)
+print("Current conversion rate: 10%")
+print("Desired lift to detect: 10% (relative)")
+print("Daily traffic: 10,000 users")
+print("Maximum acceptable duration: 30 days")
+print()
+
+recommendation = calc.recommend_sample_size(
+    p1=0.10,
+    desired_lift=0.10,
+    traffic_per_day=10000,
+    max_duration_days=30
+)
+
+print("ANALYSIS RESULTS:")
+print("-"*80)
+print(f"Required sample size: {recommendation['required_n_per_group']:,} per group")
+print(f"Total required: {recommendation['required_total_n']:,} users")
+print(f"Estimated duration: {recommendation['duration_days']} days ({recommendation['duration_weeks']} weeks)")
+print(f"Feasibility: {'✓ FEASIBLE' if recommendation['feasible'] else '✗ NOT FEASIBLE'}")
+print()
+print("RECOMMENDATION:")
+print("-"*80)
+print(recommendation['recommendation'])
+print()
+
+# Additional scenarios
+print("\nComparing Different Traffic Levels:")
+print("="*80)
+
+for daily_traffic in [1000, 5000, 10000, 50000]:
+    rec = calc.recommend_sample_size(
+        p1=0.10,
+        desired_lift=0.10,
+        traffic_per_day=daily_traffic,
+        max_duration_days=30
+    )
+
+    print(f"\nDaily traffic: {daily_traffic:,}")
+    print(f"  Duration: {rec['duration_days']} days")
+    print(f"  Feasible: {'Yes' if rec['feasible'] else 'No'}")
+    if not rec['feasible'] and rec['achievable_mde']:
+        print(f"  Achievable MDE: {rec['achievable_mde']['mde_relative']:.1%}")
+\end{lstlisting}
+
+\subsection{R Implementation}
+
+R provides excellent power analysis tools through the \texttt{pwr} package.
+
+\lstset{language=R, caption=Sample Size Calculation in R, label=lst:sample_size_r}
+\begin{lstlisting}
+# Install and load required packages
+install.packages("pwr")
+library(pwr)
+
+# 1. Sample size for two proportions
+# Testing 10% vs 11% conversion
+p1 <- 0.10
+p2 <- 0.11
+
+# Calculate effect size (Cohen's h)
+h <- ES.h(p1, p2)
+cat(sprintf("Cohen's h: %.4f\n", h))
+
+# Calculate required sample size
+power_result <- pwr.2p.test(
+  h = h,
+  sig.level = 0.05,
+  power = 0.80,
+  alternative = "two.sided"
+)
+
+print(power_result)
+cat(sprintf("\nRequired n per group: %.0f\n", ceiling(power_result$n)))
+cat(sprintf("Total n: %.0f\n", ceiling(power_result$n * 2)))
+
+# 2. Sample size for means
+# Testing $50 vs $55 with SD = $30
+mu1 <- 50
+mu2 <- 55
+sigma <- 30
+
+# Cohen's d
+d <- (mu2 - mu1) / sigma
+cat(sprintf("\nCohen's d: %.4f\n", d))
+
+# Calculate required sample size
+power_result_means <- pwr.t.test(
+  d = d,
+  sig.level = 0.05,
+  power = 0.80,
+  type = "two.sample",
+  alternative = "two.sided"
+)
+
+print(power_result_means)
+
+# 3. Power curve
+p1_vals <- seq(0.05, 0.30, 0.05)
+lift <- 0.10
+sample_sizes <- c(500, 1000, 2000, 5000)
+
+power_matrix <- matrix(NA, nrow = length(p1_vals), ncol = length(sample_sizes))
+colnames(power_matrix) <- paste0("n=", sample_sizes)
+rownames(power_matrix) <- paste0("p1=", p1_vals)
+
+for (i in seq_along(p1_vals)) {
+  p1 <- p1_vals[i]
+  p2 <- p1 * (1 + lift)
+  h <- ES.h(p1, p2)
+
+  for (j in seq_along(sample_sizes)) {
+    n <- sample_sizes[j]
+    result <- pwr.2p.test(
+      h = h,
+      n = n,
+      sig.level = 0.05,
+      alternative = "two.sided"
+    )
+    power_matrix[i, j] <- result$power
+  }
+}
+
+print(round(power_matrix, 3))
+
+# 4. Plot power curve
+plot_power_curve <- function(p1, lift_range, n, alpha = 0.05) {
+  powers <- numeric(length(lift_range))
+
+  for (i in seq_along(lift_range)) {
+    p2 <- p1 * (1 + lift_range[i])
+    h <- ES.h(p1, p2)
+    result <- pwr.2p.test(h = h, n = n, sig.level = alpha)
+    powers[i] <- result$power
+  }
+
+  plot(lift_range * 100, powers,
+       type = "l", lwd = 2,
+       xlab = "Relative Lift (%)",
+       ylab = "Statistical Power",
+       main = sprintf("Power Curve (baseline = %.1f%%, n = %d)", p1 * 100, n))
+  abline(h = 0.80, col = "red", lty = 2)
+  grid()
+}
+
+# Generate power curve
+lift_range <- seq(0.05, 0.50, 0.01)
+plot_power_curve(p1 = 0.10, lift_range = lift_range, n = 5000)
+\end{lstlisting}
+
+\section{Summary}
+
+Sample size determination transforms experimental planning from guesswork to rigorous calculation:
+
+\begin{itemize}
+    \item \textbf{Power analysis} connects sample size, effect size, significance level, and power. Specifying any three determines the fourth.
+
+    \item \textbf{Standard conventions} ($\alpha = 0.05$, power = 0.80) represent reasonable defaults but should be adjusted for context.
+
+    \item \textbf{Sample size formulas} differ by metric type. Proportions and means have closed-form solutions; other metrics require simulation or approximation.
+
+    \item \textbf{Minimum detectable effect} (MDE) defines the smallest effect reliably detectable. MDE must be both statistically feasible and business-relevant.
+
+    \item \textbf{Practical constraints}—traffic volume, acceptable duration, implementation costs—often dominate pure statistical considerations.
+
+    \item \textbf{Advanced topics}—unequal allocation, sequential testing, multiple metrics—require specialized methods beyond classical formulas.
+
+    \item \textbf{Implementation tools} in Python and R enable rapid calculation and sensitivity analysis.
+\end{itemize}
+
+Proper sample size calculation ensures experiments are neither underpowered (wasting time and resources) nor overpowered (unnecessarily delaying decisions). Master these techniques to design efficient, informative experiments.
+
+\section{Further Reading}
+
+\begin{itemize}
+    \item \citet{cohen1988statistical}: Definitive reference on statistical power analysis
+    \item \citet{chow2007sample}: Sample size methods for clinical research
+    \item \citet{kohavi2020trustworthy}: Practical guidance for online experiments
+    \item \citet{champely2020pwr}: Documentation for R's pwr package
+\end{itemize}
+
+\section{Exercises}
+
+\subsection{Conceptual Questions}
+
+\begin{enumerate}
+    \item Explain the relationship between Type I error, Type II error, power, and significance level. How are they connected?
+
+    \item Why is power = 0.80 a common standard? Under what circumstances would you use power = 0.90? Power = 0.70?
+
+    \item A colleague says: "Let's just run the test for a month and see what happens." What's wrong with this approach?
+
+    \item Explain why doubling sample size doesn't double statistical power. What's the actual relationship?
+
+    \item Describe three scenarios where unequal allocation (e.g., 75/25 split) might be justified despite efficiency loss.
+
+    \item What's the difference between minimum detectable effect and minimum practically important difference? Why do both matter?
+\end{enumerate}
+
+\subsection{Calculation Exercises}
+
+\begin{enumerate}
+    \item Calculate required sample size for testing:
+    \begin{itemize}
+        \item Baseline conversion: 5\%
+        \item Target conversion: 6\% (20\% relative lift)
+        \item $\alpha = 0.05$, power = 0.80
+    \end{itemize}
+    Show all work. How long would this experiment take with 10,000 users/day?
+
+    \item Repeat previous calculation for power = 0.90. By what factor does required sample size increase?
+
+    \item Given 3,000 users per group available, baseline conversion 15\%, calculate the minimum detectable effect (MDE) for $\alpha = 0.05$, power = 0.80.
+
+    \item Calculate required sample size for continuous metric:
+    \begin{itemize}
+        \item Control mean: \$75, SD: \$40
+        \item Target mean: \$85 (13.3\% increase)
+        \item $\alpha = 0.05$, power = 0.80
+    \end{itemize}
+
+    \item Compare sample size requirements for detecting 10\% relative lift at baseline rates of 2\%, 10\%, 30\%, and 50\%. What pattern emerges?
+\end{enumerate}
+
+\subsection{Programming Exercises}
+
+\begin{enumerate}
+    \item Implement a comprehensive power analysis function that:
+    \begin{itemize}
+        \item Accepts multiple input formats (absolute difference, relative lift, Cohen's h)
+        \item Supports both one-sided and two-sided tests
+        \item Handles unequal allocation ratios
+        \item Provides clear warnings about assumptions
+        \item Includes input validation
+    \end{itemize}
+
+    \item Create an interactive sample size calculator using Streamlit or Shiny that:
+    \begin{itemize}
+        \item Takes baseline metrics and desired lift as input
+        \item Shows power curves dynamically
+        \item Estimates experiment duration given traffic
+        \item Provides feasibility recommendations
+        \item Exports results as PDF report
+    \end{itemize}
+
+    \item Write a function to perform sensitivity analysis:
+    \begin{itemize}
+        \item How does power change if true effect is 50\% smaller/larger than assumed?
+        \item How does power change if variance is 20\% higher than expected?
+        \item Generate visualization showing sensitivity regions
+    \end{itemize}
+
+    \item Implement simulation-based power calculation for:
+    \begin{itemize}
+        \item Ratio metrics (revenue per user)
+        \item Count metrics (purchases per customer)
+        \item Mixture distributions (users who convert vs. don't convert)
+    \end{itemize}
+    Compare simulation results to closed-form approximations.
+\end{enumerate}
+
+\subsection{Applied Exercises}
+
+\begin{enumerate}
+    \item Design experiments for these scenarios with full justification:
+
+    \textbf{Scenario A:} SaaS company testing onboarding flow
+    \begin{itemize}
+        \item Current trial-to-paid conversion: 8\%
+        \item 500 new trials per week
+        \item Implementation cost: \$100,000
+        \item Average customer lifetime value: \$5,000
+    \end{itemize}
+
+    \textbf{Scenario B:} News website testing article layout
+    \begin{itemize}
+        \item Current average time on page: 2.5 minutes (SD: 3.0 minutes)
+        \item 1 million pageviews per day
+        \item Easy to implement and reverse
+    \end{itemize}
+
+    \textbf{Scenario C:} Mobile app testing premium feature
+    \begin{itemize}
+        \item Current premium conversion: 2\%
+        \item 10,000 daily active users
+        \item Major engineering effort (\$500K)
+    \end{itemize}
+
+    For each: Specify desired lift, calculate sample size, estimate duration, assess feasibility, provide recommendation.
+
+    \item A stakeholder insists on detecting 2\% relative lift with 95\% power. Your analysis shows this requires 100,000 users per group but only 50,000 total are available. Prepare a memo explaining:
+    \begin{itemize}
+        \item Why their requirement is infeasible
+        \item What can be achieved with available sample
+        \item Alternative approaches (sequential testing, focus on larger effects, etc.)
+        \item Recommended path forward
+    \end{itemize}
+
+    \item Review a past A/B test that failed to reach significance. Using actual baseline metrics and observed difference:
+    \begin{itemize}
+        \item Calculate what power the experiment actually had
+        \item Determine what sample size would have been needed for 80\% power
+        \item Assess whether observed effect was below MDE
+        \item Recommend whether to rerun with larger sample or abandon
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Advanced Projects}
+
+\begin{enumerate}
+    \item \textbf{Sequential testing sample size:} Implement group sequential design with:
+    \begin{itemize}
+        \item O'Brien-Fleming spending function
+        \item 3-5 planned interim analyses
+        \item Calculate required sample size accounting for multiple looks
+        \item Compare to fixed sample size
+    \end{itemize}
+
+    \item \textbf{Multiple metrics:} Design experiment testing 1 primary and 4 secondary metrics:
+    \begin{itemize}
+        \item Determine sample size for each metric individually
+        \item Apply Bonferroni, Holm, and FDR corrections
+        \item Compare required sample sizes
+        \item Recommend practical approach
+    \end{itemize}
+
+    \item \textbf{Variance reduction impact:} Simulate experiments with and without CUPED variance reduction:
+    \begin{itemize}
+        \item Generate correlated pre/post data
+        \item Compare power with/without covariate adjustment
+        \item Quantify sample size savings
+        \item Visualize power gains
+    \end{itemize}
+
+    \item \textbf{Bayesian sample size determination:} Implement Bayesian approach:
+    \begin{itemize}
+        \item Specify prior distribution for effect size
+        \item Calculate probability of success for various sample sizes
+        \item Compare to frequentist power analysis
+        \item Discuss advantages and limitations
+    \end{itemize}
+\end{enumerate}

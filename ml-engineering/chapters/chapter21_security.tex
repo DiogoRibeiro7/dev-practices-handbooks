@@ -1,0 +1,2790 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Understand ML-specific security threats and attack vectors
+    \item Implement adversarial attack detection and defense mechanisms
+    \item Protect models from stealing and inversion attacks
+    \item Secure data handling with encryption and access controls
+    \item Design secure ML APIs with authentication and rate limiting
+    \item Apply privacy-preserving ML techniques (differential privacy, federated learning)
+    \item Conduct security scanning and vulnerability assessments
+    \item Build defense-in-depth security architectures for ML systems
+\end{itemize}
+
+\section{Introduction}
+
+ML systems face unique security challenges beyond traditional software security. Attackers can manipulate training data, exploit model vulnerabilities, steal intellectual property, or extract private information from models.
+
+\textbf{ML Security Threat Landscape:}
+
+\begin{itemize}
+    \item \textbf{Data Poisoning:} Attackers inject malicious data into training sets
+    \item \textbf{Adversarial Examples:} Carefully crafted inputs cause misclassification
+    \item \textbf{Model Stealing:} Extracting model parameters through query access
+    \item \textbf{Model Inversion:} Reconstructing training data from model outputs
+    \item \textbf{Membership Inference:} Determining if data was in training set
+    \item \textbf{Backdoor Attacks:} Embedding hidden behaviors triggered by specific inputs
+    \item \textbf{Privacy Leakage:} Models reveal sensitive information about training data
+\end{itemize}
+
+\textbf{Security Requirements for ML Systems:}
+
+\begin{enumerate}
+    \item \textbf{Confidentiality:} Protect training data, model parameters, and predictions
+    \item \textbf{Integrity:} Ensure models behave as intended without manipulation
+    \item \textbf{Availability:} Prevent denial-of-service and resource exhaustion
+    \item \textbf{Accountability:} Audit and trace all model interactions
+    \item \textbf{Privacy:} Prevent leakage of sensitive information
+\end{enumerate}
+
+\section{Adversarial Attack Detection and Defense}
+
+Adversarial attacks exploit the continuous, high-dimensional nature of ML input spaces to create inputs that fool models while appearing normal to humans.
+
+\subsection{Adversarial Attack Types}
+
+\textbf{Common Attack Methods:}
+
+\begin{itemize}
+    \item \textbf{FGSM (Fast Gradient Sign Method):} Single-step attack using gradient sign
+    \item \textbf{PGD (Projected Gradient Descent):} Multi-step iterative attack
+    \item \textbf{C\&W (Carlini-Wagner):} Optimization-based attack minimizing perturbation
+    \item \textbf{DeepFool:} Finds minimal perturbation to decision boundary
+    \item \textbf{One-Pixel Attack:} Modifies single pixel using differential evolution
+\end{itemize}
+
+\subsection{Adversarial Defense Implementation}
+
+\begin{lstlisting}[language=Python, caption=Adversarial Attack Detection and Defense Framework]
+#!/usr/bin/env python3
+"""
+Adversarial Attack Detection and Defense
+Comprehensive framework for securing ML models against adversarial attacks
+"""
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Tuple, Dict, List
+from dataclasses import dataclass
+
+@dataclass
+class AdversarialExample:
+    """Adversarial example with metadata"""
+    original_input: np.ndarray
+    perturbed_input: np.ndarray
+    original_prediction: int
+    adversarial_prediction: int
+    perturbation: np.ndarray
+    perturbation_norm: float
+    attack_method: str
+
+class AdversarialAttackGenerator:
+    """Generate adversarial examples for testing"""
+
+    def __init__(self, model: nn.Module, device: str = "cpu"):
+        self.model = model
+        self.device = device
+        self.model.eval()
+
+    def fgsm_attack(
+        self,
+        image: torch.Tensor,
+        label: torch.Tensor,
+        epsilon: float = 0.3
+    ) -> torch.Tensor:
+        """Fast Gradient Sign Method attack"""
+
+        image.requires_grad = True
+
+        # Forward pass
+        output = self.model(image)
+        loss = F.cross_entropy(output, label)
+
+        # Backward pass
+        self.model.zero_grad()
+        loss.backward()
+
+        # Generate adversarial example
+        data_grad = image.grad.data
+        perturbed_image = image + epsilon * data_grad.sign()
+        perturbed_image = torch.clamp(perturbed_image, 0, 1)
+
+        return perturbed_image
+
+    def pgd_attack(
+        self,
+        image: torch.Tensor,
+        label: torch.Tensor,
+        epsilon: float = 0.3,
+        alpha: float = 0.01,
+        num_iter: int = 40
+    ) -> torch.Tensor:
+        """Projected Gradient Descent attack"""
+
+        perturbed_image = image.clone().detach()
+
+        for i in range(num_iter):
+            perturbed_image.requires_grad = True
+
+            output = self.model(perturbed_image)
+            loss = F.cross_entropy(output, label)
+
+            self.model.zero_grad()
+            loss.backward()
+
+            # Update perturbation
+            data_grad = perturbed_image.grad.data
+            perturbed_image = perturbed_image.detach() + alpha * data_grad.sign()
+
+            # Project back to epsilon ball
+            perturbation = torch.clamp(perturbed_image - image, -epsilon, epsilon)
+            perturbed_image = torch.clamp(image + perturbation, 0, 1).detach()
+
+        return perturbed_image
+
+    def generate_adversarial_example(
+        self,
+        image: np.ndarray,
+        true_label: int,
+        attack_type: str = "fgsm",
+        epsilon: float = 0.3
+    ) -> AdversarialExample:
+        """Generate adversarial example with metadata"""
+
+        # Convert to tensor
+        image_tensor = torch.FloatTensor(image).unsqueeze(0).to(self.device)
+        label_tensor = torch.LongTensor([true_label]).to(self.device)
+
+        # Original prediction
+        with torch.no_grad():
+            original_output = self.model(image_tensor)
+            original_pred = original_output.argmax(1).item()
+
+        # Generate adversarial example
+        if attack_type == "fgsm":
+            perturbed_tensor = self.fgsm_attack(image_tensor, label_tensor, epsilon)
+        elif attack_type == "pgd":
+            perturbed_tensor = self.pgd_attack(image_tensor, label_tensor, epsilon)
+        else:
+            raise ValueError(f"Unknown attack type: {attack_type}")
+
+        # Adversarial prediction
+        with torch.no_grad():
+            adv_output = self.model(perturbed_tensor)
+            adv_pred = adv_output.argmax(1).item()
+
+        # Calculate perturbation
+        perturbation = (perturbed_tensor - image_tensor).cpu().numpy()
+        perturbation_norm = np.linalg.norm(perturbation)
+
+        return AdversarialExample(
+            original_input=image,
+            perturbed_input=perturbed_tensor.cpu().numpy().squeeze(),
+            original_prediction=original_pred,
+            adversarial_prediction=adv_pred,
+            perturbation=perturbation.squeeze(),
+            perturbation_norm=perturbation_norm,
+            attack_method=attack_type
+        )
+
+class AdversarialDetector:
+    """Detect adversarial examples at inference time"""
+
+    def __init__(self, model: nn.Module, device: str = "cpu"):
+        self.model = model
+        self.device = device
+        self.detection_methods = []
+
+    def add_detection_method(self, method_name: str, threshold: float):
+        """Add detection method with threshold"""
+        self.detection_methods.append({
+            "name": method_name,
+            "threshold": threshold
+        })
+
+    def detect_by_prediction_confidence(
+        self,
+        image: torch.Tensor,
+        confidence_threshold: float = 0.95
+    ) -> Tuple[bool, float]:
+        """Detect based on prediction confidence"""
+
+        with torch.no_grad():
+            output = self.model(image)
+            probabilities = F.softmax(output, dim=1)
+            max_prob = probabilities.max().item()
+
+        # Adversarial examples often have lower confidence
+        is_adversarial = max_prob < confidence_threshold
+
+        return is_adversarial, max_prob
+
+    def detect_by_input_gradient(
+        self,
+        image: torch.Tensor,
+        label: torch.Tensor,
+        gradient_threshold: float = 10.0
+    ) -> Tuple[bool, float]:
+        """Detect based on input gradient magnitude"""
+
+        image.requires_grad = True
+
+        output = self.model(image)
+        loss = F.cross_entropy(output, label)
+
+        self.model.zero_grad()
+        loss.backward()
+
+        gradient_norm = image.grad.data.norm().item()
+
+        # Adversarial examples often have larger gradients
+        is_adversarial = gradient_norm > gradient_threshold
+
+        return is_adversarial, gradient_norm
+
+    def detect_by_feature_squeezing(
+        self,
+        image: torch.Tensor,
+        squeeze_threshold: float = 0.1
+    ) -> Tuple[bool, float]:
+        """Detect using feature squeezing"""
+
+        # Bit-depth reduction (squeeze to fewer bits)
+        squeezed_image = torch.round(image * 4) / 4
+
+        # Compare predictions
+        with torch.no_grad():
+            original_output = self.model(image)
+            squeezed_output = self.model(squeezed_image)
+
+            original_pred = original_output.argmax(1)
+            squeezed_pred = squeezed_output.argmax(1)
+
+        # Calculate L1 difference in predictions
+        pred_diff = torch.abs(
+            F.softmax(original_output, dim=1) -
+            F.softmax(squeezed_output, dim=1)
+        ).sum().item()
+
+        is_adversarial = pred_diff > squeeze_threshold
+
+        return is_adversarial, pred_diff
+
+    def ensemble_detection(
+        self,
+        image: torch.Tensor,
+        label: torch.Tensor
+    ) -> Dict:
+        """Run multiple detection methods and aggregate"""
+
+        results = {
+            "is_adversarial": False,
+            "detection_scores": {},
+            "methods_triggered": 0
+        }
+
+        # Confidence-based detection
+        is_adv_conf, conf_score = self.detect_by_prediction_confidence(image)
+        results["detection_scores"]["confidence"] = conf_score
+        if is_adv_conf:
+            results["methods_triggered"] += 1
+
+        # Gradient-based detection
+        is_adv_grad, grad_score = self.detect_by_input_gradient(image, label)
+        results["detection_scores"]["gradient"] = grad_score
+        if is_adv_grad:
+            results["methods_triggered"] += 1
+
+        # Feature squeezing
+        is_adv_squeeze, squeeze_score = self.detect_by_feature_squeezing(image)
+        results["detection_scores"]["feature_squeezing"] = squeeze_score
+        if is_adv_squeeze:
+            results["methods_triggered"] += 1
+
+        # Mark as adversarial if 2+ methods trigger
+        results["is_adversarial"] = results["methods_triggered"] >= 2
+
+        return results
+
+class AdversarialDefense:
+    """Implement defense mechanisms against adversarial attacks"""
+
+    def __init__(self, model: nn.Module, device: str = "cpu"):
+        self.model = model
+        self.device = device
+
+    def adversarial_training(
+        self,
+        train_loader,
+        optimizer,
+        epochs: int = 10,
+        epsilon: float = 0.3
+    ):
+        """Train model with adversarial examples"""
+
+        attacker = AdversarialAttackGenerator(self.model, self.device)
+
+        for epoch in range(epochs):
+            self.model.train()
+            total_loss = 0
+
+            for batch_idx, (data, target) in enumerate(train_loader):
+                data, target = data.to(self.device), target.to(self.device)
+
+                # Generate adversarial examples
+                adv_data = attacker.fgsm_attack(data, target, epsilon)
+
+                # Train on both clean and adversarial examples
+                optimizer.zero_grad()
+
+                # Clean loss
+                clean_output = self.model(data)
+                clean_loss = F.cross_entropy(clean_output, target)
+
+                # Adversarial loss
+                adv_output = self.model(adv_data)
+                adv_loss = F.cross_entropy(adv_output, target)
+
+                # Combined loss
+                loss = 0.5 * clean_loss + 0.5 * adv_loss
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item()
+
+            print(f"Epoch {epoch+1}/{epochs}, Loss: {total_loss/len(train_loader):.4f}")
+
+    def input_transformation(self, image: torch.Tensor) -> torch.Tensor:
+        """Apply input transformations to remove adversarial perturbations"""
+
+        # JPEG compression simulation
+        compressed = torch.round(image * 255) / 255
+
+        # Gaussian smoothing
+        kernel_size = 3
+        sigma = 1.0
+        smoothed = self._gaussian_blur(compressed, kernel_size, sigma)
+
+        # Bit-depth reduction
+        squeezed = torch.round(smoothed * 4) / 4
+
+        return squeezed
+
+    def _gaussian_blur(
+        self,
+        image: torch.Tensor,
+        kernel_size: int,
+        sigma: float
+    ) -> torch.Tensor:
+        """Apply Gaussian blur"""
+
+        # Create Gaussian kernel
+        kernel = self._gaussian_kernel(kernel_size, sigma)
+        kernel = kernel.to(image.device)
+
+        # Apply convolution
+        blurred = F.conv2d(
+            image,
+            kernel.unsqueeze(0).unsqueeze(0),
+            padding=kernel_size // 2
+        )
+
+        return blurred
+
+    def _gaussian_kernel(self, kernel_size: int, sigma: float) -> torch.Tensor:
+        """Generate Gaussian kernel"""
+
+        x = torch.arange(kernel_size).float() - kernel_size // 2
+        gauss = torch.exp(-x.pow(2) / (2 * sigma ** 2))
+        kernel = gauss.unsqueeze(0) * gauss.unsqueeze(1)
+        kernel = kernel / kernel.sum()
+
+        return kernel
+
+    def certified_defense(
+        self,
+        image: torch.Tensor,
+        num_samples: int = 100,
+        sigma: float = 0.1
+    ) -> Tuple[int, float]:
+        """Randomized smoothing for certified robustness"""
+
+        predictions = []
+
+        with torch.no_grad():
+            for _ in range(num_samples):
+                # Add Gaussian noise
+                noisy_image = image + torch.randn_like(image) * sigma
+                noisy_image = torch.clamp(noisy_image, 0, 1)
+
+                # Get prediction
+                output = self.model(noisy_image)
+                pred = output.argmax(1).item()
+                predictions.append(pred)
+
+        # Majority vote
+        from collections import Counter
+        vote_counts = Counter(predictions)
+        predicted_class = vote_counts.most_common(1)[0][0]
+        confidence = vote_counts[predicted_class] / num_samples
+
+        return predicted_class, confidence
+
+# Example usage
+if __name__ == "__main__":
+    # Create dummy model for demonstration
+    class SimpleModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = nn.Conv2d(1, 32, 3, 1)
+            self.conv2 = nn.Conv2d(32, 64, 3, 1)
+            self.fc1 = nn.Linear(9216, 128)
+            self.fc2 = nn.Linear(128, 10)
+
+        def forward(self, x):
+            x = F.relu(self.conv1(x))
+            x = F.relu(self.conv2(x))
+            x = F.max_pool2d(x, 2)
+            x = torch.flatten(x, 1)
+            x = F.relu(self.fc1(x))
+            x = self.fc2(x)
+            return x
+
+    # Initialize
+    model = SimpleModel()
+    device = "cpu"
+
+    # Test adversarial attack
+    attacker = AdversarialAttackGenerator(model, device)
+
+    # Generate dummy data
+    image = np.random.rand(1, 28, 28).astype(np.float32)
+    label = 5
+
+    # Generate adversarial example
+    adv_example = attacker.generate_adversarial_example(
+        image, label, attack_type="fgsm", epsilon=0.3
+    )
+
+    print(f"Original prediction: {adv_example.original_prediction}")
+    print(f"Adversarial prediction: {adv_example.adversarial_prediction}")
+    print(f"Perturbation norm: {adv_example.perturbation_norm:.4f}")
+    print(f"Attack successful: {adv_example.original_prediction != adv_example.adversarial_prediction}")
+
+    # Test detection
+    detector = AdversarialDetector(model, device)
+
+    image_tensor = torch.FloatTensor(image).unsqueeze(0)
+    label_tensor = torch.LongTensor([label])
+
+    detection_result = detector.ensemble_detection(image_tensor, label_tensor)
+    print(f"\nDetection result: {detection_result}")
+\end{lstlisting}
+
+\section{Model Stealing and Inversion Protection}
+
+Model stealing attacks extract model parameters or functionality through query access. Model inversion attacks reconstruct training data from model outputs.
+
+\subsection{Model Stealing Attacks}
+
+\textbf{Attack Vectors:}
+\begin{itemize}
+    \item \textbf{Equation-Solving:} Solve for model parameters using predictions
+    \item \textbf{Path-Finding:} Reconstruct decision tree paths
+    \item \textbf{Surrogate Training:} Train substitute model on query results
+    \item \textbf{Membership Inference:} Determine if data was in training set
+\end{itemize}
+
+\subsection{Model Protection Implementation}
+
+\begin{lstlisting}[language=Python, caption=Model Stealing and Inversion Protection]
+#!/usr/bin/env python3
+"""
+Model Stealing and Inversion Protection
+Techniques to protect ML models from extraction and data reconstruction
+"""
+
+import numpy as np
+import torch
+import torch.nn as nn
+from typing import Dict, List, Tuple
+from collections import defaultdict
+from datetime import datetime, timedelta
+import hashlib
+
+class QueryMonitor:
+    """Monitor and detect suspicious query patterns"""
+
+    def __init__(
+        self,
+        max_queries_per_user: int = 1000,
+        time_window_minutes: int = 60,
+        similarity_threshold: float = 0.95
+    ):
+        self.max_queries_per_user = max_queries_per_user
+        self.time_window = timedelta(minutes=time_window_minutes)
+        self.similarity_threshold = similarity_threshold
+
+        self.query_history = defaultdict(list)
+        self.user_query_counts = defaultdict(int)
+
+    def record_query(
+        self,
+        user_id: str,
+        query_input: np.ndarray,
+        timestamp: datetime = None
+    ) -> Dict:
+        """Record query and check for suspicious patterns"""
+
+        if timestamp is None:
+            timestamp = datetime.now()
+
+        # Check rate limiting
+        recent_queries = self._get_recent_queries(user_id, timestamp)
+
+        if len(recent_queries) >= self.max_queries_per_user:
+            return {
+                "allowed": False,
+                "reason": "rate_limit_exceeded",
+                "queries_in_window": len(recent_queries)
+            }
+
+        # Check for similar queries (potential model extraction)
+        if self._detect_similar_queries(user_id, query_input):
+            return {
+                "allowed": False,
+                "reason": "suspicious_query_pattern",
+                "details": "Too many similar queries detected"
+            }
+
+        # Record query
+        query_hash = self._hash_input(query_input)
+        self.query_history[user_id].append({
+            "timestamp": timestamp,
+            "query_hash": query_hash,
+            "input_shape": query_input.shape
+        })
+
+        self.user_query_counts[user_id] += 1
+
+        return {
+            "allowed": True,
+            "total_queries": self.user_query_counts[user_id]
+        }
+
+    def _get_recent_queries(
+        self,
+        user_id: str,
+        current_time: datetime
+    ) -> List[Dict]:
+        """Get queries within time window"""
+
+        cutoff_time = current_time - self.time_window
+
+        recent = [
+            q for q in self.query_history[user_id]
+            if q["timestamp"] > cutoff_time
+        ]
+
+        # Clean old queries
+        self.query_history[user_id] = recent
+
+        return recent
+
+    def _detect_similar_queries(
+        self,
+        user_id: str,
+        query_input: np.ndarray,
+        max_similar: int = 100
+    ) -> bool:
+        """Detect if too many similar queries from same user"""
+
+        query_hash = self._hash_input(query_input)
+        recent_queries = self.query_history[user_id]
+
+        if len(recent_queries) < max_similar:
+            return False
+
+        # Check last N queries for similarity
+        similar_count = sum(
+            1 for q in recent_queries[-max_similar:]
+            if q["query_hash"] == query_hash
+        )
+
+        # If >10% of recent queries are identical, flag as suspicious
+        return similar_count > (max_similar * 0.1)
+
+    def _hash_input(self, query_input: np.ndarray) -> str:
+        """Hash input for similarity detection"""
+
+        # Quantize input to reduce sensitivity
+        quantized = np.round(query_input * 100).astype(np.int32)
+        return hashlib.sha256(quantized.tobytes()).hexdigest()[:16]
+
+class PredictionObfuscator:
+    """Obfuscate model predictions to prevent information leakage"""
+
+    def __init__(
+        self,
+        noise_scale: float = 0.1,
+        rounding_precision: int = 2,
+        top_k_only: int = None
+    ):
+        self.noise_scale = noise_scale
+        self.rounding_precision = rounding_precision
+        self.top_k_only = top_k_only
+
+    def obfuscate_probabilities(
+        self,
+        probabilities: np.ndarray
+    ) -> np.ndarray:
+        """Add noise and limit precision of probability outputs"""
+
+        # Add Laplace noise for differential privacy
+        noisy_probs = probabilities + np.random.laplace(
+            0, self.noise_scale, size=probabilities.shape
+        )
+
+        # Clip to valid probability range
+        noisy_probs = np.clip(noisy_probs, 0, 1)
+
+        # Renormalize
+        noisy_probs = noisy_probs / noisy_probs.sum()
+
+        # Round to limit precision
+        rounded_probs = np.round(noisy_probs, self.rounding_precision)
+
+        # Renormalize again after rounding
+        rounded_probs = rounded_probs / rounded_probs.sum()
+
+        return rounded_probs
+
+    def obfuscate_top_k(
+        self,
+        probabilities: np.ndarray,
+        k: int = None
+    ) -> np.ndarray:
+        """Return only top-k predictions to limit information leakage"""
+
+        if k is None:
+            k = self.top_k_only
+
+        if k is None:
+            return probabilities
+
+        # Get top-k indices
+        top_k_indices = np.argsort(probabilities)[-k:]
+
+        # Create sparse output
+        obfuscated = np.zeros_like(probabilities)
+        obfuscated[top_k_indices] = probabilities[top_k_indices]
+
+        # Renormalize
+        obfuscated = obfuscated / obfuscated.sum()
+
+        return obfuscated
+
+    def obfuscate_prediction(
+        self,
+        probabilities: np.ndarray,
+        return_class_only: bool = False
+    ) -> np.ndarray:
+        """Apply full obfuscation pipeline"""
+
+        # Add noise and round
+        obfuscated = self.obfuscate_probabilities(probabilities)
+
+        # Limit to top-k if specified
+        if self.top_k_only:
+            obfuscated = self.obfuscate_top_k(obfuscated, self.top_k_only)
+
+        # Return only predicted class (maximum information hiding)
+        if return_class_only:
+            predicted_class = np.argmax(obfuscated)
+            result = np.zeros_like(obfuscated)
+            result[predicted_class] = 1.0
+            return result
+
+        return obfuscated
+
+class ModelInversionDefense:
+    """Defend against model inversion attacks"""
+
+    def __init__(self, model: nn.Module):
+        self.model = model
+
+    def add_differential_privacy_noise(
+        self,
+        gradients: torch.Tensor,
+        epsilon: float = 1.0,
+        delta: float = 1e-5
+    ) -> torch.Tensor:
+        """Add DP noise to gradients during training"""
+
+        # Calculate noise scale for (epsilon, delta)-DP
+        sensitivity = 1.0  # L2 sensitivity of gradients
+        noise_scale = sensitivity * np.sqrt(2 * np.log(1.25 / delta)) / epsilon
+
+        # Add Gaussian noise
+        noise = torch.randn_like(gradients) * noise_scale
+        private_gradients = gradients + noise
+
+        return private_gradients
+
+    def gradient_clipping(
+        self,
+        gradients: torch.Tensor,
+        max_norm: float = 1.0
+    ) -> torch.Tensor:
+        """Clip gradients to bound sensitivity"""
+
+        grad_norm = gradients.norm(2)
+
+        if grad_norm > max_norm:
+            gradients = gradients * (max_norm / grad_norm)
+
+        return gradients
+
+    def prevent_overfitting_to_individuals(
+        self,
+        train_loader,
+        validation_loader,
+        optimizer,
+        max_epochs: int = 100,
+        early_stopping_patience: int = 10
+    ):
+        """Train with early stopping to prevent memorization"""
+
+        best_val_loss = float('inf')
+        patience_counter = 0
+
+        for epoch in range(max_epochs):
+            # Training
+            self.model.train()
+            train_loss = 0
+
+            for data, target in train_loader:
+                optimizer.zero_grad()
+                output = self.model(data)
+                loss = nn.CrossEntropyLoss()(output, target)
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
+
+            # Validation
+            self.model.eval()
+            val_loss = 0
+
+            with torch.no_grad():
+                for data, target in validation_loader:
+                    output = self.model(data)
+                    loss = nn.CrossEntropyLoss()(output, target)
+                    val_loss += loss.item()
+
+            val_loss /= len(validation_loader)
+
+            # Early stopping check
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                patience_counter = 0
+            else:
+                patience_counter += 1
+
+            if patience_counter >= early_stopping_patience:
+                print(f"Early stopping at epoch {epoch}")
+                break
+
+class SecureModelAPI:
+    """Secure API wrapper for ML model"""
+
+    def __init__(
+        self,
+        model: nn.Module,
+        enable_rate_limiting: bool = True,
+        enable_obfuscation: bool = True,
+        enable_monitoring: bool = True
+    ):
+        self.model = model
+        self.model.eval()
+
+        self.query_monitor = QueryMonitor() if enable_monitoring else None
+        self.obfuscator = PredictionObfuscator() if enable_obfuscation else None
+
+    def predict(
+        self,
+        user_id: str,
+        input_data: np.ndarray,
+        return_probabilities: bool = False
+    ) -> Dict:
+        """Secure prediction endpoint"""
+
+        # Monitor query
+        if self.query_monitor:
+            query_check = self.query_monitor.record_query(user_id, input_data)
+
+            if not query_check["allowed"]:
+                return {
+                    "success": False,
+                    "error": query_check["reason"],
+                    "details": query_check
+                }
+
+        # Convert to tensor
+        input_tensor = torch.FloatTensor(input_data).unsqueeze(0)
+
+        # Get prediction
+        with torch.no_grad():
+            output = self.model(input_tensor)
+            probabilities = torch.softmax(output, dim=1).numpy()[0]
+
+        # Obfuscate if enabled
+        if self.obfuscator:
+            probabilities = self.obfuscator.obfuscate_prediction(
+                probabilities,
+                return_class_only=not return_probabilities
+            )
+
+        # Prepare response
+        predicted_class = int(np.argmax(probabilities))
+
+        response = {
+            "success": True,
+            "prediction": predicted_class
+        }
+
+        if return_probabilities:
+            response["probabilities"] = probabilities.tolist()
+
+        return response
+
+# Example usage
+if __name__ == "__main__":
+    # Create dummy model
+    class DummyModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.fc = nn.Linear(10, 5)
+
+        def forward(self, x):
+            return self.fc(x)
+
+    model = DummyModel()
+
+    # Test secure API
+    api = SecureModelAPI(
+        model,
+        enable_rate_limiting=True,
+        enable_obfuscation=True,
+        enable_monitoring=True
+    )
+
+    # Simulate queries
+    user_id = "user123"
+
+    for i in range(5):
+        input_data = np.random.randn(10).astype(np.float32)
+        result = api.predict(user_id, input_data, return_probabilities=True)
+        print(f"Query {i+1}: {result}")
+
+    # Simulate attack (too many queries)
+    print("\nSimulating attack with many queries...")
+    for i in range(1000):
+        input_data = np.random.randn(10).astype(np.float32)
+        result = api.predict(user_id, input_data)
+
+        if not result["success"]:
+            print(f"Blocked at query {i+1}: {result['error']}")
+            break
+\end{lstlisting}
+
+\section{Secure Data Handling and Encryption}
+
+Protecting training data and model parameters is critical for ML security.
+
+\subsection{Data Encryption}
+
+\begin{lstlisting}[language=Python, caption=Secure Data Handling with Encryption]
+#!/usr/bin/env python3
+"""
+Secure Data Handling and Encryption for ML Systems
+Comprehensive data security implementation
+"""
+
+import numpy as np
+import pickle
+import json
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
+import base64
+import os
+from typing import Dict, Any
+import hashlib
+
+class DataEncryptor:
+    """Encrypt and decrypt ML data and models"""
+
+    def __init__(self, password: str = None):
+        if password:
+            self.key = self._derive_key_from_password(password)
+        else:
+            self.key = Fernet.generate_key()
+
+        self.cipher = Fernet(self.key)
+
+    def _derive_key_from_password(self, password: str) -> bytes:
+        """Derive encryption key from password"""
+
+        salt = b'ml_security_salt_2024'  # In production, use random salt
+
+        kdf = PBKDF2(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=100000,
+            backend=default_backend()
+        )
+
+        key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
+        return key
+
+    def encrypt_numpy_array(self, data: np.ndarray) -> bytes:
+        """Encrypt numpy array"""
+
+        # Serialize array
+        serialized = pickle.dumps(data)
+
+        # Encrypt
+        encrypted = self.cipher.encrypt(serialized)
+
+        return encrypted
+
+    def decrypt_numpy_array(self, encrypted_data: bytes) -> np.ndarray:
+        """Decrypt numpy array"""
+
+        # Decrypt
+        decrypted = self.cipher.decrypt(encrypted_data)
+
+        # Deserialize
+        data = pickle.loads(decrypted)
+
+        return data
+
+    def encrypt_model_weights(self, model_state_dict: Dict) -> bytes:
+        """Encrypt model weights"""
+
+        # Convert tensors to numpy for serialization
+        serializable_state = {}
+        for key, value in model_state_dict.items():
+            if hasattr(value, 'cpu'):
+                serializable_state[key] = value.cpu().numpy()
+            else:
+                serializable_state[key] = value
+
+        # Serialize and encrypt
+        serialized = pickle.dumps(serializable_state)
+        encrypted = self.cipher.encrypt(serialized)
+
+        return encrypted
+
+    def decrypt_model_weights(self, encrypted_weights: bytes) -> Dict:
+        """Decrypt model weights"""
+
+        # Decrypt and deserialize
+        decrypted = self.cipher.decrypt(encrypted_weights)
+        state_dict = pickle.loads(decrypted)
+
+        return state_dict
+
+    def save_encrypted_file(self, data: Any, filepath: str):
+        """Save encrypted data to file"""
+
+        serialized = pickle.dumps(data)
+        encrypted = self.cipher.encrypt(serialized)
+
+        with open(filepath, 'wb') as f:
+            f.write(encrypted)
+
+    def load_encrypted_file(self, filepath: str) -> Any:
+        """Load encrypted data from file"""
+
+        with open(filepath, 'rb') as f:
+            encrypted = f.read()
+
+        decrypted = self.cipher.decrypt(encrypted)
+        data = pickle.loads(decrypted)
+
+        return data
+
+class SecureDataStore:
+    """Secure storage for training data with access control"""
+
+    def __init__(self, encryption_key: bytes = None):
+        if encryption_key is None:
+            encryption_key = Fernet.generate_key()
+
+        self.encryptor = DataEncryptor()
+        self.encryptor.key = encryption_key
+        self.encryptor.cipher = Fernet(encryption_key)
+
+        self.access_log = []
+        self.authorized_users = set()
+
+    def add_authorized_user(self, user_id: str, role: str = "reader"):
+        """Add user with specific role"""
+
+        self.authorized_users.add((user_id, role))
+
+    def store_dataset(
+        self,
+        dataset_id: str,
+        data: np.ndarray,
+        metadata: Dict,
+        user_id: str
+    ) -> bool:
+        """Store encrypted dataset with metadata"""
+
+        # Check authorization
+        if not self._check_authorization(user_id, "writer"):
+            self._log_access(user_id, "store", dataset_id, success=False)
+            return False
+
+        # Encrypt data
+        encrypted_data = self.encryptor.encrypt_numpy_array(data)
+
+        # Store with metadata
+        storage_record = {
+            "dataset_id": dataset_id,
+            "encrypted_data": encrypted_data,
+            "metadata": metadata,
+            "created_by": user_id,
+            "checksum": self._calculate_checksum(data)
+        }
+
+        # In production, store to database or object storage
+        filename = f"encrypted_{dataset_id}.bin"
+        with open(filename, 'wb') as f:
+            pickle.dump(storage_record, f)
+
+        self._log_access(user_id, "store", dataset_id, success=True)
+
+        return True
+
+    def retrieve_dataset(
+        self,
+        dataset_id: str,
+        user_id: str
+    ) -> np.ndarray:
+        """Retrieve and decrypt dataset"""
+
+        # Check authorization
+        if not self._check_authorization(user_id, "reader"):
+            self._log_access(user_id, "retrieve", dataset_id, success=False)
+            raise PermissionError(f"User {user_id} not authorized")
+
+        # Load encrypted record
+        filename = f"encrypted_{dataset_id}.bin"
+
+        with open(filename, 'rb') as f:
+            storage_record = pickle.load(f)
+
+        # Decrypt data
+        data = self.encryptor.decrypt_numpy_array(
+            storage_record["encrypted_data"]
+        )
+
+        # Verify integrity
+        checksum = self._calculate_checksum(data)
+        if checksum != storage_record["checksum"]:
+            raise ValueError("Data integrity check failed!")
+
+        self._log_access(user_id, "retrieve", dataset_id, success=True)
+
+        return data
+
+    def _check_authorization(self, user_id: str, required_role: str) -> bool:
+        """Check if user has required role"""
+
+        for auth_user, role in self.authorized_users:
+            if auth_user == user_id:
+                if role == "admin":
+                    return True
+                if required_role == "reader" and role in ["reader", "writer", "admin"]:
+                    return True
+                if required_role == "writer" and role in ["writer", "admin"]:
+                    return True
+
+        return False
+
+    def _calculate_checksum(self, data: np.ndarray) -> str:
+        """Calculate checksum for integrity verification"""
+
+        return hashlib.sha256(data.tobytes()).hexdigest()
+
+    def _log_access(
+        self,
+        user_id: str,
+        action: str,
+        dataset_id: str,
+        success: bool
+    ):
+        """Log data access for audit"""
+
+        from datetime import datetime
+
+        self.access_log.append({
+            "timestamp": datetime.now().isoformat(),
+            "user_id": user_id,
+            "action": action,
+            "dataset_id": dataset_id,
+            "success": success
+        })
+
+    def get_access_log(self) -> list:
+        """Retrieve access log for audit"""
+        return self.access_log
+
+class HomomorphicEncryptionSimulator:
+    """Simplified homomorphic encryption for ML (educational)"""
+
+    def __init__(self, key_size: int = 2048):
+        self.key_size = key_size
+        self.public_key = None
+        self.private_key = None
+
+        # In production, use libraries like TenSEAL or PySEAL
+        # This is a simplified demonstration
+
+    def encrypt_value(self, value: float) -> bytes:
+        """Encrypt a single value (simplified)"""
+
+        # In real implementation, use proper HE scheme
+        # This is just a demonstration
+
+        scaled_value = int(value * 1000000)  # Scale for integer encoding
+        noise = np.random.randint(0, 1000)
+
+        # Simple additive encryption (NOT secure, just for demo)
+        encrypted = scaled_value + noise
+
+        return str(encrypted).encode()
+
+    def add_encrypted(self, enc1: bytes, enc2: bytes) -> bytes:
+        """Add two encrypted values"""
+
+        # Demonstrate homomorphic addition
+        val1 = int(enc1.decode())
+        val2 = int(enc2.decode())
+
+        result = val1 + val2
+
+        return str(result).encode()
+
+    def decrypt_value(self, encrypted: bytes) -> float:
+        """Decrypt value (simplified)"""
+
+        # Remove noise and scale back
+        encrypted_int = int(encrypted.decode())
+
+        # In real HE, proper decryption would occur
+        # This is simplified
+        decrypted = encrypted_int / 1000000
+
+        return decrypted
+
+# Example usage
+if __name__ == "__main__":
+    # Test data encryption
+    print("=== Data Encryption Test ===")
+    encryptor = DataEncryptor(password="secure_ml_password_2024")
+
+    # Encrypt numpy array
+    original_data = np.random.randn(100, 10)
+    encrypted_data = encryptor.encrypt_numpy_array(original_data)
+    print(f"Original shape: {original_data.shape}")
+    print(f"Encrypted size: {len(encrypted_data)} bytes")
+
+    # Decrypt and verify
+    decrypted_data = encryptor.decrypt_numpy_array(encrypted_data)
+    print(f"Decrypted shape: {decrypted_data.shape}")
+    print(f"Data matches: {np.allclose(original_data, decrypted_data)}")
+
+    # Test secure data store
+    print("\n=== Secure Data Store Test ===")
+    data_store = SecureDataStore()
+
+    # Add authorized users
+    data_store.add_authorized_user("alice", "writer")
+    data_store.add_authorized_user("bob", "reader")
+
+    # Store dataset
+    dataset = np.random.randn(1000, 50)
+    metadata = {
+        "name": "training_data_2024",
+        "features": 50,
+        "samples": 1000
+    }
+
+    success = data_store.store_dataset(
+        "dataset001",
+        dataset,
+        metadata,
+        "alice"
+    )
+    print(f"Storage successful: {success}")
+
+    # Retrieve dataset
+    retrieved_data = data_store.retrieve_dataset("dataset001", "bob")
+    print(f"Retrieved shape: {retrieved_data.shape}")
+    print(f"Data matches: {np.allclose(dataset, retrieved_data)}")
+
+    # Check access log
+    print(f"\nAccess log entries: {len(data_store.get_access_log())}")
+    for entry in data_store.get_access_log():
+        print(f"  {entry}")
+\end{lstlisting}
+
+\section{API Security for ML Endpoints}
+
+Securing ML APIs requires implementing authentication, authorization, rate limiting, input validation, and monitoring to prevent abuse and attacks.
+
+\subsection{Authentication and Authorization}
+
+\textbf{Security Requirements:}
+\begin{itemize}
+    \item \textbf{API Key Management:} Secure generation, rotation, and revocation
+    \item \textbf{Token-Based Auth:} JWT with expiration and refresh tokens
+    \item \textbf{OAuth 2.0:} Third-party authentication and authorization
+    \item \textbf{Role-Based Access:} Different permissions for users/services
+    \item \textbf{Rate Limiting:} Prevent abuse and DoS attacks
+\end{itemize}
+
+\begin{lstlisting}[language=Python, caption=Secure ML API Implementation]
+#!/usr/bin/env python3
+"""
+Secure ML API with Authentication, Rate Limiting, and Monitoring
+Production-ready API security implementation
+"""
+
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, validator
+import jwt
+import hashlib
+import time
+from datetime import datetime, timedelta
+from typing import Optional, Dict, List
+import secrets
+from collections import defaultdict
+import numpy as np
+import torch
+import torch.nn as nn
+from functools import wraps
+import re
+
+# Configuration
+SECRET_KEY = secrets.token_urlsafe(32)
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+app = FastAPI(title="Secure ML API")
+security = HTTPBearer()
+
+class User(BaseModel):
+    """User model"""
+    user_id: str
+    api_key: str
+    role: str
+    rate_limit: int = 100  # queries per hour
+
+class PredictionRequest(BaseModel):
+    """Prediction request with validation"""
+    features: List[float]
+    model_version: Optional[str] = "v1"
+
+    @validator('features')
+    def validate_features(cls, v):
+        """Validate input features"""
+        if len(v) != 10:  # Example: expecting 10 features
+            raise ValueError("Expected 10 features")
+
+        if any(not isinstance(x, (int, float)) for x in v):
+            raise ValueError("All features must be numeric")
+
+        if any(abs(x) > 1000 for x in v):
+            raise ValueError("Feature values must be in range [-1000, 1000]")
+
+        return v
+
+class APIKeyManager:
+    """Manage API keys and authentication"""
+
+    def __init__(self):
+        self.users: Dict[str, User] = {}
+        self.api_keys: Dict[str, str] = {}  # api_key -> user_id
+
+    def create_user(
+        self,
+        user_id: str,
+        role: str = "user",
+        rate_limit: int = 100
+    ) -> str:
+        """Create user and generate API key"""
+
+        # Generate secure API key
+        api_key = self._generate_api_key(user_id)
+
+        user = User(
+            user_id=user_id,
+            api_key=api_key,
+            role=role,
+            rate_limit=rate_limit
+        )
+
+        self.users[user_id] = user
+        self.api_keys[api_key] = user_id
+
+        return api_key
+
+    def _generate_api_key(self, user_id: str) -> str:
+        """Generate cryptographically secure API key"""
+
+        random_bytes = secrets.token_bytes(32)
+        timestamp = str(time.time()).encode()
+        user_bytes = user_id.encode()
+
+        combined = random_bytes + timestamp + user_bytes
+        api_key = hashlib.sha256(combined).hexdigest()
+
+        return f"sk_{api_key[:48]}"
+
+    def verify_api_key(self, api_key: str) -> Optional[User]:
+        """Verify API key and return user"""
+
+        user_id = self.api_keys.get(api_key)
+        if user_id:
+            return self.users.get(user_id)
+        return None
+
+    def revoke_api_key(self, api_key: str) -> bool:
+        """Revoke API key"""
+
+        user_id = self.api_keys.pop(api_key, None)
+        if user_id and user_id in self.users:
+            self.users[user_id].api_key = None
+            return True
+        return False
+
+class JWTManager:
+    """Manage JWT tokens"""
+
+    def __init__(self, secret_key: str, algorithm: str = "HS256"):
+        self.secret_key = secret_key
+        self.algorithm = algorithm
+
+    def create_access_token(
+        self,
+        user_id: str,
+        role: str,
+        expires_delta: timedelta = None
+    ) -> str:
+        """Create JWT access token"""
+
+        if expires_delta is None:
+            expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
+        expire = datetime.utcnow() + expires_delta
+
+        payload = {
+            "user_id": user_id,
+            "role": role,
+            "exp": expire,
+            "iat": datetime.utcnow()
+        }
+
+        token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+        return token
+
+    def verify_token(self, token: str) -> Dict:
+        """Verify and decode JWT token"""
+
+        try:
+            payload = jwt.decode(
+                token,
+                self.secret_key,
+                algorithms=[self.algorithm]
+            )
+            return payload
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Token expired")
+        except jwt.InvalidTokenError:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+class RateLimiter:
+    """Rate limiting with sliding window"""
+
+    def __init__(self):
+        self.requests: Dict[str, List[float]] = defaultdict(list)
+
+    def check_rate_limit(
+        self,
+        user_id: str,
+        limit: int,
+        window_seconds: int = 3600
+    ) -> bool:
+        """Check if user is within rate limit"""
+
+        current_time = time.time()
+        cutoff_time = current_time - window_seconds
+
+        # Remove old requests
+        self.requests[user_id] = [
+            timestamp for timestamp in self.requests[user_id]
+            if timestamp > cutoff_time
+        ]
+
+        # Check limit
+        if len(self.requests[user_id]) >= limit:
+            return False
+
+        # Record new request
+        self.requests[user_id].append(current_time)
+        return True
+
+    def get_remaining_quota(
+        self,
+        user_id: str,
+        limit: int,
+        window_seconds: int = 3600
+    ) -> int:
+        """Get remaining quota for user"""
+
+        current_time = time.time()
+        cutoff_time = current_time - window_seconds
+
+        # Count recent requests
+        recent_requests = sum(
+            1 for timestamp in self.requests[user_id]
+            if timestamp > cutoff_time
+        )
+
+        return max(0, limit - recent_requests)
+
+class InputValidator:
+    """Validate and sanitize ML API inputs"""
+
+    def __init__(self):
+        self.max_batch_size = 100
+        self.feature_ranges = {}
+
+    def validate_input(
+        self,
+        features: List[float],
+        expected_shape: tuple = None
+    ) -> bool:
+        """Validate input features"""
+
+        # Check for NaN or Inf
+        if any(np.isnan(x) or np.isinf(x) for x in features):
+            raise ValueError("Input contains NaN or Inf values")
+
+        # Check expected shape
+        if expected_shape and len(features) != expected_shape[0]:
+            raise ValueError(
+                f"Expected {expected_shape[0]} features, got {len(features)}"
+            )
+
+        # Check for injection patterns (SQL, XSS, etc.)
+        # In ML context, checking for unusual patterns
+        feature_array = np.array(features)
+
+        if np.std(feature_array) == 0:
+            raise ValueError("All features have same value (potential attack)")
+
+        return True
+
+    def sanitize_input(self, features: List[float]) -> List[float]:
+        """Sanitize input by clipping extreme values"""
+
+        feature_array = np.array(features)
+
+        # Clip to reasonable range
+        clipped = np.clip(feature_array, -1000, 1000)
+
+        return clipped.tolist()
+
+class APISecurityMonitor:
+    """Monitor API for security threats"""
+
+    def __init__(self):
+        self.failed_attempts: Dict[str, List[float]] = defaultdict(list)
+        self.suspicious_patterns: List[Dict] = []
+
+    def record_failed_auth(self, identifier: str):
+        """Record failed authentication attempt"""
+
+        self.failed_attempts[identifier].append(time.time())
+
+        # Check for brute force
+        recent_failures = [
+            t for t in self.failed_attempts[identifier]
+            if t > time.time() - 300  # Last 5 minutes
+        ]
+
+        if len(recent_failures) > 10:
+            self.suspicious_patterns.append({
+                "type": "brute_force",
+                "identifier": identifier,
+                "timestamp": datetime.now().isoformat(),
+                "attempts": len(recent_failures)
+            })
+
+    def detect_anomaly(
+        self,
+        user_id: str,
+        request_data: Dict
+    ) -> bool:
+        """Detect anomalous request patterns"""
+
+        # Example: detect if user suddenly changes request patterns
+        # In production, use more sophisticated anomaly detection
+
+        return False  # Placeholder
+
+    def get_security_report(self) -> Dict:
+        """Generate security report"""
+
+        return {
+            "total_failed_attempts": sum(
+                len(attempts) for attempts in self.failed_attempts.values()
+            ),
+            "suspicious_patterns": self.suspicious_patterns,
+            "users_with_failures": len(self.failed_attempts)
+        }
+
+# Global instances
+api_key_manager = APIKeyManager()
+jwt_manager = JWTManager(SECRET_KEY)
+rate_limiter = RateLimiter()
+input_validator = InputValidator()
+security_monitor = APISecurityMonitor()
+
+# Dummy ML model for demonstration
+class DummyMLModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(10, 3)
+
+    def forward(self, x):
+        return self.fc(x)
+
+ml_model = DummyMLModel()
+ml_model.eval()
+
+# Authentication dependency
+async def verify_api_key_auth(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> User:
+    """Verify API key from bearer token"""
+
+    api_key = credentials.credentials
+    user = api_key_manager.verify_api_key(api_key)
+
+    if not user:
+        security_monitor.record_failed_auth(api_key[:10])
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    return user
+
+async def verify_jwt_auth(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> Dict:
+    """Verify JWT token"""
+
+    token = credentials.credentials
+    payload = jwt_manager.verify_token(token)
+    return payload
+
+async def check_rate_limit_dependency(
+    user: User = Depends(verify_api_key_auth),
+    request: Request = None
+):
+    """Check rate limit for user"""
+
+    if not rate_limiter.check_rate_limit(user.user_id, user.rate_limit):
+        remaining = rate_limiter.get_remaining_quota(user.user_id, user.rate_limit)
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Quota remaining: {remaining}",
+            headers={"Retry-After": "3600"}
+        )
+
+    return user
+
+# API Endpoints
+@app.post("/auth/register")
+async def register_user(user_id: str, role: str = "user"):
+    """Register new user and get API key"""
+
+    api_key = api_key_manager.create_user(user_id, role)
+
+    return {
+        "user_id": user_id,
+        "api_key": api_key,
+        "message": "User created successfully"
+    }
+
+@app.post("/auth/token")
+async def get_token(user: User = Depends(verify_api_key_auth)):
+    """Get JWT token using API key"""
+
+    token = jwt_manager.create_access_token(user.user_id, user.role)
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    }
+
+@app.post("/predict")
+async def predict(
+    request: PredictionRequest,
+    user: User = Depends(check_rate_limit_dependency)
+):
+    """Secure prediction endpoint"""
+
+    try:
+        # Validate input
+        input_validator.validate_input(request.features, expected_shape=(10,))
+
+        # Sanitize input
+        sanitized_features = input_validator.sanitize_input(request.features)
+
+        # Convert to tensor
+        input_tensor = torch.FloatTensor([sanitized_features])
+
+        # Get prediction
+        with torch.no_grad():
+            output = ml_model(input_tensor)
+            probabilities = torch.softmax(output, dim=1).numpy()[0]
+
+        # Limit precision to prevent information leakage
+        probabilities = np.round(probabilities, 3)
+
+        return {
+            "prediction": int(np.argmax(probabilities)),
+            "probabilities": probabilities.tolist(),
+            "model_version": request.model_version,
+            "user_id": user.user_id
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/quota")
+async def get_quota(user: User = Depends(verify_api_key_auth)):
+    """Get remaining API quota"""
+
+    remaining = rate_limiter.get_remaining_quota(user.user_id, user.rate_limit)
+
+    return {
+        "user_id": user.user_id,
+        "rate_limit": user.rate_limit,
+        "remaining": remaining,
+        "window": "1 hour"
+    }
+
+@app.get("/security/report")
+async def security_report(user: User = Depends(verify_api_key_auth)):
+    """Get security report (admin only)"""
+
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    report = security_monitor.get_security_report()
+    return report
+
+# Example usage
+if __name__ == "__main__":
+    import uvicorn
+
+    # Create test users
+    admin_key = api_key_manager.create_user("admin", "admin", rate_limit=10000)
+    user_key = api_key_manager.create_user("user1", "user", rate_limit=100)
+
+    print(f"Admin API key: {admin_key}")
+    print(f"User API key: {user_key}")
+    print("\nStarting secure ML API server...")
+    print("Endpoints:")
+    print("  POST /auth/register - Register new user")
+    print("  POST /auth/token - Get JWT token")
+    print("  POST /predict - Make prediction")
+    print("  GET /quota - Check remaining quota")
+    print("  GET /security/report - Get security report (admin)")
+
+    # Run server
+    # uvicorn.run(app, host="0.0.0.0", port=8000)
+\end{lstlisting}
+
+\subsection{Input Validation and Sanitization}
+
+\textbf{Best Practices:}
+\begin{itemize}
+    \item Validate input shapes and data types
+    \item Check for NaN, Inf, and extreme values
+    \item Implement schema validation with Pydantic
+    \item Sanitize inputs to prevent injection attacks
+    \item Set reasonable bounds on all numeric inputs
+    \item Limit batch sizes to prevent resource exhaustion
+\end{itemize}
+
+\section{Privacy-Preserving ML Techniques}
+
+Privacy-preserving techniques allow training and inference on sensitive data while protecting individual privacy.
+
+\subsection{Differential Privacy}
+
+Differential privacy adds calibrated noise to ensure individual records cannot be identified in datasets or model outputs.
+
+\begin{lstlisting}[language=Python, caption=Differential Privacy Implementation]
+#!/usr/bin/env python3
+"""
+Differential Privacy for ML Systems
+Implementation of DP-SGD and privacy-preserving inference
+"""
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from typing import Tuple, List
+from dataclasses import dataclass
+
+@dataclass
+class PrivacyBudget:
+    """Track privacy budget (epsilon, delta)"""
+    epsilon: float
+    delta: float
+    spent_epsilon: float = 0.0
+
+    def has_budget(self) -> bool:
+        """Check if privacy budget remains"""
+        return self.spent_epsilon < self.epsilon
+
+    def spend(self, amount: float):
+        """Spend privacy budget"""
+        self.spent_epsilon += amount
+
+    def remaining(self) -> float:
+        """Get remaining budget"""
+        return max(0, self.epsilon - self.spent_epsilon)
+
+class DifferentiallyPrivateOptimizer:
+    """DP-SGD optimizer with gradient clipping and noise"""
+
+    def __init__(
+        self,
+        optimizer: optim.Optimizer,
+        l2_norm_clip: float = 1.0,
+        noise_multiplier: float = 1.1,
+        batch_size: int = 256,
+        epsilon: float = 1.0,
+        delta: float = 1e-5
+    ):
+        self.optimizer = optimizer
+        self.l2_norm_clip = l2_norm_clip
+        self.noise_multiplier = noise_multiplier
+        self.batch_size = batch_size
+
+        self.privacy_budget = PrivacyBudget(epsilon, delta)
+        self.steps = 0
+
+    def clip_gradients(self, parameters):
+        """Clip gradients per-sample to bound sensitivity"""
+
+        # Compute gradient norm
+        total_norm = 0.0
+        for p in parameters:
+            if p.grad is not None:
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+
+        total_norm = total_norm ** 0.5
+
+        # Clip if necessary
+        clip_coef = self.l2_norm_clip / (total_norm + 1e-6)
+        if clip_coef < 1:
+            for p in parameters:
+                if p.grad is not None:
+                    p.grad.data.mul_(clip_coef)
+
+        return total_norm
+
+    def add_noise(self, parameters):
+        """Add Gaussian noise to gradients"""
+
+        noise_scale = self.noise_multiplier * self.l2_norm_clip
+
+        for p in parameters:
+            if p.grad is not None:
+                noise = torch.randn_like(p.grad) * noise_scale
+                p.grad.data.add_(noise)
+
+    def step(self, parameters):
+        """Perform DP-SGD step"""
+
+        # Clip gradients
+        grad_norm = self.clip_gradients(parameters)
+
+        # Add noise
+        self.add_noise(parameters)
+
+        # Update parameters
+        self.optimizer.step()
+
+        # Update privacy accounting
+        self.steps += 1
+        epsilon_spent = self._compute_epsilon_spent()
+        self.privacy_budget.spent_epsilon = epsilon_spent
+
+        return grad_norm
+
+    def _compute_epsilon_spent(self) -> float:
+        """Compute spent privacy budget using moments accountant"""
+
+        # Simplified calculation (use opacus or tensorflow-privacy for accurate accounting)
+        q = self.batch_size / 60000  # sampling probability (assuming MNIST-sized dataset)
+        sigma = self.noise_multiplier
+
+        # Strong composition theorem (simplified)
+        epsilon = q * self.steps * (1 / (2 * sigma ** 2))
+
+        return epsilon
+
+    def get_privacy_spent(self) -> Tuple[float, float]:
+        """Get spent privacy budget"""
+        return (self.privacy_budget.spent_epsilon, self.privacy_budget.delta)
+
+class PrivateAggregator:
+    """Aggregate statistics with differential privacy"""
+
+    def __init__(self, epsilon: float = 1.0):
+        self.epsilon = epsilon
+
+    def private_mean(
+        self,
+        data: np.ndarray,
+        bounds: Tuple[float, float] = (0, 1)
+    ) -> float:
+        """Compute differentially private mean"""
+
+        lower, upper = bounds
+        sensitivity = (upper - lower) / len(data)
+
+        # Clip data to bounds
+        clipped_data = np.clip(data, lower, upper)
+
+        # Compute mean
+        true_mean = np.mean(clipped_data)
+
+        # Add Laplace noise
+        scale = sensitivity / self.epsilon
+        noise = np.random.laplace(0, scale)
+
+        private_mean = true_mean + noise
+
+        return float(private_mean)
+
+    def private_count(
+        self,
+        condition: np.ndarray
+    ) -> int:
+        """Count with differential privacy"""
+
+        true_count = np.sum(condition)
+
+        # Sensitivity is 1 for counting
+        scale = 1.0 / self.epsilon
+        noise = np.random.laplace(0, scale)
+
+        private_count = true_count + noise
+
+        # Round to integer
+        return int(max(0, round(private_count)))
+
+    def private_histogram(
+        self,
+        data: np.ndarray,
+        bins: int = 10,
+        range: Tuple[float, float] = None
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Compute differentially private histogram"""
+
+        # Compute true histogram
+        counts, bin_edges = np.histogram(data, bins=bins, range=range)
+
+        # Add Laplace noise to each bin
+        # Sensitivity is 1 (one person can affect one bin)
+        scale = 1.0 / self.epsilon
+
+        private_counts = counts + np.random.laplace(0, scale, size=len(counts))
+        private_counts = np.maximum(0, private_counts)  # No negative counts
+
+        return private_counts, bin_edges
+
+class FederatedLearningCoordinator:
+    """Coordinate federated learning with privacy"""
+
+    def __init__(
+        self,
+        model: nn.Module,
+        num_clients: int,
+        privacy_epsilon: float = 10.0
+    ):
+        self.global_model = model
+        self.num_clients = num_clients
+        self.privacy_epsilon = privacy_epsilon
+        self.round = 0
+
+    def aggregate_models(
+        self,
+        client_models: List[nn.Module],
+        client_weights: List[int] = None
+    ) -> nn.Module:
+        """Aggregate client models using federated averaging"""
+
+        if client_weights is None:
+            client_weights = [1.0] * len(client_models)
+
+        # Normalize weights
+        total_weight = sum(client_weights)
+        client_weights = [w / total_weight for w in client_weights]
+
+        # Average model parameters
+        global_dict = self.global_model.state_dict()
+
+        for key in global_dict.keys():
+            # Weighted average of client parameters
+            global_dict[key] = sum(
+                client_models[i].state_dict()[key] * client_weights[i]
+                for i in range(len(client_models))
+            )
+
+            # Add noise for privacy
+            if 'weight' in key or 'bias' in key:
+                noise_scale = 0.01 * (self.num_clients / self.privacy_epsilon)
+                noise = torch.randn_like(global_dict[key]) * noise_scale
+                global_dict[key] += noise
+
+        # Update global model
+        self.global_model.load_state_dict(global_dict)
+        self.round += 1
+
+        return self.global_model
+
+    def secure_aggregation(
+        self,
+        client_updates: List[Dict],
+        use_secure_sum: bool = True
+    ) -> Dict:
+        """Secure aggregation without revealing individual updates"""
+
+        # In production, implement actual secure aggregation protocol
+        # This is a simplified version
+
+        aggregated_update = {}
+
+        for key in client_updates[0].keys():
+            # Sum all client updates
+            total_update = sum(
+                update[key] for update in client_updates
+            )
+
+            # Add masking noise (cancelled out across clients in real protocol)
+            if use_secure_sum:
+                # Placeholder: real implementation uses secret sharing
+                mask_noise = torch.randn_like(total_update) * 0.001
+                aggregated_update[key] = total_update + mask_noise
+            else:
+                aggregated_update[key] = total_update
+
+        return aggregated_update
+
+# Example usage
+if __name__ == "__main__":
+    print("=== Differential Privacy Test ===")
+
+    # Test private aggregation
+    aggregator = PrivateAggregator(epsilon=1.0)
+
+    # Simulate salary data
+    salaries = np.random.normal(50000, 15000, 1000)
+
+    true_mean = np.mean(salaries)
+    private_mean = aggregator.private_mean(salaries, bounds=(0, 200000))
+
+    print(f"True mean salary: ${true_mean:.2f}")
+    print(f"Private mean salary: ${private_mean:.2f}")
+    print(f"Error: ${abs(true_mean - private_mean):.2f}")
+
+    # Test private counting
+    high_earners = salaries > 60000
+    true_count = np.sum(high_earners)
+    private_count = aggregator.private_count(high_earners)
+
+    print(f"\nTrue count of high earners: {true_count}")
+    print(f"Private count of high earners: {private_count}")
+
+    # Test DP-SGD
+    print("\n=== DP-SGD Test ===")
+
+    model = nn.Linear(10, 5)
+    optimizer = optim.SGD(model.parameters(), lr=0.01)
+
+    dp_optimizer = DifferentiallyPrivateOptimizer(
+        optimizer,
+        l2_norm_clip=1.0,
+        noise_multiplier=1.1,
+        batch_size=32,
+        epsilon=1.0,
+        delta=1e-5
+    )
+
+    # Simulate training step
+    dummy_input = torch.randn(32, 10)
+    dummy_target = torch.randint(0, 5, (32,))
+
+    output = model(dummy_input)
+    loss = nn.CrossEntropyLoss()(output, dummy_target)
+
+    optimizer.zero_grad()
+    loss.backward()
+
+    dp_optimizer.step(model.parameters())
+
+    epsilon_spent, delta = dp_optimizer.get_privacy_spent()
+    print(f"Privacy spent: (ε={epsilon_spent:.4f}, δ={delta})")
+    print(f"Privacy remaining: ε={dp_optimizer.privacy_budget.remaining():.4f}")
+
+    # Test federated learning
+    print("\n=== Federated Learning Test ===")
+
+    global_model = nn.Linear(10, 5)
+    coordinator = FederatedLearningCoordinator(
+        global_model,
+        num_clients=10,
+        privacy_epsilon=10.0
+    )
+
+    # Simulate client models
+    client_models = [nn.Linear(10, 5) for _ in range(3)]
+    client_weights = [100, 150, 200]  # Number of samples per client
+
+    updated_global = coordinator.aggregate_models(client_models, client_weights)
+    print(f"Federated learning round {coordinator.round} completed")
+\end{lstlisting}
+
+\subsection{Federated Learning}
+
+Federated learning trains models on decentralized data without centralizing it, preserving privacy by keeping data on local devices.
+
+\textbf{Key Principles:}
+\begin{itemize}
+    \item \textbf{Local Training:} Models train on local data
+    \item \textbf{Secure Aggregation:} Combine updates without revealing individual contributions
+    \item \textbf{Differential Privacy:} Add noise to updates
+    \item \textbf{Client Selection:} Random sampling of participants
+    \item \textbf{Communication Efficiency:} Compress updates to reduce bandwidth
+\end{itemize}
+
+\section{Security Scanning and Vulnerability Assessment}
+
+Regular security scanning identifies vulnerabilities before attackers exploit them.
+
+\subsection{ML Security Scanner}
+
+\begin{lstlisting}[language=Python, caption=ML Security Vulnerability Scanner]
+#!/usr/bin/env python3
+"""
+ML Security Scanner
+Automated security assessment for ML systems
+"""
+
+import ast
+import os
+import re
+from typing import List, Dict, Set
+from dataclasses import dataclass
+from pathlib import Path
+import pickle
+import subprocess
+
+@dataclass
+class SecurityFinding:
+    """Security finding from scan"""
+    severity: str  # critical, high, medium, low
+    category: str
+    description: str
+    location: str
+    recommendation: str
+    cwe_id: str = None
+
+class MLSecurityScanner:
+    """Scan ML systems for security vulnerabilities"""
+
+    def __init__(self, project_path: str):
+        self.project_path = Path(project_path)
+        self.findings: List[SecurityFinding] = []
+
+    def scan_all(self) -> List[SecurityFinding]:
+        """Run all security scans"""
+
+        self.scan_pickle_usage()
+        self.scan_hardcoded_secrets()
+        self.scan_sql_injection()
+        self.scan_unsafe_deserialization()
+        self.scan_insecure_random()
+        self.scan_model_files()
+        self.scan_dependency_vulnerabilities()
+
+        return self.findings
+
+    def scan_pickle_usage(self):
+        """Detect unsafe pickle usage"""
+
+        for py_file in self.project_path.rglob("*.py"):
+            try:
+                with open(py_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # Check for pickle.load without validation
+                if re.search(r'pickle\.load\(', content):
+                    self.findings.append(SecurityFinding(
+                        severity="high",
+                        category="Insecure Deserialization",
+                        description="Unsafe pickle.load() usage detected",
+                        location=str(py_file),
+                        recommendation="Use safe serialization (JSON, protobuf) or validate pickle data source",
+                        cwe_id="CWE-502"
+                    ))
+
+                # Check for joblib.load (also uses pickle)
+                if re.search(r'joblib\.load\(', content):
+                    self.findings.append(SecurityFinding(
+                        severity="medium",
+                        category="Insecure Deserialization",
+                        description="joblib.load() uses pickle internally",
+                        location=str(py_file),
+                        recommendation="Validate source before loading joblib files",
+                        cwe_id="CWE-502"
+                    ))
+
+            except Exception as e:
+                pass
+
+    def scan_hardcoded_secrets(self):
+        """Detect hardcoded secrets and credentials"""
+
+        secret_patterns = [
+            (r'api[_-]?key\s*=\s*["\']([a-zA-Z0-9]{32,})["\']', "API Key"),
+            (r'password\s*=\s*["\'](.+)["\']', "Password"),
+            (r'secret\s*=\s*["\'](.+)["\']', "Secret"),
+            (r'token\s*=\s*["\']([a-zA-Z0-9]{20,})["\']', "Token"),
+            (r'aws_secret_access_key\s*=\s*["\'](.+)["\']', "AWS Secret"),
+        ]
+
+        for py_file in self.project_path.rglob("*.py"):
+            try:
+                with open(py_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                for pattern, secret_type in secret_patterns:
+                    matches = re.finditer(pattern, content, re.IGNORECASE)
+                    for match in matches:
+                        self.findings.append(SecurityFinding(
+                            severity="critical",
+                            category="Hardcoded Secrets",
+                            description=f"Hardcoded {secret_type} detected",
+                            location=str(py_file),
+                            recommendation="Use environment variables or secret management service",
+                            cwe_id="CWE-798"
+                        ))
+
+            except Exception:
+                pass
+
+    def scan_sql_injection(self):
+        """Detect potential SQL injection vulnerabilities"""
+
+        sql_patterns = [
+            r'execute\([f"\'].*\{.*\}',  # String interpolation in SQL
+            r'\.format\(.*\).*execute',   # .format() in SQL
+            r'%\s*%.*execute',            # % formatting in SQL
+        ]
+
+        for py_file in self.project_path.rglob("*.py"):
+            try:
+                with open(py_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                for pattern in sql_patterns:
+                    if re.search(pattern, content):
+                        self.findings.append(SecurityFinding(
+                            severity="high",
+                            category="SQL Injection",
+                            description="Potential SQL injection via string interpolation",
+                            location=str(py_file),
+                            recommendation="Use parameterized queries or ORM",
+                            cwe_id="CWE-89"
+                        ))
+                        break
+
+            except Exception:
+                pass
+
+    def scan_unsafe_deserialization(self):
+        """Detect unsafe deserialization patterns"""
+
+        unsafe_patterns = [
+            r'eval\(',
+            r'exec\(',
+            r'__import__\(',
+            r'compile\(',
+        ]
+
+        for py_file in self.project_path.rglob("*.py"):
+            try:
+                with open(py_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                for pattern in unsafe_patterns:
+                    if re.search(pattern, content):
+                        self.findings.append(SecurityFinding(
+                            severity="critical",
+                            category="Code Injection",
+                            description=f"Unsafe function detected: {pattern}",
+                            location=str(py_file),
+                            recommendation="Avoid dynamic code execution with untrusted input",
+                            cwe_id="CWE-94"
+                        ))
+
+            except Exception:
+                pass
+
+    def scan_insecure_random(self):
+        """Detect insecure random number generation"""
+
+        for py_file in self.project_path.rglob("*.py"):
+            try:
+                with open(py_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                # Check for random.random() in security contexts
+                if re.search(r'import random', content):
+                    if any(keyword in content.lower() for keyword in
+                           ['password', 'token', 'key', 'secret', 'auth']):
+                        self.findings.append(SecurityFinding(
+                            severity="medium",
+                            category="Weak Cryptography",
+                            description="Using insecure random for security purposes",
+                            location=str(py_file),
+                            recommendation="Use secrets module for cryptographic randomness",
+                            cwe_id="CWE-330"
+                        ))
+
+            except Exception:
+                pass
+
+    def scan_model_files(self):
+        """Scan model files for security issues"""
+
+        # Check for unencrypted model files
+        model_extensions = ['.pkl', '.h5', '.pt', '.pth', '.onnx', '.pb']
+
+        for ext in model_extensions:
+            for model_file in self.project_path.rglob(f"*{ext}"):
+                # Check if file is world-readable (on Unix systems)
+                try:
+                    if os.path.exists(model_file):
+                        permissions = oct(os.stat(model_file).st_mode)[-3:]
+                        if permissions[-1] in ['4', '5', '6', '7']:  # World-readable
+                            self.findings.append(SecurityFinding(
+                                severity="medium",
+                                category="Insecure File Permissions",
+                                description="Model file is world-readable",
+                                location=str(model_file),
+                                recommendation="Restrict file permissions (chmod 600)",
+                                cwe_id="CWE-732"
+                            ))
+                except Exception:
+                    pass
+
+    def scan_dependency_vulnerabilities(self):
+        """Check for vulnerable dependencies"""
+
+        requirements_file = self.project_path / "requirements.txt"
+
+        if requirements_file.exists():
+            try:
+                # Run safety check (if installed)
+                result = subprocess.run(
+                    ["safety", "check", "-r", str(requirements_file)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
+                if "vulnerabilities found" in result.stdout.lower():
+                    self.findings.append(SecurityFinding(
+                        severity="high",
+                        category="Vulnerable Dependencies",
+                        description="Vulnerable packages detected in requirements.txt",
+                        location=str(requirements_file),
+                        recommendation="Update vulnerable packages",
+                        cwe_id="CWE-1035"
+                    ))
+
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                # Safety not installed or timeout
+                pass
+
+    def generate_report(self) -> str:
+        """Generate security report"""
+
+        # Group findings by severity
+        by_severity = {'critical': [], 'high': [], 'medium': [], 'low': []}
+
+        for finding in self.findings:
+            by_severity[finding.severity].append(finding)
+
+        report = "=" * 60 + "\n"
+        report += "ML SECURITY SCAN REPORT\n"
+        report += "=" * 60 + "\n\n"
+
+        report += f"Total Findings: {len(self.findings)}\n"
+        report += f"  Critical: {len(by_severity['critical'])}\n"
+        report += f"  High: {len(by_severity['high'])}\n"
+        report += f"  Medium: {len(by_severity['medium'])}\n"
+        report += f"  Low: {len(by_severity['low'])}\n\n"
+
+        for severity in ['critical', 'high', 'medium', 'low']:
+            if by_severity[severity]:
+                report += f"\n{severity.upper()} SEVERITY FINDINGS:\n"
+                report += "-" * 60 + "\n"
+
+                for i, finding in enumerate(by_severity[severity], 1):
+                    report += f"\n{i}. {finding.category}\n"
+                    report += f"   Description: {finding.description}\n"
+                    report += f"   Location: {finding.location}\n"
+                    report += f"   Recommendation: {finding.recommendation}\n"
+                    if finding.cwe_id:
+                        report += f"   CWE: {finding.cwe_id}\n"
+
+        return report
+
+class PenetrationTester:
+    """Automated penetration testing for ML APIs"""
+
+    def __init__(self, api_url: str):
+        self.api_url = api_url
+        self.findings: List[SecurityFinding] = []
+
+    def test_all(self) -> List[SecurityFinding]:
+        """Run all penetration tests"""
+
+        self.test_authentication()
+        self.test_rate_limiting()
+        self.test_input_validation()
+        self.test_injection_attacks()
+
+        return self.findings
+
+    def test_authentication(self):
+        """Test authentication bypass"""
+
+        # Test without credentials
+        # Test with invalid credentials
+        # Test with expired tokens
+        # Test session fixation
+
+        pass  # Placeholder
+
+    def test_rate_limiting(self):
+        """Test rate limiting effectiveness"""
+
+        # Send burst of requests
+        # Check if rate limiting is enforced
+
+        pass  # Placeholder
+
+    def test_input_validation(self):
+        """Test input validation"""
+
+        test_inputs = [
+            "' OR '1'='1",  # SQL injection
+            "<script>alert('xss')</script>",  # XSS
+            "../../../etc/passwd",  # Path traversal
+            "A" * 10000,  # Buffer overflow attempt
+            float('inf'),  # Infinity
+            float('nan'),  # NaN
+        ]
+
+        # Test each malicious input
+        pass  # Placeholder
+
+    def test_injection_attacks(self):
+        """Test for injection vulnerabilities"""
+
+        pass  # Placeholder
+
+# Example usage
+if __name__ == "__main__":
+    # Create scanner
+    scanner = MLSecurityScanner("./")
+
+    print("Running security scan...")
+    findings = scanner.scan_all()
+
+    # Generate report
+    report = scanner.generate_report()
+    print(report)
+
+    # Save report
+    with open("security_report.txt", "w") as f:
+        f.write(report)
+
+    print(f"\nReport saved to security_report.txt")
+\end{lstlisting}
+
+\subsection{Security Best Practices}
+
+\textbf{Defense-in-Depth Strategy:}
+\begin{enumerate}
+    \item \textbf{Network Security:} Firewalls, VPNs, network segmentation
+    \item \textbf{Application Security:} Input validation, authentication, authorization
+    \item \textbf{Data Security:} Encryption at rest and in transit
+    \item \textbf{Model Security:} Access controls, obfuscation, monitoring
+    \item \textbf{Infrastructure Security:} Hardened containers, least privilege
+    \item \textbf{Monitoring:} Continuous logging, anomaly detection, alerting
+\end{enumerate}
+
+\section{Implementation Exercises}
+
+\subsection{Exercise 1: Adversarial Attack Detection System}
+
+\textbf{Objective:} Build a comprehensive adversarial attack detection and defense system for image classification.
+
+\textbf{Requirements:}
+\begin{enumerate}
+    \item Train a CNN classifier on MNIST or CIFAR-10
+    \item Implement FGSM and PGD attack generators
+    \item Create ensemble detection with 3+ methods:
+    \begin{itemize}
+        \item Confidence-based detection
+        \item Input gradient magnitude
+        \item Feature squeezing
+        \item Statistical outlier detection
+    \end{itemize}
+    \item Implement adversarial training defense
+    \item Evaluate detection accuracy and false positive rate
+    \item Test with different epsilon values (0.1, 0.2, 0.3)
+\end{enumerate}
+
+\textbf{Evaluation Metrics:}
+\begin{itemize}
+    \item Clean accuracy vs adversarial accuracy
+    \item Detection true positive rate at 5\% false positive rate
+    \item Robustness gain from adversarial training
+    \item Computational overhead of detection methods
+\end{itemize}
+
+\textbf{Bonus Challenges:}
+\begin{itemize}
+    \item Implement C\&W attack
+    \item Add defensive distillation
+    \item Create visualization of perturbations
+    \item Compare white-box vs black-box attack success rates
+\end{itemize}
+
+\subsection{Exercise 2: Secure ML API with Rate Limiting}
+
+\textbf{Objective:} Build production-ready ML API with comprehensive security controls.
+
+\textbf{Requirements:}
+\begin{enumerate}
+    \item Implement FastAPI with model serving
+    \item Add multi-tier authentication:
+    \begin{itemize}
+        \item API key generation and validation
+        \item JWT token support with refresh
+        \item Role-based access control (user, premium, admin)
+    \end{itemize}
+    \item Implement sliding window rate limiting per user
+    \item Add input validation and sanitization
+    \item Create security monitoring dashboard
+    \item Log all requests with audit trail
+    \item Implement request/response encryption
+\end{enumerate}
+
+\textbf{Test Cases:}
+\begin{itemize}
+    \item Verify rate limiting blocks excess requests
+    \item Test authentication bypass attempts
+    \item Validate input sanitization with malicious inputs
+    \item Measure API response time overhead
+    \item Simulate coordinated attack from multiple IPs
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Dockerized API service
+    \item API documentation with security notes
+    \item Load testing results (1000+ RPS)
+    \item Security scan report with no critical findings
+\end{itemize}
+
+\subsection{Exercise 3: Differential Privacy for Model Training}
+
+\textbf{Objective:} Implement DP-SGD to train privacy-preserving classification model.
+
+\textbf{Requirements:}
+\begin{enumerate}
+    \item Implement DP-SGD optimizer from scratch
+    \item Train on sensitive dataset (medical, financial simulation)
+    \item Track privacy budget (epsilon, delta) across epochs
+    \item Compare performance:
+    \begin{itemize}
+        \item Standard SGD vs DP-SGD
+        \item Different noise multipliers (0.5, 1.0, 1.5, 2.0)
+        \item Various clipping norms (0.5, 1.0, 2.0)
+    \end{itemize}
+    \item Implement privacy accounting with moments accountant
+    \item Create privacy/utility tradeoff curves
+    \item Test membership inference attack resistance
+\end{enumerate}
+
+\textbf{Analysis Tasks:}
+\begin{itemize}
+    \item Plot accuracy vs epsilon curves
+    \item Measure training time overhead
+    \item Evaluate membership inference attack success rate
+    \item Document privacy guarantees achieved
+\end{itemize}
+
+\textbf{Extensions:}
+\begin{itemize}
+    \item Implement PATE (Private Aggregation of Teacher Ensembles)
+    \item Add differential privacy to inference
+    \item Compare with federated learning + DP
+\end{itemize}
+
+\subsection{Exercise 4: Model Stealing Defense System}
+
+\textbf{Objective:} Protect ML models from extraction attacks with query monitoring.
+
+\textbf{Requirements:}
+\begin{enumerate}
+    \item Deploy target model as API
+    \item Implement query monitoring:
+    \begin{itemize}
+        \item Track query patterns per user
+        \item Detect similar/duplicate queries
+        \item Identify systematic exploration patterns
+        \item Flag anomalous query volumes
+    \end{itemize}
+    \item Add prediction obfuscation:
+    \begin{itemize}
+        \item Confidence score rounding
+        \item Selective top-k predictions
+        \item Calibrated noise injection
+    \end{itemize}
+    \item Create watermarking for model ownership verification
+    \item Implement query budget enforcement
+\end{enumerate}
+
+\textbf{Attack Simulation:}
+\begin{itemize}
+    \item Implement model extraction attack (equation-solving, surrogate training)
+    \item Measure extraction accuracy vs query budget
+    \item Test detection system against various attack strategies
+    \item Evaluate impact of defenses on extraction success
+\end{itemize}
+
+\textbf{Metrics:}
+\begin{itemize}
+    \item Surrogate model accuracy (should be <70\% of original)
+    \item Detection rate of extraction attempts (>90\%)
+    \item False positive rate on legitimate users (<5\%)
+    \item Service quality degradation (<10\% accuracy loss)
+\end{itemize}
+
+\subsection{Exercise 5: Federated Learning with Secure Aggregation}
+
+\textbf{Objective:} Implement privacy-preserving federated learning system.
+
+\textbf{Requirements:}
+\begin{enumerate}
+    \item Create federated learning coordinator
+    \item Simulate 10+ client devices with local datasets
+    \item Implement FedAvg aggregation algorithm
+    \item Add differential privacy to client updates
+    \item Implement secure aggregation (simplified):
+    \begin{itemize}
+        \item Mask client updates with random noise
+        \item Aggregate without revealing individual contributions
+        \item Verify aggregation correctness
+    \end{itemize}
+    \item Handle client dropouts gracefully
+    \item Optimize communication efficiency (compression)
+\end{enumerate}
+
+\textbf{Experiments:}
+\begin{itemize}
+    \item Non-IID data distribution across clients
+    \item Compare centralized vs federated accuracy
+    \item Measure communication rounds to convergence
+    \item Test with 10\%, 50\% client participation
+    \item Evaluate privacy vs accuracy tradeoffs
+\end{itemize}
+
+\textbf{Advanced Features:}
+\begin{itemize}
+    \item Implement personalized federated learning
+    \item Add Byzantine-robust aggregation
+    \item Test against gradient inversion attacks
+    \item Implement adaptive privacy budgets
+\end{itemize}
+
+\subsection{Exercise 6: ML Security Audit and Penetration Testing}
+
+\textbf{Objective:} Perform comprehensive security audit of ML system.
+
+\textbf{Requirements:}
+\begin{enumerate}
+    \item Implement automated security scanner:
+    \begin{itemize}
+        \item Scan for insecure pickle usage
+        \item Detect hardcoded credentials
+        \item Find SQL injection vulnerabilities
+        \item Check for unsafe deserialization
+        \item Identify weak cryptography
+        \item Scan dependency vulnerabilities
+    \end{itemize}
+    \item Perform penetration testing:
+    \begin{itemize}
+        \item Authentication bypass attempts
+        \item Rate limiting evasion
+        \item Input injection attacks
+        \item Model extraction attempts
+        \item Adversarial example generation
+    \end{itemize}
+    \item Generate detailed security report
+    \item Implement fixes for all critical/high findings
+    \item Create security hardening checklist
+\end{enumerate}
+
+\textbf{Testing Scope:}
+\begin{itemize}
+    \item Code security review (SAST)
+    \item API penetration testing
+    \item Model robustness testing
+    \item Data privacy assessment
+    \item Infrastructure security audit
+\end{itemize}
+
+\textbf{Deliverables:}
+\begin{itemize}
+    \item Security scan report (categorized by severity)
+    \item Penetration test results with PoC exploits
+    \item Remediation plan with priority rankings
+    \item Before/after security metrics comparison
+    \item Security best practices documentation
+\end{itemize}
+
+\subsection{Exercise Evaluation Criteria}
+
+All exercises will be evaluated on:
+
+\begin{enumerate}
+    \item \textbf{Correctness (30\%):} Implementation works as specified
+    \item \textbf{Security (25\%):} Proper security controls and best practices
+    \item \textbf{Performance (15\%):} Efficient implementation with minimal overhead
+    \item \textbf{Testing (15\%):} Comprehensive test coverage and validation
+    \item \textbf{Documentation (10\%):} Clear explanations and usage examples
+    \item \textbf{Code Quality (5\%):} Clean, maintainable, well-structured code
+\end{enumerate}
+
+\section{Conclusion}
+
+Security is paramount in production ML systems. This chapter covered the ML-specific threat landscape and defense mechanisms across multiple layers.
+
+\textbf{Key Takeaways:}
+
+\begin{enumerate}
+    \item \textbf{ML Security is Unique:} Traditional security measures are necessary but insufficient. ML systems face adversarial attacks, model extraction, privacy leakage, and data poisoning that require specialized defenses.
+
+    \item \textbf{Defense in Depth:} No single security measure is perfect. Layer multiple defenses: adversarial training, input validation, rate limiting, encryption, monitoring, and access controls.
+
+    \item \textbf{Privacy Preservation:} Differential privacy and federated learning enable learning from sensitive data while providing mathematical privacy guarantees. The privacy-utility tradeoff must be carefully managed.
+
+    \item \textbf{API Security Critical:} ML APIs are attack surfaces requiring authentication, authorization, rate limiting, input sanitization, and continuous monitoring.
+
+    \item \textbf{Proactive Security:} Regular security scanning, vulnerability assessments, and penetration testing identify issues before attackers exploit them.
+
+    \item \textbf{Security Overhead Acceptable:} The performance cost of security measures (10-30\% typical) is justified by risk reduction and regulatory compliance.
+\end{enumerate}
+
+\textbf{Security Checklist for ML Systems:}
+
+\begin{itemize}
+    \item[$\square$] Implement adversarial attack detection and defense
+    \item[$\square$] Protect models from extraction with query monitoring and obfuscation
+    \item[$\square$] Encrypt sensitive data at rest and in transit
+    \item[$\square$] Secure model files with access controls and checksums
+    \item[$\square$] Deploy authentication and authorization for all endpoints
+    \item[$\square$] Implement rate limiting to prevent abuse
+    \item[$\square$] Validate and sanitize all inputs
+    \item[$\square$] Add differential privacy when handling sensitive data
+    \item[$\square$] Monitor for security anomalies and failed access attempts
+    \item[$\square$] Conduct regular security scans and penetration tests
+    \item[$\square$] Maintain audit logs for all model access
+    \item[$\square$] Keep dependencies updated and scan for vulnerabilities
+    \item[$\square$] Train team on ML security best practices
+    \item[$\square$] Establish incident response procedures
+    \item[$\square$] Document security architecture and controls
+\end{itemize}
+
+\textbf{Future Directions:}
+
+ML security is rapidly evolving. Emerging areas include:
+\begin{itemize}
+    \item \textbf{Certified Robustness:} Provable guarantees against adversarial attacks
+    \item \textbf{Homomorphic Encryption:} Computation on encrypted data without decryption
+    \item \textbf{Secure Multi-Party Computation:} Collaborative learning without data sharing
+    \item \textbf{Zero-Knowledge Proofs:} Verify model properties without revealing internals
+    \item \textbf{Quantum-Safe ML:} Protecting against quantum computing threats
+    \item \textbf{AI-Powered Security:} Using ML to defend ML systems
+\end{itemize}
+
+Security must be built into ML systems from the design phase, not added as an afterthought. As ML systems increasingly make critical decisions affecting privacy, safety, and fairness, robust security becomes non-negotiable.
+
+The techniques covered in this chapter provide a foundation for building secure ML systems. However, security is an ongoing process requiring continuous monitoring, updating, and improvement as new threats emerge and attack techniques evolve.
+
+\textbf{Recommended Resources:}
+\begin{itemize}
+    \item OWASP Machine Learning Security Top 10
+    \item NIST AI Risk Management Framework
+    \item MITRE ATLAS (Adversarial Threat Landscape for AI Systems)
+    \item CleverHans library for adversarial examples
+    \item Opacus library for differential privacy
+    \item TensorFlow Privacy framework
+    \item PySyft for privacy-preserving ML
+\end{itemize}
+
+By implementing the security controls, monitoring systems, and best practices outlined in this chapter, ML engineers can build robust systems that protect against evolving threats while maintaining model performance and user privacy.
+

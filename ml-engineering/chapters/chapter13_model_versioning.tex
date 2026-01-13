@@ -1,0 +1,4204 @@
+\section{Learning Objectives}
+
+After completing this chapter, readers will be able to:
+\begin{itemize}
+    \item Implement comprehensive model versioning strategies with MLflow
+    \item Track model lineage, metadata, and dependencies systematically
+    \item Design and implement approval workflows for model governance
+    \item Compare models across multiple dimensions and promote winners
+    \item Integrate model registry with CI/CD pipelines for automation
+    \item Package and containerize models for reproducible deployment
+    \item Build production-grade model management systems
+\end{itemize}
+
+\section{Introduction}
+
+Model versioning and registry systems are critical infrastructure for production ML. As teams deploy dozens or hundreds of model versions, managing which models are in production, tracking their lineage, and governing their lifecycle becomes essential. Without proper model management, teams face chaos: lost experiments, unclear model provenance, ungoverned deployments, and inability to reproduce or rollback models.
+
+A robust model registry provides:
+\begin{itemize}
+    \item \textbf{Version control:} Track every model version with immutable identifiers
+    \item \textbf{Lineage tracking:} Understand how models were trained, from data to hyperparameters
+    \item \textbf{Governance:} Approval workflows ensure only validated models reach production
+    \item \textbf{Reproducibility:} Package models with dependencies for exact recreation
+    \item \textbf{Comparison:} Evaluate models systematically before promotion
+    \item \textbf{Audit trail:} Complete history of model changes for compliance
+\end{itemize}
+
+This chapter covers production-grade model management systems, centered on MLflow but applicable to any registry system.
+
+\section{MLflow Model Registry: Advanced Features}
+
+\subsection{Architecture and Core Concepts}
+
+MLflow Model Registry provides centralized model storage with versioning, stage transitions, and annotations. Understanding its architecture enables effective model management at scale.
+
+\textbf{Key concepts:}
+\begin{itemize}
+    \item \textbf{Registered Model:} A logical model entity with multiple versions
+    \item \textbf{Model Version:} A specific trained instance with unique version number
+    \item \textbf{Model Stage:} Lifecycle stage (None, Staging, Production, Archived)
+    \item \textbf{Model Signature:} Input/output schema for validation
+    \item \textbf{Model Artifact:} Serialized model files and dependencies
+\end{itemize}
+
+\subsection{Complete MLflow Registry Implementation}
+
+\begin{lstlisting}[language=Python, caption=Advanced MLflow Model Registry Manager]
+import mlflow
+from mlflow.tracking import MlflowClient
+from mlflow.models.signature import infer_signature
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+from datetime import datetime
+import pandas as pd
+import numpy as np
+import logging
+import json
+
+@dataclass
+class ModelMetadata:
+    """Comprehensive model metadata"""
+    name: str
+    version: str
+    stage: str
+    run_id: str
+    experiment_id: str
+
+    # Performance metrics
+    metrics: Dict[str, float]
+
+    # Training metadata
+    training_date: datetime
+    training_duration_seconds: float
+    dataset_version: str
+    dataset_size: int
+
+    # Model characteristics
+    model_type: str
+    framework: str
+    framework_version: str
+
+    # Environment
+    python_version: str
+    dependencies: List[str]
+
+    # Tags and annotations
+    tags: Dict[str, str]
+    description: str
+
+class MLflowModelRegistry:
+    """
+    Advanced MLflow Model Registry manager
+
+    Provides high-level API for model management, versioning, and governance
+    """
+
+    def __init__(self, tracking_uri: str = None, registry_uri: str = None):
+        """
+        Initialize MLflow registry manager
+
+        Args:
+            tracking_uri: MLflow tracking server URI
+            registry_uri: Model registry URI (defaults to tracking_uri)
+        """
+        if tracking_uri:
+            mlflow.set_tracking_uri(tracking_uri)
+        if registry_uri:
+            mlflow.set_registry_uri(registry_uri)
+
+        self.client = MlflowClient()
+        self.logger = logging.getLogger("MLflowRegistry")
+
+    def register_model(self,
+                       model,
+                       model_name: str,
+                       run_id: str,
+                       metadata: ModelMetadata,
+                       input_example: Any = None,
+                       signature: Any = None) -> str:
+        """
+        Register a new model version with comprehensive metadata
+
+        Args:
+            model: Trained model object
+            model_name: Registered model name
+            run_id: MLflow run ID
+            metadata: Model metadata
+            input_example: Example input for schema inference
+            signature: Model signature (inferred if not provided)
+
+        Returns:
+            Model version number
+        """
+        self.logger.info(f"Registering model: {model_name}")
+
+        # Infer signature if not provided
+        if signature is None and input_example is not None:
+            # Generate predictions for signature
+            predictions = model.predict(input_example)
+            signature = infer_signature(input_example, predictions)
+
+        # Log model with MLflow
+        with mlflow.start_run(run_id=run_id):
+            # Log model
+            mlflow.sklearn.log_model(
+                model,
+                artifact_path="model",
+                registered_model_name=model_name,
+                signature=signature,
+                input_example=input_example
+            )
+
+            # Log metrics
+            for metric_name, metric_value in metadata.metrics.items():
+                mlflow.log_metric(metric_name, metric_value)
+
+            # Log parameters
+            mlflow.log_param("model_type", metadata.model_type)
+            mlflow.log_param("framework", metadata.framework)
+            mlflow.log_param("framework_version", metadata.framework_version)
+            mlflow.log_param("dataset_version", metadata.dataset_version)
+            mlflow.log_param("dataset_size", metadata.dataset_size)
+            mlflow.log_param("training_duration", metadata.training_duration_seconds)
+
+            # Log tags
+            for tag_key, tag_value in metadata.tags.items():
+                mlflow.set_tag(tag_key, tag_value)
+
+        # Get the latest version
+        latest_versions = self.client.get_latest_versions(model_name)
+        if latest_versions:
+            version = latest_versions[0].version
+
+            # Add description
+            self.client.update_model_version(
+                name=model_name,
+                version=version,
+                description=metadata.description
+            )
+
+            self.logger.info(f"Registered {model_name} version {version}")
+            return version
+
+        return None
+
+    def transition_model_stage(self,
+                              model_name: str,
+                              version: str,
+                              stage: str,
+                              archive_existing: bool = True) -> bool:
+        """
+        Transition model version to new stage
+
+        Args:
+            model_name: Registered model name
+            version: Model version
+            stage: Target stage (Staging, Production, Archived)
+            archive_existing: Archive existing models in target stage
+
+        Returns:
+            True if transition successful
+        """
+        try:
+            self.client.transition_model_version_stage(
+                name=model_name,
+                version=version,
+                stage=stage,
+                archive_existing_versions=archive_existing
+            )
+
+            self.logger.info(
+                f"Transitioned {model_name} v{version} to {stage}"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Stage transition failed: {str(e)}")
+            return False
+
+    def get_model_version(self,
+                         model_name: str,
+                         version: str = None,
+                         stage: str = None) -> Optional[Dict]:
+        """
+        Get model version details
+
+        Args:
+            model_name: Registered model name
+            version: Specific version (optional)
+            stage: Get latest version in stage (optional)
+
+        Returns:
+            Model version information
+        """
+        try:
+            if version:
+                mv = self.client.get_model_version(model_name, version)
+            elif stage:
+                versions = self.client.get_latest_versions(model_name, stages=[stage])
+                if not versions:
+                    return None
+                mv = versions[0]
+            else:
+                return None
+
+            # Get run details
+            run = self.client.get_run(mv.run_id)
+
+            return {
+                'name': mv.name,
+                'version': mv.version,
+                'stage': mv.current_stage,
+                'run_id': mv.run_id,
+                'description': mv.description,
+                'tags': mv.tags,
+                'metrics': run.data.metrics,
+                'params': run.data.params,
+                'creation_timestamp': mv.creation_timestamp,
+                'last_updated_timestamp': mv.last_updated_timestamp,
+                'source': mv.source
+            }
+
+        except Exception as e:
+            self.logger.error(f"Failed to get model version: {str(e)}")
+            return None
+
+    def compare_models(self,
+                      model_name: str,
+                      version1: str,
+                      version2: str,
+                      metric_names: List[str]) -> Dict:
+        """
+        Compare two model versions across multiple metrics
+
+        Args:
+            model_name: Registered model name
+            version1: First version to compare
+            version2: Second version to compare
+            metric_names: Metrics to compare
+
+        Returns:
+            Comparison results
+        """
+        v1_info = self.get_model_version(model_name, version1)
+        v2_info = self.get_model_version(model_name, version2)
+
+        if not v1_info or not v2_info:
+            return {'error': 'One or both versions not found'}
+
+        comparison = {
+            'model_name': model_name,
+            'version1': version1,
+            'version2': version2,
+            'metrics': {}
+        }
+
+        for metric_name in metric_names:
+            m1 = v1_info['metrics'].get(metric_name)
+            m2 = v2_info['metrics'].get(metric_name)
+
+            if m1 is not None and m2 is not None:
+                improvement = ((m2 - m1) / abs(m1)) * 100 if m1 != 0 else 0
+
+                comparison['metrics'][metric_name] = {
+                    'version1': m1,
+                    'version2': m2,
+                    'improvement_percent': improvement,
+                    'winner': version2 if m2 > m1 else version1
+                }
+
+        return comparison
+
+    def search_models(self,
+                     filter_string: str = None,
+                     max_results: int = 100) -> List[Dict]:
+        """
+        Search registered models
+
+        Args:
+            filter_string: Filter query (e.g., "name LIKE 'fraud%'")
+            max_results: Maximum results to return
+
+        Returns:
+            List of matching models
+        """
+        try:
+            models = self.client.search_registered_models(
+                filter_string=filter_string,
+                max_results=max_results
+            )
+
+            return [
+                {
+                    'name': model.name,
+                    'creation_timestamp': model.creation_timestamp,
+                    'last_updated_timestamp': model.last_updated_timestamp,
+                    'description': model.description,
+                    'tags': model.tags,
+                    'latest_versions': [
+                        {
+                            'version': v.version,
+                            'stage': v.current_stage
+                        }
+                        for v in model.latest_versions
+                    ]
+                }
+                for model in models
+            ]
+
+        except Exception as e:
+            self.logger.error(f"Model search failed: {str(e)}")
+            return []
+
+    def delete_model_version(self,
+                            model_name: str,
+                            version: str) -> bool:
+        """
+        Delete a model version
+
+        Args:
+            model_name: Registered model name
+            version: Version to delete
+
+        Returns:
+            True if deletion successful
+        """
+        try:
+            self.client.delete_model_version(model_name, version)
+            self.logger.info(f"Deleted {model_name} version {version}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Deletion failed: {str(e)}")
+            return False
+
+    def get_model_stages_summary(self, model_name: str) -> Dict:
+        """
+        Get summary of all model versions by stage
+
+        Args:
+            model_name: Registered model name
+
+        Returns:
+            Summary by stage
+        """
+        try:
+            all_versions = self.client.search_model_versions(
+                f"name='{model_name}'"
+            )
+
+            summary = {
+                'Production': [],
+                'Staging': [],
+                'Archived': [],
+                'None': []
+            }
+
+            for mv in all_versions:
+                summary[mv.current_stage].append({
+                    'version': mv.version,
+                    'run_id': mv.run_id,
+                    'creation_timestamp': mv.creation_timestamp
+                })
+
+            return summary
+
+        except Exception as e:
+            self.logger.error(f"Failed to get stages summary: {str(e)}")
+            return {}
+
+    def load_production_model(self, model_name: str):
+        """
+        Load the current production model
+
+        Args:
+            model_name: Registered model name
+
+        Returns:
+            Loaded model
+        """
+        model_uri = f"models:/{model_name}/Production"
+        return mlflow.sklearn.load_model(model_uri)
+
+# Example usage
+def example_mlflow_registry():
+    """Example of using MLflow Model Registry"""
+
+    # Initialize registry
+    registry = MLflowModelRegistry(
+        tracking_uri="http://localhost:5000"
+    )
+
+    # Train a model (simplified)
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.datasets import make_classification
+
+    X, y = make_classification(n_samples=1000, n_features=20, random_state=42)
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X, y)
+
+    # Create metadata
+    metadata = ModelMetadata(
+        name="fraud_detector",
+        version="1",
+        stage="None",
+        run_id=mlflow.active_run().info.run_id,
+        experiment_id="0",
+        metrics={
+            'accuracy': 0.95,
+            'precision': 0.93,
+            'recall': 0.97,
+            'f1_score': 0.95
+        },
+        training_date=datetime.now(),
+        training_duration_seconds=120.5,
+        dataset_version="v2023-01-15",
+        dataset_size=1000,
+        model_type="RandomForest",
+        framework="scikit-learn",
+        framework_version="1.4.2",
+        python_version="3.11.6",
+        dependencies=["scikit-learn==1.4.2", "numpy==1.26.4"],
+        tags={'team': 'ml-team', 'use_case': 'fraud_detection'},
+        description="Random Forest model for fraud detection v1"
+    )
+
+    # Register model
+    version = registry.register_model(
+        model=model,
+        model_name="fraud_detector",
+        run_id=mlflow.active_run().info.run_id,
+        metadata=metadata,
+        input_example=X[:5]
+    )
+
+    print(f"Registered model version: {version}")
+
+    # Transition to staging
+    registry.transition_model_stage(
+        model_name="fraud_detector",
+        version=version,
+        stage="Staging"
+    )
+
+    # Get model info
+    model_info = registry.get_model_version(
+        model_name="fraud_detector",
+        stage="Staging"
+    )
+    print(f"Staging model: {model_info}")
+
+    # Compare models (if multiple versions exist)
+    # comparison = registry.compare_models(
+    #     model_name="fraud_detector",
+    #     version1="1",
+    #     version2="2",
+    #     metric_names=['accuracy', 'f1_score']
+    # )
+
+    # Get stages summary
+    summary = registry.get_model_stages_summary("fraud_detector")
+    print(f"Model stages: {summary}")
+\end{lstlisting}
+
+\subsection{Model Signature and Schema Validation}
+
+Model signatures enforce input/output schemas, preventing silent failures from schema mismatches.
+
+\begin{lstlisting}[language=Python, caption=Model Signature and Validation]
+from typing import Any, List
+from mlflow.models.signature import ModelSignature, infer_signature
+from mlflow.types.schema import Schema, ColSpec
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+
+class ModelSignatureValidator:
+    """Validate model inputs against registered signature"""
+
+    @staticmethod
+    def create_signature(input_df: pd.DataFrame,
+                        output: Any) -> ModelSignature:
+        """
+        Create explicit model signature
+
+        Args:
+            input_df: Example input DataFrame
+            output: Example output
+
+        Returns:
+            ModelSignature
+        """
+        return infer_signature(input_df, output)
+
+    @staticmethod
+    def create_manual_signature(
+        input_schema: List[tuple],
+        output_schema: List[tuple]
+    ) -> ModelSignature:
+        """
+        Create signature manually
+
+        Args:
+            input_schema: List of (name, type) tuples
+            output_schema: List of (name, type) tuples
+
+        Returns:
+            ModelSignature
+        """
+        input_cols = [ColSpec(dtype, name) for name, dtype in input_schema]
+        output_cols = [ColSpec(dtype, name) for name, dtype in output_schema]
+
+        return ModelSignature(
+            inputs=Schema(input_cols),
+            outputs=Schema(output_cols)
+        )
+
+    @staticmethod
+    def validate_input(input_df: pd.DataFrame,
+                      signature: ModelSignature) -> tuple:
+        """
+        Validate input against signature
+
+        Args:
+            input_df: Input DataFrame
+            signature: Expected signature
+
+        Returns:
+            (is_valid, error_message)
+        """
+        if signature is None or signature.inputs is None:
+            return True, None
+
+        # Check columns
+        expected_cols = set(signature.inputs.input_names())
+        actual_cols = set(input_df.columns)
+
+        missing_cols = expected_cols - actual_cols
+        extra_cols = actual_cols - expected_cols
+
+        if missing_cols:
+            return False, f"Missing columns: {missing_cols}"
+
+        if extra_cols:
+            return False, f"Unexpected columns: {extra_cols}"
+
+        # Check types
+        for col_spec in signature.inputs.inputs:
+            if col_spec.name in input_df.columns:
+                actual_dtype = input_df[col_spec.name].dtype
+                # Type checking logic here
+                pass
+
+        return True, None
+
+# Example usage
+def example_signature_validation():
+    """Example of signature validation"""
+
+    # Create sample data
+    X_train = pd.DataFrame({
+        'feature_1': np.random.rand(100),
+        'feature_2': np.random.rand(100),
+        'feature_3': np.random.randint(0, 10, 100)
+    })
+
+    y_train = np.random.randint(0, 2, 100)
+
+    # Train model
+    model = RandomForestClassifier()
+    model.fit(X_train, y_train)
+
+    # Create signature
+    predictions = model.predict(X_train[:5])
+    signature = infer_signature(X_train, predictions)
+
+    print(f"Signature: {signature}")
+
+    # Validate input
+    validator = ModelSignatureValidator()
+
+    # Valid input
+    valid_input = pd.DataFrame({
+        'feature_1': [0.5],
+        'feature_2': [0.3],
+        'feature_3': [5]
+    })
+
+    is_valid, error = validator.validate_input(valid_input, signature)
+    print(f"Valid input: {is_valid}")
+
+    # Invalid input (missing column)
+    invalid_input = pd.DataFrame({
+        'feature_1': [0.5],
+        'feature_2': [0.3]
+    })
+
+    is_valid, error = validator.validate_input(invalid_input, signature)
+    print(f"Invalid input: {is_valid}, Error: {error}")
+\end{lstlisting}
+
+\section{Model Lineage and Metadata Tracking}
+
+\subsection{Comprehensive Lineage System}
+
+Model lineage tracks the complete history of how a model was created, enabling reproducibility and debugging.
+
+\begin{lstlisting}[language=Python, caption=Model Lineage Tracker]
+from typing import Any, Dict, List, Optional, Set
+from dataclasses import dataclass, field
+from datetime import datetime
+import hashlib
+import json
+import logging
+import numpy as np
+import pandas as pd
+import mlflow
+import mlflow
+
+@dataclass
+class DataLineage:
+    """Data lineage information"""
+    dataset_name: str
+    dataset_version: str
+    dataset_hash: str
+    num_samples: int
+    num_features: int
+    feature_names: List[str]
+    data_source: str
+    collection_date: datetime
+    preprocessing_steps: List[str] = field(default_factory=list)
+
+@dataclass
+class CodeLineage:
+    """Code lineage information"""
+    git_commit: str
+    git_branch: str
+    git_repo: str
+    code_version: str
+    file_paths: List[str]
+    dependencies: Dict[str, str]
+
+@dataclass
+class ModelLineage:
+    """Complete model lineage"""
+    model_id: str
+    model_name: str
+    model_version: str
+    creation_timestamp: datetime
+
+    # Data lineage
+    data_lineage: DataLineage
+
+    # Code lineage
+    code_lineage: CodeLineage
+
+    # Training configuration
+    hyperparameters: Dict[str, Any]
+    training_duration: float
+    hardware: Dict[str, str]
+
+    # Parent models (for transfer learning, ensembles)
+    parent_models: List[str] = field(default_factory=list)
+
+    # Performance
+    metrics: Dict[str, float] = field(default_factory=dict)
+
+    # Additional metadata
+    tags: Dict[str, str] = field(default_factory=dict)
+    notes: str = ""
+
+class LineageTracker:
+    """
+    Track comprehensive model lineage
+
+    Captures data, code, and training provenance
+    """
+
+    def __init__(self, storage_backend: str = "mlflow"):
+        """
+        Initialize lineage tracker
+
+        Args:
+            storage_backend: Where to store lineage (mlflow, database, etc.)
+        """
+        self.storage_backend = storage_backend
+        self.logger = logging.getLogger("LineageTracker")
+
+    def track_data_lineage(self,
+                          dataset: pd.DataFrame,
+                          dataset_name: str,
+                          dataset_version: str,
+                          data_source: str,
+                          preprocessing_steps: List[str] = None) -> DataLineage:
+        """
+        Track data lineage
+
+        Args:
+            dataset: Training dataset
+            dataset_name: Dataset identifier
+            dataset_version: Dataset version
+            data_source: Where data came from
+            preprocessing_steps: List of preprocessing operations
+
+        Returns:
+            DataLineage object
+        """
+        # Calculate dataset hash for verification
+        dataset_hash = hashlib.sha256(
+            pd.util.hash_pandas_object(dataset).values
+        ).hexdigest()
+
+        return DataLineage(
+            dataset_name=dataset_name,
+            dataset_version=dataset_version,
+            dataset_hash=dataset_hash,
+            num_samples=len(dataset),
+            num_features=len(dataset.columns),
+            feature_names=list(dataset.columns),
+            data_source=data_source,
+            collection_date=datetime.now(),
+            preprocessing_steps=preprocessing_steps or []
+        )
+
+    def track_code_lineage(self,
+                          training_script_paths: List[str]) -> CodeLineage:
+        """
+        Track code lineage from git
+
+        Args:
+            training_script_paths: Paths to training scripts
+
+        Returns:
+            CodeLineage object
+        """
+        import subprocess
+        import pkg_resources
+
+        try:
+            # Get git information
+            git_commit = subprocess.check_output(
+                ['git', 'rev-parse', 'HEAD']
+            ).decode('utf-8').strip()
+
+            git_branch = subprocess.check_output(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD']
+            ).decode('utf-8').strip()
+
+            git_repo = subprocess.check_output(
+                ['git', 'config', '--get', 'remote.origin.url']
+            ).decode('utf-8').strip()
+
+        except Exception as e:
+            self.logger.warning(f"Failed to get git info: {str(e)}")
+            git_commit = "unknown"
+            git_branch = "unknown"
+            git_repo = "unknown"
+
+        # Get installed packages
+        dependencies = {
+            pkg.key: pkg.version
+            for pkg in pkg_resources.working_set
+        }
+
+        return CodeLineage(
+            git_commit=git_commit,
+            git_branch=git_branch,
+            git_repo=git_repo,
+            code_version="1.0",
+            file_paths=training_script_paths,
+            dependencies=dependencies
+        )
+
+    def create_lineage(self,
+                      model_id: str,
+                      model_name: str,
+                      model_version: str,
+                      data_lineage: DataLineage,
+                      code_lineage: CodeLineage,
+                      hyperparameters: Dict,
+                      training_duration: float,
+                      metrics: Dict[str, float],
+                      parent_models: List[str] = None) -> ModelLineage:
+        """
+        Create complete model lineage
+
+        Args:
+            model_id: Unique model identifier
+            model_name: Model name
+            model_version: Model version
+            data_lineage: Data lineage
+            code_lineage: Code lineage
+            hyperparameters: Training hyperparameters
+            training_duration: Training time in seconds
+            metrics: Performance metrics
+            parent_models: Parent model IDs (for transfer learning)
+
+        Returns:
+            Complete ModelLineage
+        """
+        import platform
+
+        lineage = ModelLineage(
+            model_id=model_id,
+            model_name=model_name,
+            model_version=model_version,
+            creation_timestamp=datetime.now(),
+            data_lineage=data_lineage,
+            code_lineage=code_lineage,
+            hyperparameters=hyperparameters,
+            training_duration=training_duration,
+            hardware={
+                'platform': platform.system(),
+                'processor': platform.processor(),
+                'python_version': platform.python_version()
+            },
+            parent_models=parent_models or [],
+            metrics=metrics
+        )
+
+        # Store lineage
+        self._store_lineage(lineage)
+
+        return lineage
+
+    def _store_lineage(self, lineage: ModelLineage):
+        """Store lineage in backend"""
+        if self.storage_backend == "mlflow":
+            self._store_in_mlflow(lineage)
+        else:
+            self._store_in_json(lineage)
+
+    def _store_in_mlflow(self, lineage: ModelLineage):
+        """Store lineage in MLflow"""
+        with mlflow.start_run(run_name=f"{lineage.model_name}_v{lineage.model_version}"):
+            # Log data lineage
+            mlflow.log_param("dataset_name", lineage.data_lineage.dataset_name)
+            mlflow.log_param("dataset_version", lineage.data_lineage.dataset_version)
+            mlflow.log_param("dataset_hash", lineage.data_lineage.dataset_hash)
+            mlflow.log_param("num_samples", lineage.data_lineage.num_samples)
+            mlflow.log_param("num_features", lineage.data_lineage.num_features)
+
+            # Log code lineage
+            mlflow.log_param("git_commit", lineage.code_lineage.git_commit)
+            mlflow.log_param("git_branch", lineage.code_lineage.git_branch)
+
+            # Log hyperparameters
+            for key, value in lineage.hyperparameters.items():
+                mlflow.log_param(key, value)
+
+            # Log metrics
+            for key, value in lineage.metrics.items():
+                mlflow.log_metric(key, value)
+
+            # Log lineage as artifact
+            lineage_dict = self._lineage_to_dict(lineage)
+            with open("lineage.json", "w") as f:
+                json.dump(lineage_dict, f, indent=2, default=str)
+            mlflow.log_artifact("lineage.json")
+
+    def _store_in_json(self, lineage: ModelLineage):
+        """Store lineage as JSON file"""
+        lineage_dict = self._lineage_to_dict(lineage)
+        filename = f"lineage_{lineage.model_id}.json"
+        with open(filename, "w") as f:
+            json.dump(lineage_dict, f, indent=2, default=str)
+
+    def _lineage_to_dict(self, lineage: ModelLineage) -> Dict:
+        """Convert lineage to dictionary"""
+        return {
+            'model_id': lineage.model_id,
+            'model_name': lineage.model_name,
+            'model_version': lineage.model_version,
+            'creation_timestamp': lineage.creation_timestamp.isoformat(),
+            'data_lineage': {
+                'dataset_name': lineage.data_lineage.dataset_name,
+                'dataset_version': lineage.data_lineage.dataset_version,
+                'dataset_hash': lineage.data_lineage.dataset_hash,
+                'num_samples': lineage.data_lineage.num_samples,
+                'num_features': lineage.data_lineage.num_features,
+                'feature_names': lineage.data_lineage.feature_names,
+                'data_source': lineage.data_lineage.data_source,
+                'preprocessing_steps': lineage.data_lineage.preprocessing_steps
+            },
+            'code_lineage': {
+                'git_commit': lineage.code_lineage.git_commit,
+                'git_branch': lineage.code_lineage.git_branch,
+                'git_repo': lineage.code_lineage.git_repo,
+                'code_version': lineage.code_lineage.code_version,
+                'file_paths': lineage.code_lineage.file_paths
+            },
+            'hyperparameters': lineage.hyperparameters,
+            'training_duration': lineage.training_duration,
+            'hardware': lineage.hardware,
+            'parent_models': lineage.parent_models,
+            'metrics': lineage.metrics,
+            'tags': lineage.tags,
+            'notes': lineage.notes
+        }
+
+    def get_lineage(self, model_id: str) -> Optional[ModelLineage]:
+        """
+        Retrieve model lineage
+
+        Args:
+            model_id: Model identifier
+
+        Returns:
+            ModelLineage or None
+        """
+        try:
+            with open(f"lineage_{model_id}.json", "r") as f:
+                lineage_dict = json.load(f)
+                # Reconstruct ModelLineage from dict
+                # (Simplified - full implementation would deserialize properly)
+                return lineage_dict
+        except FileNotFoundError:
+            return None
+
+# Example usage
+def example_lineage_tracking():
+    """Example of comprehensive lineage tracking"""
+
+    # Initialize tracker
+    tracker = LineageTracker(storage_backend="mlflow")
+
+    # Create training dataset
+    X_train = pd.DataFrame({
+        'age': np.random.randint(18, 80, 1000),
+        'income': np.random.randint(20000, 200000, 1000),
+        'credit_score': np.random.randint(300, 850, 1000)
+    })
+
+    # Track data lineage
+    data_lineage = tracker.track_data_lineage(
+        dataset=X_train,
+        dataset_name="customer_features",
+        dataset_version="v2024-01-15",
+        data_source="data_warehouse.customers",
+        preprocessing_steps=[
+            "remove_nulls",
+            "normalize_income",
+            "handle_outliers"
+        ]
+    )
+
+    # Track code lineage
+    code_lineage = tracker.track_code_lineage(
+        training_script_paths=["train.py", "preprocess.py"]
+    )
+
+    # Training configuration
+    hyperparameters = {
+        'n_estimators': 100,
+        'max_depth': 10,
+        'min_samples_split': 5,
+        'learning_rate': 0.1
+    }
+
+    # Create complete lineage
+    lineage = tracker.create_lineage(
+        model_id="model_abc123",
+        model_name="credit_risk_model",
+        model_version="v2.0",
+        data_lineage=data_lineage,
+        code_lineage=code_lineage,
+        hyperparameters=hyperparameters,
+        training_duration=450.5,
+        metrics={
+            'accuracy': 0.92,
+            'auc': 0.88,
+            'f1_score': 0.90
+        },
+        parent_models=[]
+    )
+
+    print(f"Lineage created for {lineage.model_id}")
+    print(f"Dataset: {lineage.data_lineage.dataset_name}")
+    print(f"Git commit: {lineage.code_lineage.git_commit}")
+\end{lstlisting}
+
+\section{Approval Workflows and Governance}
+
+\subsection{Model Governance Framework}
+
+Production ML systems require governance to ensure only validated models reach production. Approval workflows enforce reviews, validations, and compliance checks before model promotion.
+
+\textbf{Key governance requirements:}
+\begin{itemize}
+    \item \textbf{Multi-stage approvals:} Different stakeholders approve at each stage
+    \item \textbf{Validation gates:} Automated checks before promotion
+    \item \textbf{Role-based access:} Control who can promote models
+    \item \textbf{Audit trails:} Complete history of approvals and rejections
+    \item \textbf{Compliance integration:} Ticketing systems for regulatory requirements
+    \item \textbf{Automated enforcement:} Prevent unauthorized promotions
+\end{itemize}
+
+\subsection{Complete Governance Implementation}
+
+\begin{lstlisting}[language=Python, caption=Model Approval and Governance System]
+from enum import Enum
+from typing import Any, Dict, List, Optional, Callable
+from dataclasses import dataclass, field
+from datetime import datetime
+import logging
+import json
+
+class ApprovalStatus(Enum):
+    """Approval request status"""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+class UserRole(Enum):
+    """User roles for RBAC"""
+    DATA_SCIENTIST = "data_scientist"
+    ML_ENGINEER = "ml_engineer"
+    TEAM_LEAD = "team_lead"
+    COMPLIANCE_OFFICER = "compliance_officer"
+    PRODUCTION_OWNER = "production_owner"
+
+@dataclass
+class ValidationGate:
+    """Validation gate configuration"""
+    name: str
+    description: str
+    validator_func: Callable
+    required: bool = True
+    error_message: str = ""
+
+@dataclass
+class ApprovalRequest:
+    """Model approval request"""
+    request_id: str
+    model_name: str
+    current_version: str
+    source_stage: str
+    target_stage: str
+
+    # Requester information
+    requester: str
+    requester_role: UserRole
+    request_timestamp: datetime
+
+    # Approval chain
+    required_approvers: List[UserRole]
+    approvals: List[Dict[str, Any]] = field(default_factory=list)
+    rejections: List[Dict[str, Any]] = field(default_factory=list)
+
+    # Status
+    status: ApprovalStatus = ApprovalStatus.PENDING
+
+    # Validation results
+    validation_results: Dict[str, bool] = field(default_factory=dict)
+
+    # Metadata
+    justification: str = ""
+    impact_assessment: str = ""
+    rollback_plan: str = ""
+    ticket_id: Optional[str] = None
+
+class ModelGovernanceManager:
+    """
+    Comprehensive model governance and approval workflow manager
+
+    Enforces approval workflows, validation gates, and RBAC
+    """
+
+    def __init__(self,
+                 mlflow_registry: MLflowModelRegistry,
+                 ticket_system: Optional[Any] = None):
+        """
+        Initialize governance manager
+
+        Args:
+            mlflow_registry: MLflow registry instance
+            ticket_system: Optional ticketing system integration
+        """
+        self.registry = mlflow_registry
+        self.ticket_system = ticket_system
+        self.logger = logging.getLogger("ModelGovernance")
+
+        # Validation gates by stage transition
+        self.validation_gates: Dict[str, List[ValidationGate]] = {}
+
+        # Approval requirements by stage
+        self.approval_requirements: Dict[str, List[UserRole]] = {
+            'Staging': [UserRole.TEAM_LEAD],
+            'Production': [UserRole.TEAM_LEAD, UserRole.PRODUCTION_OWNER],
+            'Archived': [UserRole.TEAM_LEAD]
+        }
+
+        # Approval requests
+        self.approval_requests: Dict[str, ApprovalRequest] = {}
+
+        # Audit log
+        self.audit_log: List[Dict] = []
+
+    def register_validation_gate(self,
+                                 target_stage: str,
+                                 gate: ValidationGate):
+        """
+        Register validation gate for stage transition
+
+        Args:
+            target_stage: Target stage (Staging, Production, etc.)
+            gate: ValidationGate to register
+        """
+        if target_stage not in self.validation_gates:
+            self.validation_gates[target_stage] = []
+
+        self.validation_gates[target_stage].append(gate)
+        self.logger.info(f"Registered validation gate '{gate.name}' for {target_stage}")
+
+    def request_approval(self,
+                        model_name: str,
+                        version: str,
+                        source_stage: str,
+                        target_stage: str,
+                        requester: str,
+                        requester_role: UserRole,
+                        justification: str = "",
+                        impact_assessment: str = "",
+                        rollback_plan: str = "") -> str:
+        """
+        Request approval for model stage transition
+
+        Args:
+            model_name: Model name
+            version: Model version
+            source_stage: Current stage
+            target_stage: Target stage
+            requester: User requesting approval
+            requester_role: Requester's role
+            justification: Reason for promotion
+            impact_assessment: Expected impact
+            rollback_plan: Plan if rollback needed
+
+        Returns:
+            Request ID
+        """
+        import uuid
+
+        request_id = str(uuid.uuid4())
+
+        # Get required approvers for target stage
+        required_approvers = self.approval_requirements.get(
+            target_stage,
+            [UserRole.TEAM_LEAD]
+        )
+
+        # Create approval request
+        request = ApprovalRequest(
+            request_id=request_id,
+            model_name=model_name,
+            current_version=version,
+            source_stage=source_stage,
+            target_stage=target_stage,
+            requester=requester,
+            requester_role=requester_role,
+            request_timestamp=datetime.now(),
+            required_approvers=required_approvers,
+            justification=justification,
+            impact_assessment=impact_assessment,
+            rollback_plan=rollback_plan
+        )
+
+        # Run validation gates
+        validation_passed = self._run_validation_gates(
+            request,
+            model_name,
+            version
+        )
+
+        if not validation_passed:
+            request.status = ApprovalStatus.REJECTED
+            self.logger.warning(
+                f"Validation failed for {model_name} v{version}"
+            )
+            self.approval_requests[request_id] = request
+            return request_id
+
+        # Create ticket if system available
+        if self.ticket_system:
+            ticket_id = self._create_governance_ticket(request)
+            request.ticket_id = ticket_id
+
+        self.approval_requests[request_id] = request
+
+        # Log audit event
+        self._log_audit_event(
+            event_type="approval_requested",
+            request_id=request_id,
+            model_name=model_name,
+            version=version,
+            user=requester,
+            details={
+                'source_stage': source_stage,
+                'target_stage': target_stage,
+                'justification': justification
+            }
+        )
+
+        self.logger.info(
+            f"Approval request created: {request_id} for {model_name} v{version}"
+        )
+
+        return request_id
+
+    def approve_request(self,
+                       request_id: str,
+                       approver: str,
+                       approver_role: UserRole,
+                       comments: str = "") -> bool:
+        """
+        Approve a model promotion request
+
+        Args:
+            request_id: Request ID
+            approver: User approving
+            approver_role: Approver's role
+            comments: Approval comments
+
+        Returns:
+            True if approval recorded successfully
+        """
+        request = self.approval_requests.get(request_id)
+        if not request:
+            self.logger.error(f"Request {request_id} not found")
+            return False
+
+        if request.status != ApprovalStatus.PENDING:
+            self.logger.error(
+                f"Request {request_id} is not pending (status: {request.status})"
+            )
+            return False
+
+        # Check if approver role is required
+        if approver_role not in request.required_approvers:
+            self.logger.error(
+                f"{approver_role} not authorized to approve this request"
+            )
+            return False
+
+        # Record approval
+        approval = {
+            'approver': approver,
+            'role': approver_role.value,
+            'timestamp': datetime.now().isoformat(),
+            'comments': comments
+        }
+        request.approvals.append(approval)
+
+        # Log audit event
+        self._log_audit_event(
+            event_type="approval_granted",
+            request_id=request_id,
+            model_name=request.model_name,
+            version=request.current_version,
+            user=approver,
+            details={'role': approver_role.value, 'comments': comments}
+        )
+
+        # Check if all required approvals received
+        approved_roles = {a['role'] for a in request.approvals}
+        required_roles = {r.value for r in request.required_approvers}
+
+        if required_roles.issubset(approved_roles):
+            # All approvals received - execute promotion
+            success = self._execute_promotion(request)
+            if success:
+                request.status = ApprovalStatus.APPROVED
+                self.logger.info(
+                    f"Request {request_id} fully approved and executed"
+                )
+            return success
+
+        self.logger.info(
+            f"Approval recorded for {request_id}. "
+            f"Pending: {required_roles - approved_roles}"
+        )
+        return True
+
+    def reject_request(self,
+                      request_id: str,
+                      rejector: str,
+                      rejector_role: UserRole,
+                      reason: str) -> bool:
+        """
+        Reject a model promotion request
+
+        Args:
+            request_id: Request ID
+            rejector: User rejecting
+            rejector_role: Rejector's role
+            reason: Rejection reason
+
+        Returns:
+            True if rejection recorded successfully
+        """
+        request = self.approval_requests.get(request_id)
+        if not request:
+            self.logger.error(f"Request {request_id} not found")
+            return False
+
+        if request.status != ApprovalStatus.PENDING:
+            self.logger.error(
+                f"Request {request_id} is not pending"
+            )
+            return False
+
+        # Record rejection
+        rejection = {
+            'rejector': rejector,
+            'role': rejector_role.value,
+            'timestamp': datetime.now().isoformat(),
+            'reason': reason
+        }
+        request.rejections.append(rejection)
+        request.status = ApprovalStatus.REJECTED
+
+        # Log audit event
+        self._log_audit_event(
+            event_type="approval_rejected",
+            request_id=request_id,
+            model_name=request.model_name,
+            version=request.current_version,
+            user=rejector,
+            details={'role': rejector_role.value, 'reason': reason}
+        )
+
+        # Update ticket if exists
+        if self.ticket_system and request.ticket_id:
+            self._update_ticket_status(request.ticket_id, "Rejected", reason)
+
+        self.logger.info(f"Request {request_id} rejected by {rejector}")
+        return True
+
+    def _run_validation_gates(self,
+                             request: ApprovalRequest,
+                             model_name: str,
+                             version: str) -> bool:
+        """
+        Run validation gates for stage transition
+
+        Args:
+            request: Approval request
+            model_name: Model name
+            version: Model version
+
+        Returns:
+            True if all validations pass
+        """
+        gates = self.validation_gates.get(request.target_stage, [])
+
+        if not gates:
+            self.logger.info(f"No validation gates for {request.target_stage}")
+            return True
+
+        all_passed = True
+
+        for gate in gates:
+            try:
+                # Get model version info
+                model_info = self.registry.get_model_version(
+                    model_name,
+                    version
+                )
+
+                # Run validation
+                passed = gate.validator_func(model_info, request)
+                request.validation_results[gate.name] = passed
+
+                if not passed and gate.required:
+                    self.logger.error(
+                        f"Required validation gate '{gate.name}' failed"
+                    )
+                    all_passed = False
+                elif not passed:
+                    self.logger.warning(
+                        f"Optional validation gate '{gate.name}' failed"
+                    )
+                else:
+                    self.logger.info(f"Validation gate '{gate.name}' passed")
+
+            except Exception as e:
+                self.logger.error(
+                    f"Validation gate '{gate.name}' error: {str(e)}"
+                )
+                if gate.required:
+                    all_passed = False
+
+        return all_passed
+
+    def _execute_promotion(self, request: ApprovalRequest) -> bool:
+        """
+        Execute model promotion after approvals
+
+        Args:
+            request: Approved request
+
+        Returns:
+            True if promotion successful
+        """
+        success = self.registry.transition_model_stage(
+            model_name=request.model_name,
+            version=request.current_version,
+            stage=request.target_stage,
+            archive_existing=True
+        )
+
+        if success:
+            # Log audit event
+            self._log_audit_event(
+                event_type="model_promoted",
+                request_id=request.request_id,
+                model_name=request.model_name,
+                version=request.current_version,
+                user="system",
+                details={
+                    'source_stage': request.source_stage,
+                    'target_stage': request.target_stage
+                }
+            )
+
+            # Update ticket
+            if self.ticket_system and request.ticket_id:
+                self._update_ticket_status(
+                    request.ticket_id,
+                    "Completed",
+                    "Model promoted successfully"
+                )
+
+        return success
+
+    def _create_governance_ticket(self, request: ApprovalRequest) -> str:
+        """Create governance ticket in external system"""
+        # Simplified - would integrate with JIRA, ServiceNow, etc.
+        ticket = {
+            'title': f"Model Promotion: {request.model_name} v{request.current_version}",
+            'description': f"""
+Model Promotion Request
+
+Model: {request.model_name}
+Version: {request.current_version}
+Source Stage: {request.source_stage}
+Target Stage: {request.target_stage}
+
+Requester: {request.requester}
+Justification: {request.justification}
+
+Impact Assessment:
+{request.impact_assessment}
+
+Rollback Plan:
+{request.rollback_plan}
+            """,
+            'type': 'Model Governance',
+            'priority': 'High' if request.target_stage == 'Production' else 'Medium'
+        }
+
+        # In real implementation, call ticket system API
+        ticket_id = f"GOV-{request.request_id[:8]}"
+        self.logger.info(f"Created ticket {ticket_id}")
+        return ticket_id
+
+    def _update_ticket_status(self, ticket_id: str, status: str, comment: str):
+        """Update ticket status"""
+        # In real implementation, call ticket system API
+        self.logger.info(f"Updated ticket {ticket_id}: {status}")
+
+    def _log_audit_event(self,
+                        event_type: str,
+                        request_id: str,
+                        model_name: str,
+                        version: str,
+                        user: str,
+                        details: Dict):
+        """Log audit event"""
+        event = {
+            'timestamp': datetime.now().isoformat(),
+            'event_type': event_type,
+            'request_id': request_id,
+            'model_name': model_name,
+            'version': version,
+            'user': user,
+            'details': details
+        }
+        self.audit_log.append(event)
+
+    def get_audit_trail(self,
+                       model_name: str = None,
+                       start_date: datetime = None,
+                       end_date: datetime = None) -> List[Dict]:
+        """
+        Get audit trail
+
+        Args:
+            model_name: Filter by model name
+            start_date: Filter by start date
+            end_date: Filter by end date
+
+        Returns:
+            List of audit events
+        """
+        filtered_events = self.audit_log
+
+        if model_name:
+            filtered_events = [
+                e for e in filtered_events
+                if e['model_name'] == model_name
+            ]
+
+        if start_date:
+            filtered_events = [
+                e for e in filtered_events
+                if datetime.fromisoformat(e['timestamp']) >= start_date
+            ]
+
+        if end_date:
+            filtered_events = [
+                e for e in filtered_events
+                if datetime.fromisoformat(e['timestamp']) <= end_date
+            ]
+
+        return filtered_events
+
+    def get_request_status(self, request_id: str) -> Optional[Dict]:
+        """
+        Get approval request status
+
+        Args:
+            request_id: Request ID
+
+        Returns:
+            Request details
+        """
+        request = self.approval_requests.get(request_id)
+        if not request:
+            return None
+
+        return {
+            'request_id': request.request_id,
+            'model_name': request.model_name,
+            'version': request.current_version,
+            'source_stage': request.source_stage,
+            'target_stage': request.target_stage,
+            'status': request.status.value,
+            'requester': request.requester,
+            'request_timestamp': request.request_timestamp.isoformat(),
+            'approvals': request.approvals,
+            'rejections': request.rejections,
+            'validation_results': request.validation_results,
+            'ticket_id': request.ticket_id
+        }
+
+# Example validation gates
+def validate_model_performance(model_info: Dict, request: ApprovalRequest) -> bool:
+    """Validate model meets performance thresholds"""
+    metrics = model_info.get('metrics', {})
+
+    # Example thresholds for production
+    if request.target_stage == 'Production':
+        accuracy = metrics.get('accuracy', 0)
+        if accuracy < 0.90:
+            return False
+
+        f1_score = metrics.get('f1_score', 0)
+        if f1_score < 0.85:
+            return False
+
+    return True
+
+def validate_model_testing(model_info: Dict, request: ApprovalRequest) -> bool:
+    """Validate model has been tested"""
+    tags = model_info.get('tags', {})
+
+    # Check for test completion tag
+    if request.target_stage == 'Production':
+        if tags.get('tested') != 'true':
+            return False
+
+        if tags.get('integration_tested') != 'true':
+            return False
+
+    return True
+
+def validate_documentation(model_info: Dict, request: ApprovalRequest) -> bool:
+    """Validate model documentation"""
+    description = model_info.get('description', '')
+
+    if request.target_stage == 'Production':
+        # Require minimum documentation
+        if len(description) < 100:
+            return False
+
+    return True
+
+# Example usage
+def example_governance_workflow():
+    """Example of complete governance workflow"""
+
+    # Initialize components
+    registry = MLflowModelRegistry(tracking_uri="http://localhost:5000")
+    governance = ModelGovernanceManager(registry)
+
+    # Register validation gates for Production
+    governance.register_validation_gate(
+        target_stage='Production',
+        gate=ValidationGate(
+            name='performance_check',
+            description='Validate model performance metrics',
+            validator_func=validate_model_performance,
+            required=True
+        )
+    )
+
+    governance.register_validation_gate(
+        target_stage='Production',
+        gate=ValidationGate(
+            name='testing_check',
+            description='Validate testing completion',
+            validator_func=validate_model_testing,
+            required=True
+        )
+    )
+
+    governance.register_validation_gate(
+        target_stage='Production',
+        gate=ValidationGate(
+            name='documentation_check',
+            description='Validate documentation completeness',
+            validator_func=validate_documentation,
+            required=False
+        )
+    )
+
+    # Request approval for production promotion
+    request_id = governance.request_approval(
+        model_name='fraud_detector',
+        version='3',
+        source_stage='Staging',
+        target_stage='Production',
+        requester='alice@company.com',
+        requester_role=UserRole.DATA_SCIENTIST,
+        justification='New model shows 5% improvement in F1 score',
+        impact_assessment='Expected to reduce false positives by 15%',
+        rollback_plan='Immediate rollback to v2 if accuracy drops below 0.88'
+    )
+
+    print(f"Approval request created: {request_id}")
+
+    # Check request status
+    status = governance.get_request_status(request_id)
+    print(f"Request status: {status['status']}")
+    print(f"Validation results: {status['validation_results']}")
+
+    # Team lead approves
+    governance.approve_request(
+        request_id=request_id,
+        approver='bob@company.com',
+        approver_role=UserRole.TEAM_LEAD,
+        comments='Model performance looks good, approving for production'
+    )
+
+    # Production owner approves (final approval)
+    governance.approve_request(
+        request_id=request_id,
+        approver='charlie@company.com',
+        approver_role=UserRole.PRODUCTION_OWNER,
+        comments='Infrastructure ready, approved for deployment'
+    )
+
+    # Check final status
+    final_status = governance.get_request_status(request_id)
+    print(f"Final status: {final_status['status']}")
+
+    # Get audit trail
+    audit_trail = governance.get_audit_trail(model_name='fraud_detector')
+    print(f"Audit events: {len(audit_trail)}")
+    for event in audit_trail:
+        print(f"  {event['timestamp']}: {event['event_type']} by {event['user']}")
+\end{lstlisting}
+
+\section{Model Comparison and Promotion}
+
+\subsection{Comprehensive Model Comparison Framework}
+
+Comparing models rigorously before promotion prevents regression. Effective comparison evaluates models across multiple dimensions: performance metrics, statistical significance, computational cost, data requirements, and operational characteristics.
+
+\textbf{Comparison dimensions:}
+\begin{itemize}
+    \item \textbf{Performance metrics:} Accuracy, precision, recall, F1, AUC-ROC
+    \item \textbf{Statistical significance:} Hypothesis tests, confidence intervals
+    \item \textbf{Computational cost:} Inference latency, throughput, resource usage
+    \item \textbf{Data requirements:} Feature dependencies, data freshness needs
+    \item \textbf{Model complexity:} Number of parameters, interpretability
+    \item \textbf{Business metrics:} Revenue impact, user satisfaction, operational cost
+\end{itemize}
+
+\subsection{Model Comparison and Promotion System}
+
+\begin{lstlisting}[language=Python, caption=Model Comparison and Promotion System]
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from datetime import datetime
+import numpy as np
+from scipy import stats
+import logging
+
+@dataclass
+class ComparisonResult:
+    """Results of model comparison"""
+    model1_name: str
+    model1_version: str
+    model2_name: str
+    model2_version: str
+
+    # Performance comparison
+    metric_comparisons: Dict[str, Dict[str, float]]
+
+    # Statistical significance
+    statistically_significant: bool
+    p_values: Dict[str, float]
+    confidence_intervals: Dict[str, Tuple[float, float]]
+
+    # Computational comparison
+    latency_comparison: Dict[str, float]
+    throughput_comparison: Dict[str, float]
+    resource_comparison: Dict[str, float]
+
+    # Overall recommendation
+    recommended_model: str
+    recommendation_reason: str
+    confidence_score: float
+
+@dataclass
+class PromotionCriteria:
+    """Criteria for automatic model promotion"""
+    # Performance requirements
+    min_accuracy_improvement: float = 0.01  # 1% minimum improvement
+    min_f1_improvement: float = 0.01
+    require_statistical_significance: bool = True
+    min_confidence_level: float = 0.95
+
+    # Resource constraints
+    max_latency_ms: Optional[float] = None
+    max_memory_mb: Optional[float] = None
+    min_throughput_qps: Optional[float] = None
+
+    # Business requirements
+    max_false_positive_rate: Optional[float] = None
+    max_false_negative_rate: Optional[float] = None
+
+    # A/B test requirements
+    min_sample_size: int = 1000
+    min_test_duration_days: int = 7
+
+class ModelComparator:
+    """
+    Compare models across multiple dimensions
+
+    Performs statistical testing and comprehensive evaluation
+    """
+
+    def __init__(self, mlflow_registry: MLflowModelRegistry):
+        """
+        Initialize model comparator
+
+        Args:
+            mlflow_registry: MLflow registry instance
+        """
+        self.registry = mlflow_registry
+        self.logger = logging.getLogger("ModelComparator")
+
+    def compare_models(self,
+                      model_name: str,
+                      version1: str,
+                      version2: str,
+                      test_data: pd.DataFrame = None,
+                      test_labels: np.ndarray = None,
+                      production_metrics: Dict = None) -> ComparisonResult:
+        """
+        Comprehensive model comparison
+
+        Args:
+            model_name: Model name
+            version1: First version
+            version2: Second version
+            test_data: Test dataset for evaluation
+            test_labels: True labels for test data
+            production_metrics: Optional production performance data
+
+        Returns:
+            ComparisonResult
+        """
+        self.logger.info(f"Comparing {model_name} v{version1} vs v{version2}")
+
+        # Get model information
+        model1_info = self.registry.get_model_version(model_name, version1)
+        model2_info = self.registry.get_model_version(model_name, version2)
+
+        # Compare metrics
+        metric_comparisons = self._compare_metrics(
+            model1_info['metrics'],
+            model2_info['metrics']
+        )
+
+        # Statistical significance testing
+        p_values = {}
+        confidence_intervals = {}
+        statistically_significant = True
+
+        if test_data is not None and test_labels is not None:
+            # Load models and evaluate
+            model1 = self._load_model(model_name, version1)
+            model2 = self._load_model(model_name, version2)
+
+            pred1 = model1.predict_proba(test_data)[:, 1]
+            pred2 = model2.predict_proba(test_data)[:, 1]
+
+            # Perform statistical tests
+            stat_results = self._perform_statistical_tests(
+                pred1, pred2, test_labels
+            )
+            p_values = stat_results['p_values']
+            confidence_intervals = stat_results['confidence_intervals']
+            statistically_significant = stat_results['significant']
+
+        # Compare computational performance
+        latency_comparison = self._compare_latency(
+            model1_info, model2_info
+        )
+
+        throughput_comparison = self._compare_throughput(
+            model1_info, model2_info
+        )
+
+        resource_comparison = self._compare_resources(
+            model1_info, model2_info
+        )
+
+        # Make recommendation
+        recommended_model, reason, confidence = self._make_recommendation(
+            version1, version2,
+            metric_comparisons,
+            statistically_significant,
+            latency_comparison,
+            resource_comparison
+        )
+
+        return ComparisonResult(
+            model1_name=model_name,
+            model1_version=version1,
+            model2_name=model_name,
+            model2_version=version2,
+            metric_comparisons=metric_comparisons,
+            statistically_significant=statistically_significant,
+            p_values=p_values,
+            confidence_intervals=confidence_intervals,
+            latency_comparison=latency_comparison,
+            throughput_comparison=throughput_comparison,
+            resource_comparison=resource_comparison,
+            recommended_model=recommended_model,
+            recommendation_reason=reason,
+            confidence_score=confidence
+        )
+
+    def _compare_metrics(self,
+                        metrics1: Dict[str, float],
+                        metrics2: Dict[str, float]) -> Dict[str, Dict[str, float]]:
+        """Compare performance metrics"""
+        comparisons = {}
+
+        all_metrics = set(metrics1.keys()) | set(metrics2.keys())
+
+        for metric in all_metrics:
+            m1 = metrics1.get(metric, 0)
+            m2 = metrics2.get(metric, 0)
+
+            improvement = ((m2 - m1) / abs(m1) * 100) if m1 != 0 else 0
+
+            comparisons[metric] = {
+                'model1': m1,
+                'model2': m2,
+                'improvement_percent': improvement,
+                'absolute_difference': m2 - m1
+            }
+
+        return comparisons
+
+    def _perform_statistical_tests(self,
+                                   pred1: np.ndarray,
+                                   pred2: np.ndarray,
+                                   labels: np.ndarray) -> Dict:
+        """Perform statistical significance tests"""
+
+        # Calculate AUC for both models
+        from sklearn.metrics import roc_auc_score
+
+        auc1 = roc_auc_score(labels, pred1)
+        auc2 = roc_auc_score(labels, pred2)
+
+        # McNemar's test for binary predictions
+        binary_pred1 = (pred1 > 0.5).astype(int)
+        binary_pred2 = (pred2 > 0.5).astype(int)
+
+        # Create contingency table
+        both_correct = np.sum((binary_pred1 == labels) & (binary_pred2 == labels))
+        only_1_correct = np.sum((binary_pred1 == labels) & (binary_pred2 != labels))
+        only_2_correct = np.sum((binary_pred1 != labels) & (binary_pred2 == labels))
+        both_wrong = np.sum((binary_pred1 != labels) & (binary_pred2 != labels))
+
+        # McNemar's test
+        if only_1_correct + only_2_correct > 0:
+            mcnemar_stat = ((abs(only_1_correct - only_2_correct) - 1) ** 2) / \
+                          (only_1_correct + only_2_correct)
+            mcnemar_p = 1 - stats.chi2.cdf(mcnemar_stat, 1)
+        else:
+            mcnemar_p = 1.0
+
+        # Bootstrap confidence interval for AUC difference
+        n_bootstrap = 1000
+        auc_diffs = []
+
+        for _ in range(n_bootstrap):
+            indices = np.random.choice(len(labels), len(labels), replace=True)
+            boot_auc1 = roc_auc_score(labels[indices], pred1[indices])
+            boot_auc2 = roc_auc_score(labels[indices], pred2[indices])
+            auc_diffs.append(boot_auc2 - boot_auc1)
+
+        auc_diffs = np.array(auc_diffs)
+        ci_lower = np.percentile(auc_diffs, 2.5)
+        ci_upper = np.percentile(auc_diffs, 97.5)
+
+        # Determine if statistically significant
+        significant = mcnemar_p < 0.05 and ci_lower > 0
+
+        return {
+            'p_values': {
+                'mcnemar': mcnemar_p
+            },
+            'confidence_intervals': {
+                'auc_difference': (ci_lower, ci_upper)
+            },
+            'significant': significant
+        }
+
+    def _compare_latency(self,
+                        model1_info: Dict,
+                        model2_info: Dict) -> Dict[str, float]:
+        """Compare inference latency"""
+        # In practice, would get from production metrics or benchmarks
+        latency1 = model1_info.get('params', {}).get('avg_latency_ms', 0)
+        latency2 = model2_info.get('params', {}).get('avg_latency_ms', 0)
+
+        return {
+            'model1_ms': float(latency1) if latency1 else 0,
+            'model2_ms': float(latency2) if latency2 else 0,
+            'difference_ms': float(latency2) - float(latency1) if latency1 and latency2 else 0
+        }
+
+    def _compare_throughput(self,
+                           model1_info: Dict,
+                           model2_info: Dict) -> Dict[str, float]:
+        """Compare throughput (queries per second)"""
+        throughput1 = model1_info.get('params', {}).get('throughput_qps', 0)
+        throughput2 = model2_info.get('params', {}).get('throughput_qps', 0)
+
+        return {
+            'model1_qps': float(throughput1) if throughput1 else 0,
+            'model2_qps': float(throughput2) if throughput2 else 0,
+            'difference_qps': float(throughput2) - float(throughput1) if throughput1 and throughput2 else 0
+        }
+
+    def _compare_resources(self,
+                          model1_info: Dict,
+                          model2_info: Dict) -> Dict[str, float]:
+        """Compare resource usage"""
+        memory1 = model1_info.get('params', {}).get('memory_mb', 0)
+        memory2 = model2_info.get('params', {}).get('memory_mb', 0)
+
+        return {
+            'model1_memory_mb': float(memory1) if memory1 else 0,
+            'model2_memory_mb': float(memory2) if memory2 else 0,
+            'difference_mb': float(memory2) - float(memory1) if memory1 and memory2 else 0
+        }
+
+    def _make_recommendation(self,
+                            version1: str,
+                            version2: str,
+                            metric_comparisons: Dict,
+                            statistically_significant: bool,
+                            latency_comparison: Dict,
+                            resource_comparison: Dict) -> Tuple[str, str, float]:
+        """Make promotion recommendation"""
+
+        reasons = []
+        version2_score = 0
+        version1_score = 0
+
+        # Evaluate performance improvements
+        for metric, comparison in metric_comparisons.items():
+            improvement = comparison['improvement_percent']
+            if improvement > 1:  # > 1% improvement
+                version2_score += 1
+                reasons.append(f"{metric} improved by {improvement:.2f}%")
+            elif improvement < -1:  # > 1% degradation
+                version1_score += 1
+                reasons.append(f"{metric} degraded by {abs(improvement):.2f}%")
+
+        # Consider statistical significance
+        if not statistically_significant:
+            reasons.append("Improvement not statistically significant")
+            version2_score -= 2
+
+        # Consider latency
+        latency_diff = latency_comparison.get('difference_ms', 0)
+        if latency_diff > 10:  # 10ms degradation
+            version1_score += 1
+            reasons.append(f"Latency increased by {latency_diff:.1f}ms")
+        elif latency_diff < -10:  # 10ms improvement
+            version2_score += 1
+            reasons.append(f"Latency reduced by {abs(latency_diff):.1f}ms")
+
+        # Make decision
+        if version2_score > version1_score:
+            recommended = version2
+            confidence = min(version2_score / (version2_score + version1_score + 1), 0.99)
+        elif version1_score > version2_score:
+            recommended = version1
+            confidence = min(version1_score / (version2_score + version1_score + 1), 0.99)
+        else:
+            recommended = version1  # Keep current if tie
+            confidence = 0.5
+            reasons.append("Models perform similarly - keeping current version")
+
+        reason = "; ".join(reasons)
+        return recommended, reason, confidence
+
+    def _load_model(self, model_name: str, version: str):
+        """Load model from registry"""
+        model_uri = f"models:/{model_name}/{version}"
+        return mlflow.sklearn.load_model(model_uri)
+
+class PromotionManager:
+    """
+    Automated model promotion based on criteria
+
+    Evaluates models against criteria and promotes automatically
+    """
+
+    def __init__(self,
+                 comparator: ModelComparator,
+                 governance: ModelGovernanceManager):
+        """
+        Initialize promotion manager
+
+        Args:
+            comparator: ModelComparator instance
+            governance: ModelGovernanceManager instance
+        """
+        self.comparator = comparator
+        self.governance = governance
+        self.logger = logging.getLogger("PromotionManager")
+
+    def evaluate_for_promotion(self,
+                              model_name: str,
+                              candidate_version: str,
+                              current_version: str,
+                              criteria: PromotionCriteria,
+                              test_data: pd.DataFrame = None,
+                              test_labels: np.ndarray = None) -> Dict:
+        """
+        Evaluate if candidate model should be promoted
+
+        Args:
+            model_name: Model name
+            candidate_version: Candidate version
+            current_version: Current production version
+            criteria: Promotion criteria
+            test_data: Test dataset
+            test_labels: Test labels
+
+        Returns:
+            Evaluation results with promotion decision
+        """
+        self.logger.info(
+            f"Evaluating {model_name} v{candidate_version} for promotion"
+        )
+
+        # Compare models
+        comparison = self.comparator.compare_models(
+            model_name=model_name,
+            version1=current_version,
+            version2=candidate_version,
+            test_data=test_data,
+            test_labels=test_labels
+        )
+
+        # Evaluate against criteria
+        checks = {}
+        all_passed = True
+
+        # Check accuracy improvement
+        accuracy_comp = comparison.metric_comparisons.get('accuracy', {})
+        accuracy_improvement = accuracy_comp.get('improvement_percent', 0) / 100
+
+        checks['accuracy_improvement'] = accuracy_improvement >= criteria.min_accuracy_improvement
+        if not checks['accuracy_improvement']:
+            all_passed = False
+            self.logger.warning(
+                f"Accuracy improvement {accuracy_improvement:.3f} below threshold "
+                f"{criteria.min_accuracy_improvement}"
+            )
+
+        # Check F1 improvement
+        f1_comp = comparison.metric_comparisons.get('f1_score', {})
+        f1_improvement = f1_comp.get('improvement_percent', 0) / 100
+
+        checks['f1_improvement'] = f1_improvement >= criteria.min_f1_improvement
+        if not checks['f1_improvement']:
+            all_passed = False
+
+        # Check statistical significance
+        if criteria.require_statistical_significance:
+            checks['statistical_significance'] = comparison.statistically_significant
+            if not checks['statistical_significance']:
+                all_passed = False
+                self.logger.warning("Improvement not statistically significant")
+
+        # Check latency constraint
+        if criteria.max_latency_ms:
+            candidate_latency = comparison.latency_comparison.get('model2_ms', 0)
+            checks['latency_constraint'] = candidate_latency <= criteria.max_latency_ms
+            if not checks['latency_constraint']:
+                all_passed = False
+
+        # Check resource constraints
+        if criteria.max_memory_mb:
+            candidate_memory = comparison.resource_comparison.get('model2_memory_mb', 0)
+            checks['memory_constraint'] = candidate_memory <= criteria.max_memory_mb
+            if not checks['memory_constraint']:
+                all_passed = False
+
+        return {
+            'should_promote': all_passed,
+            'comparison': comparison,
+            'criteria_checks': checks,
+            'recommendation': comparison.recommendation_reason
+        }
+
+    def auto_promote(self,
+                    model_name: str,
+                    candidate_version: str,
+                    current_version: str,
+                    criteria: PromotionCriteria,
+                    requester: str,
+                    test_data: pd.DataFrame = None,
+                    test_labels: np.ndarray = None) -> Optional[str]:
+        """
+        Automatically promote model if criteria met
+
+        Args:
+            model_name: Model name
+            candidate_version: Candidate version
+            current_version: Current version
+            criteria: Promotion criteria
+            requester: User requesting promotion
+            test_data: Test data
+            test_labels: Test labels
+
+        Returns:
+            Approval request ID if promotion initiated, None otherwise
+        """
+        # Evaluate for promotion
+        evaluation = self.evaluate_for_promotion(
+            model_name=model_name,
+            candidate_version=candidate_version,
+            current_version=current_version,
+            criteria=criteria,
+            test_data=test_data,
+            test_labels=test_labels
+        )
+
+        if not evaluation['should_promote']:
+            self.logger.info(
+                f"Model {model_name} v{candidate_version} does not meet promotion criteria"
+            )
+            return None
+
+        # Create approval request
+        comparison = evaluation['comparison']
+
+        request_id = self.governance.request_approval(
+            model_name=model_name,
+            version=candidate_version,
+            source_stage='Staging',
+            target_stage='Production',
+            requester=requester,
+            requester_role=UserRole.ML_ENGINEER,
+            justification=f"Automated promotion: {comparison.recommendation_reason}",
+            impact_assessment=f"Performance improvements: {comparison.metric_comparisons}",
+            rollback_plan=f"Rollback to v{current_version} if issues detected"
+        )
+
+        self.logger.info(
+            f"Created promotion request {request_id} for {model_name} v{candidate_version}"
+        )
+
+        return request_id
+
+# Example usage
+def example_model_comparison_and_promotion():
+    """Example of model comparison and promotion"""
+
+    # Initialize components
+    registry = MLflowModelRegistry(tracking_uri="http://localhost:5000")
+    comparator = ModelComparator(registry)
+    governance = ModelGovernanceManager(registry)
+    promotion_manager = PromotionManager(comparator, governance)
+
+    # Create test data
+    from sklearn.datasets import make_classification
+    X_test, y_test = make_classification(
+        n_samples=1000, n_features=20, random_state=42
+    )
+
+    # Compare models
+    comparison = comparator.compare_models(
+        model_name='fraud_detector',
+        version1='2',  # Current production
+        version2='3',  # Candidate
+        test_data=pd.DataFrame(X_test),
+        test_labels=y_test
+    )
+
+    print(f"Comparison Results:")
+    print(f"  Recommended: {comparison.recommended_model}")
+    print(f"  Reason: {comparison.recommendation_reason}")
+    print(f"  Confidence: {comparison.confidence_score:.2f}")
+    print(f"  Statistically significant: {comparison.statistically_significant}")
+
+    # Define promotion criteria
+    criteria = PromotionCriteria(
+        min_accuracy_improvement=0.01,  # 1%
+        min_f1_improvement=0.01,
+        require_statistical_significance=True,
+        max_latency_ms=100,
+        max_memory_mb=2000
+    )
+
+    # Evaluate for promotion
+    evaluation = promotion_manager.evaluate_for_promotion(
+        model_name='fraud_detector',
+        candidate_version='3',
+        current_version='2',
+        criteria=criteria,
+        test_data=pd.DataFrame(X_test),
+        test_labels=y_test
+    )
+
+    print(f"\nPromotion Evaluation:")
+    print(f"  Should promote: {evaluation['should_promote']}")
+    print(f"  Criteria checks: {evaluation['criteria_checks']}")
+
+    # Auto-promote if criteria met
+    if evaluation['should_promote']:
+        request_id = promotion_manager.auto_promote(
+            model_name='fraud_detector',
+            candidate_version='3',
+            current_version='2',
+            criteria=criteria,
+            requester='ml-pipeline@company.com',
+            test_data=pd.DataFrame(X_test),
+            test_labels=y_test
+        )
+        print(f"\nPromotion request created: {request_id}")
+\end{lstlisting}
+
+\section{CI/CD Pipeline Integration}
+
+\subsection{Automated Model Lifecycle with CI/CD}
+
+Integrating model registry with CI/CD pipelines automates model training, testing, registration, and deployment. This reduces manual errors, ensures reproducibility, and accelerates delivery.
+
+\textbf{CI/CD integration benefits:}
+\begin{itemize}
+    \item \textbf{Automated testing:} Run validation tests on every model version
+    \item \textbf{Consistent deployment:} Standardized promotion workflows
+    \item \textbf{Version control:} Automatic model versioning and tagging
+    \item \textbf{Audit trail:} Complete history of model changes
+    \item \textbf{Rollback capability:} Quick reversion to previous versions
+    \item \textbf{Infrastructure as code:} Declarative model deployment
+\end{itemize}
+
+\subsection{CI/CD Pipeline Implementation}
+
+\begin{lstlisting}[language=Python, caption=CI/CD Pipeline Integration for ML Models]
+from typing import Dict, List, Optional
+from dataclasses import dataclass
+import subprocess
+import yaml
+import json
+import os
+from pathlib import Path
+
+@dataclass
+class PipelineConfig:
+    """CI/CD pipeline configuration"""
+    # Repository
+    git_repo: str
+    git_branch: str
+
+    # Training
+    training_script: str
+    training_data_path: str
+    hyperparameters_file: str
+
+    # Testing
+    test_script: str
+    test_data_path: str
+    performance_thresholds: Dict[str, float]
+
+    # Model registration
+    model_name: str
+    registry_uri: str
+
+    # Deployment
+    deployment_target: str  # staging, production
+    kubernetes_namespace: str
+    docker_image_registry: str
+
+class MLPipeline:
+    """
+    ML CI/CD pipeline orchestrator
+
+    Automates model training, testing, registration, and deployment
+    """
+
+    def __init__(self,
+                 config: PipelineConfig,
+                 registry: MLflowModelRegistry,
+                 governance: ModelGovernanceManager):
+        """
+        Initialize ML pipeline
+
+        Args:
+            config: Pipeline configuration
+            registry: MLflow registry
+            governance: Governance manager
+        """
+        self.config = config
+        self.registry = registry
+        self.governance = governance
+        self.logger = logging.getLogger("MLPipeline")
+
+    def run_training_pipeline(self) -> Dict:
+        """
+        Run complete training pipeline
+
+        Returns:
+            Pipeline results
+        """
+        self.logger.info("Starting training pipeline")
+
+        results = {
+            'git_commit': None,
+            'run_id': None,
+            'model_version': None,
+            'metrics': {},
+            'tests_passed': False,
+            'registered': False
+        }
+
+        try:
+            # Step 1: Get git commit info
+            results['git_commit'] = self._get_git_commit()
+
+            # Step 2: Train model
+            run_id, metrics = self._train_model()
+            results['run_id'] = run_id
+            results['metrics'] = metrics
+
+            # Step 3: Run model tests
+            test_results = self._run_model_tests(run_id)
+            results['tests_passed'] = test_results['passed']
+
+            if not test_results['passed']:
+                self.logger.error("Model tests failed")
+                return results
+
+            # Step 4: Register model
+            model_version = self._register_model(run_id, metrics)
+            results['model_version'] = model_version
+            results['registered'] = True
+
+            # Step 5: Request approval for staging
+            self._request_staging_approval(model_version)
+
+            self.logger.info(
+                f"Training pipeline completed successfully. Model v{model_version}"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Training pipeline failed: {str(e)}")
+            raise
+
+        return results
+
+    def run_deployment_pipeline(self,
+                                model_version: str,
+                                target_stage: str) -> bool:
+        """
+        Run deployment pipeline
+
+        Args:
+            model_version: Model version to deploy
+            target_stage: Target stage (Staging, Production)
+
+        Returns:
+            True if deployment successful
+        """
+        self.logger.info(
+            f"Starting deployment pipeline for v{model_version} to {target_stage}"
+        )
+
+        try:
+            # Step 1: Build Docker image
+            image_tag = self._build_docker_image(model_version)
+
+            # Step 2: Push to registry
+            self._push_docker_image(image_tag)
+
+            # Step 3: Deploy to Kubernetes
+            self._deploy_to_kubernetes(image_tag, target_stage)
+
+            # Step 4: Run smoke tests
+            smoke_passed = self._run_smoke_tests(target_stage)
+
+            if not smoke_passed:
+                self.logger.error("Smoke tests failed, rolling back")
+                self._rollback_deployment(target_stage)
+                return False
+
+            self.logger.info(f"Deployment to {target_stage} successful")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Deployment failed: {str(e)}")
+            self._rollback_deployment(target_stage)
+            return False
+
+    def _get_git_commit(self) -> str:
+        """Get current git commit hash"""
+        result = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True
+        )
+        return result.stdout.strip()
+
+    def _train_model(self) -> tuple:
+        """Execute training script"""
+        self.logger.info("Training model")
+
+        # Load hyperparameters
+        with open(self.config.hyperparameters_file, 'r') as f:
+            hyperparameters = yaml.safe_load(f)
+
+        # Run training script
+        env = os.environ.copy()
+        env['MLFLOW_TRACKING_URI'] = self.config.registry_uri
+
+        result = subprocess.run(
+            ['python', self.config.training_script,
+             '--data', self.config.training_data_path,
+             '--params', self.config.hyperparameters_file],
+            env=env,
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            raise Exception(f"Training failed: {result.stderr}")
+
+        # Parse output to get run_id and metrics
+        output = json.loads(result.stdout)
+        return output['run_id'], output['metrics']
+
+    def _run_model_tests(self, run_id: str) -> Dict:
+        """Run model validation tests"""
+        self.logger.info("Running model tests")
+
+        result = subprocess.run(
+            ['python', self.config.test_script,
+             '--run-id', run_id,
+             '--test-data', self.config.test_data_path],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            return {'passed': False, 'error': result.stderr}
+
+        test_results = json.loads(result.stdout)
+
+        # Check against thresholds
+        passed = True
+        for metric, threshold in self.config.performance_thresholds.items():
+            actual = test_results['metrics'].get(metric, 0)
+            if actual < threshold:
+                self.logger.warning(
+                    f"{metric}={actual:.3f} below threshold {threshold}"
+                )
+                passed = False
+
+        return {'passed': passed, 'results': test_results}
+
+    def _register_model(self, run_id: str, metrics: Dict) -> str:
+        """Register model in MLflow"""
+        self.logger.info("Registering model")
+
+        # Load model from run
+        model_uri = f"runs:/{run_id}/model"
+
+        # Create metadata
+        metadata = ModelMetadata(
+            name=self.config.model_name,
+            version="auto",
+            stage="None",
+            run_id=run_id,
+            experiment_id="0",
+            metrics=metrics,
+            training_date=datetime.now(),
+            training_duration_seconds=0,  # Would be tracked
+            dataset_version="auto",
+            dataset_size=0,
+            model_type="auto",
+            framework="sklearn",
+            framework_version="1.2.0",
+            python_version="3.9",
+            dependencies=[],
+            tags={'ci_cd': 'true', 'automated': 'true'},
+            description=f"Automated build from commit {self._get_git_commit()[:8]}"
+        )
+
+        # Register
+        version = self.registry.register_model(
+            model=None,  # Already logged in training
+            model_name=self.config.model_name,
+            run_id=run_id,
+            metadata=metadata
+        )
+
+        return version
+
+    def _request_staging_approval(self, model_version: str):
+        """Request approval for staging deployment"""
+        self.governance.request_approval(
+            model_name=self.config.model_name,
+            version=model_version,
+            source_stage='None',
+            target_stage='Staging',
+            requester='ci-cd-pipeline',
+            requester_role=UserRole.ML_ENGINEER,
+            justification='Automated build passed all tests',
+            impact_assessment='New model version for staging validation',
+            rollback_plan='Automated rollback on failure'
+        )
+
+    def _build_docker_image(self, model_version: str) -> str:
+        """Build Docker image with model"""
+        image_tag = f"{self.config.docker_image_registry}/{self.config.model_name}:{model_version}"
+
+        self.logger.info(f"Building Docker image: {image_tag}")
+
+        # Create Dockerfile
+        dockerfile_content = f"""
+FROM python:3.9-slim
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# Copy model serving code
+COPY serve.py .
+
+# Set MLflow environment
+ENV MLFLOW_TRACKING_URI={self.config.registry_uri}
+ENV MODEL_NAME={self.config.model_name}
+ENV MODEL_VERSION={model_version}
+
+# Expose port
+EXPOSE 8000
+
+# Run server
+CMD ["python", "serve.py"]
+        """
+
+        with open('Dockerfile', 'w') as f:
+            f.write(dockerfile_content)
+
+        # Build image
+        result = subprocess.run(
+            ['docker', 'build', '-t', image_tag, '.'],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            raise Exception(f"Docker build failed: {result.stderr}")
+
+        return image_tag
+
+    def _push_docker_image(self, image_tag: str):
+        """Push Docker image to registry"""
+        self.logger.info(f"Pushing image: {image_tag}")
+
+        result = subprocess.run(
+            ['docker', 'push', image_tag],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            raise Exception(f"Docker push failed: {result.stderr}")
+
+    def _deploy_to_kubernetes(self, image_tag: str, target_stage: str):
+        """Deploy to Kubernetes"""
+        self.logger.info(f"Deploying to Kubernetes: {target_stage}")
+
+        # Create Kubernetes deployment manifest
+        deployment = {
+            'apiVersion': 'apps/v1',
+            'kind': 'Deployment',
+            'metadata': {
+                'name': f"{self.config.model_name}-{target_stage.lower()}",
+                'namespace': self.config.kubernetes_namespace
+            },
+            'spec': {
+                'replicas': 3 if target_stage == 'Production' else 1,
+                'selector': {
+                    'matchLabels': {
+                        'app': self.config.model_name,
+                        'stage': target_stage.lower()
+                    }
+                },
+                'template': {
+                    'metadata': {
+                        'labels': {
+                            'app': self.config.model_name,
+                            'stage': target_stage.lower()
+                        }
+                    },
+                    'spec': {
+                        'containers': [{
+                            'name': 'model-server',
+                            'image': image_tag,
+                            'ports': [{'containerPort': 8000}],
+                            'resources': {
+                                'requests': {
+                                    'memory': '1Gi',
+                                    'cpu': '500m'
+                                },
+                                'limits': {
+                                    'memory': '2Gi',
+                                    'cpu': '1000m'
+                                }
+                            }
+                        }]
+                    }
+                }
+            }
+        }
+
+        # Write manifest
+        with open('deployment.yaml', 'w') as f:
+            yaml.dump(deployment, f)
+
+        # Apply to cluster
+        result = subprocess.run(
+            ['kubectl', 'apply', '-f', 'deployment.yaml'],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            raise Exception(f"Kubernetes deployment failed: {result.stderr}")
+
+    def _run_smoke_tests(self, target_stage: str) -> bool:
+        """Run smoke tests on deployed model"""
+        self.logger.info("Running smoke tests")
+
+        # Would make test requests to deployed endpoint
+        # Simplified here
+        return True
+
+    def _rollback_deployment(self, target_stage: str):
+        """Rollback failed deployment"""
+        self.logger.info(f"Rolling back {target_stage} deployment")
+
+        # Rollback to previous version
+        result = subprocess.run(
+            ['kubectl', 'rollout', 'undo',
+             f"deployment/{self.config.model_name}-{target_stage.lower()}",
+             '-n', self.config.kubernetes_namespace],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            self.logger.error(f"Rollback failed: {result.stderr}")
+
+    def generate_github_actions_workflow(self) -> str:
+        """Generate GitHub Actions workflow YAML"""
+        workflow = {
+            'name': 'ML Model CI/CD',
+            'on': {
+                'push': {
+                    'branches': ['main', 'develop']
+                },
+                'pull_request': {
+                    'branches': ['main']
+                }
+            },
+            'jobs': {
+                'train-and-test': {
+                    'runs-on': 'ubuntu-latest',
+                    'steps': [
+                        {'uses': 'actions/checkout@v2'},
+                        {
+                            'name': 'Set up Python',
+                            'uses': 'actions/setup-python@v2',
+                            'with': {'python-version': '3.9'}
+                        },
+                        {
+                            'name': 'Install dependencies',
+                            'run': 'pip install -r requirements.txt'
+                        },
+                        {
+                            'name': 'Train model',
+                            'env': {
+                                'MLFLOW_TRACKING_URI': '${{ secrets.MLFLOW_TRACKING_URI }}'
+                            },
+                            'run': f'python {self.config.training_script}'
+                        },
+                        {
+                            'name': 'Run tests',
+                            'run': f'python {self.config.test_script}'
+                        },
+                        {
+                            'name': 'Register model',
+                            'if': "github.ref == 'refs/heads/main'",
+                            'run': 'python scripts/register_model.py'
+                        }
+                    ]
+                },
+                'deploy-staging': {
+                    'needs': 'train-and-test',
+                    'if': "github.ref == 'refs/heads/develop'",
+                    'runs-on': 'ubuntu-latest',
+                    'steps': [
+                        {
+                            'name': 'Deploy to Staging',
+                            'run': 'python scripts/deploy.py --stage staging'
+                        }
+                    ]
+                },
+                'deploy-production': {
+                    'needs': 'train-and-test',
+                    'if': "github.ref == 'refs/heads/main'",
+                    'runs-on': 'ubuntu-latest',
+                    'steps': [
+                        {
+                            'name': 'Deploy to Production',
+                            'run': 'python scripts/deploy.py --stage production'
+                        }
+                    ]
+                }
+            }
+        }
+
+        return yaml.dump(workflow, default_flow_style=False)
+
+# Example usage
+def example_cicd_pipeline():
+    """Example of CI/CD pipeline integration"""
+
+    # Configuration
+    config = PipelineConfig(
+        git_repo='https://github.com/company/ml-models',
+        git_branch='main',
+        training_script='train.py',
+        training_data_path='data/train.csv',
+        hyperparameters_file='config/hyperparameters.yaml',
+        test_script='test_model.py',
+        test_data_path='data/test.csv',
+        performance_thresholds={
+            'accuracy': 0.90,
+            'f1_score': 0.85,
+            'auc': 0.88
+        },
+        model_name='fraud_detector',
+        registry_uri='http://mlflow.company.com',
+        deployment_target='production',
+        kubernetes_namespace='ml-models',
+        docker_image_registry='gcr.io/company'
+    )
+
+    # Initialize pipeline
+    registry = MLflowModelRegistry(tracking_uri=config.registry_uri)
+    governance = ModelGovernanceManager(registry)
+    pipeline = MLPipeline(config, registry, governance)
+
+    # Run training pipeline
+    results = pipeline.run_training_pipeline()
+
+    if results['registered']:
+        print(f"Model registered: v{results['model_version']}")
+        print(f"Metrics: {results['metrics']}")
+
+        # Deploy to staging
+        if results['tests_passed']:
+            success = pipeline.run_deployment_pipeline(
+                model_version=results['model_version'],
+                target_stage='Staging'
+            )
+            print(f"Staging deployment: {'Success' if success else 'Failed'}")
+
+    # Generate GitHub Actions workflow
+    workflow_yaml = pipeline.generate_github_actions_workflow()
+    print("\nGenerated GitHub Actions workflow:")
+    print(workflow_yaml)
+\end{lstlisting}
+
+\section{Model Packaging and Containerization}
+
+\subsection{Reproducible Model Packaging}
+
+Proper model packaging ensures reproducibility across environments. Packaging includes the model artifacts, dependencies, runtime configuration, and metadata needed for deployment.
+
+\textbf{Packaging requirements:}
+\begin{itemize}
+    \item \textbf{Model artifacts:} Serialized model files (pickle, ONNX, SavedModel)
+    \item \textbf{Dependencies:} Exact versions of all libraries
+    \item \textbf{Environment:} Python version, system libraries
+    \item \textbf{Preprocessing:} Feature transformations, encoders, scalers
+    \item \textbf{Configuration:} Model hyperparameters, thresholds
+    \item \textbf{Metadata:} Model signature, lineage, performance metrics
+\end{itemize}
+
+\subsection{Model Packaging and Container Implementation}
+
+\begin{lstlisting}[language=Python, caption=Model Packaging and Containerization System]
+from typing import Dict, List, Optional, Any
+from pathlib import Path
+import pickle
+import json
+import shutil
+from dataclasses import dataclass
+
+@dataclass
+class PackageConfig:
+    """Model package configuration"""
+    model_name: str
+    model_version: str
+    model_format: str  # mlflow, onnx, pickle, savedmodel
+    include_preprocessing: bool = True
+    include_postprocessing: bool = True
+    optimize_size: bool = True
+    compression: str = "gzip"  # gzip, zip, tar
+
+class ModelPackager:
+    """
+    Package models in multiple formats with dependencies
+
+    Creates self-contained model packages for deployment
+    """
+
+    def __init__(self, output_dir: Path = Path("./model_packages")):
+        """
+        Initialize model packager
+
+        Args:
+            output_dir: Directory for packaged models
+        """
+        self.output_dir = output_dir
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.logger = logging.getLogger("ModelPackager")
+
+    def package_model(self,
+                     model: Any,
+                     config: PackageConfig,
+                     metadata: Dict,
+                     preprocessing_pipeline: Any = None,
+                     postprocessing_fn: Optional[callable] = None) -> Path:
+        """
+        Package model with all dependencies
+
+        Args:
+            model: Trained model
+            config: Package configuration
+            metadata: Model metadata
+            preprocessing_pipeline: Sklearn pipeline or custom preprocessor
+            postprocessing_fn: Post-prediction processing function
+
+        Returns:
+            Path to packaged model
+        """
+        self.logger.info(f"Packaging {config.model_name} v{config.model_version}")
+
+        # Create package directory
+        package_dir = self.output_dir / f"{config.model_name}_{config.model_version}"
+        package_dir.mkdir(exist_ok=True)
+
+        # Save model in specified format
+        if config.model_format == 'mlflow':
+            self._save_mlflow_format(model, package_dir, metadata)
+        elif config.model_format == 'onnx':
+            self._save_onnx_format(model, package_dir, metadata)
+        elif config.model_format == 'pickle':
+            self._save_pickle_format(model, package_dir)
+        else:
+            raise ValueError(f"Unsupported format: {config.model_format}")
+
+        # Save preprocessing pipeline
+        if config.include_preprocessing and preprocessing_pipeline:
+            self._save_preprocessing(preprocessing_pipeline, package_dir)
+
+        # Save postprocessing
+        if config.include_postprocessing and postprocessing_fn:
+            self._save_postprocessing(postprocessing_fn, package_dir)
+
+        # Save metadata
+        self._save_metadata(metadata, package_dir)
+
+        # Generate requirements.txt
+        self._generate_requirements(package_dir)
+
+        # Create inference script
+        self._create_inference_script(package_dir, config)
+
+        # Compress if requested
+        if config.optimize_size:
+            archive_path = self._compress_package(package_dir, config.compression)
+            return archive_path
+
+        return package_dir
+
+    def _save_mlflow_format(self, model: Any, package_dir: Path, metadata: Dict):
+        """Save in MLflow format"""
+        import mlflow.sklearn
+
+        mlflow.sklearn.save_model(
+            model,
+            path=str(package_dir / "model"),
+            signature=metadata.get('signature')
+        )
+
+    def _save_onnx_format(self, model: Any, package_dir: Path, metadata: Dict):
+        """Convert and save in ONNX format"""
+        try:
+            from skl2onnx import convert_sklearn
+            from skl2onnx.common.data_types import FloatTensorType
+
+            # Infer input shape from metadata
+            n_features = metadata.get('n_features', 10)
+            initial_type = [('float_input', FloatTensorType([None, n_features]))]
+
+            # Convert to ONNX
+            onnx_model = convert_sklearn(model, initial_types=initial_type)
+
+            # Save
+            with open(package_dir / "model.onnx", "wb") as f:
+                f.write(onnx_model.SerializeToString())
+
+            self.logger.info("Model converted to ONNX format")
+
+        except ImportError:
+            self.logger.warning("skl2onnx not installed, falling back to pickle")
+            self._save_pickle_format(model, package_dir)
+
+    def _save_pickle_format(self, model: Any, package_dir: Path):
+        """Save in pickle format"""
+        with open(package_dir / "model.pkl", "wb") as f:
+            pickle.dump(model, f)
+
+    def _save_preprocessing(self, pipeline: Any, package_dir: Path):
+        """Save preprocessing pipeline"""
+        with open(package_dir / "preprocessing.pkl", "wb") as f:
+            pickle.dump(pipeline, f)
+
+    def _save_postprocessing(self, fn: callable, package_dir: Path):
+        """Save postprocessing function"""
+        import dill
+
+        with open(package_dir / "postprocessing.pkl", "wb") as f:
+            dill.dump(fn, f)
+
+    def _save_metadata(self, metadata: Dict, package_dir: Path):
+        """Save model metadata"""
+        metadata_file = package_dir / "metadata.json"
+
+        with open(metadata_file, "w") as f:
+            json.dump(metadata, f, indent=2, default=str)
+
+    def _generate_requirements(self, package_dir: Path):
+        """Generate requirements.txt"""
+        import pkg_resources
+
+        # Get installed packages
+        installed_packages = {pkg.key: pkg.version for pkg in pkg_resources.working_set}
+
+        # Core ML packages
+        required_packages = [
+            'numpy', 'pandas', 'scikit-learn', 'mlflow',
+            'scipy', 'joblib', 'fastapi', 'uvicorn'
+        ]
+
+        requirements = []
+        for package in required_packages:
+            if package in installed_packages:
+                requirements.append(f"{package}=={installed_packages[package]}")
+
+        # Write requirements
+        with open(package_dir / "requirements.txt", "w") as f:
+            f.write("\n".join(requirements))
+
+    def _create_inference_script(self, package_dir: Path, config: PackageConfig):
+        """Create standalone inference script"""
+        script_content = f"""
+import pickle
+import json
+import numpy as np
+from pathlib import Path
+
+class ModelInference:
+    def __init__(self, model_dir: str):
+        self.model_dir = Path(model_dir)
+
+        # Load model
+        if (self.model_dir / 'model.pkl').exists():
+            with open(self.model_dir / 'model.pkl', 'rb') as f:
+                self.model = pickle.load(f)
+        else:
+            import mlflow.sklearn
+            self.model = mlflow.sklearn.load_model(str(self.model_dir / 'model'))
+
+        # Load preprocessing if exists
+        preproc_path = self.model_dir / 'preprocessing.pkl'
+        self.preprocessing = None
+        if preproc_path.exists():
+            with open(preproc_path, 'rb') as f:
+                self.preprocessing = pickle.load(f)
+
+        # Load metadata
+        with open(self.model_dir / 'metadata.json', 'r') as f:
+            self.metadata = json.load(f)
+
+    def predict(self, input_data):
+        # Preprocess
+        if self.preprocessing:
+            input_data = self.preprocessing.transform(input_data)
+
+        # Predict
+        predictions = self.model.predict(input_data)
+
+        return predictions
+
+if __name__ == '__main__':
+    # Example usage
+    inference = ModelInference('.')
+
+    # Make prediction
+    import pandas as pd
+    test_data = pd.DataFrame(np.random.rand(1, 10))
+    predictions = inference.predict(test_data)
+    print(f"Predictions: {{predictions}}")
+"""
+
+        with open(package_dir / "inference.py", "w") as f:
+            f.write(script_content)
+
+    def _compress_package(self, package_dir: Path, compression: str) -> Path:
+        """Compress package directory"""
+        archive_name = f"{package_dir.name}.tar.gz"
+        archive_path = self.output_dir / archive_name
+
+        shutil.make_archive(
+            str(package_dir),
+            'gztar',
+            self.output_dir,
+            package_dir.name
+        )
+
+        self.logger.info(f"Package compressed: {archive_path}")
+        return archive_path
+
+class ContainerBuilder:
+    """
+    Build optimized containers for model deployment
+
+    Creates production-ready Docker images
+    """
+
+    def __init__(self):
+        """Initialize container builder"""
+        self.logger = logging.getLogger("ContainerBuilder")
+
+    def build_optimized_container(self,
+                                  model_package_path: Path,
+                                  model_name: str,
+                                  version: str,
+                                  base_image: str = "python:3.9-slim",
+                                  optimize: bool = True) -> str:
+        """
+        Build optimized Docker container
+
+        Args:
+            model_package_path: Path to model package
+            model_name: Model name
+            version: Model version
+            base_image: Base Docker image
+            optimize: Apply optimization techniques
+
+        Returns:
+            Image tag
+        """
+        self.logger.info(f"Building container for {model_name}:{version}")
+
+        # Generate optimized Dockerfile
+        dockerfile = self._generate_dockerfile(
+            model_package_path,
+            base_image,
+            optimize
+        )
+
+        # Write Dockerfile
+        with open('Dockerfile', 'w') as f:
+            f.write(dockerfile)
+
+        # Build image
+        image_tag = f"{model_name}:{version}"
+        result = subprocess.run(
+            ['docker', 'build', '-t', image_tag, '.'],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            raise Exception(f"Docker build failed: {result.stderr}")
+
+        self.logger.info(f"Container built: {image_tag}")
+        return image_tag
+
+    def _generate_dockerfile(self,
+                            model_package_path: Path,
+                            base_image: str,
+                            optimize: bool) -> str:
+        """Generate optimized Dockerfile"""
+
+        # Optimization layers
+        optimization_layers = ""
+        if optimize:
+            optimization_layers = """
+# Optimization: Use multi-stage build
+FROM python:3.9 as builder
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --user -r requirements.txt
+
+# Production stage
+"""
+
+        dockerfile = f"""
+{optimization_layers}
+FROM {base_image}
+
+# Set working directory
+WORKDIR /app
+
+# Copy dependencies from builder (if optimized)
+{"COPY --from=builder /root/.local /root/.local" if optimize else ""}
+
+# Install dependencies
+COPY requirements.txt .
+{"" if optimize else "RUN pip install --no-cache-dir -r requirements.txt"}
+
+# Copy model package
+COPY {model_package_path} ./model/
+
+# Copy serving code
+COPY inference.py .
+COPY serve.py .
+
+# Create non-root user for security
+RUN useradd -m -u 1000 modeluser && chown -R modeluser:modeluser /app
+USER modeluser
+
+# Set environment variables
+ENV MODEL_DIR=/app/model
+ENV PYTHONPATH=/app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
+  CMD python -c "import requests; requests.get('http://localhost:8000/health')"
+
+# Expose port
+EXPOSE 8000
+
+# Run server
+CMD ["python", "serve.py"]
+"""
+
+        return dockerfile
+
+# Example usage
+def example_packaging_and_containerization():
+    """Example of model packaging and containerization"""
+
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.pipeline import Pipeline
+
+    # Train a simple model
+    X_train = np.random.rand(100, 10)
+    y_train = np.random.randint(0, 2, 100)
+
+    # Create preprocessing pipeline
+    preprocessing = StandardScaler()
+    preprocessing.fit(X_train)
+
+    # Train model
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(preprocessing.transform(X_train), y_train)
+
+    # Package configuration
+    config = PackageConfig(
+        model_name='fraud_detector',
+        model_version='v1.0.0',
+        model_format='mlflow',
+        include_preprocessing=True,
+        optimize_size=True,
+        compression='gzip'
+    )
+
+    # Metadata
+    metadata = {
+        'model_type': 'RandomForestClassifier',
+        'framework': 'scikit-learn',
+        'n_features': 10,
+        'metrics': {
+            'accuracy': 0.95,
+            'f1_score': 0.93
+        },
+        'created_at': datetime.now().isoformat()
+    }
+
+    # Package model
+    packager = ModelPackager()
+    package_path = packager.package_model(
+        model=model,
+        config=config,
+        metadata=metadata,
+        preprocessing_pipeline=preprocessing
+    )
+
+    print(f"Model packaged at: {package_path}")
+
+    # Build container
+    builder = ContainerBuilder()
+    image_tag = builder.build_optimized_container(
+        model_package_path=package_path,
+        model_name=config.model_name,
+        version=config.model_version,
+        optimize=True
+    )
+
+    print(f"Container built: {image_tag}")
+\end{lstlisting}
+
+\section{Exercises}
+
+\subsection{Exercise 1: Model Registration and Lifecycle Management}
+
+\textbf{Problem:} Implement a complete model registration workflow that trains a model, registers it in MLflow, transitions through stages (Staging → Production), and maintains version history.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 1 Solution
+from sklearn.datasets import load_breast_cancer
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+import mlflow
+import mlflow.sklearn
+
+def solution_exercise_1():
+    """Complete model registration and lifecycle workflow"""
+
+    # Initialize MLflow
+    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_experiment("breast_cancer_detection")
+
+    # Load data
+    data = load_breast_cancer()
+    X_train, X_test, y_train, y_test = train_test_split(
+        data.data, data.target, test_size=0.2, random_state=42
+    )
+
+    # Train model
+    model = GradientBoostingClassifier(
+        n_estimators=100,
+        learning_rate=0.1,
+        max_depth=3,
+        random_state=42
+    )
+
+    with mlflow.start_run(run_name="breast_cancer_v1") as run:
+        # Train
+        model.fit(X_train, y_train)
+
+        # Evaluate
+        y_pred = model.predict(X_test)
+        y_pred_proba = model.predict_proba(X_test)[:, 1]
+
+        accuracy = accuracy_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
+        auc = roc_auc_score(y_test, y_pred_proba)
+
+        # Log metrics
+        mlflow.log_metric("accuracy", accuracy)
+        mlflow.log_metric("f1_score", f1)
+        mlflow.log_metric("auc_roc", auc)
+
+        # Log parameters
+        mlflow.log_param("n_estimators", 100)
+        mlflow.log_param("learning_rate", 0.1)
+        mlflow.log_param("max_depth", 3)
+
+        # Log model
+        mlflow.sklearn.log_model(
+            model,
+            artifact_path="model",
+            registered_model_name="breast_cancer_detector"
+        )
+
+        run_id = run.info.run_id
+
+    # Initialize registry manager
+    registry = MLflowModelRegistry(tracking_uri="http://localhost:5000")
+
+    # Get latest version
+    versions = registry.client.get_latest_versions("breast_cancer_detector")
+    latest_version = versions[0].version
+
+    # Transition to Staging
+    registry.transition_model_stage(
+        model_name="breast_cancer_detector",
+        version=latest_version,
+        stage="Staging"
+    )
+
+    print(f"Model v{latest_version} moved to Staging")
+
+    # After validation in staging, move to Production
+    registry.transition_model_stage(
+        model_name="breast_cancer_detector",
+        version=latest_version,
+        stage="Production",
+        archive_existing=True
+    )
+
+    print(f"Model v{latest_version} promoted to Production")
+
+    # Get model stages summary
+    summary = registry.get_model_stages_summary("breast_cancer_detector")
+    print(f"Model stages: {summary}")
+
+solution_exercise_1()
+\end{lstlisting}
+
+\subsection{Exercise 2: Complete Model Lineage Tracking}
+
+\textbf{Problem:} Implement comprehensive lineage tracking for a model that captures data provenance, code version, training configuration, and dependencies.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 2 Solution
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+
+def solution_exercise_2():
+    """Implement complete lineage tracking"""
+
+    # Create training dataset
+    np.random.seed(42)
+    X_train = pd.DataFrame({
+        'feature_1': np.random.rand(1000),
+        'feature_2': np.random.rand(1000),
+        'feature_3': np.random.randint(0, 10, 1000),
+        'feature_4': np.random.rand(1000),
+        'feature_5': np.random.randint(0, 5, 1000)
+    })
+    y_train = np.random.randint(0, 2, 1000)
+
+    # Initialize lineage tracker
+    tracker = LineageTracker(storage_backend="mlflow")
+
+    # Track data lineage
+    data_lineage = tracker.track_data_lineage(
+        dataset=X_train,
+        dataset_name="customer_churn_features",
+        dataset_version="v2024-01-20",
+        data_source="warehouse.customer_events",
+        preprocessing_steps=[
+            "remove_null_values",
+            "normalize_numerical_features",
+            "encode_categorical_features",
+            "handle_class_imbalance_smote",
+            "train_test_split_80_20"
+        ]
+    )
+
+    print(f"Data lineage tracked:")
+    print(f"  Dataset: {data_lineage.dataset_name}")
+    print(f"  Version: {data_lineage.dataset_version}")
+    print(f"  Hash: {data_lineage.dataset_hash[:16]}...")
+    print(f"  Samples: {data_lineage.num_samples}")
+    print(f"  Features: {data_lineage.num_features}")
+    print(f"  Preprocessing: {data_lineage.preprocessing_steps}")
+
+    # Track code lineage
+    code_lineage = tracker.track_code_lineage(
+        training_script_paths=["train.py", "preprocessing.py", "utils.py"]
+    )
+
+    print(f"\nCode lineage tracked:")
+    print(f"  Git commit: {code_lineage.git_commit[:8]}")
+    print(f"  Git branch: {code_lineage.git_branch}")
+    print(f"  Repository: {code_lineage.git_repo}")
+    print(f"  Dependencies: {len(code_lineage.dependencies)} packages")
+
+    # Train model
+    model = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=15,
+        min_samples_split=10,
+        random_state=42
+    )
+    model.fit(X_train, y_train)
+
+    # Define hyperparameters
+    hyperparameters = {
+        'n_estimators': 200,
+        'max_depth': 15,
+        'min_samples_split': 10,
+        'random_state': 42,
+        'criterion': 'gini',
+        'bootstrap': True
+    }
+
+    # Calculate metrics
+    from sklearn.metrics import accuracy_score, precision_score, recall_score
+    y_pred = model.predict(X_train)  # Simplified - should use validation set
+
+    metrics = {
+        'accuracy': accuracy_score(y_train, y_pred),
+        'precision': precision_score(y_train, y_pred),
+        'recall': recall_score(y_train, y_pred)
+    }
+
+    # Create complete lineage
+    model_lineage = tracker.create_lineage(
+        model_id="churn_model_abc123",
+        model_name="customer_churn_predictor",
+        model_version="v3.0",
+        data_lineage=data_lineage,
+        code_lineage=code_lineage,
+        hyperparameters=hyperparameters,
+        training_duration=245.5,
+        metrics=metrics,
+        parent_models=[]  # No parent models (not transfer learning)
+    )
+
+    print(f"\nComplete model lineage created:")
+    print(f"  Model ID: {model_lineage.model_id}")
+    print(f"  Model: {model_lineage.model_name} v{model_lineage.model_version}")
+    print(f"  Hardware: {model_lineage.hardware}")
+    print(f"  Training duration: {model_lineage.training_duration}s")
+
+    return model_lineage
+
+lineage = solution_exercise_2()
+\end{lstlisting}
+
+\subsection{Exercise 3: Model Governance with Approval Workflows}
+
+\textbf{Problem:} Implement a governance system with validation gates and multi-stage approval workflow for promoting a model to production.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 3 Solution
+
+def solution_exercise_3():
+    """Implement model governance with approval workflows"""
+
+    # Initialize components
+    registry = MLflowModelRegistry(tracking_uri="http://localhost:5000")
+    governance = ModelGovernanceManager(registry)
+
+    # Define custom validation gates
+    def validate_minimum_samples(model_info: Dict, request: ApprovalRequest) -> bool:
+        """Ensure model trained on sufficient data"""
+        dataset_size = model_info.get('params', {}).get('dataset_size', 0)
+        min_required = 10000
+
+        if int(dataset_size) < min_required:
+            return False
+        return True
+
+    def validate_model_bias(model_info: Dict, request: ApprovalRequest) -> bool:
+        """Check for model bias metrics"""
+        tags = model_info.get('tags', {})
+
+        # Check if bias assessment was performed
+        if tags.get('bias_assessed') != 'true':
+            return False
+
+        # Check fairness metrics
+        demographic_parity = float(tags.get('demographic_parity', '0'))
+        if abs(demographic_parity) > 0.1:  # Max 10% disparity
+            return False
+
+        return True
+
+    def validate_security_scan(model_info: Dict, request: ApprovalRequest) -> bool:
+        """Validate security scanning completed"""
+        tags = model_info.get('tags', {})
+        return tags.get('security_scanned') == 'true'
+
+    # Register validation gates for Production
+    governance.register_validation_gate(
+        target_stage='Production',
+        gate=ValidationGate(
+            name='performance_check',
+            description='Validate performance meets thresholds',
+            validator_func=validate_model_performance,
+            required=True
+        )
+    )
+
+    governance.register_validation_gate(
+        target_stage='Production',
+        gate=ValidationGate(
+            name='sample_size_check',
+            description='Ensure sufficient training data',
+            validator_func=validate_minimum_samples,
+            required=True
+        )
+    )
+
+    governance.register_validation_gate(
+        target_stage='Production',
+        gate=ValidationGate(
+            name='bias_check',
+            description='Check for model bias and fairness',
+            validator_func=validate_model_bias,
+            required=True
+        )
+    )
+
+    governance.register_validation_gate(
+        target_stage='Production',
+        gate=ValidationGate(
+            name='security_check',
+            description='Validate security scan completion',
+            validator_func=validate_security_scan,
+            required=False  # Optional for now
+        )
+    )
+
+    # Request approval for production
+    request_id = governance.request_approval(
+        model_name='fraud_detector',
+        version='5',
+        source_stage='Staging',
+        target_stage='Production',
+        requester='data-scientist@company.com',
+        requester_role=UserRole.DATA_SCIENTIST,
+        justification='New model achieves 3% improvement in precision with no recall degradation',
+        impact_assessment='Expected to reduce false positives by 20%, saving $500K annually in manual review costs',
+        rollback_plan='Automated rollback to v4 if production accuracy drops below 0.92 or latency exceeds 50ms'
+    )
+
+    print(f"Approval request created: {request_id}")
+
+    # Check request status
+    status = governance.get_request_status(request_id)
+    print(f"\nRequest Status:")
+    print(f"  Status: {status['status']}")
+    print(f"  Model: {status['model_name']} v{status['version']}")
+    print(f"  Target: {status['target_stage']}")
+    print(f"  Validation results: {status['validation_results']}")
+
+    # Team lead approval
+    governance.approve_request(
+        request_id=request_id,
+        approver='team-lead@company.com',
+        approver_role=UserRole.TEAM_LEAD,
+        comments='Validated model performance in staging. Metrics look good. Approved.'
+    )
+
+    print(f"\nTeam Lead approved")
+
+    # Production owner approval
+    governance.approve_request(
+        request_id=request_id,
+        approver='prod-owner@company.com',
+        approver_role=UserRole.PRODUCTION_OWNER,
+        comments='Infrastructure capacity confirmed. Load testing passed. Final approval granted.'
+    )
+
+    print(f"Production Owner approved")
+
+    # Check final status
+    final_status = governance.get_request_status(request_id)
+    print(f"\nFinal Status: {final_status['status']}")
+    print(f"Approvals: {len(final_status['approvals'])}")
+
+    # Get audit trail
+    audit_trail = governance.get_audit_trail(model_name='fraud_detector')
+    print(f"\nAudit Trail ({len(audit_trail)} events):")
+    for event in audit_trail[-5:]:  # Show last 5 events
+        print(f"  [{event['timestamp']}] {event['event_type']} by {event['user']}")
+
+    return request_id
+
+request_id = solution_exercise_3()
+\end{lstlisting}
+
+\subsection{Exercise 4: Statistical Model Comparison}
+
+\textbf{Problem:} Implement rigorous statistical comparison between two model versions, including McNemar's test and bootstrap confidence intervals.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 4 Solution
+from sklearn.datasets import make_classification
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+
+def solution_exercise_4():
+    """Statistical model comparison with hypothesis testing"""
+
+    # Create test data
+    X_test, y_test = make_classification(
+        n_samples=2000,
+        n_features=20,
+        n_informative=15,
+        n_redundant=5,
+        random_state=42
+    )
+
+    # Train two models
+    model_v1 = RandomForestClassifier(n_estimators=100, random_state=42)
+    model_v2 = GradientBoostingClassifier(n_estimators=100, random_state=42)
+
+    # Simplified training (use actual train set in practice)
+    model_v1.fit(X_test[:1000], y_test[:1000])
+    model_v2.fit(X_test[:1000], y_test[:1000])
+
+    # Initialize comparator
+    registry = MLflowModelRegistry(tracking_uri="http://localhost:5000")
+    comparator = ModelComparator(registry)
+
+    # Register both models first (simplified here)
+    # In practice, load from registry
+
+    # Create comparison with test data
+    print("Comparing Model v1 (RandomForest) vs Model v2 (GradientBoosting)")
+    print("=" * 70)
+
+    # Get predictions
+    pred_v1_proba = model_v1.predict_proba(X_test)[:, 1]
+    pred_v2_proba = model_v2.predict_proba(X_test)[:, 1]
+
+    pred_v1 = (pred_v1_proba > 0.5).astype(int)
+    pred_v2 = (pred_v2_proba > 0.5).astype(int)
+
+    # Calculate metrics
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+
+    metrics_v1 = {
+        'accuracy': accuracy_score(y_test, pred_v1),
+        'precision': precision_score(y_test, pred_v1),
+        'recall': recall_score(y_test, pred_v1),
+        'f1_score': f1_score(y_test, pred_v1),
+        'auc_roc': roc_auc_score(y_test, pred_v1_proba)
+    }
+
+    metrics_v2 = {
+        'accuracy': accuracy_score(y_test, pred_v2),
+        'precision': precision_score(y_test, pred_v2),
+        'recall': recall_score(y_test, pred_v2),
+        'f1_score': f1_score(y_test, pred_v2),
+        'auc_roc': roc_auc_score(y_test, pred_v2_proba)
+    }
+
+    print("\nPerformance Metrics:")
+    print(f"{'Metric':<15} {'v1 (RF)':<12} {'v2 (GB)':<12} {'Improvement':<15}")
+    print("-" * 70)
+
+    for metric in metrics_v1.keys():
+        v1_val = metrics_v1[metric]
+        v2_val = metrics_v2[metric]
+        improvement = ((v2_val - v1_val) / v1_val) * 100
+
+        print(f"{metric:<15} {v1_val:<12.4f} {v2_val:<12.4f} {improvement:>+.2f}%")
+
+    # McNemar's Test
+    print("\n\nStatistical Significance Testing:")
+    print("-" * 70)
+
+    # Contingency table
+    both_correct = np.sum((pred_v1 == y_test) & (pred_v2 == y_test))
+    only_v1_correct = np.sum((pred_v1 == y_test) & (pred_v2 != y_test))
+    only_v2_correct = np.sum((pred_v1 != y_test) & (pred_v2 == y_test))
+    both_wrong = np.sum((pred_v1 != y_test) & (pred_v2 != y_test))
+
+    print(f"\nContingency Table:")
+    print(f"  Both models correct: {both_correct}")
+    print(f"  Only v1 correct: {only_v1_correct}")
+    print(f"  Only v2 correct: {only_v2_correct}")
+    print(f"  Both models wrong: {both_wrong}")
+
+    # McNemar statistic
+    if only_v1_correct + only_v2_correct > 0:
+        from scipy import stats
+        mcnemar_stat = ((abs(only_v1_correct - only_v2_correct) - 1) ** 2) / \
+                      (only_v1_correct + only_v2_correct)
+        mcnemar_p = 1 - stats.chi2.cdf(mcnemar_stat, 1)
+
+        print(f"\nMcNemar's Test:")
+        print(f"  Chi-square statistic: {mcnemar_stat:.4f}")
+        print(f"  p-value: {mcnemar_p:.4f}")
+        print(f"  Significant (p < 0.05): {mcnemar_p < 0.05}")
+
+    # Bootstrap confidence intervals
+    print(f"\nBootstrap Confidence Intervals (95%):")
+
+    n_bootstrap = 1000
+    auc_diffs = []
+
+    for _ in range(n_bootstrap):
+        indices = np.random.choice(len(y_test), len(y_test), replace=True)
+        boot_auc1 = roc_auc_score(y_test[indices], pred_v1_proba[indices])
+        boot_auc2 = roc_auc_score(y_test[indices], pred_v2_proba[indices])
+        auc_diffs.append(boot_auc2 - boot_auc1)
+
+    auc_diffs = np.array(auc_diffs)
+    ci_lower = np.percentile(auc_diffs, 2.5)
+    ci_upper = np.percentile(auc_diffs, 97.5)
+
+    print(f"  AUC difference: ({ci_lower:.4f}, {ci_upper:.4f})")
+    print(f"  CI excludes zero: {ci_lower > 0 or ci_upper < 0}")
+
+    # Recommendation
+    print(f"\n\nRecommendation:")
+    if mcnemar_p < 0.05 and ci_lower > 0:
+        print(f"  [OK] Model v2 shows statistically significant improvement")
+        print(f"  [OK] Recommend promoting v2 to production")
+    elif mcnemar_p >= 0.05:
+        print(f"  [X] No statistically significant difference detected")
+        print(f"  [X] Keep current model v1 in production")
+    else:
+        print(f"  ? Mixed results - require additional validation")
+
+solution_exercise_4()
+\end{lstlisting}
+
+\subsection{Exercise 5: CI/CD Pipeline for Model Deployment}
+
+\textbf{Problem:} Create a complete CI/CD pipeline that trains a model, runs tests, registers it, and deploys to Kubernetes.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 5 Solution
+
+def solution_exercise_5():
+    """Complete CI/CD pipeline implementation"""
+
+    # Pipeline configuration
+    config = PipelineConfig(
+        git_repo='https://github.com/company/ml-fraud-detection',
+        git_branch='main',
+        training_script='scripts/train_fraud_detector.py',
+        training_data_path='data/fraud_training.csv',
+        hyperparameters_file='config/fraud_detector_params.yaml',
+        test_script='scripts/test_fraud_detector.py',
+        test_data_path='data/fraud_test.csv',
+        performance_thresholds={
+            'accuracy': 0.93,
+            'precision': 0.90,
+            'recall': 0.88,
+            'f1_score': 0.89,
+            'auc_roc': 0.92
+        },
+        model_name='fraud_detector',
+        registry_uri='http://mlflow.company.com',
+        deployment_target='production',
+        kubernetes_namespace='ml-models-prod',
+        docker_image_registry='gcr.io/company-ml'
+    )
+
+    # Initialize pipeline components
+    registry = MLflowModelRegistry(tracking_uri=config.registry_uri)
+    governance = ModelGovernanceManager(registry)
+    pipeline = MLPipeline(config, registry, governance)
+
+    print("=" * 70)
+    print("ML CI/CD Pipeline Execution")
+    print("=" * 70)
+
+    # Step 1: Run training pipeline
+    print("\n[1/3] Running Training Pipeline...")
+    print("-" * 70)
+
+    try:
+        results = pipeline.run_training_pipeline()
+
+        if not results['tests_passed']:
+            print("[X] Training pipeline failed: Tests did not pass")
+            print(f"  Metrics: {results['metrics']}")
+            return False
+
+        print(f"[OK] Training completed successfully")
+        print(f"  Git commit: {results['git_commit'][:8]}")
+        print(f"  Run ID: {results['run_id']}")
+        print(f"  Model version: {results['model_version']}")
+        print(f"  Metrics: {results['metrics']}")
+
+    except Exception as e:
+        print(f"[X] Training pipeline failed: {str(e)}")
+        return False
+
+    # Step 2: Run deployment to staging
+    print(f"\n[2/3] Deploying to Staging...")
+    print("-" * 70)
+
+    try:
+        staging_success = pipeline.run_deployment_pipeline(
+            model_version=results['model_version'],
+            target_stage='Staging'
+        )
+
+        if not staging_success:
+            print("[X] Staging deployment failed")
+            return False
+
+        print(f"[OK] Deployed to Staging successfully")
+        print(f"  Model: {config.model_name}:{results['model_version']}")
+        print(f"  Namespace: {config.kubernetes_namespace}")
+
+    except Exception as e:
+        print(f"[X] Staging deployment failed: {str(e)}")
+        return False
+
+    # Step 3: Production promotion (requires approval)
+    print(f"\n[3/3] Production Promotion Workflow...")
+    print("-" * 70)
+
+    # Request production approval
+    request_id = governance.request_approval(
+        model_name=config.model_name,
+        version=results['model_version'],
+        source_stage='Staging',
+        target_stage='Production',
+        requester='ci-cd-pipeline@company.com',
+        requester_role=UserRole.ML_ENGINEER,
+        justification=f"Automated deployment - all tests passed with metrics: {results['metrics']}",
+        impact_assessment="Improved fraud detection accuracy expected to save $2M annually",
+        rollback_plan="Automated rollback to previous version if production metrics degrade"
+    )
+
+    print(f"[OK] Production approval request created: {request_id}")
+    print(f"  Awaiting approvals from: Team Lead, Production Owner")
+    print(f"\n  Next steps:")
+    print(f"    1. Team Lead reviews and approves")
+    print(f"    2. Production Owner reviews and approves")
+    print(f"    3. Model automatically promoted to Production")
+    print(f"    4. Kubernetes deployment updated")
+
+    # Generate GitHub Actions workflow
+    print(f"\n\nGenerated GitHub Actions Workflow:")
+    print("=" * 70)
+    workflow = pipeline.generate_github_actions_workflow()
+    print(workflow[:500] + "...")  # Show first 500 chars
+
+    return True
+
+success = solution_exercise_5()
+print(f"\n\nPipeline execution: {'SUCCESS' if success else 'FAILED'}")
+\end{lstlisting}
+
+\subsection{Exercise 6: Model Packaging for Multi-Format Deployment}
+
+\textbf{Problem:} Package a model in multiple formats (MLflow, ONNX, pickle) with preprocessing pipelines and create an optimized Docker container.
+
+\textbf{Solution:}
+\begin{lstlisting}[language=Python]
+# Exercise 6 Solution
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+
+def solution_exercise_6():
+    """Package model in multiple formats with containerization"""
+
+    # Create sample model with preprocessing
+    X_train = pd.DataFrame({
+        'age': np.random.randint(18, 80, 1000),
+        'income': np.random.randint(20000, 200000, 1000),
+        'credit_score': np.random.randint(300, 850, 1000),
+        'category': np.random.choice(['A', 'B', 'C'], 1000)
+    })
+    y_train = np.random.randint(0, 2, 1000)
+
+    # Create preprocessing pipeline
+    numeric_features = ['age', 'income', 'credit_score']
+    categorical_features = ['category']
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', StandardScaler(), numeric_features),
+            ('cat', OneHotEncoder(drop='first'), categorical_features)
+        ]
+    )
+
+    # Fit preprocessing
+    preprocessor.fit(X_train)
+    X_processed = preprocessor.transform(X_train)
+
+    # Train model
+    model = RandomForestClassifier(
+        n_estimators=150,
+        max_depth=12,
+        min_samples_split=8,
+        random_state=42
+    )
+    model.fit(X_processed, y_train)
+
+    # Package in multiple formats
+    packager = ModelPackager(output_dir=Path("./model_packages"))
+
+    formats = ['mlflow', 'pickle', 'onnx']
+    packages = {}
+
+    print("Packaging model in multiple formats...")
+    print("=" * 70)
+
+    for fmt in formats:
+        print(f"\nPackaging in {fmt.upper()} format...")
+
+        config = PackageConfig(
+            model_name='credit_risk_model',
+            model_version='v2.1.0',
+            model_format=fmt,
+            include_preprocessing=True,
+            include_postprocessing=False,
+            optimize_size=True,
+            compression='gzip'
+        )
+
+        metadata = {
+            'model_type': 'RandomForestClassifier',
+            'framework': 'scikit-learn',
+            'framework_version': '1.2.0',
+            'n_features': len(numeric_features) + len(categorical_features),
+            'feature_names': X_train.columns.tolist(),
+            'numeric_features': numeric_features,
+            'categorical_features': categorical_features,
+            'metrics': {
+                'accuracy': 0.94,
+                'precision': 0.92,
+                'recall': 0.91,
+                'f1_score': 0.91
+            },
+            'created_at': datetime.now().isoformat(),
+            'created_by': 'automated-pipeline',
+            'use_case': 'credit_risk_assessment'
+        }
+
+        package_path = packager.package_model(
+            model=model,
+            config=config,
+            metadata=metadata,
+            preprocessing_pipeline=preprocessor
+        )
+
+        packages[fmt] = package_path
+        print(f"  [OK] Package created: {package_path}")
+
+        # Check package contents
+        if package_path.is_dir():
+            contents = list(package_path.glob('*'))
+            print(f"  Package contents:")
+            for item in contents:
+                print(f"    - {item.name}")
+
+    # Build Docker containers for each format
+    print(f"\n\nBuilding Docker Containers...")
+    print("=" * 70)
+
+    builder = ContainerBuilder()
+
+    for fmt, package_path in packages.items():
+        if package_path.suffix == '.gz':
+            # Extract archive first
+            import tarfile
+            extract_dir = package_path.parent / package_path.stem.replace('.tar', '')
+            with tarfile.open(package_path, 'r:gz') as tar:
+                tar.extractall(path=extract_dir)
+            package_path = extract_dir
+
+        print(f"\nBuilding container for {fmt.upper()} format...")
+
+        image_tag = builder.build_optimized_container(
+            model_package_path=package_path,
+            model_name=f'credit_risk_model_{fmt}',
+            version='v2.1.0',
+            base_image='python:3.9-slim',
+            optimize=True
+        )
+
+        print(f"  [OK] Container built: {image_tag}")
+        print(f"  Ready for deployment to Kubernetes/Cloud Run")
+
+    # Summary
+    print(f"\n\nPackaging Summary:")
+    print("=" * 70)
+    print(f"Model: credit_risk_model v2.1.0")
+    print(f"Formats packaged: {len(packages)}")
+    print(f"Containers built: {len(packages)}")
+    print(f"\nDeployment options:")
+    print(f"  - MLflow format: Best for MLflow-based serving")
+    print(f"  - ONNX format: Cross-platform, optimized inference")
+    print(f"  - Pickle format: Simple Python-based serving")
+
+    return packages
+
+packages = solution_exercise_6()
+\end{lstlisting}
+
+\section{Chapter Summary}
+
+This chapter covered comprehensive model versioning and registry systems essential for production ML operations. We explored the complete lifecycle of model management from registration to deployment, focusing on practical implementations that ensure reproducibility, governance, and operational excellence.
+
+\subsection{Key Concepts Covered}
+
+\textbf{MLflow Model Registry:}
+\begin{itemize}
+    \item Model registration with comprehensive metadata and signatures
+    \item Stage-based lifecycle management (None, Staging, Production, Archived)
+    \item Version control and model comparison capabilities
+    \item Model loading and serving from registry
+\end{itemize}
+
+\textbf{Model Lineage and Provenance:}
+\begin{itemize}
+    \item Data lineage tracking with dataset versioning and hashing
+    \item Code lineage capturing git commits, branches, and dependencies
+    \item Complete model provenance including hyperparameters and training metadata
+    \item Reproducibility through comprehensive artifact tracking
+\end{itemize}
+
+\textbf{Governance and Approval Workflows:}
+\begin{itemize}
+    \item Multi-stage approval processes with role-based access control
+    \item Automated validation gates ensuring model quality
+    \item Audit trails for compliance and regulatory requirements
+    \item Integration with ticketing systems for formal approvals
+\end{itemize}
+
+\textbf{Model Comparison and Promotion:}
+\begin{itemize}
+    \item Statistical significance testing with McNemar's test
+    \item Bootstrap confidence intervals for metric comparisons
+    \item Comprehensive evaluation across performance, latency, and resource usage
+    \item Automated promotion based on criteria and thresholds
+\end{itemize}
+
+\textbf{CI/CD Integration:}
+\begin{itemize}
+    \item Automated training, testing, and registration pipelines
+    \item Docker containerization and Kubernetes deployment
+    \item GitHub Actions and Jenkins workflow integration
+    \item Automated rollback and smoke testing
+\end{itemize}
+
+\textbf{Model Packaging and Containerization:}
+\begin{itemize}
+    \item Multi-format packaging (MLflow, ONNX, pickle)
+    \item Dependency management and requirements generation
+    \item Optimized Docker images with multi-stage builds
+    \item Security best practices with non-root users
+\end{itemize}
+
+\subsection{Best Practices}
+
+\begin{enumerate}
+    \item \textbf{Always track complete lineage:} Capture data, code, and training provenance for every model version to ensure reproducibility
+    \item \textbf{Implement validation gates:} Automated checks prevent low-quality models from reaching production
+    \item \textbf{Require statistical significance:} Use hypothesis testing to validate that model improvements are real, not random variation
+    \item \textbf{Automate everything:} CI/CD pipelines reduce manual errors and accelerate deployment
+    \item \textbf{Maintain audit trails:} Complete history of model changes satisfies compliance requirements
+    \item \textbf{Package with preprocessing:} Include all transformation steps in model packages for deployment consistency
+    \item \textbf{Use staged rollouts:} Test models in staging before production deployment
+    \item \textbf{Monitor production models:} Continuous validation ensures models maintain performance
+\end{enumerate}
+
+\subsection{Common Pitfalls to Avoid}
+
+\begin{itemize}
+    \item \textbf{Incomplete metadata:} Missing training details make reproduction impossible
+    \item \textbf{Skipping approval gates:} Direct production deployments bypass critical validation
+    \item \textbf{Ignoring statistical significance:} Small metric improvements may not be meaningful
+    \item \textbf{Manual deployments:} Error-prone and slow compared to automated pipelines
+    \item \textbf{Missing rollback plans:} Production issues without rollback capability cause outages
+    \item \textbf{Inadequate testing:} Insufficient validation leads to production failures
+    \item \textbf{Poor version control:} Unclear model history makes debugging difficult
+\end{itemize}
+
+\subsection{Production Checklist}
+
+Before deploying a model registry system to production, verify:
+
+\begin{enumerate}
+    \item Model registry infrastructure is highly available and backed up
+    \item All model versions have complete metadata and lineage
+    \item Approval workflows are configured with appropriate roles
+    \item Validation gates are implemented and tested
+    \item CI/CD pipelines are operational with proper error handling
+    \item Docker images are scanned for security vulnerabilities
+    \item Kubernetes deployments have resource limits and health checks
+    \item Rollback procedures are documented and tested
+    \item Monitoring and alerting are configured for model performance
+    \item Audit logging captures all model lifecycle events
+\end{enumerate}
+
+\subsection{Next Steps}
+
+The model versioning and registry system forms the foundation for production ML operations. In subsequent chapters, we'll explore:
+
+\begin{itemize}
+    \item Model monitoring and observability systems
+    \item Data drift detection and model retraining triggers
+    \item Multi-model ensemble management
+    \item Cost optimization for model serving
+    \item Advanced deployment strategies (shadow, canary, A/B)
+\end{itemize}
+
+By implementing the practices and systems covered in this chapter, teams can confidently manage dozens or hundreds of model versions, ensure reproducibility, maintain governance, and deploy models safely to production. The combination of MLflow, automated workflows, and statistical rigor provides a production-grade foundation for ML operations at scale.
