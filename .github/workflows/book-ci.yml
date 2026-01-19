@@ -1,0 +1,76 @@
+name: Build Handbooks & Docs
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  checks:
+    name: Verify Docs and Handbooks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Markdown tooling
+        run: npm ci
+
+      - name: Markdown lint + spelling
+        run: npm run lint
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python formatters
+        run: python -m pip install --user ruff black
+
+      - name: Lint Python examples
+        run: |
+          ruff check software-testing-handbook/examples
+          black --check software-testing-handbook/examples
+
+      - name: Set up Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+
+      - name: Install mdBook and lychee
+        run: |
+          cargo install mdbook
+          cargo install lychee
+
+      - name: Build docs site
+        run: mdbook build docs/book
+
+      - name: Link check
+        run: lychee --config lychee.toml
+
+      - name: Install LaTeX
+        run: sudo apt-get update && sudo apt-get install -y latexmk texlive-latex-extra texlive-fonts-recommended texlive-lang-english
+
+      - name: Build Python handbook
+        run: cd python-best-practices && latexmk -pdf main.tex
+
+      - name: Build Git handbook
+        run: cd git-github-best-practices && latexmk -pdf main.tex
+
+      - name: Build Software Testing handbook
+        run: cd software-testing-handbook && latexmk -pdf main.tex
+
+      - name: Upload PDFs
+        uses: actions/upload-artifact@v4
+        with:
+          name: handbooks
+          path: |
+            python-best-practices/*.pdf
+            git-github-best-practices/*.pdf
+            software-testing-handbook/*.pdf

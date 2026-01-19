@@ -1,0 +1,11 @@
+﻿{
+  "variables": {
+    "Channel": ["Email", "SMS"],
+    "Segment": ["New", "Existing"],
+    "Offer": ["Discount", "Trial"]
+  },
+  "constraints": [
+    "not (Channel == 'SMS' and Offer == 'Trial')",
+    "not (Segment == 'New' and Offer == 'Discount')"
+  ]
+}

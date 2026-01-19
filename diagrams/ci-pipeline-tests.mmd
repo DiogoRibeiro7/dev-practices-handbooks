@@ -1,0 +1,19 @@
+flowchart LR
+    classDef stage fill:#E3F2FD,stroke:#0D47A1,stroke-width:1px;
+    classDef action fill:#C8E6C9,stroke:#2E7D32,stroke-width:1px;
+    classDef artifact fill:#FFF9C4,stroke:#F9A825,stroke-width:1px;
+
+    source[Source change]:::stage
+    lint[Lint + static analysis]:::action
+    unit[Unit + component suites]:::action
+    integration[Integration + contract checks]:::action
+    smoke[Smoke + acceptance]:::action
+    reports[Reports & dashboards]:::artifact
+    cache[Cache restore/store]:::artifact
+
+    source --> lint --> unit --> integration --> smoke --> reports
+    lint --> cache
+    unit --> cache
+    integration --> cache
+    smoke --> reports
+    reports --> source

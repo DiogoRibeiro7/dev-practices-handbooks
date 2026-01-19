@@ -1,0 +1,85 @@
+\section{Motivation and Learning Objectives}
+
+After five chapters of fundamentals, strategy, automation, metrics, and governance, this chapter weaves the concepts together into a single readiness conversation. You will learn how to judge a release against the full stack, surface the missing artifacts, and produce a capstone mini-project that demonstrates trust in the pipeline.
+
+\section{Core Concepts}
+
+\subsection{What Readiness Means}
+
+Readiness is more than “tests pass.” It is the alignment of risk awareness (Chapter 1), balanced coverage (Chapter 2), automated pipelines (Chapter 3), actionable metrics (Chapter 4), and clear governance (Chapter 5). Frame a readiness checklist with pillars: risk score, pyramid layers, automation health, metric budgets, and governance sign-offs.
+
+\subsection{Orchestrating Evidence}
+
+Gather artifacts from every layer: a risk profile, pyramid counts, pipeline metadata, KPI dashboards, audit trails, and war-room summaries. Map them to a release playbook entry so stakeholders can see “risk → automation → metrics → governance” in one place and detect gaps early.
+
+\subsection{Automation-Driven Readiness Gates}
+
+Automate the readiness evaluation with scripts that evaluate risk thresholds, pipeline gate timestamps, KPI narratives, and charter approvals. When a gate fails, record the failing artifact and notify the appropriate owner with remediation steps. Keep logs so post-mortems can trace the earliest signal that prevented release.
+
+\subsection{Capstone Mini-Project Requirements}
+
+The mini-project is a lightweight tool that combines data from all previous chapters: a risk score (Chapter 1), pyramid health (Chapter 2), pipeline stage status (Chapter 3), KPI burn (Chapter 4), and governance sign-offs (Chapter 5). It should emit a readiness verdict plus a recommended checklist to share with release leads.
+
+\section{Anti-patterns and Common Mistakes}
+
+- Treating “tests passed” as a release signal when no governance or metrics review ran.
+- Running the capstone script only once the release is blocked, not as part of the daily ritual.
+- Ignoring the pyramid/doughnut balance and letting exploratory checks fall silent.
+
+\section{Worked Example}
+
+The companion example \texttt{examples/ch06/capstone\_readiness.py} polls deterministic data and prints a readiness score; see \texttt{examples/ch06/README.md} for running instructions and \texttt{examples/ch06/test\_capstone\_readiness.py} for automated checks.
+
+\begin{lstlisting}[language=python]
+from datetime import datetime
+
+readiness = {
+    "risk_score": 0.12,
+    "pyramid_balance": "healthy",
+    "automation_status": "all gates passed",
+    "kpi_narrative": "build stability slightly gentle; still within budget",
+    "governance_signoff": "quality review completed",
+}
+
+print("Release readiness verdict:")
+for item, status in readiness.items():
+    print(f"  - {item}: {status}")
+\end{lstlisting}
+
+\section{Checklist}
+
+\begin{itemize}
+  \item Link each release to (1) a risk profile, (2) pyramid/doughnut coverage, (3) automation gates, (4) KPIs, and (5) governance sign-offs.
+  \item Automate the readiness script so it runs after every pipeline completion.
+  \item Store readiness logs alongside release notes for traceability.
+  \item Feed failed readiness gates into war-room playbooks.
+  \item Keep the capstone tool deterministic so engineers can reproduce the same verdict.
+  \item Share the readiness new with stakeholders through dashboards or reports.
+\end{itemize}
+
+\section{Exercises}
+
+\begin{enumerate}
+  \item Run the capstone script and interpret each pillar’s output.
+  \item Extend the script to include a pyramid coverage badge with doughnut checks noted.
+  \item Build a readiness narrative that links a KPI drop to a gating decision.
+  \item Model a governance failure (missing sign-off) and document the escalation path.
+  \item Rehearse a war-room by sharing the readiness log with a teammate and debating the next steps.
+  \item Create a checklist template that copies the readiness pillars and reuse it for the next release.
+  \item Measure the time between automation gate completion and readiness verdict generation; document bottlenecks.
+  \item Pair with your PM to create a readiness dashboard slide for the next stakeholder demo.
+\end{enumerate}
+
+\section{Capstone Mini-Project}
+
+Implement \texttt{examples/ch06/capstone\_readiness.py} that aggregates deterministic inputs from Chapters 1–5, determines a verdict (“ready”, “needs more coverage”, “hold for governance”), and prints actionable remediation steps. Include a pytest harness (\texttt{examples/ch06/test\_capstone\_readiness.py}) that confirms the verdict logic and a README explaining how to integrate the script into your CI (e.g., run after \texttt{pytest} and before \texttt{git push}).
+
+\section{Summary}
+
+- The readiness conversation keeps risk, automation, metrics, and governance visible.
+- A deterministic capstone tool makes the release ritual reproducible.
+- Sharing artifacts via dashboards or war-room notes keeps stakeholders aligned.
+
+\section{What's Next}
+
+Use Appendix material (checklists, templates) in the back matter to keep the capstone project operational across teams.

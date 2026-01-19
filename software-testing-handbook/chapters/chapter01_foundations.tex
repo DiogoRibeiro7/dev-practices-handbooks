@@ -1,0 +1,162 @@
+\section{Motivation and Learning Objectives}
+
+Software testing exists to reduce uncertainty before a product reaches users. Tests package assumptions about behaviour, expose regressions, and anchor discussions with product partners in verifiable outcomes. Treated correctly, testing enables informed risk-taking instead of replacing it with blind optimism \citep{beizer1995software}. This chapter explains how to scope risk, align quality goals, and treat coverage and assets as planning tools.
+
+\section{Core Concepts}
+
+\subsection{Testing as a Risk Control Strategy}
+
+Not every change deserves the same test investment. Map each release or feature to a risk profile that combines customer impact, regulatory exposure, and backend fragility. Use that profile to scope trade-offs: a cosmetic change might require a focused smoke test plus linting, while a core payment path demands stress, regression, and audit suites. Keep the model lightweight—update it each sprint so it reflects the current roadmap and the parts of the system that receive the most traffic.
+
+\subsection{Applying Risk Techniques from Safety Engineering}
+
+Borrow structured frameworks such as Failure Mode and Effects Analysis (FMEA) to catalogue failure modes, consequences, detection, and mitigation. Assign likelihood, severity, and detectability scores to each mode; the resulting risk priority number guides whether the team invests in automation, monitoring, or manual reviews. Record the controls already in place (e.g., throttling, retries, synthetic monitoring) so future reviewers can trace the original reasoning for each suite.
+
+\subsection{Quality Characteristics}
+
+Reliable software provides availability, correctness, performance, and usability. Tests are most valuable when they explicitly state which characteristic they exercise. Unit tests should focus on correctness of isolated logic, integration tests on contract boundaries, and system tests on user-visible behaviour. Non-functional qualities such as resilience and security often require specialised fixtures and instrumentation.
+
+\subsection{Articulating Non-functional Requirements}
+
+Translate reliability needs into measurable assertions. Document that API endpoints should respond in under 500\,ms at the 95th percentile, or that the system must degrade gracefully when a downstream dependency is noisy. These acceptance criteria feed synthetic monitors, property-based tests, or chaos exercises that confirm the platform honours the requirement.
+
+\subsection{Coverage vs Confidence}
+
+Coverage metrics such as statement or branch coverage quantify how much code was executed, but they remain proxies for confidence. Pair coverage statistics with scenario-based suites and exploratory sessions, and use them to identify blind spots rather than as a goal in themselves \citep{myers2011art}.
+
+\subsection{Test Pyramid vs Test Honeycomb}
+
+The classic pyramid (unit → integration → end-to-end) gives a useful baseline, but modern systems demand a honeycomb of observability, exploratory charters, and service virtualization that surround those layers. Keep the pyramid counts for quick reporting and add hexagonal slices for contracts, chaos exercises, and monitoring probes to keep the full surface covered.
+
+\subsection{Building Confidence with Narrative Tests}
+
+Supplement coverage reports with narrative tests: stories that describe a user journey through critical flows. These narratives become the basis for exploratory charters and help QA practitioners justify why a particular path deserves automation. Record the acceptance story, the environments used, and the expected metrics so future reviewers understand why the test matters.
+
+\subsection{Why Tests Fail in Real Organizations}
+
+- **Feedback loops** grow long when suites take hours; issues go stale and require more context to debug.
+- **Reliability slippage** occurs as dependencies evolve; tests written for old contracts begin failing unpredictably.
+- **Speed pressure** tempts teams to skip suites or rely on manual checks; invest in parallelization and targeted gating instead.
+
+\subsection{Test Assets and Artefacts}
+
+Typical test assets include executable suites, fixtures representing production-like data, environment descriptors (containers, virtualization scripts), and the data pipelines that collect assertions or metrics from live systems. Treat these assets as first-class deliverables—they evolve with the product, so version them, document their scope, and integrate them into release checklists.
+
+\subsection{Lifecycle of Test Documentation}
+
+Pair each suite with metadata: owner, maintenance frequency, scope, and expected execution time. Publish this metadata next to the tests or in the quality handbook so reviewers know what to expect. When a test breaks, update the metadata rather than hiding the failure; transparency reduces churn and keeps the feedback loop healthy.
+
+\subsection{Reusing Environment Definitions}
+
+Define environments declaratively so teams can reproduce them across local, CI, and staging contexts. Use templated container definitions or infrastructure-as-code modules that can be versioned alongside tests. Reuse the same descriptors for smoke runs, performance labs, and exploratory sessions to avoid drift and simplify debugging.
+
+\subsection{Determinism: Time, Randomness, I/O, and Concurrency}
+
+Tests become unreliable when relying on clocks, random seeds, ephemeral files, or race conditions. Inject clock interfaces, seed random number generators, stub filesystem calls, and control goroutine scheduling. Document any non-deterministic dependency in the suite metadata so failures can be traced to the original cause.
+ 
+\subsection{Test Doubles Taxonomy}
+
+Teams describe mocks, stubs, fakes, and spies differently; writing down the roles keeps terminology consistent later. Table~\ref{tab:test-doubles} summarizes each double’s intent and the anti-pattern it prevents.
+
+\begin{table}[h]
+\centering
+\caption{Test double taxonomy}
+\label{tab:test-doubles}
+\begin{tabular}{p{3cm}p{4cm}p{5cm}}
+\toprule
+Type & Intent & Anti-pattern \\
+\midrule
+Stub & Provide canned responses with minimal logic & Coupling tests to non-relevant behaviour embedded in the stub \\
+Mock & Verify specific interactions or call counts & Asserting implementation details rather than observable outcomes \\
+Fake & Lightweight production-like implementation (e.g., in-memory DB) & Letting the fake drift from the real contract \\
+Spy & Observe calls or arguments without altering behaviour & Replacing simple state assertions with brittle interaction sequences \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Feedback Loops for Confidence}
+
+Short feedback loops keep confidence high; every additional hop between a change and the signal that validates it erodes ownership. Diagram~\ref{fig:feedback-loop} captures the journey from a developer edit through local suites, CI, and staging telemetry. The Mermaid source lives in `diagrams/feedback-loop.mmd` if you want to render a visual for presentations (e.g., `mmdc -i diagrams/feedback-loop.mmd -o docs/assets/feedback-loop.svg`).
+
+\lstinputlisting[caption={Mermaid definition for the test feedback loop diagram.}, label=fig:feedback-loop]{../diagrams/feedback-loop.mmd}
+
+\begin{table}[h]
+\centering
+\caption{Feedback loop checkpoints}
+\label{tab:feedback-checkpoints}
+\begin{tabular}{p{3cm}p{5cm}p{4cm}}
+\toprule
+Checkpoint & Signal & Action \\
+\midrule
+Local edit & Immediate test results & Triage failure before pushing \\
+CI pipeline & Lint/Unit/Integration success & Merge or fix configuration drift \\
+Staging smoke & Telemetry + synthetic checks & Delay release until stability confirmed \\
+Monitoring & Alerts or anomaly detection & Roll back/pause rollout and notify owner \\
+Post-release & Customer feedback & Schedule regression or exploratory follow-up \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Crafting Good Assertions}
+
+Good assertions point to a single behavioral promise. Check status codes, key fields, or invariants instead of asserting entire structures. Keep message strings descriptive (e.g., \texttt{assert response.ok, "payment API must return 200"}) and wrap repeated checks in helper functions like \texttt{$assert\_valid\_payload(response)$}
+
+\section{Anti-patterns and Common Mistakes}
+
+- Treating coverage as a scoreboard instead of a directional signal.
+- Ignoring metadata for suites, which makes ownership unclear.
+- Running the entire regression suite for every tiny change.
+- Calling a test “flaky” before investigating its dependency on time, randomness, or concurrency.
+- Writing sprawling assertions that hide the actual success criteria from reviewers.
+
+\section{Worked Example}
+
+The snippet below sketches how to compute a release risk score so that CI gates can trigger the appropriate suites. For runnable versions and instructions, see `examples/ch01/README.md`.
+
+\begin{lstlisting}[language=python]
+risk_scores = []
+for change in release_changes:
+    impact = change.customer_impact
+    likelihood = change.likelihood
+    controls = max(change.coverage_score, 1)
+    risk_scores.append((impact * likelihood) / controls)
+
+composite = sum(risk_scores) / len(risk_scores)
+print(f"Composite risk: {composite:.2f}")
+gate_bands = {"low": ["lint"], "medium": ["lint", "unit"], "high": ["lint", "unit", "integration", "regression"]}
+
+for band, suites in gate_bands.items():
+    print(f"Risk band {band}: gate on {suites}")
+\end{lstlisting}
+
+\section{Checklist}
+
+\begin{itemize}
+  \item Align release risk tiers with defined test bundles.
+  \item Pair coverage metrics with human narratives.
+  \item Version environment descriptors alongside suites.
+  \item Catalog fixture ownership and refresh plans.
+  \item Track non-deterministic dependencies (time, randomness, I/O, concurrency).
+  \item Define what a "good assertion" looks like for each major suite.
+  \item Keep honeycomb slices (exploratory, contract, observability) visible alongside the pyramid.
+\end{itemize}
+
+\section{Exercises}
+
+\begin{enumerate}
+  \item Draft a risk profile for your next release and list the suites you will run for each tier.
+  \item Map three quality attributes (availability, performance, correctness) to specific test types and SLIs.
+  \item Create a narrative charter for a critical user journey and identify the metrics you will observe during exploratory runs.
+  \item List the current feedback loops (code, reviews, automation) and highlight the longest pole; plan how to shorten it.
+  \item Sketch your pyramid and add honeycomb slices for contracts, observability, and exploratory charters.
+  \item Identify one non-deterministic test and describe how you would stabilize it (time injection, seeded randomness, etc.).
+  \item Replace a multi-assertion block with helper-based assertions and explain the readability wins.
+  \item Run \texttt{examples/ch01/risk\_score.py} and note the computed composite risk score.
+  \item Execute \texttt{examples/ch01/deterministic\_assertions.py} from the examples folder and confirm every assertion passes.
+  \item Document two "good assertions" from your test suite and why they fail fast.
+\end{enumerate}
+
+\section{Further Reading}
+
+- \citep{kaner2002testing} for exploratory testing strategies.
+- \citep{myers2011art} for coverage versus confidence discussions.

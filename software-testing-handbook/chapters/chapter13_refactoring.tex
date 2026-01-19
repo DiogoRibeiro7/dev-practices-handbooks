@@ -1,0 +1,68 @@
+\section{Opening: Motivation and Learning Objectives}
+Focus on the payoff from refactoring legacy code for testability: less mocking, simpler fixtures, and clearer owner-ship. Readers will learn to identify seams and apply dependency injection.
+
+\section{Core Concepts}
+\begin{itemize}
+  \item Seams and dependency injection for resources (databases, HTTP clients, clocks).
+  \item Extracting collaborators to keep logic small and verifiable.
+  \item Balancing refactoring effort with delivery schedules.
+\end{itemize}
+
+\section{Anti-patterns and Common Mistakes}
+\begin{itemize}
+  \item Testing private behaviour instead of public outcomes makes refactors break widely.
+  \item Relying on singletons/global state ties suites to the environment and prevents isolation.
+  \item Monoliths that create their own dependencies hide seams and make injection impossible.
+\end{itemize}
+
+\section{Worked Example}
+Refactor a handler that currently instantiates dependencies internally so tests can inject doubles. Before:
+
+\begin{lstlisting}[language=python]
+class ReportHandler:
+    def __init__(self):
+        self.db = DatabaseClient()
+        self.email = EmailNotifier()
+
+    def run(self, payload):
+        data = self.db.query(payload["id"])
+        self.email.send(data)
+\end{lstlisting}
+
+After introducing interfaces:
+
+\begin{lstlisting}[language=python]
+class ReportHandler:
+    def __init__(self, db: DatabaseClient, email: EmailNotifier):
+        self.db = db
+        self.email = email
+
+    def run(self, payload):
+        data = self.db.query(payload["id"])
+        self.email.send(data)
+\end{lstlisting}
+
+Tests now inject fakes/spies and focus on business rules without orchestrating infrastructure.
+
+\section{Checklist}
+\begin{itemize}
+  \item Isolate business rules and keep collaborators small so tests can target single responsibilities.
+  \item Inject test doubles via constructors or factories to keep suites deterministic.
+  \item Document refactor scope, intended behaviour, and which tests exercise the new seam.
+\end{itemize}
+
+\section{Exercises}
+\begin{enumerate}
+  \item Inspect a module, identify seams, and rewrite it so dependencies are passed in.
+  \item Extract a factory that produces test doubles and reuse it across tests.
+  \item Add a regression test that exercises a seam without needing the real dependency.
+  \item Document the trade-offs you chose (e.g., extra helper class vs passing raw clients).
+  \item Pair with the owning team to review the new interfaces and collect feedback.
+  \item Practice tracing a production incident back to a missing seam and plan the refactor.
+\end{enumerate}
+
+\section{Further Reading}
+\begin{itemize}
+  \item Michael Feathers, “Working Effectively with Legacy Code.”
+  \item Kent Beck, “Test-Driven Development” for designing testable APIs.
+\end{itemize}

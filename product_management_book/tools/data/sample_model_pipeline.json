@@ -1,0 +1,15 @@
+﻿{
+  "name": "ChurnPredictionModel",
+  "owner": "ML Platform Team",
+  "use_case": "Predict monthly churn probability for subscription customers.",
+  "version": "1.2.0",
+  "data": "Aggregated behavioral logs + billing history (Jan 2022 - Aug 2025)",
+  "sensitive_attributes": "region, tenure",
+  "metrics": {
+    "AUC": 0.89,
+    "Recall@0.2": 0.78,
+    "Calibration": 0.04
+  },
+  "ethics": "Reviewed for bias across gender and region; disparate impact < 5%.",
+  "monitoring": "Drift thresholds: PSI 0.2; weekly performance review"
+}

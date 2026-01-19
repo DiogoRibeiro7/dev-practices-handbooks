@@ -1,0 +1,14 @@
+flowchart LR
+    classDef stage fill:#E3F2FD,stroke:#0D47A1,stroke-width:1px;
+    classDef boundary fill:#FFF9C4,stroke:#F9A825,stroke-width:1px;
+
+    unit[Units: isolated functions]:::stage
+    integration[Integration: modules + contracts]:::stage
+    e2e[End-to-end: full flow]:::stage
+    boundaryUI[UI/UX Assertions]:::boundary
+    boundaryInfra[Infra/Deployment Checks]:::boundary
+
+    unit --> integration --> e2e
+    integration --> boundaryUI
+    integration --> boundaryInfra
+    e2e --> boundaryInfra

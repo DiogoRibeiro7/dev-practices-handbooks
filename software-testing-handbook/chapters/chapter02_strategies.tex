@@ -1,0 +1,170 @@
+\section{Motivation and Learning Objectives}
+
+The testing pyramid acts as the architectural shorthand for most suites, but teams often forget to plan the guardrails around it. This chapter explains how to size each layer, treat exploratory doughnut activities as first-class citizens, and keep regression/performance suites healthy. You will leave with ready-to-run validation rituals and ownership cues.
+
+\section{Core Concepts}
+
+\subsection{Testing Pyramid and Doughnut}
+
+Define a tiered execution plan before writing automation. A common pattern is the \emph{testing pyramid}: many fast unit tests at the base, a slimmer integration tier, and a thin shell of end-to-end checks \citep{kaner2002testing}. Some teams complement the pyramid with a \emph{doughnut} of exploratory, usability, and security checks that orbit the core automation.
+
+\subsection{Adapting the Pyramid to Your Context}
+
+Adjust the proportions of the pyramid to the domain you support. Complex domains such as finance or healthcare may need more integration coverage to validate regulatory constraints, while UI-heavy products might push a thicker shell of contract and UI-driven checks. Visualize the pyramid for each release so stakeholders can see where testing effort concentrates and which layers receive additional maintenance resources. Use a simple chart to show the number of tests per layer and the cadence at which they run.
+
+\subsection{Doughnut Activities}
+
+Outside the pyramid, maintain a list of exploratory charters, usability reviews, and security probes that execute less frequently but guard the edges of the product. Schedule them in your release calendar: for example, exploratory sessions before major launches, accessibility checks whenever there is a visual refresh, or security scans when dependencies change.
+
+\subsection{Test Data and Fixture Rotation}
+
+Treat fixtures as another layer of the strategy cake. Rotate sanitized production snapshots through unit, contract, and acceptance suites, and validate them with smoke pilots before pushing to CI. Track fixture ownership and refresh cadence so stale data does not lead to false negatives or brittle dependencies.
+
+\subsection{Unit and Component Testing}
+
+Unit tests validate a single function or class boundary. Keep them deterministic by avoiding network calls and randomness. Favor dependency injection and fake double objects to exercise edge cases without producing brittle side effects. A disciplined suite helps developers refactor quickly because it catches contract violations early.
+
+\subsection{Designing Maintainable Unit Suites}
+
+Focus on behaviour rather than implementation details. Resist assertions on private helper functions; instead, verify outcomes that matter to consumers. Use parameterized fixtures or data tables to consolidate similar scenarios, and guard against large fixtures that bleed into unrelated tests. A small set of well-named units is easier to understand than a sprawling suite full of one-off cases.
+
+\subsection{Naming, Grouping, and Ownership}
+
+Structure unit tests by behaviour: use phrases like \texttt{should\_} or \texttt{when\_} to hint at the scenario, group related cases with descriptive contexts, and keep assertions small. Assign ownership of each module's tests to the team that owns the code so they can drive refactors and respond quickly to test failures.
+
+\subsection{Integration and Contract Testing}
+
+Integration tests verify that modules collaborate correctly. Pact-style contract testing or schema validation can shrink the blast radius of upstream changes. Graphical interfaces and APIs should be tested using service virtualization or lightweight staging environments so end-to-end flows remain reliable.
+
+\subsection{Contract Testing as Communication}
+
+Share contracts with partner teams. Commit consumer-driven contract files to the same repo as the dependent service so changes generate automated validation jobs. When a provider evolves an API, the validation pipeline fails fast and prompts a conversation before the breaking change reaches production.
+
+\subsection{Integration Environment Hygiene}
+
+Run integration suites against dedicated environments that mirror production dependencies. Reset databases between runs, seed feature flags, and keep the service topology stable. When tests become flaky due to third-party instability, add retry logic on the harness or mock the external dependency so the suite only fails on application issues.
+
+\subsection{Layer Boundaries and Anti-patterns}
+
+Clarifying the border between unit, integration, and end-to-end work prevents overlap and wasted effort. Diagram~\ref{fig:test-boundaries} traces the path through the layers and highlights the peripherals (UI assertions and infrastructure checks). The raw Mermaid lives in `diagrams/test-boundaries.mmd`.
+
+\lstinputlisting[caption={Mermaid definition for unit/integration/end-to-end boundaries.}, label=fig:test-boundaries]{../diagrams/test-boundaries.mmd}
+
+\begin{table}[h]
+\centering
+\caption{Anti-patterns and better alternatives}
+\label{tab:anti-patterns}
+\begin{tabular}{p{4cm}p{4cm}p{4cm}}
+\toprule
+Anti-pattern & Consequence & Alternative \\
+\midrule
+Mocking concrete classes & Brittle tests that break with refactors & Depend on interfaces or abstractions \\
+Waiting for every environment before merging & Slow feedback, reduced exploration & Gate on fast suites + targeted smoke staging \\
+Treating integration as QA’s job & Ownership gaps and delayed fixes & Embed automation and maintenance in dev squads \\
+Running identical checks in multiple layers & Wasteful runtime and non-actionable overlap & Route assertions to the layer with most context \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{System and Acceptance Testing}
+
+System tests focus on how the application behaves in an environment that mirrors production. Deployment scripts, data pipelines, and third-party services should be exercised. Acceptance tests translate product requirements into executable scripts, often written in domain-specific languages or Gherkin to keep stakeholders engaged.
+
+\subsection{Orchestrating Acceptance Criteria}
+
+Capture acceptance criteria in collaborative sessions and translate them into test automation stories. Maintain a living list of acceptance tests grouped by feature or epic, and tie them to release notes so product owners can report status with confidence. When possible, map Gherkin scenarios back to user personas so reviewers understand the motivation behind each test.
+
+\subsection{Release Validation Runs}
+
+Schedule release validation windows where a small team executes deterministic acceptance suites, exploratory charters, and sanity checks against the staging environment. Treat these runs like a miniature launch: open a dedicated communication channel, document the checklist, and log any observations for the post-mortem.
+
+\subsection{Acceptance Gate Automation}
+
+Automate gate logic so merges cannot proceed until the right combination of excuses passes (unit + regression + contract). Use policy-as-code (e.g., GitHub branch protection) to enforce success, and publish the gate status with clear signals for product teams. When a gate fails, send the minimal failing artifact and next steps in one note to avoid finger pointing.
+
+\subsection{Regression and Performance Suites}
+
+Regression suites guard against feature cross-talk. Run them nightly or on branches targeting long-lived releases. Performance or load regression suites monitor latency, throughput, and resource usage. These suites usually run in dedicated environments with stable baselines, and failures signal that changes risk degrading user experience.
+
+\subsection{Maintaining Healthy Regression Runs}
+
+Monitor failure trends before rerunning suites. Tag intermittent failures as flaky and spin up dedicated debug jobs that capture logs and recordings. Document the expected duration of the regression run and keep an eye on resource consumption; if suites balloon, consider splitting them or running subsets in parallel.
+
+\subsection{Performance Budgeting}
+
+Define performance budgets for key transactions (e.g., page load time, API latency). Automate performance regression suites to run after deployments and compare results to the previous baseline. Trigger alerts when budgets cross thresholds so teams can prioritize optimizations before the impact reaches customers.
+
+\subsection{Monitoring Pyramid Health}
+
+Track the ratios between pyramid layers in your dashboards (unit/integration/end-to-end ratio, doughnut coverage). Alert when one layer grows disproportionately or when doughnut activities are unused for several releases. These signals keep the team honest about where maintenance work is needed.
+
+ \section{Anti-patterns and Common Mistakes}
+
+ - Building the pyramid without capturing doughnut activities—exploratory charters get forgotten.
+ - Letting flaky integration environments dictate release timing.
+ - Treating regression runs as "set and forget" without monitoring success trends.
+ - Assuming coverage numbers alone prove the pyramid is balanced.
+ - Ignoring fixture ownership and letting data drift silently.
+
+ \section{Worked Example}
+
+The example demonstrates how to annotate a release with pyramid counts and gate release validation runs. For the runnable script and its tests see \texttt{examples/ch02/pyramid\_planner.py} and \texttt{examples/ch02/test\_pyramid\_planner.py}. Run them locally with \texttt{python examples/ch02/pyramid\_planner.py} and \texttt{pytest examples/ch02}.
+
+\begin{lstlisting}[language=bash]
+ name: Release Validation
+ on:
+   workflow_dispatch:
+ jobs:
+   unit_tests:
+     runs-on: ubuntu-latest
+     steps:
+       - uses: actions/checkout@v4
+       - run: pytest tests/unit
+   regression:
+     needs: unit_tests
+     runs-on: ubuntu-latest
+     steps:
+       - run: ./scripts/run-regression.sh
+       - run: ./scripts/check-performance.sh
+       - name: Report status
+         run: |
+           # Emit metrics to monitoring dashboard (pyramid counts, gate status, risk score).
+ \end{lstlisting}
+
+ \section{Checklist}
+
+ \begin{itemize}
+   \item Chart pyramid layers with target counts and cadence.
+   \item Schedule doughnut activities near major launches.
+   \item Own each unit suite per service/component.
+   \item Monitor regression suite duration and flakiness.
+   \item Rotate and sanitize fixtures across layers.
+   \item Automate acceptance gates with policy-as-code.
+   \item Alert when pyramid ratios or doughnut activity drop.
+ \end{itemize}
+
+ \section{Exercises}
+
+ \begin{enumerate}
+   \item Sketch a doughnut plan for your current product area, listing exploratory, usability, and security checks.
+   \item Review the last regression run and document three failure trends to investigate.
+   \item Define a release validation checklist that includes automation and manual observations.
+   \item List the fixtures that support each pyramid layer and note who refreshes them.
+   \item Add policy-as-code logic to your CI job that prevents merging if a gate fails; describe the logic.
+   \item Identify a doughnut activity that has not run in two releases and plan how to revive it.
+   \item Simulate a pyramid-health alert: describe the metric that trips and how the response workflow looks.
+  \item Run \texttt{examples/ch02/pyramid\_planner.py} and confirm the pyramid plan output.
+ \end{enumerate}
+
+\section{Summary}
+
+- The pyramid needs doughnut support, refreshed fixtures, and automation gating to stay actionable.
+- Monitoring layer ratios keeps regression suites proportional, while alerts flag unbalanced growth.
+- A disciplined approach to release validation makes the strategy tangible for every team member.
+
+\section{What's Next}
+
+Chapter 3 walks through the automation frameworks and pipelines that execute the strategy laid out here.
+
+- \citep{kaner2002testing} for pyramid-related guidance.
+- \citep{beizer1995software} for integration and system-level testing tales.

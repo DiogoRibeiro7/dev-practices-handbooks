@@ -1,0 +1,122 @@
+\section{Motivation and Learning Objectives}
+
+Metrics tie testing to business outcomes, but teams often drown in dashboards. This chapter shows how to define KPIs, maintain a risk register, and keep coverage reviews actionable so automation contributes to measurable reliability.
+
+\section{Core Concepts}
+
+\subsection{Key Performance Indicators for Testing}
+
+Quality teams track a small set of KPIs so stakeholders can interpret efforts consistently. Useful measures include cycle time for fixing failures, defect escape rate, build stability, and test execution time. Present these metrics together; focusing on a single metric can encourage gaming the system.
+
+\subsection{Constructing Balanced KPI Sets}
+
+Group indicators into outcome, velocity, and reliability buckets. Outcome metrics (defect escape, customer-reported issues) confirm whether the product meets expectations. Velocity metrics (cycle time, pipeline throughput) show how quickly the team iterates. Reliability metrics (build stability, SLA compliance) prove the automation investment. Keep the set balanced so no single bucket dominates stakeholder discussions.
+
+\subsection{Narratives Behind the Numbers}
+
+Complement KPIs with short narratives that explain anomalies. If build stability falls, record whether the regression is due to flaky infrastructure or a genuine failing suite. These narratives keep leadership informed without forcing them to wade through dashboards.
+
+\subsection{Risk-Based Testing}
+
+Risk-based testing prioritizes scenarios that threaten business outcomes. Combine impact (customer-facing severity) with likelihood (probability of failure) to triage test campaigns. Map risk scores to regression coverage so the most critical flows receive multiple safety nets (e.g., unit, contract, and system tests).
+
+\subsection{SLI/SLO Alignment}
+
+Define Service Level Indicators (SLIs) that correspond to the tests you run, such as error rate or latency. Convert those into Service Level Objectives (SLOs) and compute error budgets before deployment. Feed automation results (pass/fail, latency metrics) into the SLO calculation so you can page teams before the error budget is breached.
+
+\subsection{Maintaining a Risk Register}
+
+Keep a living register of high-risk areas, the evidence behind the scores, and the mitigations in place. Document what tests cover the risk, who owns them, and when the risk should be reevaluated, such as after a major architectural change or incident.
+
+\subsection{Reliability and Observability}
+
+Reliability metrics such as mean time between failures (MTBF) or service-level indicators (SLIs) help teams know when to extend test coverage. System health dashboards should display failed assertions, alert volumes, and test flakiness. Use these signals to trigger retrospectives or post-incident reviews that adjust the testing roadmap.
+
+\subsection{Alert Fatigue and Threshold Calibration}
+
+Design alerts with two thresholds: a warning threshold for investigation and a critical threshold that blocks deployments. Tune the warning threshold with historical data so you reduce noise and only escalate when repeated patterns appear. Document each alert’s intent and response path, and retire alerts that produce no meaningful action.
+
+\subsection{Linking Observability to Automation}
+
+Automate alerts that surface failing smoke checks, SLA breaches, or deployment issues. Feed observability signals back into automated regression or exploratory tickets so the team can investigate before the next release. When alert noise grows, tune thresholds or add guardrails to keep the signal meaningful.
+
+\subsection{Test Coverage Reports}
+
+Treat coverage tools as diagnostic aids. Combine line or branch coverage with mutation testing to highlight blind spots. Document what each report covers, who owns the suites, and when to refresh or retire obsolete cases so maintenance stays manageable.
+
+\subsection{Refreshing Coverage Audits}
+
+Schedule quarterly coverage reviews. Include stakeholders from product and architecture to decide which areas still merit automation and which can be retired in favour of manual checks or targeted smoke suites. Record the conclusions so future teams understand why the coverage bar remains where it is.
+
+\subsection{Narrative Dashboards}
+
+Build dashboards that pair KPI numbers with short narratives and risk register statuses. For example, display build stability next to the corresponding risk entry and note when the coverage review last ran. These dashboards become the shared storybook for quality conversations.
+
+\section{Anti-patterns and Common Mistakes}
+
+- Banking on a single KPI (e.g., coverage) to represent all quality.
+- Letting the risk register grow stale without scheduled reviews.
+- Treating observability alerts as noise without looping back to automation.
+- Ignoring SLI/SLO linkage and continuing to deploy even when the budget is consumed.
+- Raising alerts without clear thresholds or documented response owners.
+
+\section{Worked Example}
+
+The snippet below references an SLO burn calculator; the companion example lives in \texttt{examples/ch04/metrics\_kpi.py}, with tests under \texttt{examples/ch04/test\_metrics\_kpi.py}. Run it locally via \texttt{python examples/ch04/metrics\_kpi.py} or in CI with \texttt{pytest examples/ch04}.
+
+\begin{lstlisting}[language=python]
+from datetime import datetime
+
+metrics = {
+    "defect_escape_rate": 0.02,
+    "build_stability": 0.85,
+    "test_execution_time": 420,
+}
+
+# TODO: This snippet would integrate with incident tracking tools / dashboards in practice.
+if metrics["build_stability"] < 0.9:
+    print("Open incident ticket with logs and notify the QA channel.")
+else:
+    print("Metrics healthy; continue scheduled regression.")
+
+# TODO: feed the narrative summary to the metrics dashboard.
+\end{lstlisting}
+
+\section{Checklist}
+
+\begin{itemize}
+  \item Maintain a risk register with owners and review dates.
+  \item Document coverage scope and retirement plans.
+  \item Link automation failure alerts to observability tickets.
+  \item Add narrative why a KPI dipped before presenting to leadership.
+  \item Tie KPIs to SLOs and track error budgets alongside automation gates.
+  \item Tune alert thresholds with both warning and critical gates, and document owners.
+  \item Include risk register entries on narrative dashboards so they tell a cohesive story.
+\end{itemize}
+
+\section{Exercises}
+
+\begin{enumerate}
+  \item Write a KPI narrative for the last sprint's build stability change.
+  \item Add an alert rule that triggers when a regression job fails twice in a row.
+  \item Run a mutation test pass on your suite and log the blind spots you discover.
+  \item Identify three metrics you would include in an SLI/SLO pair and explain the error budget.
+  \item Sketch a dashboard that shows coverage review dates, KPIs, and the related risk register entry.
+  \item Tune warning vs critical thresholds for one alert and document the action each threshold triggers.
+  \item Use the example script to calculate SLO burn and note when you'd halt a release.
+  \item Document a narrative summary for the current sprint and attach it to the KPI dashboard.
+\end{enumerate}
+
+\section{Further Reading}
+
+- \citep{myers2011art} for confidence-building techniques.
+- Service Level Objective (SLO) documentation from Google Cloud for reliability context.
+\section{Summary}
+
+- Balanced KPI sets and SLI/SLO pairings connect testing work to business value.
+- Risk registers, alert calibration, and narrative dashboards keep metrics actionable.
+- Coverage reviews and mutation testing expose blind spots so automation stays relevant.
+
+\section{What's Next}
+
+Chapter 5 turns to governance: how policies, rituals, and learning loops connect the strategy and automation investments back to people and process.

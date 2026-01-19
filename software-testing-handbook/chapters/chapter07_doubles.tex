@@ -1,0 +1,58 @@
+\section{Opening: Motivation and Learning Objectives}
+Explain why the right kind of test double keeps suites fast while preventing brittle interactions with downstream services. Detail what the reader will learn about choosing between stubs, spies, fakes, and mocks, and when to avoid them.
+
+\section{Core Concepts}
+\begin{itemize}
+  \item Doubles taxonomy: stubs for canned responses, spies for interaction counts, mocks for behavioral contracts, fakes for lightweight implementations.
+  \item Criteria to decide between state-based assertions and interaction verification.
+  \item Strategies for introducing doubles incrementally within CI without degrading coverage.
+\end{itemize}
+
+\section{Anti-patterns and Common Mistakes}
+\begin{itemize}
+  \item Mocking concrete classes instead of defining clear interaction contracts makes refactors brittle.
+  \item Oververifying every method call turns tests into implementation checks instead of validating outcomes.
+  \item Relying on a single static fake for multiple contexts hides differences between environments and breeds hidden state bugs.
+\end{itemize}
+
+\section{Worked Example}
+The worked example sketches how to wrap a rating service client with an interface and inject a deterministic fake:
+
+\begin{lstlisting}[language=python]
+class RatingClient:
+    def fetch(self, feature_id: str) -> float:
+        raise NotImplementedError
+
+class FakeRatingClient(RatingClient):
+    def __init__(self, fixed_score: float) -> None:
+        self.fixed_score = fixed_score
+    def fetch(self, feature_id: str) -> float:
+        return self.fixed_score
+
+def evaluate(feature_id: str, client: RatingClient) -> str:
+    score = client.fetch(feature_id)
+    return "pass" if score > 4.0 else "review"
+\end{lstlisting}
+
+Swap `FakeRatingClient` into CI so the `evaluate` logic stays deterministic without calling the upstream API.
+
+\section{Checklist}
+\begin{itemize}
+  \item Decide when to introduce doubles (slow network, unavailable service) and document ownership plus scope.
+  \item Log each fake/mock/stub deployment to trace when contracts changed.
+  \item Stabilize interaction verifications by pinning expected call counts to meaningful events.
+\end{itemize}
+
+\section{Exercises}
+\begin{enumerate}
+  \item Identify three slow dependencies and sketch the double (interface + fake) you would inject for local tests.
+  \item Refactor an existing test that hits a network call so it depends on an injectable interface instead of the concrete client.
+  \item Evaluate when a spy adds value versus when a state assertion is sufficient.
+  \item Create a scope note explaining when to keep the live dependency (e.g., contract verification) versus using a fake.
+  \item Document a regression that broke because a fake diverged from production and how the team caught it.
+  \item Describe how you would seed deterministic data for a fake that emulates a rate-limited API.
+\end{enumerate}
+
+\section{Further Reading}
+- Martin Fowler, “Mocks Aren’t Stubs” for understanding interaction testing.
+- Gerard Meszaros, “xUnit Test Patterns” for double design guidance.

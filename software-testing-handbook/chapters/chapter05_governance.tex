@@ -1,0 +1,124 @@
+\section{Motivation and Learning Objectives}
+
+Governance keeps teams aligned around quality without slowing delivery. This chapter clarifies how policies, collaboration, and learning loops turn tactical tests into sustainable programs.
+
+\section{Core Concepts}
+
+\subsection{Governance and Testing Policy}
+
+Formalize how testing decisions are made. Define approval gates when a release can move to staging or production, and specify who owns which suites. Document responsibilities for triaging failures, owning automation maintenance, and updating environment definitions so there is no ambiguity when issues surface.
+
+\subsection{Governance Lifecycle}
+
+A governance lifecycle keeps charters fresh: draft the policy, socialize it with stakeholders, instrument dashboards to surface adherence, review quarterly, and retire obsolete commitments. Track owner, review date, and status so teams rotate charters and avoid letting them stagnate.
+
+\subsection{Testing Charters and Decision Trees}
+
+Publish charters that spell out the criteria for when to add or remove coverage. For example, a charter might state that all customer-facing APIs require regression smoke tests, while prototypes in feature flags may only need happy-path validation. Decision trees help engineers choose the appropriate test type when the new change touches multiple layers.
+
+\subsection{Governance Metrics and Scorecards}
+
+Track logistics via scorecards: gate pass rates, charter reviews completed, incident follow-through, and training completions. Surface the scorecard during retrospectives so the team can see how governance investments shift outcomes.
+
+\subsection{Ownership and Collaboration}
+
+Testing is most effective when product, design, and engineering share ownership. Invite non-engineering partners into acceptance criteria workshops, review automated test reports together, and turn exploratory sessions into shared learning opportunities. Cross-functional collaboration surfaces assumptions early and keeps quality goals aligned with customer needs.
+
+\subsection{Communication and Training}
+
+Good governance depends on transparency. Publish weekly summaries (failed suites, incident learnings, charter updates) and rotate presenters for quality clinics so every team member understands the governance language and can participate in the rituals.
+
+\subsection{Cadence for Quality Reviews}
+
+Establish recurring rituals that bring together QA, product, and engineering. A weekly quality review can highlight flaky suites, failing metrics, or upcoming release risks. Document action items from these reviews directly in the playbooks so the team can track progress on stabilizing critical flows.
+
+\subsection{Policy Enforcement and Feedback}
+
+Enforce policies with checklists tied to gates and dashboards that show pending approvals. When gates fail, feed the failure into war-room notes so decision-makers can agree on mitigation scopes instead of bypassing the process.
+
+\subsection{Continuous Improvement and Learning}
+
+Improve testing practices through retrospectives and learning loops. Capture knowledge in playbooks: how to debug flaky tests, how to write effective test modules, and how to keep suites efficient. Encourage experimentation with new tools or test designs, but always loop back with measurable outcomes so the team can validate the payoff.
+
+\subsection{Playbooks and War Rooms}
+
+Maintain war-room guides for common situations, such as investigating a production incident or onboarding a new automation framework. The guides should reference relevant tests, metrics, and responsibilities so responders can jump straight into diagnosis instead of recreating knowledge from scratch.
+
+\subsection{Resilience and Incident Reviews}
+
+Post-incident reviews should include a testing section: which suites failed to catch the issue, what coverage gaps existed, and what next steps are planned. Feeding these insights back into the test roadmap prevents repeated failures and keeps confidence high.
+
+\subsection{Escalation Paths}
+
+Define escalation paths for repeated failures or test-blocking issues. When a failing suite prevents progress, the owning team should be transparent about the failure mode, whether it is infrastructure, flaky tests, or product ambiguity. Escalating promptly keeps release velocity on track while preserving overall quality.
+
+\section{Anti-patterns and Common Mistakes}
+
+- Assuming governance is a static policy rather than a living charter.
+- Running quality reviews without action items or owners.
+- Ignoring the test section in post-incident reviews.
+- Elevating policy language without explaining why gates exist (stakeholder confusion).
+- Broadcasting scorecards without linking them to actionable rituals.
+
+\section{Worked Example}
+
+The example below prints a deterministic review summary for the scripted quality review; see \texttt{examples/ch05/quality\_review.py} and \texttt{examples/ch05/test\_quality\_review.py} and the \texttt{examples/ch05/README.md} instructions for running locally or via CI.
+
+\begin{lstlisting}[language=python]
+review = {
+    "owner": "qa-lead",
+    "agenda": [
+        "Failed suites (links)",
+        "Coverage drift",
+        "Incident learnings",
+    ],
+    "actions": [],
+}
+
+has_failures = True
+if has_failures:
+    review["actions"].append("Assign debugging pair")
+else:
+    review["actions"].append("Schedule next validation run")
+
+print("Weekly quality review:", review)
+\end{lstlisting}
+
+\section{Checklist}
+
+\begin{itemize}
+  \item Surface testing charters in release planning rituals.
+  \item Include testing questions in post-incident reviews.
+  \item Run quality reviews with documented actions and owners.
+  \item Keep escalation paths transparent and practiced.
+  \item Update governance scorecards with the latest gate pass rates and incident learnings.
+  \item Rotate presenters on training clinics so every team knows the governance playbook.
+  \item Point alerts back to war-room guides whenever policies block progress.
+\end{itemize}
+
+\section{Exercises}
+
+\begin{enumerate}
+  \item Draft a testing charter for an upcoming feature and list the gates it must pass.
+  \item Run a 15-minute quality review and capture one action item per stakeholder.
+  \item Add a testing question to your next incident review template.
+  \item Schedule a governance training session and log attendance with the charter topic.
+  \item Update the risk register entry for your high-priority service and note the current coverage.
+  \item Rehearse an escalation path by simulating a failing regression gate and documenting the notifications.
+  \item Pair with a teammate to write a short narrative that links a KPI drop to a released gate failure.
+  \item Run \texttt{python examples/ch05/quality\_review.py} and verify it returns the same deterministic review summary each time.
+\end{enumerate}
+
+\section{Further Reading}
+
+- \citep{kaner2002testing} for collaborative QA practices.
+- \citep{beizer1995software} for governance-oriented test habits.
+\section{Summary}
+
+- Fresh charters, scorecards, and enforcement dashboards make governance actionable.
+- Communication clinics and war-room guides keep policies visible and auditable.
+- Incident reviews and reflections ensure governance continuously improves.
+
+\section{What's Next}
+
+Chapter 6 will build a capstone mini-project combining foundations, strategy, automation, metrics, and governance into a repeatable readiness checklist.

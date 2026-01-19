@@ -1,0 +1,53 @@
+\section{Opening: Motivation and Learning Objectives}
+Introduce how consumer-driven contracts and containerized integration suites bridge fast unit tests and slow end-to-ends. State that readers will learn to lock down contracts and run deterministic containers in CI.
+
+\section{Core Concepts}
+\begin{itemize}
+  \item Contract publishing, verification, and broker workflows.
+  \item Container <> integration testing patterns (docker compose, testcontainers, reusable fixtures).
+  \item Balancing speed and fidelity when loading real services.
+\end{itemize}
+
+\section{Anti-patterns and Common Mistakes}
+\begin{itemize}
+  \item Duplicating production logic inside consumer contracts makes the test indistinguishable from the system under test.
+  \item Spinning up containers without seeding deterministic data leads to flaky suites that mask regressions.
+  \item Treating integration tests as happy-path acceptance checks without verifying invariants reduces their guardrail value.
+\end{itemize}
+
+\section{Worked Example}
+Suppose a consumer defines a contract expecting `GET /offers` to return a JSON array. Use Pact or a simple fixture to validate this response while the provider runs in Docker Compose with fixed data:
+
+\begin{lstlisting}[language=python]
+# consumer contract snippet (pseudo)
+def test_offers_contract(pact):
+    pact.given("offers exist").upon_receiving("a request for offers").with_request(
+        method="GET", path="/offers"
+    ).will_respond_with(
+        status=200, body=[{"id": 1, "price": 9.99}]
+    )
+    pact.verify(lambda: client.fetch_offers())
+\end{lstlisting}
+
+Run the provider in a container with a seed script that populates the same `offers` data and keep the image cached so CI can start deterministically.
+
+\section{Checklist}
+\begin{itemize}
+  \item Check that contract versions are published and compatible with consumer expectations.
+  \item Verify container state before running integration tests (migrations, feature flags).
+  \item Tear down containers and clear volumes after each run to avoid pollution across stages.
+\end{itemize}
+
+\section{Exercises}
+\begin{enumerate}
+  \item Write a consumer contract for an HTTP endpoint and share the Pact file with the provider team.
+  \item Run a docker-compose integration test with deterministic data and log the artifacts.
+  \item Identify the minimal assertions that catch breaking changes without overconstraining the provider.
+  \item Sketch a workflow for publishing contract changes safely (review, test, broker).
+  \item Document how you monitor contract violations over time and who fixes them.
+  \item Pair with another team to run a cross-service integration test before a release.
+\end{enumerate}
+
+\section{Further Reading}
+- Pact documentation for consumer-driven contract workflows.
+- Testcontainers and Docker Compose best-practice guides for integration environments.

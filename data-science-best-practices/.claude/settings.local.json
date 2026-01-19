@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pdflatex:*)",
+      "Bash(done)",
+      "Bash(for file in chapters/*.tex)",
+      "Bash(do sed -i 's/×/$\\\\times$/g' \"$file\")",
+      "Bash(do sed -i 's/±/$\\\\pm$/g' \"$file\")",
+      "Bash(do sed -i 's/≠/$\\\\neq$/g' \"$file\")",
+      "Bash(do sed -i.bak 's/—/---/g' \"$file\")",
+      "Bash(python fix_unicode.py:*)",
+      "Bash(python fix_quotes_in_code.py:*)",
+      "Bash(LC_ALL=C grep:*)",
+      "Bash(python fix_arrows_in_code.py:*)",
+      "Bash(python:*)",
+      "Bash(pdfinfo:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

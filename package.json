@@ -1,0 +1,14 @@
+{
+  "name": "dev-practices-handbooks",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint:md": "markdownlint CONTRIBUTING.md docs/*.md docs/book/src/**/*.md solutions/*.md software-testing-handbook/**/*.md python-best-practices/**/*.md git-github-best-practices/**/*.md --ignore node_modules --ignore docs/book/book",
+    "lint:spell": "cspell --config .cspell.json CONTRIBUTING.md docs/*.md docs/book/src/**/*.md solutions/*.md software-testing-handbook/**/*.md python-best-practices/**/*.md git-github-best-practices/**/*.md",
+    "lint": "npm run lint:md && npm run lint:spell"
+  },
+  "devDependencies": {
+    "cspell": "^6.3.0",
+    "markdownlint-cli": "^0.34.0"
+  }
+}

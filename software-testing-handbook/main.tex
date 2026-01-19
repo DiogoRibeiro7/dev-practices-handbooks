@@ -1,0 +1,108 @@
+\documentclass[12pt,a4paper]{book}
+
+% Packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{natbib}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{titlesec}
+
+% Layout
+\geometry{margin=1in}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\thepage}
+\fancyhead[LO]{\nouppercase{\rightmark}}
+\fancyhead[RE]{\nouppercase{\leftmark}}
+
+% Listings
+\lstset{
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    frame=single,
+    breaklines=true,
+    numbers=left,
+    numberstyle=\tiny,
+    backgroundcolor=\color{gray!10},
+    postbreak={\mbox{\textcolor{red}{$\hookrightarrow$}\space}},
+}
+
+% Heading tweaks
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries}{\chaptertitlename\ \thechapter}{20pt}{\Huge}
+
+% Title data
+\title{Software Testing Handbook:\\Building Trust in Complex Systems}
+\author{Diogo Ribeiro\\ESMAD - Instituto Polit{\'\i}cnico do Porto}
+\date{\today}
+
+\begin{document}
+
+\frontmatter
+\maketitle
+\tableofcontents
+\listoffigures
+
+\mainmatter
+
+\chapter{Preface}
+\input{chapters/preface}
+
+\chapter{Foundations of Software Testing}
+\input{chapters/chapter01_foundations}
+
+\chapter{Testing Strategies and Level Planning}
+\input{chapters/chapter02_strategies}
+
+\chapter{Automation, Tooling, and Infrastructure}
+\input{chapters/chapter03_automation}
+
+\chapter{Metrics, Risk, and Quality Indicators}
+\input{chapters/chapter04_metrics}
+
+\chapter{Governance, Culture, and Continuous Improvement}
+\input{chapters/chapter05_governance}
+
+\chapter{Capstone: Release Readiness Checklist}
+\input{chapters/chapter06_capstone}
+
+\chapter{Designing Test Doubles and Mocking Discipline}
+\input{chapters/chapter07_doubles}
+
+\chapter{Property-Based and Meta Testing}
+\input{chapters/chapter08_property_based}
+
+\chapter{Contracts and Containerized Integration Testing}
+\input{chapters/chapter09_contracts_integration}
+
+\chapter{Flaky Tests: Detection and Resolution}
+\input{chapters/chapter10_flaky}
+
+\chapter{Coverage, Risk, and Confidence}
+\input{chapters/chapter11_coverage}
+
+\chapter{CI Strategy for Test Suites}
+\input{chapters/chapter12_ci_strategy}
+
+\chapter{Refactoring for Testability}
+\input{chapters/chapter13_refactoring}
+
+\backmatter
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

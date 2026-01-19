@@ -1,0 +1,40 @@
+\section{Opening: Motivation and Learning Objectives}
+Clarify how coverage relates to confidence and what it cannot guarantee. Define the goals for this chapter: reading coverage reports, prioritizing coverage based on risk, and avoiding vanity metrics.
+
+\section{Core Concepts}
+\begin{itemize}
+  \item Line, branch, and mutation coverage in modern toolchains.
+  \item How coverage gaps highlight risk but do not prove correctness.
+  \item Combining coverage data with risk matrices and targeted smoke tests.
+\end{itemize}
+
+\section{Anti-patterns and Common Mistakes}
+\begin{itemize}
+  \item Chasing 100% coverage is a vanity metric that draws effort away from riskier, less tested modules.
+  \item Ignoring uncovered gaps because the overall percentage looks healthy lets regressions slip through in critical paths.
+  \item Treating instrumentation noise (e.g., synthetic branches executed only during tests) as evidence of correctness gives false confidence.
+\end{itemize}
+
+\section{Worked Example}
+`\texttt{order\_processor.py}` exposes an early exit when the cart is empty, but coverage shows the branch remains untested. Add a focused unit that sets up an empty cart and asserts the early return, raising the coverage for that module without chasing unrelated lines.
+
+\section{Checklist}
+\begin{itemize}
+  \item Audit uncovered branches and annotate whether they are reachable in production.
+  \item Tune thresholds per module based on risk instead of a single global target.
+  \item Pair coverage gaps with risk statements so they drive meaningful test investments.
+\end{itemize}
+
+\section{Exercises}
+\begin{enumerate}
+  \item Run coverage locally, identify two high-risk gaps, and plan targeted tests to cover them.
+  \item Describe how you would combine mutation testing with coverage data to pinpoint blind spots.
+  \item Explain why hitting 100% coverage across the board is neither practical nor valuable.
+  \item Document how you would retire coverage-heavy suites that no longer align with risk.
+  \item Match coverage gaps to the risk register and decide whether to add automation, monitoring, or manual charters.
+  \item Note one area where high coverage should be maintained (e.g., payments) and how you would prove it continuously.
+\end{enumerate}
+
+\section{Further Reading}
+- Gleb Bahmutov, “Test Coverage Does Not Equal Quality,” for practical warning signs.
+- Google Testing Blog’s coverage articles for balancing numbers with risk.

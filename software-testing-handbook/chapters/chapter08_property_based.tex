@@ -1,0 +1,53 @@
+\section{Opening: Motivation and Learning Objectives}
+Frame property-based testing as a way to cover wide input spaces with short suites while preserving determinism. Outline what readers will gain: designing invariants, seeding randomness, and spotting anti-patterns.
+
+\section{Core Concepts}
+\begin{itemize}
+  \item Difference between example-based and property-driven tests.
+  \item Managing randomness by freezing seeds, controlling clocks, and isolating I/O during generation.
+  \item Shrinking failed cases and interpreting counterexamples.
+\end{itemize}
+
+\section{Anti-patterns and Common Mistakes}
+- Copying the production logic into the property (e.g., rolling your own sum-to-match) defeats the point of invariants.
+- Forgetting to seed randomness or controlling shrinking leads to non-deterministic failures that frustrate developers.
+- Oversampling unrealistic data (very large ints, long strings) without filtering for domain relevance generates noise instead of insights.
+
+\section{Worked Example}
+Use Hypothesis to assert that sorting a list is idempotent. Freeze the seed so the failure reproduces consistently:
+
+\begin{lstlisting}[language=python]
+from hypothesis import given, settings, seed
+import hypothesis.strategies as st
+
+@settings(deadline=None)
+@seed(42)
+@given(st.lists(st.integers(), min_size=1, max_size=5))
+def test_sort_idempotent(nums):
+    assert sorted(nums) == sorted(sorted(nums))
+\end{lstlisting}
+
+The invariant is "sorting twice equals sorting once." Record the seed in logs to rerun failing cases without rerunning the entire suite.
+
+\section{Checklist}
+\begin{itemize}
+  \item Confirm seeds replay the failing example exactly.
+  \item Inspect shrinking output to ensure counterexamples remain human-readable.
+  \item Validate that custom strategies generate meaningful domain data (IDs, enums, structural invariants).
+\end{itemize}
+
+\section{Exercises}
+\begin{enumerate}
+  \item Convert a regression test into a property test by identifying the invariant it should hold.
+  \item Build a custom strategy that mirrors your domain objects and ensures valid combinations.
+  \item Freeze a failure's seed and rerun it to confirm deterministic reproduction.
+  \item Explain how Hypothesis shrinks a counterexample and where to stop if it takes too long.
+  \item Document a property anti-pattern you discovered and how you refactored it.
+  \item Run a property test under CI and capture the logs needed for triage.
+  \item List three invariants (e.g., sorting, totals, invariants over JSON schema) that would catch regression bugs.
+  \item Pair property tests with example-based smoke checks to maintain human-readable documentation.
+\end{enumerate}
+
+\section{Further Reading}
+- Hypothesis documentation (`https://hypothesis.readthedocs.io`) for canonical recipes.
+- John Hughes, `Why Functional Programming Matters` for declarative invariants that inspire property testing.

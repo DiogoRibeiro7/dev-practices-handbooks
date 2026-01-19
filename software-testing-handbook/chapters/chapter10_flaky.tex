@@ -1,0 +1,77 @@
+\section{Opening: Motivation and Learning Objectives}
+Highlight the cost of flaky tests and the reader benefits: detecting nondeterminism, establishing quarantine practices, and realistically fixing root causes.
+
+\section{Core Concepts}
+\begin{itemize}
+  \item Categories of flakiness (timing, resources, environment).
+  \item Detection techniques such as rerun counters, CI analytics, and dashboards.
+  \item Quarantine vs fix decisions and how to communicate status.
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\caption{Flaky-test symptoms, likely causes, and fixes}
+\label{tab:flaky-symptoms}
+\begin{tabular}{p{4cm}p{4cm}p{5cm}}
+\toprule
+Symptom & Likely Cause & Fix \\
+\midrule
+Order-dependent passes/fails & Shared global state or fixtures & Isolate state resets per test \\
+Intermittent timeouts & Slow dependency or race condition & Add deterministic waits or mock external service \\
+Random data failures & Unseeded randomness or entropy & Seed RNG and log seed on failure \\
+Environment-specific failures & External service flakiness or configuration drift & Pin dependencies and use recorded responses \\
+Resource exhaustion on CI & Concurrent pipelines exceeding quota & Limit concurrency or sample smaller data \\
+UI tests failing in headless & Timing and animation differences & Synchronize waits and capture screenshots on failure \\
+Post-deploy checks pass while nightlies fail & Data set growth or stale fixtures & Refresh fixtures and monitor data drift \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Anti-patterns and Common Mistakes}
+\begin{itemize}
+  \item Rerunning flakes without logging inputs or seeds hides the failing dependency rather than fixing it.
+  \item Ignoring flaky suites and relying on retries erodes squad confidence—they should be tracked and owned.
+  \item Labeling every regression as a flake without investigating infra, timing, or shared-state issues prevents real remediation.
+\end{itemize}
+
+\section{Worked Example}
+The harness reruns flaky suites with deterministic seeds and logs each attempt:
+
+\begin{lstlisting}[language=python]
+def rerun_test_with_logging(test_callable, retries=3):
+    history = []
+    for attempt in range(retries):
+        seed = 1337 + attempt
+        random.seed(seed)
+        result = test_callable()
+        history.append({"seed": seed, "result": result})
+        if result == "pass":
+            break
+        log_failure(test_callable.__name__, seed, attempt)
+    summarize(history)
+\end{lstlisting}
+
+By saving every seed and run status, engineers reproduce failures locally and determine whether the flake arises from timing, data, or environment noise.
+
+\section{Checklist}
+\begin{itemize}
+  \item Tag flaky tests, assign ownership, and record metadata (seed, reruns, environments).
+  \item Document root cause hypotheses and confirm which dependency triggered the nondeterminism.
+  \item Quarantine only until a fix lands; note the remediation plan so the suite can be re-enabled.
+\end{itemize}
+
+\section{Exercises}
+\begin{enumerate}
+  \item Analyze CI history for tests that fail more than once daily and list the suspect dependencies.
+  \item Implement a detection script that reruns flagged suites, captures seeds, and writes a JSON report for CI.
+  \item Quarantine a flaky test by tagging it, notifying stakeholders, and logging the plan to fix it.
+  \item Introduce a deliberate delay to mimic a timing flake and document how you diagnosed it.
+  \item Automate a rerun harness and note when a test passes consistently, indicating it might be reintroduced.
+  \item Pair with a platform engineer to capture traces whenever a flaky suite touches shared infrastructure.
+  \item Review the harness logs to categorize flakes by root cause and plan targeted fixes.
+  \item Share the rerun summary with your team to crowdsource additional observations.
+\end{enumerate}
+
+\section{Further Reading}
+- Kent Beck, “Flaky Tests and the Costs of Not Fixing Them” (blog) for management tactics.
+- Charity Majors, “Observability Engineering” resources about logging/tracing flaky services.

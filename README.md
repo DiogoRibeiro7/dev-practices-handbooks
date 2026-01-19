@@ -46,6 +46,26 @@ Elevate your Git proficiency from basic commands to enterprise-grade workflows. 
 - Incident response playbooks
 - Repository hygiene checklists
 
+### ?? Software Testing Handbook
+
+**A practical guide to building trust in modern delivery pipelines**
+
+This handbook distills testing strategy, automation, metrics, and governance into a cohesive playbook that can be shared with engineers, testers, and product partners. It balances conceptual models with hands-on examples so teams can elevate their test suites without slowing down the release cadence.
+
+Key topics:
+
+- Test planning across pyramid and doughnut models
+- Automation architecture from unit suites to CI-driven performance labs
+- Metrics, risk-based prioritization, and observability
+- Governance rituals, ownership charters, and post-incident learning
+
+**Key Features:**
+
+- Pragmatic testing patterns grounded in real-world constraints
+- Sample CI workflows, dependency hygiene, and test data recipes
+- Guidance for observability, defect reporting, and continual improvement
+- Templates for incident reviews, test ownership, and governance checklists
+
 ## 🏗️ Repository Structure
 
 ```
@@ -92,7 +112,19 @@ dev-practices-handbooks/
 │   │   ├── 13-advanced-workflows-and-troubleshooting.tex
 │   │   └── 14-checklists-templates-and-further-reading.tex
 │   └── output/                        # Generated PDFs (optional)
+│
+└── software-testing-handbook/          # Software Testing Handbook
+    ├── main.tex
+    ├── chapters/
+    │   ├── preface.tex
+    │   ├── chapter01_foundations.tex
+    │   ├── chapter02_strategies.tex
+    │   ├── chapter03_automation.tex
+    │   ├── chapter04_metrics.tex
+    │   └── chapter05_governance.tex
+    └── references.bib
 ```
+
 
 ## 🚀 Quick Start
 
@@ -118,6 +150,16 @@ latexmk -pdf main.tex
 
 ```bash
 cd git-github-best-practices
+pdflatex main.tex
+
+# Or use latexmk
+latexmk -pdf main.tex
+```
+
+#### Software Testing Handbook
+
+```bash
+cd software-testing-handbook
 pdflatex main.tex
 
 # Or use latexmk
