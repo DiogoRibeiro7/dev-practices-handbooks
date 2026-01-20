@@ -44,6 +44,14 @@ Improve testing practices through retrospectives and learning loops. Capture kno
 
 Maintain war-room guides for common situations, such as investigating a production incident or onboarding a new automation framework. The guides should reference relevant tests, metrics, and responsibilities so responders can jump straight into diagnosis instead of recreating knowledge from scratch.
 
+\subsection{Instrumentation for Governance Decisions}
+
+Track objective signals that prove the governance loop works. Gate pass rates, failed suites, and incident lists should feed dashboards so reviewers can see whether a charter is healthy before the next release. Calculated metrics (e.g., \texttt{gate\_pass\_rate}) and follow-up plans should be stored beside the charter so the next reviewer understands which actions were already taken.
+
+\subsection{Quality Review Automation}
+
+Automate the quality review summary so meetings focus on decisions rather than note-taking. The Chapter 5 example in \texttt{examples/ch05/quality\_review.py} builds a deterministic review record, endorses follow-up tasks (\texttt{schedule\_follow\_up}), and emits human-friendly summaries (\texttt{format\_summary}). Feed the output into your meeting notes or governance dashboard to keep the conversation evidence-based.
+
 \subsection{Resilience and Incident Reviews}
 
 Post-incident reviews should include a testing section: which suites failed to catch the issue, what coverage gaps existed, and what next steps are planned. Feeding these insights back into the test roadmap prevents repeated failures and keeps confidence high.
@@ -64,25 +72,35 @@ Define escalation paths for repeated failures or test-blocking issues. When a fa
 
 The example below prints a deterministic review summary for the scripted quality review; see \texttt{examples/ch05/quality\_review.py} and \texttt{examples/ch05/test\_quality\_review.py} and the \texttt{examples/ch05/README.md} instructions for running locally or via CI.
 
+The example orchestrates \texttt{build\_review}, \texttt{format\_summary}, and \texttt{schedule\_follow\_up} to produce the deterministic quality-review record, highlight gate pass rates, and capture follow-up tasks for governance rotations. The runnable version lives in \texttt{examples/ch05/quality\_review.py} (see \texttt{examples/ch05/README.md} for instructions, and run \texttt{pytest examples/ch05} to validate). Here is the core review flow:
+
 \begin{lstlisting}[language=python]
-review = {
-    "owner": "qa-lead",
-    "agenda": [
-        "Failed suites (links)",
-        "Coverage drift",
-        "Incident learnings",
+from examples.ch05.quality_review import (
+    GovernanceReview,
+    ReviewOutcome,
+    build_review,
+    format_summary,
+    schedule_follow_up,
+)
+
+review = GovernanceReview(
+    title="Weekly Quality Review",
+    owner="qa-lead",
+    failed_suites=["regression-suite"],
+    incidents=["payment-service-timeout"],
+    gate_outcomes=[
+        ReviewOutcome("lint", True),
+        ReviewOutcome("integration", False, blockers=["test-data drift"]),
     ],
-    "actions": [],
-}
+    knowledge_session=True,
+)
 
-has_failures = True
-if has_failures:
-    review["actions"].append("Assign debugging pair")
-else:
-    review["actions"].append("Schedule next validation run")
-
-print("Weekly quality review:", review)
+print("Governance review summary:", build_review(review))
+print("Narrative:", format_summary(review))
+print("Follow-ups:", schedule_follow_up(review))
 \end{lstlisting}
+
+Use the output to seed your review notes: include the gate pass percentage, mention unresolved blockers, and publish follow-up steps into your playbook or incident tracker.
 
 \section{Checklist}
 

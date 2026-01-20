@@ -1,6 +1,6 @@
 # Chapter 5 Governance Examples
 
-These scripts capture a deterministic quality review narrative for Chapter 5 governance rituals.
+These scripts capture a deterministic quality review narrative for Chapter 5 governance rituals. The planner highlights gate pass rates, failed suites, and the actions/regression responses that keep governance rituals accountable.
 
 ## Requirements
 

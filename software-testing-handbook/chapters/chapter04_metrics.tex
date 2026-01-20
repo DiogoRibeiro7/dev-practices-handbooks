@@ -65,22 +65,24 @@ Build dashboards that pair KPI numbers with short narratives and risk register s
 The snippet below references an SLO burn calculator; the companion example lives in \texttt{examples/ch04/metrics\_kpi.py}, with tests under \texttt{examples/ch04/test\_metrics\_kpi.py}. Run it locally via \texttt{python examples/ch04/metrics\_kpi.py} or in CI with \texttt{pytest examples/ch04}.
 
 \begin{lstlisting}[language=python]
-from datetime import datetime
-
-metrics = {
-    "defect_escape_rate": 0.02,
-    "build_stability": 0.85,
-    "test_execution_time": 420,
-}
-
-# TODO: This snippet would integrate with incident tracking tools / dashboards in practice.
-if metrics["build_stability"] < 0.9:
-    print("Open incident ticket with logs and notify the QA channel.")
+metrics = [
+    Metric("build_stability", 0.92, 0.95),
+    Metric("defect_escape_rate", 0.03, 0.02, higher_is_better=False),
+    Metric("test_execution_time", 410, 400, higher_is_better=False),
+]
+incidents = detect_incidents(metrics)
+if incidents:
+    # open_incident would create tickets in tools such as Opsgenie or ServiceNow.
+    open_incident(incidents)
 else:
     print("Metrics healthy; continue scheduled regression.")
 
-# TODO: feed the narrative summary to the metrics dashboard.
+# publish_dashboard_summary pushes the narrative string to the KPI dashboard.
+publish_dashboard_summary(metrics, incidents)
+print(check_slo(metrics, error_budget=0.05))
 \end{lstlisting}
+
+The helper functions build incident payloads for any KPI that violates its target and then push a narrative summary plus incident status to the dashboard. Use \texttt{narrative(metrics)} to render human-readable descriptions and the error-budget result to block releases when automation exceeds the agreed-upon burn.
 
 \section{Checklist}
 
