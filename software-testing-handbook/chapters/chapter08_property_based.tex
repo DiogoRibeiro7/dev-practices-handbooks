@@ -1,53 +1,117 @@
-\section{Opening: Motivation and Learning Objectives}
-Frame property-based testing as a way to cover wide input spaces with short suites while preserving determinism. Outline what readers will gain: designing invariants, seeding randomness, and spotting anti-patterns.
+\section{Motivation and Learning Objectives}
+Property-based testing multiplies coverage without ballooning suites. This chapter teaches you to frame invariants as executable contracts, tighten randomness so failures remain tractable, and weave Hypothesis-style suites into CI without introducing flakiness.
+
+We also discuss the tension between one-off examples and generated sweeps so you can describe, in plain language, when a property is needed versus when a curated scenario suffices. Keeping the narrative clear convinces reviewers that the property actually protects a business rule, not merely a contrived edge case.
 
 \section{Core Concepts}
-\begin{itemize}
-  \item Difference between example-based and property-driven tests.
-  \item Managing randomness by freezing seeds, controlling clocks, and isolating I/O during generation.
-  \item Shrinking failed cases and interpreting counterexamples.
-\end{itemize}
+\subsection{Example vs Property-Based Thinking}
+Example-based tests capture curated inputs while property-based suites express invariants that hold across every generated example. The key is to pair each property with a story: document which business invariant it protects and what risk it lowers, then complement it with a human-readable example so reviewers can anchor the generator in the product context.
+
+When you convert a regression test into a property, keep the narrative simple. Take a bug that occurred because two invoices added up to the wrong amount: retain the concrete sequence of user actions as an example and express the property as ``the total should remain the same regardless of insert order.'' This pairing lets reviewers say, ``I remember this bug; the property now guards the invariant and the example illustrates the workflow.''
+
+The `examples/ch08/sort_invariants.py` script mirrors that approach by keeping an explicit example next to the Hypothesis-driven property. The human-readable example explains why sorted lists should remain idempotent, while the generator sweeps across thousands of permutations. That mix satisfies both the machine and the human reviewer, keeping the property grounded in a real user story.
+
+\subsection{Managing Randomness and Shrinking}
+Seed generators and log those seeds so every failure can be replayed deterministically. Control shrinking by narrowing domains or by supplying `filter`/`composite` strategies that keep counterexamples understandable. Keep generators isolated from clocks, I/O, and concurrency so a rerun under CI only depends on deterministic inputs, not the environment.
+
+Hypothesis already prints the shrinking path, but CI logs can bury it unless you explicitly capture the `@example` or `seed` metadata. Add a helper that writes the failing seed to a JSON artifact, include it in pipeline logs, and rerun locally with `HYPOTHESIS_SEED=...` to reproduce the failure deterministically. When the generator explores a new domain, pin the random strategies in smoke suites so you do not rely on unpredictable sequences during merges.
+
+Give shrinking some boundaries. If the generated counterexample still contains noise (a 64-bit integer with unrelated bits), scope the strategy with `fixed_dictionaries`, `st.sampled_from`, or `hypothesis.strategies.data()` to trim irrelevant dimensions. That focused shrinking keeps the human-readable artifact small and ensures the rerun signal is actionable; the script in `examples/ch08` demonstrates narrowing the domain until the shrinks stay at two-element lists rather than sprawling tuples.
+
+\subsection{Domain-Specific Strategies}
+Compose small strategies into `@strategy` factories that mirror domain objects and sanitize data before it reaches the system under test. Validate each generated value against business rules (valid enums, ranges, sanitised payloads) before exercising the property. Version these generators alongside the domain model they guard so when the API changes, the generators evolve with the contract.
+
+When teams debug property failures, they ask why the generator produced a strange payload. Answer that question by composing named strategies: `addresses()` produces valid shipping addresses, `supported\_plans()` yields only active plans, and `order\_payload()` assembles the final fixture. These helpers serve double duty: developers can reuse them in handwritten examples, and CI can import them for smoke tests that run alongside the property suite.
+
+Keep strategy factories under CI guardrails. Tag them with metadata documenting what schema version they cover and whether they require database migrations. The `examples/ch08` repository demonstrates this by pairing generators with `contracts/version.txt`; each Hypothesis run logs the version so reviewers know which API shape the property protects. When you bump the version, run the property suite in an isolated container to ensure the generator still produces valid data before merging.
+
+\begin{table}[h]
+\centering
+\caption{Strategy tiers}
+\label{tab:property-strategies}
+\begin{tabular}{p{4cm}p{6cm}}
+\toprule
+Strategy & Purpose \\
+\midrule
+Primitive & Wrap base ranges (numbers, strings) with domain constraints. \\
+Composite & Combine primitives into richer objects while preserving invariants. \\
+Filtered & Drop unreasonable generated values before they hit the system under test. \\
+Versioned & Pair with schema versions so CI knows which property to run per release. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:property-strategies} classifies the strategy tiers so you can weigh primitive, composite, filtered, and versioned generators against the invariants they protect.
 
 \section{Anti-patterns and Common Mistakes}
-- Copying the production logic into the property (e.g., rolling your own sum-to-match) defeats the point of invariants.
-- Forgetting to seed randomness or controlling shrinking leads to non-deterministic failures that frustrate developers.
-- Oversampling unrealistic data (very large ints, long strings) without filtering for domain relevance generates noise instead of insights.
+\begin{tabular}{p{5cm}p{4cm}p{4cm}}
+\toprule
+Anti-pattern & Consequence & Alternative \\
+\midrule
+Copying production logic into the generator & The property always passes & Assert an independent invariant or add a supporting example \\
+Ignoring seeds & Failures cannot be reproduced & Log seeds, rerun them when the suite reports failure \\
+Oversampling unrealistic data & CI noise and long shrinks & Anchor strategies in domain relevance (IDs, enums, contract fields) \\
+\bottomrule
+\end{tabular}
+
+\begin{quote}
+\textbf{Rule of thumb:} Always log the seed plus a concise human-readable example so failures replay consistently and reviewers trust the property.
+\end{quote}
+
+Avoiding these traps keeps Hypothesis honest. Each anti-pattern note doubles as a guardrail for the automation gates discussed later: document the mitigation path so the next engineer knows why the property exists.
 
 \section{Worked Example}
-Use Hypothesis to assert that sorting a list is idempotent. Freeze the seed so the failure reproduces consistently:
+\texttt{examples/ch08/sort\_invariants.py} asserts that sorting lists is idempotent and logs the seed plus shrinking steps that reproduce every failure. Hypothesis drives generation, shrinks counterexamples down to readable payloads, and wraps assertions in helpers that live in CI. The script prints a deterministic failure signal to the console so the pipeline can capture it in artifacts and rerun it later.
 
-\begin{lstlisting}[language=python]
-from hypothesis import given, settings, seed
-import hypothesis.strategies as st
+\begin{lstlisting}[language=python, caption={Hypothesis sort invariant guard.}, label=lst:ch08-sort-invariants]
+from examples.ch08.sort_invariants import test_sort_idempotent
 
-@settings(deadline=None)
-@seed(42)
-@given(st.lists(st.integers(), min_size=1, max_size=5))
-def test_sort_idempotent(nums):
-    assert sorted(nums) == sorted(sorted(nums))
+if __name__ == "__main__":
+    test_sort_idempotent()
 \end{lstlisting}
 
-The invariant is "sorting twice equals sorting once." Record the seed in logs to rerun failing cases without rerunning the entire suite.
+\textbf{How to run}
+\begin{itemize}
+  \item \texttt{python examples/ch08/sort\_invariants.py}
+  \item \texttt{pytest examples/ch08}
+\end{itemize}
+
+Run the example with \texttt{python examples/ch08/sort\_invariants.py}; it prints the seed plus failing example when the invariant breaks so developers can reproduce the issue locally or rerun the CI job.
 
 \section{Checklist}
 \begin{itemize}
-  \item Confirm seeds replay the failing example exactly.
-  \item Inspect shrinking output to ensure counterexamples remain human-readable.
-  \item Validate that custom strategies generate meaningful domain data (IDs, enums, structural invariants).
+  \item Log every seed and shrink path so CI reruns stay deterministic.
+  \item Keep domain strategies versioned with the API or schema they guard.
+  \item Pair properties with example-based smoke checks so reviewers can follow the narrative.
+  \item Define what a “good assertion” means for each property (target field, status code, invariant).
+  \item Treat properties as contracts: document which system behaviour they protect and why.
 \end{itemize}
 
+Use this checklist as a pre-merge sanity scan—complete it before letting CI gate the change.
+
 \section{Exercises}
+Each exercise ties a property habit to a reproducible artifact so readers can immediately apply the concepts in their pipelines.
 \begin{enumerate}
-  \item Convert a regression test into a property test by identifying the invariant it should hold.
-  \item Build a custom strategy that mirrors your domain objects and ensures valid combinations.
-  \item Freeze a failure's seed and rerun it to confirm deterministic reproduction.
-  \item Explain how Hypothesis shrinks a counterexample and where to stop if it takes too long.
-  \item Document a property anti-pattern you discovered and how you refactored it.
-  \item Run a property test under CI and capture the logs needed for triage.
-  \item List three invariants (e.g., sorting, totals, invariants over JSON schema) that would catch regression bugs.
-  \item Pair property tests with example-based smoke checks to maintain human-readable documentation.
+  \item Convert a regression test into a property by surfacing its invariant.
+  \item Build a custom strategy that generates domain objects with valid combinations (IDs, enums, structural rules).
+  \item Freeze a failing seed, rerun it locally, and log the repro instructions.
+  \item Explain how Hypothesis shrinks a counterexample and when to override shrinking for performance.
+  \item Document a property anti-pattern you found and describe how you corrected it.
+  \item Run \texttt{pytest examples/ch08} under CI and capture the logs for triage.
+  \item List three invariants (sorting, totals, schema consistency) that detect regression bugs.
+  \item Bake property tests into your smoke suite for a key user flow while keeping the output readable.
 \end{enumerate}
 
+\section{Summary}
+- Properties extend coverage elegantly when you frame them as business invariants and keep their outputs deterministic.
+- Logging seeds, shrinking paths, and domain constraints keeps rerun harnesses reliable.
+- Pairing properties with example-based chars enables stakeholders to understand why they exist.
+
+These properties build on the deterministic doubles from Chapter 7 and will feed the contract verification stages in Chapter 9.
+
+\section{What's Next}
+Chapter 9 (Contracts and Containerized Integration) shows how to wrap those deterministic artefacts with contracts and seeded containers so the QC story carries through the pipeline.
+
 \section{Further Reading}
-- Hypothesis documentation (`https://hypothesis.readthedocs.io`) for canonical recipes.
-- John Hughes, `Why Functional Programming Matters` for declarative invariants that inspire property testing.
+- Hypothesis docs (\texttt{https://hypothesis.readthedocs.io}) for canonical recipes.  
+- John Hughes, “Why Functional Programming Matters,” for declarative invariants that inspire property testing.

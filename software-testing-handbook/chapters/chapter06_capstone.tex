@@ -16,6 +16,41 @@ Gather artifacts from every layer: a risk profile, pyramid counts, pipeline meta
 
 Automate the readiness evaluation with scripts that evaluate risk thresholds, pipeline gate timestamps, KPI narratives, and charter approvals. When a gate fails, record the failing artifact and notify the appropriate owner with remediation steps. Keep logs so post-mortems can trace the earliest signal that prevented release.
 
+\subsection{Readiness Scorecards}
+
+Present a condensed scorecard that ties each pillar to the artifact responsible for it. A typical scorecard lists the pillar name, pass/warn/fail status, and the chapter or system that produced the signal (e.g., “Chapter 4 – KPIs and error budget”). Distribute the scorecard in the weekly review channel and attach it to the readiness log so auditors can trace decisions.
+
+Table~\ref{tab:readiness-pillars} maps the pillars to their originating chapters and the responsibilities they enforce.
+
+\begin{table}[h]
+\centering
+\caption{Readiness pillars and sources}
+\label{tab:readiness-pillars}
+\begin{tabular}{p{3cm}p{5cm}p{4cm}}
+\toprule
+Pillar & Source & Responsibility \\
+\midrule
+Risk awareness & Chapter 1 – foundations & Ensure nondeterministic factors are tracked \\
+Coverage balance & Chapter 2 – strategies & Confirm pyramid/doughnut ratios are healthy \\
+Automation health & Chapter 3 – automation & Gate pipelines and artifact freshness \\
+Metric budgets & Chapter 4 – metrics & Validate KPI/SLO compliance \\
+Governance & Chapter 5 – governance & Document approvals and follow-ups \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Artifact Manifest and Evidence}
+
+Record the manifest of artifacts that the capstone consumes: risk models from Chapter 1, pyramid counts from Chapter 2, pipeline metadata from Chapter 3, KPI narratives from Chapter 4, and governance sign-offs from Chapter 5. Embed the manifest into the readiness verdict so every pillar points back to the responsible playbook entry and data source.
+
+\subsection{Remediation Playbooks}
+
+When the readiness verdict is not “ready,” emit a remediation plan that captures who owns the follow-up, what action to take, and how to rerun the readiness check. Remediation playbooks live alongside the readiness script so teams can copy the actions into war-room notes, attach comms to incidents, and close the loop before the next release.
+
+\subsection{Integration with Runbooks}
+
+Hook the readiness script into your release runbook: run it after the automation gates finish, upload the log to your release dashboard, and include the manifest summary in the pre-launch checklist. Keeping this ritual tied to the existing runbook keeps releases predictable and enables other teams to know where to look for evidence when pushback comes.
+
 \subsection{Capstone Mini-Project Requirements}
 
 The mini-project is a lightweight tool that combines data from all previous chapters: a risk score (Chapter 1), pyramid health (Chapter 2), pipeline stage status (Chapter 3), KPI burn (Chapter 4), and governance sign-offs (Chapter 5). It should emit a readiness verdict plus a recommended checklist to share with release leads.
@@ -28,23 +63,47 @@ The mini-project is a lightweight tool that combines data from all previous chap
 
 \section{Worked Example}
 
-The companion example \texttt{examples/ch06/capstone\_readiness.py} polls deterministic data and prints a readiness score; see \texttt{examples/ch06/README.md} for running instructions and \texttt{examples/ch06/test\_capstone\_readiness.py} for automated checks.
+The companion example \texttt{examples/ch06/capstone\_readiness.py} evaluates deterministic pillars, emits a manifest that links each status to its originating chapter, and prints remediation guidance when the verdict is not “ready.” Run the script via the README instructions and validate it through \texttt{examples/ch06/test\_capstone\_readiness.py}.
 
-\begin{lstlisting}[language=python]
-from datetime import datetime
+\begin{lstlisting}[language=python, caption={Capstone readiness evaluation harness.}, label=lst:ch06-capstone-readiness]
+from pathlib import Path
 
-readiness = {
-    "risk_score": 0.12,
-    "pyramid_balance": "healthy",
-    "automation_status": "all gates passed",
-    "kpi_narrative": "build stability slightly gentle; still within budget",
-    "governance_signoff": "quality review completed",
-}
+from examples.ch06.capstone_readiness import (
+    artifact_manifest,
+    evaluate_readiness,
+    format_summary,
+    load_manifest,
+    remediation_plan,
+    summary_manifest,
+    verdict,
+)
 
-print("Release readiness verdict:")
-for item, status in readiness.items():
-    print(f"  - {item}: {status}")
+manifest_path = Path("examples/ch06/ci-artifacts/readiness_manifest.json")
+manifest = load_manifest(manifest_path)
+pillars = evaluate_readiness(manifest)
+score = verdict(pillars)
+summary = summary_manifest(pillars, manifest, artifact_manifest())
+
+print("Readiness verdict:", score)
+print("Manifest summary:")
+for name, text in summary.items():
+    print(f"  - {name}: {text}")
+
+if score != "ready":
+    for item in remediation_plan(pillars):
+        print(f"Remediation [{item.pillar}]: {item.action} (owner: {item.owner})")
 \end{lstlisting}
+
+\textbf{How to run}
+\begin{itemize}
+  \item \texttt{python examples/ch06/generate\_ci\_manifest.py}
+  \item \texttt{python examples/ch06/capstone\_readiness.py}
+  \item \texttt{pytest examples/ch06}
+\end{itemize}
+
+Use the printed manifest to trace each pillar back to its chapter so reviewers can see how risk, coverage, pipeline health, metrics, and governance feed the verdict.
+
+Run \texttt{examples/ch06/generate\_ci\_manifest.py} earlier in your pipeline (the forthcoming workflow step does this automatically) so the JSON payload the readiness script consumes always reflects the latest CI artifacts.
 
 \section{Checklist}
 
@@ -80,6 +139,8 @@ Implement \texttt{examples/ch06/capstone\_readiness.py} that aggregates determin
 - A deterministic capstone tool makes the release ritual reproducible.
 - Sharing artifacts via dashboards or war-room notes keeps stakeholders aligned.
 
+These readiness rituals integrate the governance cadence from Chapter 5 and prepare the automation artisans in Chapter 7 with the deterministic inputs they need.
+
 \section{What's Next}
 
-Use Appendix material (checklists, templates) in the back matter to keep the capstone project operational across teams.
+Use Appendix material (checklists, templates) in the back matter to keep the capstone project operational across teams, then apply the deterministic doubles and spy techniques from Chapter 7 to anchor integration boundaries.

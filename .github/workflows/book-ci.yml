@@ -66,6 +66,12 @@ jobs:
       - name: Build Software Testing handbook
         run: cd software-testing-handbook && latexmk -pdf main.tex
 
+      - name: Generate readiness manifest
+        run: python software-testing-handbook/examples/ch06/generate_ci_manifest.py --output software-testing-handbook/examples/ch06/ci-artifacts/readiness_manifest.json --ci-url https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Run capstone readiness
+        run: python software-testing-handbook/examples/ch06/capstone_readiness.py --manifest software-testing-handbook/examples/ch06/ci-artifacts/readiness_manifest.json
+
       - name: Upload PDFs
         uses: actions/upload-artifact@v4
         with:

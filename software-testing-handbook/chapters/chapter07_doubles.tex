@@ -1,58 +1,127 @@
-\section{Opening: Motivation and Learning Objectives}
-Explain why the right kind of test double keeps suites fast while preventing brittle interactions with downstream services. Detail what the reader will learn about choosing between stubs, spies, fakes, and mocks, and when to avoid them.
+\section{Motivation and Learning Objectives}
+The right double keeps suites fast, deterministic, and aligned with downstream contracts. This chapter explains how to pick between stubs, spies, fakes, and mocks, how to document their scope, and how to chain them into CI so brittle interactions stay contained.
+
+We describe how to map each double to a contract boundary, prepare automation that swaps implementations safely, and keep the terminology consistent so future team members know whether a fixture is a fake or just a mutable stub.
 
 \section{Core Concepts}
-\begin{itemize}
-  \item Doubles taxonomy: stubs for canned responses, spies for interaction counts, mocks for behavioral contracts, fakes for lightweight implementations.
-  \item Criteria to decide between state-based assertions and interaction verification.
-  \item Strategies for introducing doubles incrementally within CI without degrading coverage.
-\end{itemize}
+\subsection{Taxonomy and Selection Criteria}
+Every dependency sits behind a contract, and doubles translate those contracts into predictable fixtures. Stubs are the first bridge: they provide canned responses for slow upstreams, such as payment gateways or message brokers, and keep the test sane while the real service is offline. Mocks encode expectations about interactions and timing, which is useful when downstream services guarantee quotas, retries, or ordering; use them sparingly to avoid coupling tests to implementation details.
+
+Fowler cautions that mocks can quickly become stubs in disguise when they verify implementation details that downstream owners no longer require \citep{fowler2007mocks}, so reserve them for protocols with explicit behavioral contracts. Meszaros' xUnit catalog further clarifies why spies and fakes belong to the same orbit: they capture necessary telemetry without demanding brittle call counts \citep{meszaros2007xunit}.
+
+Fakes offer lightweight, production-like implementations, for example, an in-memory queue whose behavior mirrors the contracted persistence layer. Keep them aligned with the contract by versioning the fake data and refreshing it when the real contract changes. Spies wrap real clients so you can audit calls without controlling behavior. Tracking retries, headers, or telemetry fields lets you surface silent contract violations that might otherwise slip through CI.
+
+\subsection{Criteria for Assertions}
+Once you pick a double, decide whether the test should check state (payloads, persisted records, emitted events) or behavior (calls, retries, headers). State assertions tend to survive refactors because they align with observable outcomes that matter to stakeholders—an invoice marked paid, a notification sent, a metrics counter incremented. Behavioral assertions should be reserved for protocols that downstream owners explicitly enforce, like a rate-limited webhook that must fire three times with specific headers.
+
+Document the rationale for assertions so reviewers understand why a spy exists instead of a stub. For instance, ``We assert the retry count because the downstream API charges per attempt,'' or ``We only assert payload fields because downstream owners control the retry logic.'' That documentation keeps a clear boundary between verifying intent and over-specifying choreography.
+
+\subsection{Incremental Adoption in CI}
+Introduce doubles incrementally so CI keeps providing timely feedback. Start by doubling the slowest dependency, run the suite against both the double and the live service using feature flags or dependency injection, and capture the verdicts separately. The same tests should instantiate the fake in fast merge jobs and the real client in nightly smoke suites so you can observe divergences without rewriting tests.
+
+Automate the toggle by wiring the dependency through a factory that checks an environment variable or configuration file. When the doubled suite fails, rerun it with the live service before blaming the double. CI can spin up a containerized version or hit a staging endpoint seeded with deterministic data. This practice ensures the double stays honest and avoids confusing teammates with different failure modes across pipelines.
+
+\subsection{Handling Unexpected Behaviors}
+Doubles can expose unknown contract gaps, but the instrumentation matters. When a double flags an unexpected interaction, log the payload, headers, and the specific expectation that failed; rerun the test against the live dependency to determine whether the contract evolved or the double drifted. Include the failure context in dashboards or issue trackers so downstream owners and QA can triage quickly.
+
+Treat these observations as inputs to the contract review: if the downstream service adds a new header, update the double and the documented contract before releasing. If the double keeps detecting jittery requests, add telemetry or more explicit assertions instead of ignoring the noise. Constantly refresh the double based on real incidents so it remains a faithful puppet of production.
 
 \section{Anti-patterns and Common Mistakes}
-\begin{itemize}
-  \item Mocking concrete classes instead of defining clear interaction contracts makes refactors brittle.
-  \item Oververifying every method call turns tests into implementation checks instead of validating outcomes.
-  \item Relying on a single static fake for multiple contexts hides differences between environments and breeds hidden state bugs.
-\end{itemize}
+\begin{tabular}{p{4cm}p{4cm}p{4cm}}
+\toprule
+Anti-pattern & Consequence & Alternative \\
+\midrule
+Mocking concrete classes & Brittle suites that break with refactors & Depend on interfaces or protocols that capture intent \\
+Verifying every call & Tests validate implementation instead of outcomes & Assert domain-level invariants and reserve spies for contract-critical paths \\
+Sharing mutable fakes & Hidden state leaks between tests & Version fake data per environment and reset state before each run \\
+\bottomrule
+\end{tabular}
+
+\begin{quote}
+\textbf{Rule of thumb:} Match the double to the contract focus—state-based contracts get stubs or fakes, behavior-driven ones get mocks or spies, and document why.
+\end{quote}
+
+\subsection{Decision tree for double selection}
+Inputs: dependency criticality (does it guard customer data?), latency/failure history, and assertion focus (state vs behavior). Decision steps: (1) If the dependency is slow but only needs to return data, choose a stub (merge -> stub). (2) If you need to audit specific interactions or quotas, pick a mock/spy depending on whether you control behavior or merely observe it. (3) If the dependency should behave like production (e.g., in-memory event store), go with a fake and version its data. (4) Always document the chosen double so future reviewers know why it meets the contract. Output: a named double plus instrumentation (logs, spies) that corresponds to the downstream requirements, preventing pairs of a high-fidelity contract with a low-fidelity assertion.
+
+\section{Common failure modes}
+- Deploying mocks that assert too many internal calls, which breaks on refactors; prefer state assertions when the contract cares only about outcomes.
+- Forgetting to reset shared fake state between tests, leaving forgotten data that leaks into later runs; version fake data per environment and clean fixtures pre-test.
+- Instrumentation gaps where spies record retries but the failure logs do not surface them; capture call sequences and seeds in dashboards so the failure triage knows the true behavior.
 
 \section{Worked Example}
-The worked example sketches how to wrap a rating service client with an interface and inject a deterministic fake:
+The Chapter 7 example (\texttt{examples/ch07/double\_strategies.py}) shows how to structure a notification pipeline with fakes, spies, and verdict logic. The script runs deterministically with a \texttt{FakeNotificationClient} and a \texttt{SpyNotificationClient} that records every call—no upstream API is involved. Run the CLI via \texttt{examples/ch07/README.md} or trust the supplied tests (\texttt{examples/ch07/test\_double\_strategies.py}).
 
-\begin{lstlisting}[language=python]
-class RatingClient:
-    def fetch(self, feature_id: str) -> float:
-        raise NotImplementedError
+\begin{table}[h]
+\centering
+\caption{Double usage checklist}
+\label{tab:doubles-usage}
+\begin{tabular}{p{3cm}p{5cm}}
+\toprule
+Double & When to use \\
+\midrule
+Stub & Slow upstream with deterministic response \\
+Fake & Lightweight production-like store\\
+Spy & Audit interaction sequences without controlling behavior\\
+Mock & Enforce order or quantity when downstream contracts need it\\
+\bottomrule
+\end{tabular}
+\end{table}
 
-class FakeRatingClient(RatingClient):
-    def __init__(self, fixed_score: float) -> None:
-        self.fixed_score = fixed_score
-    def fetch(self, feature_id: str) -> float:
-        return self.fixed_score
+\textbf{See} Table~\ref{tab:doubles-usage} for a quick reminder of when to prefer each double so you can keep suites stable.
 
-def evaluate(feature_id: str, client: RatingClient) -> str:
-    score = client.fetch(feature_id)
-    return "pass" if score > 4.0 else "review"
+\begin{lstlisting}[language=python, caption={Notification pipeline using fakes and spies.}, label=lst:ch07-double-strategies]
+from examples.ch07.double_strategies import (
+    Event,
+    FakeNotificationClient,
+    SpyNotificationClient,
+    evaluate_strategy,
+)
+
+events = [
+    Event("alice@example.com", "deploy complete"),
+    Event("bob@example.com", "smoke success"),
+]
+fake = FakeNotificationClient(allowed=["alice@example.com"])
+spy = SpyNotificationClient(fake)
+
+print("Readiness:", evaluate_strategy(events, spy))
+print("Calls logged:", [(call.recipient, call.payload) for call in spy.calls])
 \end{lstlisting}
 
-Swap `FakeRatingClient` into CI so the `evaluate` logic stays deterministic without calling the upstream API.
+\textbf{How to run}
+\begin{itemize}
+  \item \texttt{python examples/ch07/double\_strategies.py}
+  \item \texttt{pytest examples/ch07}
+\end{itemize}
+
+Leverage the fake for CI runs so the pipeline verdict stays deterministic and plug the spy into exploratory suites when you need to audit retries or unexpected payloads.
 
 \section{Checklist}
 \begin{itemize}
-  \item Decide when to introduce doubles (slow network, unavailable service) and document ownership plus scope.
-  \item Log each fake/mock/stub deployment to trace when contracts changed.
-  \item Stabilize interaction verifications by pinning expected call counts to meaningful events.
+  \item Map each double to an ownership document that explains its scope, reset strategy, and production-go-live criteria.
+  \item Capture call logs from spies in failure reports so the team can trace retries or mutation bugs.
+  \item Keep fake seed data versioned and representative of real edge cases.
 \end{itemize}
 
 \section{Exercises}
 \begin{enumerate}
-  \item Identify three slow dependencies and sketch the double (interface + fake) you would inject for local tests.
-  \item Refactor an existing test that hits a network call so it depends on an injectable interface instead of the concrete client.
-  \item Evaluate when a spy adds value versus when a state assertion is sufficient.
-  \item Create a scope note explaining when to keep the live dependency (e.g., contract verification) versus using a fake.
-  \item Document a regression that broke because a fake diverged from production and how the team caught it.
-  \item Describe how you would seed deterministic data for a fake that emulates a rate-limited API.
+  \item Identify three slow downstream services and sketch a `NotificationClient` variant (stub/fake) that keeps your unit tests fast.
+  \item Wrap a real client in a spy, run the test suite, and export the recorded calls to validate retries.
+  \item Demonstrate upgrading a stub to a fake by adding deterministic state and documenting what drift you guard against.
+  \item Compare state-based assertions with interaction checks for a critical transaction, and argue why one wins.
+  \item Build a regression checklist for fakes: what to refresh when real payloads add new fields?
+  \item Run `pytest examples/ch07` and confirm the spy/ fake coverage keeps the verdict deterministic.
 \end{enumerate}
 
+\section{Summary}
+Test doubles let you contain brittle interactions, but you still need clear categories, instrumentation, and deterministic assertions to keep CI whitebox-friendly.
+
+These practices validate the artifacts produced by the readiness capstone in Chapter 6 and prime property-based guards that Chapter 8 adds to the invariant story.
+
+\section{What's Next}
+Use Chapter 8’s property-based strategies to supplement the double taxonomy when events or invariants drift from expected behavior.
+
 \section{Further Reading}
-- Martin Fowler, “Mocks Aren’t Stubs” for understanding interaction testing.
-- Gerard Meszaros, “xUnit Test Patterns” for double design guidance.
+- Martin Fowler, “Mocks Aren’t Stubs” for interaction-versus-state testing trade-offs \citep{fowler2007mocks}.
+- Gerard Meszaros, “xUnit Test Patterns” for double classification and refactoring guidance \citep{meszaros2007xunit}.

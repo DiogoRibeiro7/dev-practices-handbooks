@@ -1,40 +1,78 @@
 \section{Opening: Motivation and Learning Objectives}
-Clarify how coverage relates to confidence and what it cannot guarantee. Define the goals for this chapter: reading coverage reports, prioritizing coverage based on risk, and avoiding vanity metrics.
+Coverage reports are risk maps, not correctness proofs. This chapter teaches how to read line, branch, and mutation numbers; link gaps to business impact; and keep instrumentation in sync with real production behaviour. You will see how to prioritize coverage work that matters, automate the gate, and keep vanity metrics from distracting the team.
 
 \section{Core Concepts}
-\begin{itemize}
-  \item Line, branch, and mutation coverage in modern toolchains.
-  \item How coverage gaps highlight risk but do not prove correctness.
-  \item Combining coverage data with risk matrices and targeted smoke tests.
-\end{itemize}
+\subsection{Coverage metrics and their meaning}
+Line coverage tells you whether each statement ran, branch coverage reveals whether every logical fork executed, and mutation coverage shows whether the suite noticed when code changed. Treat each metric as a question: ``did we explore this path?'' but never forget that all metrics depend on assertions in tests. Raw percentages only become signals when you pair them with context (see the risk-driven strategy below).
+
+\subsection{Risk-guided coverage strategy}
+Start with a risk register: map customer-impacting flows (payments, data exports, authentication) to modules. Invest in branch coverage around those flows and accept lower coverage for low-risk plumbing. Annotate coverage gaps with the reason you skipped them so reviewers know you saw the hole and chose automation, monitoring, or manual charters instead.
+
+\subsection{Automating instrumentation}
+Add coverage instrumentation to every CI job (`pytest --cov=examples.ch11 --cov-branch`). Persist `coverage.xml` or `htmlcov/index.html` so QA and auditors can see the badge, and gate merges on thresholds that reflect the risk level (e.g., `--cov-fail-under=80`). Use the same instrumentation locally with `coverage run -m pytest` so developers spot branch regressions before pushing.
 
 \section{Anti-patterns and Common Mistakes}
-\begin{itemize}
-  \item Chasing 100% coverage is a vanity metric that draws effort away from riskier, less tested modules.
-  \item Ignoring uncovered gaps because the overall percentage looks healthy lets regressions slip through in critical paths.
-  \item Treating instrumentation noise (e.g., synthetic branches executed only during tests) as evidence of correctness gives false confidence.
-\end{itemize}
+\begin{table}[h]
+\centering
+\caption{Coverage anti-patterns}
+\label{tab:coverage-antipatterns}
+\begin{tabular}{p{4cm}p{4cm}p{5cm}}
+\toprule
+Anti-pattern & Consequence & Alternative \\
+\midrule
+Chasing 100\% line coverage & Engineers spend time on trivial statements instead of business flows & Rate-limit coverage work to risk-critical modules and annotate acceptable gaps \\
+Blindly trusting the overall percentage & Teams miss regressions hidden in low-coverage packages & Drill into module-level reports and set thresholds per service or layer \\
+Treating instrumentation noise as confidence & Synthetic branches executed only during tests appear covered & Combine coverage with assertions that validate behaviour, not just execution \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:coverage-antipatterns} keeps these traps visible so you can rebut the urge to chase vanity numbers.
 
 \section{Worked Example}
-`\texttt{order\_processor.py}` exposes an early exit when the cart is empty, but coverage shows the branch remains untested. Add a focused unit that sets up an empty cart and asserts the early return, raising the coverage for that module without chasing unrelated lines.
+The worked example uses `\texttt{examples/ch11/order\_processor.py}` plus its test suite to demonstrate how branch coverage mirrors risk. The module calculates shipping costs and applies discounts; the tests in `\texttt{examples/ch11/test\_order\_processor.py}` defend the high-priority paths (free shipping, coupon discounts, invalid inputs). Run the example via the README instructions (`pytest --cov=examples.ch11 --cov-report=term --cov-report=html`) and open `htmlcov/index.html` to see which branch still needs coverage.
+
+\begin{lstlisting}[language=python, caption={Coverage threshold regression.}, label=lst:ch11-coverage-snippet]
+from examples.ch11.order_processor import Order, shipping_cost
+
+orders = [
+    Order(total=150.0, has_coupon=False, items=["widget"]),
+    Order(total=18.0, has_coupon=True, items=["gadget"]),
+]
+
+for order in orders:
+    print(f"order={order.total} coupon={order.has_coupon} shipping={shipping_cost(order)}")
+\end{lstlisting}
+
+The snippet above exercises the same functions the tests cover. When you run coverage, the report highlights untested combinations (e.g., a coupon with a high total or an empty item list), letting you decide whether to add automation or accept the gap with documentation.
 
 \section{Checklist}
 \begin{itemize}
-  \item Audit uncovered branches and annotate whether they are reachable in production.
-  \item Tune thresholds per module based on risk instead of a single global target.
-  \item Pair coverage gaps with risk statements so they drive meaningful test investments.
+  \item Annotate coverage gaps with the mitigation chosen (automation, monitoring, or manual guardrails).
+  \item Gate CI on threat-specific thresholds (branches for payments, mutation for parsers) instead of a single number.
+  \item Keep local `coverage run` commands in your pre-commit checklist so regressions surface before pushing.
+  \item Surface coverage reports (text/html/xml) on dashboards or PR comments for stakeholders.
+  \item Pair coverage reports with risk statements so every uncovered branch has a documented trade-off.
 \end{itemize}
 
 \section{Exercises}
 \begin{enumerate}
-  \item Run coverage locally, identify two high-risk gaps, and plan targeted tests to cover them.
-  \item Describe how you would combine mutation testing with coverage data to pinpoint blind spots.
-  \item Explain why hitting 100% coverage across the board is neither practical nor valuable.
-  \item Document how you would retire coverage-heavy suites that no longer align with risk.
-  \item Match coverage gaps to the risk register and decide whether to add automation, monitoring, or manual charters.
-  \item Note one area where high coverage should be maintained (e.g., payments) and how you would prove it continuously.
+  \item Run coverage locally, inspect the HTML report, and identify two branches that still need risk justification.
+  \item Adjust `examples/ch11` to add a new branch (e.g., surcharge for weekend orders) and update the tests to cover it.
+  \item Propose a coverage-threshold policy for payment-critical modules and explain how it maps to your risk register.
+  \item Create a CI job snippet that publishes coverage artifacts and fails when branch coverage drops below 85\%.
+  \item Pair with QA to determine when a coverage gap should become an exploratory charter rather than write more automation.
+  \item Document a coverage anti-pattern you encounter (e.g., hiding assertions behind mocks) and describe the fix.
+  \item Run `pytest --cov=examples.ch11 --cov-report=term` on CI and record the coverage summary in a release note template.
+  \item Explain why mutation coverage matters for parsing logic, and how you would use it to validate a serializer.
 \end{enumerate}
 
-\section{Further Reading}
-- Gleb Bahmutov, “Test Coverage Does Not Equal Quality,” for practical warning signs.
-- Google Testing Blog’s coverage articles for balancing numbers with risk.
+\section{Summary}
+- Coverage is a risk indicator, not a proof of correctness; interpret its numbers with context.
+- Prioritize branch/mutation coverage on high-risk flows and automate instrumentation both locally and in CI.
+- Link coverage reports to risk statements so reviewers know why you covered what you did.
+
+These coverage reports reinforce the deterministic reruns from Chapter 10 and feed the CI strategy tuning in Chapter 12.
+
+\section{What's Next}
+Carry the risk-based mindset into Chapter 12: a tuned CI pipeline should surface coverage regressions as quickly as smoke checks and include the same artifacts (coverage reports, dashboards) for reviewers.

@@ -1,6 +1,6 @@
 \section{Motivation and Learning Objectives}
 
-The testing pyramid acts as the architectural shorthand for most suites, but teams often forget to plan the guardrails around it. This chapter explains how to size each layer, treat exploratory doughnut activities as first-class citizens, and keep regression/performance suites healthy. You will leave with ready-to-run validation rituals and ownership cues.
+The testing pyramid acts as the architectural shorthand for most suites, but teams frequently forget to plan the guardrails around it. This chapter explains how to size each layer, treat exploratory doughnut activities as first-class citizens, and keep regression/performance suites healthy. You will leave with ready-to-run validation rituals and ownership cues.
 
 \section{Core Concepts}
 
@@ -22,7 +22,7 @@ Treat fixtures as another layer of the strategy cake. Rotate sanitized productio
 
 \subsection{Unit and Component Testing}
 
-Unit tests validate a single function or class boundary. Keep them deterministic by avoiding network calls and randomness. Favor dependency injection and fake double objects to exercise edge cases without producing brittle side effects. A disciplined suite helps developers refactor quickly because it catches contract violations early.
+Unit tests validate a single function or class boundary. Keep them deterministic by avoiding network calls and randomness. Favor dependency injection and fake double objects to exercise edge cases without producing brittle side effects. A disciplined suite enables developers to refactor quickly because it catches contract violations early.
 
 \subsection{Designing Maintainable Unit Suites}
 
@@ -66,9 +66,11 @@ Running identical checks in multiple layers & Wasteful runtime and non-actionabl
 \end{tabular}
 \end{table}
 
+Table~\ref{tab:anti-patterns} summarizes the anti-patterns that sabotage pyramid discipline and the concrete alternatives that keep ownership clear.
+
 \subsection{System and Acceptance Testing}
 
-System tests focus on how the application behaves in an environment that mirrors production. Deployment scripts, data pipelines, and third-party services should be exercised. Acceptance tests translate product requirements into executable scripts, often written in domain-specific languages or Gherkin to keep stakeholders engaged.
+System tests focus on how the application behaves in an environment that mirrors production. Deployment scripts, data pipelines, and third-party services should be exercised. Acceptance tests translate product requirements into executable scripts, typically written in domain-specific languages or Gherkin to keep stakeholders engaged.
 
 \subsection{Orchestrating Acceptance Criteria}
 
@@ -98,6 +100,14 @@ Define performance budgets for key transactions (e.g., page load time, API laten
 
 Track the ratios between pyramid layers in your dashboards (unit/integration/end-to-end ratio, doughnut coverage). Alert when one layer grows disproportionately or when doughnut activities are unused for several releases. These signals keep the team honest about where maintenance work is needed.
 
+\subsection{Pyramid Sizing Heuristic}
+Inputs: baseline unit/integration/end-to-end ratios from previous releases, change scope (feature vs bugfix), and available automation budget (CI time + review capacity). Decision steps: start with the canonical 70/20/10 split for unit/integration/e2e, then adjust if the change touches shared services (shift toward more integration) or new UIs (add e2e coverage). Apply thresholds (±10 points per layer) before adding compensating doughnut activities or contract tests; if you exceed a 30% shift in any layer, document the deviation and schedule exploratory follow-ups. Output: a target test matrix (counts per layer, doughnut tasks) that reviewers can check against branch pipelines and release gates.
+
+\subsection{Common failure modes}
+- Locking the heuristic to the canonical split without considering current risks leads to blind spots; recalculate ratios when dependencies or reliability change.
+- Skipping the deviation documentation means reviewers cannot tell why a release runs more regression versus unit suites; always log the threshold shift and the compensating assurance activity.
+- Ignoring the automation budget (CI minutes) causes the heuristic to generate unsustainable suites; cap total time and adjust coverage by adding doughnut or contract checks instead of heavy end-to-end regression runs.
+
  \section{Anti-patterns and Common Mistakes}
 
  - Building the pyramid without capturing doughnut activities—exploratory charters get forgotten.
@@ -110,9 +120,9 @@ Track the ratios between pyramid layers in your dashboards (unit/integration/end
 
 The example demonstrates how to annotate a release with pyramid counts and gate release validation runs. For the runnable script and its tests see \texttt{examples/ch02/pyramid\_planner.py} and \texttt{examples/ch02/test\_pyramid\_planner.py}. Run them locally with \texttt{python examples/ch02/pyramid\_planner.py} and \texttt{pytest examples/ch02}.
 
-\begin{lstlisting}[language=bash]
- name: Release Validation
- on:
+\begin{lstlisting}[language=bash, caption={Release validation workflow example.}, label=lst:ch02-release-validation]
+name: Release Validation
+on:
    workflow_dispatch:
  jobs:
    unit_tests:
@@ -129,9 +139,15 @@ The example demonstrates how to annotate a release with pyramid counts and gate 
        - name: Report status
          run: |
            # Emit metrics to monitoring dashboard (pyramid counts, gate status, risk score).
- \end{lstlisting}
+\end{lstlisting}
 
- \section{Checklist}
+\textbf{How to run}
+\begin{itemize}
+  \item \texttt{python examples/ch02/pyramid\_planner.py}
+  \item \texttt{pytest examples/ch02}
+\end{itemize}
+
+\section{Checklist}
 
  \begin{itemize}
    \item Chart pyramid layers with target counts and cadence.
@@ -162,9 +178,11 @@ The example demonstrates how to annotate a release with pyramid counts and gate 
 - Monitoring layer ratios keeps regression suites proportional, while alerts flag unbalanced growth.
 - A disciplined approach to release validation makes the strategy tangible for every team member.
 
+These ratios operationalize the risk tiers from Chapter 1 and prime the automation phases described in Chapter 3.
+
 \section{What's Next}
 
-Chapter 3 walks through the automation frameworks and pipelines that execute the strategy laid out here.
+Chapter 3 walks through the automation frameworks and pipelines that execute the strategy laid out here, ensuring the CI gates honor both today's pyramid sizing and the risk tiers from Chapter 1.
 
 - \citep{kaner2002testing} for pyramid-related guidance.
 - \citep{beizer1995software} for integration and system-level testing tales.

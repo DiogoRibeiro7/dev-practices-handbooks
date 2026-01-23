@@ -14,7 +14,7 @@ Borrow structured frameworks such as Failure Mode and Effects Analysis (FMEA) to
 
 \subsection{Quality Characteristics}
 
-Reliable software provides availability, correctness, performance, and usability. Tests are most valuable when they explicitly state which characteristic they exercise. Unit tests should focus on correctness of isolated logic, integration tests on contract boundaries, and system tests on user-visible behaviour. Non-functional qualities such as resilience and security often require specialised fixtures and instrumentation.
+Reliable software provides availability, correctness, performance, and usability. Tests are most valuable when they explicitly state which characteristic they exercise. Unit tests should focus on correctness of isolated logic, integration tests on contract boundaries, and system tests on user-visible behaviour. Non-functional qualities such as resilience and security typically require specialised fixtures and instrumentation.
 
 \subsection{Articulating Non-functional Requirements}
 
@@ -30,7 +30,7 @@ The classic pyramid (unit → integration → end-to-end) gives a useful baselin
 
 \subsection{Building Confidence with Narrative Tests}
 
-Supplement coverage reports with narrative tests: stories that describe a user journey through critical flows. These narratives become the basis for exploratory charters and help QA practitioners justify why a particular path deserves automation. Record the acceptance story, the environments used, and the expected metrics so future reviewers understand why the test matters.
+Supplement coverage reports with narrative tests: stories that describe a user journey through critical flows. These narratives become the basis for exploratory charters and allow QA practitioners to justify why a particular path deserves automation. Record the acceptance story, the environments used, and the expected metrics so future reviewers understand why the test matters.
 
 \subsection{Why Tests Fail in Real Organizations}
 
@@ -53,6 +53,14 @@ Define environments declaratively so teams can reproduce them across local, CI, 
 \subsection{Determinism: Time, Randomness, I/O, and Concurrency}
 
 Tests become unreliable when relying on clocks, random seeds, ephemeral files, or race conditions. Inject clock interfaces, seed random number generators, stub filesystem calls, and control goroutine scheduling. Document any non-deterministic dependency in the suite metadata so failures can be traced to the original cause.
+
+\subsection{Risk Scoring Rubric}
+Inputs: change scope (files touched, teams affected), dependency reliability (historical availability), and business impact (user/financial exposure). Decision steps: assign severity numbers (1–5) for each input, compute the product, and bucket the result (1–10 low, 11–35 medium, 36+ high). Adjust for edge cases such as infrastructure-only changes (force high reliability weight) or emergency patches (add multiplier to probability). Output: a documented risk tier that triggers the appropriate guardrails (number of automated layers, manual review, stakeholder signoff) and highlights any deviation from the default window.
+
+\subsection{Common failure modes}
+- Leaving scores static after major architectural shifts causes the rubric to under-report risk; revisit the inputs when dependencies are upgraded or new services appear.
+- Treating the rubric as a blocker rather than a guide leads to check-the-box habits; always pair the risk tier with explicit gate actions (e.g., ``High risk → run contract, smoke, and regression pieces'').
+- Ignoring the “detectable distance” input hides long-tail failures; log how far downstream the change can fail and adjust the calculation so latent bugs surface in the right layers.
  
 \subsection{Test Doubles Taxonomy}
 
@@ -113,7 +121,7 @@ Good assertions point to a single behavioral promise. Check status codes, key fi
 
 The snippet below sketches how to compute a release risk score so that CI gates can trigger the appropriate suites. For runnable versions and instructions, see `examples/ch01/README.md`.
 
-\begin{lstlisting}[language=python]
+\begin{lstlisting}[language=python, caption={Assertion helper that keeps expectations explicit.}, label=lst:ch01-assertion-helper]
 risk_scores = []
 for change in release_changes:
     impact = change.customer_impact
@@ -128,6 +136,12 @@ gate_bands = {"low": ["lint"], "medium": ["lint", "unit"], "high": ["lint", "uni
 for band, suites in gate_bands.items():
     print(f"Risk band {band}: gate on {suites}")
 \end{lstlisting}
+
+\textbf{How to run}
+\begin{itemize}
+  \item \texttt{python examples/ch01/risk\_score.py}
+  \item \texttt{python examples/ch01/deterministic\_assertions.py}
+\end{itemize}
 
 \section{Checklist}
 
@@ -155,6 +169,13 @@ for band, suites in gate_bands.items():
   \item Execute \texttt{examples/ch01/deterministic\_assertions.py} from the examples folder and confirm every assertion passes.
   \item Document two "good assertions" from your test suite and why they fail fast.
 \end{enumerate}
+
+\section{Summary}
+- The risk scoring rubric gives deterministic gate outputs that feed the pyramid sizing heuristics in Chapter 2.
+- Deterministic assertions and explicit coverage narratives anchor regressions so downstream chapters can layer automation on stable foundations.
+
+\section{What's Next}
+Chapter 2 translates the risk tiers you just computed into a test pyramid plan with concrete ratios and deviations so automation strategy stays proportional.
 
 \section{Further Reading}
 

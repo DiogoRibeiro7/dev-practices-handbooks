@@ -1,68 +1,83 @@
 \section{Opening: Motivation and Learning Objectives}
-Focus on the payoff from refactoring legacy code for testability: less mocking, simpler fixtures, and clearer owner-ship. Readers will learn to identify seams and apply dependency injection.
+Refactoring for testability pays dividends: fewer brittle doubles, faster suites, and clearer ownership. This chapter explains how to spot seams, apply dependency injection incrementally, and measure the payoff with deterministic, CI-friendly helpers. By the end you will know how to refactor a handler without rewriting the whole stack and keep automation grounded in observable behaviour.
 
 \section{Core Concepts}
-\begin{itemize}
-  \item Seams and dependency injection for resources (databases, HTTP clients, clocks).
-  \item Extracting collaborators to keep logic small and verifiable.
-  \item Balancing refactoring effort with delivery schedules.
-\end{itemize}
+\subsection{Finding and documenting seams}
+A seam is any place where you can change behaviour without editing the caller. Look for resource creation (new clients, clocks, singletons) and loops that bake in concrete classes. Document the seam with a short note or issue so the team knows why it exists and what tests rely on it. Use interfaces or protocols to hide the dependency while keeping the calling code focused on business rules.
+
+\subsection{Dependency injection patterns}
+Inject dependencies through constructors, factories, or context managers. Prefer constructor injection for long-lived services, factory injection when you need per-call state, and context objects for thread-local setups. Always ensure the injection point is testable (no global state) and deterministic (seed clocks, fix randomness, re-use in-memory fixtures). Keep the production wiring separate from the test wiring so fast CI runs operate with fakes or spies while production still uses the real clients.
+
+\subsection{Incremental refactors and verification}
+Refactor in small steps: (1) extract the dependency interface, (2) accept it as a parameter, (3) add a temporary adapter so both old and new call sites compile, and (4) update tests to pass fakes. Verify each step with existing suites and add targeted tests for the seam you expose. Keep a changelog entry or commit note that records the refactor, why the seam matters, and which automation exercises it so future engineers can follow the intent.
+
+\subsection{Measuring testability and automation telemetry}
+Track the impact of refactors with simple metrics: how long suites run before/after the change, how many CI jobs now skip heavy dependencies, and the success rate of rerun harnesses built on the fakes. Add logging around the seam (e.g., which injectors execute) so you can correlate pipeline gates with code branches. Good instrumentation lets the team trust the refactor because you can see the deterministic inputs that keep automation stable.
 
 \section{Anti-patterns and Common Mistakes}
-\begin{itemize}
-  \item Testing private behaviour instead of public outcomes makes refactors break widely.
-  \item Relying on singletons/global state ties suites to the environment and prevents isolation.
-  \item Monoliths that create their own dependencies hide seams and make injection impossible.
-\end{itemize}
+\begin{table}[h]
+\centering
+\caption{Refactoring anti-patterns}
+\label{tab:refactor-antipatterns}
+\begin{tabular}{p{4cm}p{4cm}p{5cm}}
+\toprule
+Anti-pattern & Consequence & Alternative \\
+\midrule
+Pulling concrete dependencies deep into the handler & Tests must spin up entire subsystems and go slow & Extract interfaces and inject lightweight adapters \\
+Swapping mocks and fakes without refactoring the code & Poor separation keeps the system under test tangled & Refactor the calling code to accept collaborators before mocking \\
+Massive refactor without CI visibility & Breakages slip through because no automation exercises the seam & Incrementally refactor and keep instrumentation/logs in CI for the new injection point \\
+Skipping documentation of the refactor & Future engineers hesitate to touch the seam because its intent is unclear & Add comments, changelog entries, or ticket links that explain the seam and its test coverage \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:refactor-antipatterns} identifies common traps so you can refactor conservatively while keeping the automation path visible.
 
 \section{Worked Example}
-Refactor a handler that currently instantiates dependencies internally so tests can inject doubles. Before:
+The worked example in \texttt{examples/ch13/report\_handler.py} shows a handler that originally creates \texttt{DatabaseClient}, \texttt{EmailNotifier}, and \texttt{Clock} instances internally. The refactored version accepts those collaborators via constructor injection and uses fakes for tests. Run \texttt{examples/ch13/README.md} to see how the deterministic harness replaces real integrations in CI while the production wiring can still instantiate the real clients.
 
-\begin{lstlisting}[language=python]
-class ReportHandler:
-    def __init__(self):
-        self.db = DatabaseClient()
-        self.email = EmailNotifier()
+\begin{lstlisting}[language=python, caption={Refactoring checklist automation.}, label=lst:ch13-refactor-checklist]
+from examples.ch13.report_handler import (
+    Clock,
+    DatabaseClient,
+    EmailNotifier,
+    ReportHandler,
+    build_default_handler,
+)
 
-    def run(self, payload):
-        data = self.db.query(payload["id"])
-        self.email.send(data)
+handler = build_default_handler()
+handler.run({"id": "order-42", "owner": "ops"})
 \end{lstlisting}
 
-After introducing interfaces:
-
-\begin{lstlisting}[language=python]
-class ReportHandler:
-    def __init__(self, db: DatabaseClient, email: EmailNotifier):
-        self.db = db
-        self.email = email
-
-    def run(self, payload):
-        data = self.db.query(payload["id"])
-        self.email.send(data)
-\end{lstlisting}
-
-Tests now inject fakes/spies and focus on business rules without orchestrating infrastructure.
+The snippet uses \texttt{build\_default\_handler()} to construct the production wiring (real DB client, notifier, clock). Tests call `ReportHandler` directly with fakes to keep suites fast and deterministic.
 
 \section{Checklist}
 \begin{itemize}
-  \item Isolate business rules and keep collaborators small so tests can target single responsibilities.
-  \item Inject test doubles via constructors or factories to keep suites deterministic.
-  \item Document refactor scope, intended behaviour, and which tests exercise the new seam.
+  \item Identify seams by tracking where the code instantiates external resources or writes to globals.
+  \item Refactor incrementally so every change keeps the existing tests green and adds focused coverage.
+  \item Document the seam (comment, changelog, ticket) and annotate which automations cover it.
+  \item Inject deterministic clocks, randomness, and I/O helpers so rerun harnesses in CI can reproduce failures.
+  \item Keep production wiring in one helper (e.g., \texttt{build\_default\_handler}) so tests can inject fakes without touching the live stack.
 \end{itemize}
 
 \section{Exercises}
 \begin{enumerate}
-  \item Inspect a module, identify seams, and rewrite it so dependencies are passed in.
-  \item Extract a factory that produces test doubles and reuse it across tests.
-  \item Add a regression test that exercises a seam without needing the real dependency.
-  \item Document the trade-offs you chose (e.g., extra helper class vs passing raw clients).
-  \item Pair with the owning team to review the new interfaces and collect feedback.
-  \item Practice tracing a production incident back to a missing seam and plan the refactor.
+  \item Take a handler that currently instantiates resources internally and refactor it to accept collaborators. Measure the test suite duration before and after.
+  \item Add a fake `Clock` and verify the handler logs the timestamp deterministically during the refactor.
+  \item Document a seam by outlining its purpose, the traits it hides, and the automation that exercises it.
+  \item Create a small CI harness that runs the refactored handler with fakes and reports the dependency list in the artifact metadata.
+  \item Explore how the handler behaves when you swap in a slow dependency; confirm that the injected fake keeps the automation fast.
+  \item Pair with the owner of the impacted module to review the refactor before merging and capture their concerns.
+  \item Write a squarely deterministic test that ensures the handler does not send notifications when the database query returns `None`.
+  \item Explain why refactoring a handler for testability might require revisiting the readiness script from Chapter 6.
 \end{enumerate}
 
-\section{Further Reading}
-\begin{itemize}
-  \item Michael Feathers, “Working Effectively with Legacy Code.”
-  \item Kent Beck, “Test-Driven Development” for designing testable APIs.
-\end{itemize}
+\section{Summary}
+- Refactoring for testability unlocks faster, more reliable automation and makes pipelines easier to tune.
+- Incremental seam extraction plus deterministic injection keeps CI reruns stable and the code readable.
+- Document the refactor so future engineers see the intention and know which automation covers it.
+
+These refactors consolidate the CI signals surfaced in Chapter 12 and keep the automation artifacts ready for the appendices to document.
+
+\section{What's Next}
+Merge the refactor learnings into the capstone mini-project: let the readiness scorecard pull the deterministic artifacts you now instrument, so releases feel predictable.

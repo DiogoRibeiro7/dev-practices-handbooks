@@ -1,6 +1,6 @@
 \section{Motivation and Learning Objectives}
 
-Metrics tie testing to business outcomes, but teams often drown in dashboards. This chapter shows how to define KPIs, maintain a risk register, and keep coverage reviews actionable so automation contributes to measurable reliability.
+Metrics tie testing to business outcomes, but teams drown in dashboards without a narrow focus. This chapter shows how to define KPIs, maintain a risk register, and keep coverage reviews actionable so automation contributes to measurable reliability.
 
 \section{Core Concepts}
 
@@ -11,6 +11,23 @@ Quality teams track a small set of KPIs so stakeholders can interpret efforts co
 \subsection{Constructing Balanced KPI Sets}
 
 Group indicators into outcome, velocity, and reliability buckets. Outcome metrics (defect escape, customer-reported issues) confirm whether the product meets expectations. Velocity metrics (cycle time, pipeline throughput) show how quickly the team iterates. Reliability metrics (build stability, SLA compliance) prove the automation investment. Keep the set balanced so no single bucket dominates stakeholder discussions.
+
+Table~\ref{tab:kpi-buckets} captures the buckets, their focus, and example metrics that live in each.
+
+\begin{table}[h]
+\centering
+\caption{KPI bucket focus areas}
+\label{tab:kpi-buckets}
+\begin{tabular}{p{3cm}p{5cm}p{4cm}}
+\toprule
+Bucket & Focus & Example metrics \\
+\midrule
+Outcome & Deliverable correctness & Defect escape rate, customer-reported bugs \\
+Velocity & Team responsiveness & Cycle time, pipeline throughput, merge queue wait \\
+Reliability & Stability & Build success rate, SLA compliance, regression pass rate \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Narratives Behind the Numbers}
 
@@ -30,7 +47,7 @@ Keep a living register of high-risk areas, the evidence behind the scores, and t
 
 \subsection{Reliability and Observability}
 
-Reliability metrics such as mean time between failures (MTBF) or service-level indicators (SLIs) help teams know when to extend test coverage. System health dashboards should display failed assertions, alert volumes, and test flakiness. Use these signals to trigger retrospectives or post-incident reviews that adjust the testing roadmap.
+Reliability metrics such as mean time between failures (MTBF) or service-level indicators (SLIs) signal when to extend test coverage. System health dashboards should display failed assertions, alert volumes, and test flakiness. Use these signals to trigger retrospectives or post-incident reviews that adjust the testing roadmap.
 
 \subsection{Alert Fatigue and Threshold Calibration}
 
@@ -64,7 +81,7 @@ Build dashboards that pair KPI numbers with short narratives and risk register s
 
 The snippet below references an SLO burn calculator; the companion example lives in \texttt{examples/ch04/metrics\_kpi.py}, with tests under \texttt{examples/ch04/test\_metrics\_kpi.py}. Run it locally via \texttt{python examples/ch04/metrics\_kpi.py} or in CI with \texttt{pytest examples/ch04}.
 
-\begin{lstlisting}[language=python]
+\begin{lstlisting}[language=python, caption={KPI incident detection snippet.}, label=lst:ch04-kpi-incident]
 metrics = [
     Metric("build_stability", 0.92, 0.95),
     Metric("defect_escape_rate", 0.03, 0.02, higher_is_better=False),
@@ -81,6 +98,12 @@ else:
 publish_dashboard_summary(metrics, incidents)
 print(check_slo(metrics, error_budget=0.05))
 \end{lstlisting}
+
+\textbf{How to run}
+\begin{itemize}
+  \item \texttt{python examples/ch04/metrics\_kpi.py}
+  \item \texttt{pytest examples/ch04}
+\end{itemize}
 
 The helper functions build incident payloads for any KPI that violates its target and then push a narrative summary plus incident status to the dashboard. Use \texttt{narrative(metrics)} to render human-readable descriptions and the error-budget result to block releases when automation exceeds the agreed-upon burn.
 
@@ -118,6 +141,8 @@ The helper functions build incident payloads for any KPI that violates its targe
 - Balanced KPI sets and SLI/SLO pairings connect testing work to business value.
 - Risk registers, alert calibration, and narrative dashboards keep metrics actionable.
 - Coverage reviews and mutation testing expose blind spots so automation stays relevant.
+
+\nThese metrics consume the automation artifacts from Chapter 3 and prepare the scorecards that Chapter 5 will enforce.
 
 \section{What's Next}
 

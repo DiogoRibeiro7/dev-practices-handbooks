@@ -1,63 +1,81 @@
 \section{Opening: Motivation and Learning Objectives}
-Describe how a well-tuned CI pipeline keeps tests fast and actionable. Readers will understand parallelism, caching, selective execution, and reporting strategies.
+A resilient CI pipeline keeps tests fast, predictable, and informative. This chapter shows how to orchestrate parallelism, reuse caches, select suites conscientiously, and surface results clearly so teams trust the automation without waiting for a cranky build.
 
 \section{Core Concepts}
-\begin{itemize}
-  \item Designing pipelines for fast feedback using parallel jobs and sharding.
-  \item Caching dependencies and artifacts to avoid cold starts.
-  \item Selective testing (changed-files heuristics, smoke-first suites, tagging critical paths).
-  \item Reporting results: dashboards, annotations, and alerts.
-\end{itemize}
+\subsection{Parallel execution and sharding}
+Distribute thin jobs across runners: lint, unit smoke, integration, and regression stages should run concurrently when possible. Split heavy suites by shard (e.g., by test directory or file groups) so the slowest job becomes manageable. Use dependency graphs (`needs`) to gate code that truly depends on earlier completion, and watch the critical path duration instead of the total.
+
+\subsection{Caching and artifact reuse}
+Cache dependencies per job matrix entry (e.g., \texttt{pip-\${{ matrix.python }}}) and restore before running tests. Persist build artifacts such as wheel files or compiled assets so downstream jobs reuse warm data. Invalidate caches deliberately when lockfiles change, and treat cache misses as telemetry: log them and alert when they spike so the team can optimize dependency stability.
+
+\subsection{Selective testing strategies}
+Use heuristic filters (changed-files, tags, directory ownership) to run the most relevant suites first. A change touching only documentation should not trigger the full regression guardrail; instead, run smoke and lint while scheduling deeper suites later or on demand. Record the files that triggered each job so reviewers can confirm the selection logic (e.g., `\texttt{ci/changed\_files.json}`).
+
+\subsection{Reporting and visibility}
+Publish artifacts (logs, coverage, test summaries) after every stage. Annotate PRs with failure context, highlight flaky tests in dashboards, and send alerts that show responsible owners. Keep CI output short but actionable by pointing readers to the artifact that just failed instead of dumping gigabytes of logs.
 
 \section{Anti-patterns and Common Mistakes}
-\begin{itemize}
-  \item Running the entire suite sequentially on every push instead of narrowing the scope slows feedback to a crawl.
-  \item Ignoring cache invalidation leads to stale dependencies and nondeterministic builds.
-  \item Hiding failure context (logs, artifacts) leaves reviewers guessing why jobs failed, which encourages reruns instead of fixes.
-\end{itemize}
+\begin{table}[h]
+\centering
+\caption{CI strategy anti-patterns}
+\label{tab:ci-anti-patterns}
+\begin{tabular}{p{4cm}p{4cm}p{5cm}}
+\toprule
+Anti-pattern & Consequence & Alternative \\
+\midrule
+Everything runs on every push & Pipeline duration balloons and feedback turns into waiting rooms & Tier suites (smoke/regression) and gate slow jobs behind successful fast checks \\
+Caches never retire & Jobs see stale dependencies or binary corruption & Tie cache keys to lockfiles and prune them when dependencies update \\
+Selective testing without transparency & Teams mistrust automation and rerun locally & Log triggering paths and let reviewers understand which files drove the selection \\
+Only pushing failures to Slack & Developers get fatigued by unfiltered noise & Surface contextual links (artifacts, failing test names) and keep alerts actionable \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:ci-anti-patterns} keeps these traps visible so you can tune cunning pipelines instead of amplifying noise.
 
 \section{Worked Example}
-\begin{lstlisting}[language=bash]
-name: Test Matrix
-on: [push, pull_request]
-jobs:
-  smoke:
-    runs-on: ubuntu-latest
-    strategy: { matrix: { python: [3.10, 3.11] } }
-    steps:
-      - checkout
-      - restore-cache: pip-${{ matrix.python }}
-      - run: pytest smoke --maxfail=1
-      - save-cache: pip-${{ matrix.python }}
-  regression:
-    runs-on: ubuntu-latest
-    needs: smoke
-    steps:
-      - checkout
-      - restore-cache: pip-stable
-      - run: pytest regression
-      - save-artifact: regression-report
+`\texttt{examples/ch12/selective\_runner.py}` models a CI planner that inspects changed files, assigns jobs, and computes cache keys so you can simulate the matrix before it runs. The script accepts a JSON payload with `\texttt{changed\_files}` and optional `\texttt{durations}`, and it prints the staged jobs plus the dependency chains. CI can invoke it as a pre-flight check to ensure the pipeline stays balanced.
+
+\begin{lstlisting}[language=python, caption={CI strategy reporting template.}, label=lst:ch12-ci-strategy]
+from examples.ch12.selective_runner import plan_pipeline
+
+payload = {
+    "changed_files": ["src/api/service.py", "tests/unit/test_api.py"],
+    "durations": {"smoke": 120, "regression": 480},
+}
+
+for job in plan_pipeline(payload):
+    print(f"{job.name}: runs-on={job.runner} cache={job.cache_key} needs={job.needs}")
 \end{lstlisting}
 
-The matrix runs smoke suites in parallel while the regression job reuses cached deps, uploads artifacts, and depends on successful smoke results.
+The planner also computes a cache key that includes the repository hash so cache restoration stays precise. When CI consumes the planner’s output, dashboards can confirm the jobs matched the triggering files and rerun durations are within the expected range.
 
 \section{Checklist}
 \begin{itemize}
-  \item Verify caches hit by checking cache restore steps and failing fast if a cache miss leaves tests offline.
-  \item Publish artifacts (logs, coverage) after each stage for later triage.
-  \item Capture failure fingerprints (e.g., failing test names, container IDs) alongside each failed job for faster debugging.
+  \item Tier suites into smoke, regression, and exploratory groups with clear gates between them.
+  \item Tie cache keys to environment variables or lockfiles so invalidation happens deliberately.
+  \item Log which files triggered each suite and publish that mapping with the job summary artifact.
+  \item Surface full failure context: failing test names, job duration, and related artifacts (coverage, logs).
+  \item Track cache misses and slow jobs so you can tune the matrix proactively.
 \end{itemize}
 
 \section{Exercises}
 \begin{enumerate}
-  \item Split your suite into fast (lint/unit) and slow (integration/regression) groups and measure their durations.
-  \item Measure cache hit rates for dependencies and log misses per run.
-  \item Build change-aware filters that run critical smoke suites when backend files change.
-  \item Create a CI watchdog that reports when pipelines exceed their time budget.
-  \item Design alerts that surface failure context (logs, artifacts) immediately to Slack or Teams.
-  \item Simulate a cache miss across jobs and document how you would recover deterministically.
+  \item Split your suite into fast and slow groups; measure and report their durations over a week.
+  \item Emulate selective testing by feeding different file sets to `\texttt{examples/ch12/selective\_runner.py}` and document the triggered jobs.
+  \item Write a script that flags cache keys older than a week and triggers a full refresh.
+  \item Design alerts that surface the earliest failing job in the matrix along with its artifacts.
+  \item Introduce a CI watchdog that enforces a time budget per pipeline and fails when the budget is exceeded.
+  \item Propose a strategy for scheduling nightly regression suites and explain how to track their results separately.
+  \item Build a lightweight dashboard that shows cache restore percentages and slowest jobs over time.
 \end{enumerate}
 
-\section{Further Reading}
-- GitHub Actions docs for reusable workflows and caching strategies.
-- GitLab CI caching guide and parallel builds reference.
+\section{Summary}
+- Parallel jobs, smart caches, and selective filtering keep pipelines fast without sacrificing signal.
+- Reporting artifacts and contextual alerts allow reviewers to trust automation and act swiftly when failures occur.
+- Track cache health and job-triggering files to keep feedback loops tight and predictable.
+
+These pipelines consume the coverage artifacts from Chapter 11 and surface the signals that Chapter 13 uses to guide refactors.
+
+\section{What's Next}
+Bring the CI artifacts (reports, dashboards, cache metrics) into Chapter 13 so refactors remain testable and visible; the next chapter shows how to adjust the codebase when the pipeline signals instability.
