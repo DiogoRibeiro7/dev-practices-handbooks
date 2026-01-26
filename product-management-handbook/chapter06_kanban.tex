@@ -1,0 +1,47 @@
+\section{Kanban in Jira: Flow and WIP}
+Kanban emphasizes flow over timeboxes. Jira can enforce flow discipline when WIP limits are explicit and aging work is visible.
+
+\subsection{Jira setup steps (Kanban)}
+\begin{enumerate}
+  \item Create a Kanban board scoped to your project or component.
+  \item Map workflow states to columns: Backlog, Ready, In Progress, In Review, Done.
+  \item Set WIP limits per column in Board settings.
+  \item Define a class of service field (Standard, Expedited, Fixed Date).
+  \item Add a swimlane by class of service.
+  \item Enable the Control Chart and Cumulative Flow Diagram.
+\end{enumerate}
+
+\subsection{WIP limits: representation and enforcement}
+WIP limits live in board column settings. Enforce them in daily standups: if a column is over limit, no new work enters it. Use automation or alerts if you need stricter enforcement.
+
+Sample JQL filters:
+\begin{itemize}
+  \item Over-limit columns (manual check): \texttt{project = PMH AND status = \"In Progress\"}
+  \item Expedited items: \texttt{project = PMH AND \"Class of Service\" = Expedited AND status != Done}
+\end{itemize}
+
+\subsection{Classes of service}
+Classes of service define priority rules. Expedited work preempts standard work but must be rare. Fixed Date work must include a target release or due date. Standard work follows normal flow.
+
+Sample JQL filters:
+\begin{itemize}
+  \item Fixed Date items: \texttt{project = PMH AND \"Class of Service\" = \"Fixed Date\"}
+\end{itemize}
+
+\subsection{Cycle time and aging work}
+Cycle time is the time from In Progress to Done. Aging work tracks items stuck too long. Use the Control Chart for cycle time and a JQL aging filter for stuck items.
+
+Sample JQL filters:
+\begin{itemize}
+  \item Aging work (In Progress > 7 days): \texttt{project = PMH AND status = "In Progress" AND updated <= -7d}
+  \item Review bottleneck: \texttt{project = PMH AND status = "In Review" AND updated <= -3d}
+\end{itemize}
+
+\subsection{Case study insert}
+The platform team runs Kanban. TS-107 and TS-117 stay within WIP limits, and any expedited item must be labeled and reviewed daily.
+
+
+
+
+
+

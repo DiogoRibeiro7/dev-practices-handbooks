@@ -7,14 +7,14 @@ This chapter teaches how to capture consumer expectations as executable contract
 \subsection{Contract lifecycle}
 Contracts begin as consumer stories: record the request, response, headers, and invariants that downstream service owners must honor. Store that contract as a shareable artifact (JSON, YAML, or Pact) and publish it to a broker or repository so both consumers and providers can reference the same expectations. When a provider changes, rerun the verification suite to ensure recorded requests still match the new schema.
 
-Each contract carries metadata you can expose in dashboards—who owns the consumer, which API version it targets, and what invariants (status codes, payload fields) it protects. The `examples/ch09/contract_runner.py` script reads this metadata, loads the contract file, and orchestrates the verification by hitting a seeded provider container so you can replay the consumer story deterministically before merging.
+Each contract carries metadata you can expose in dashboards—who owns the consumer, which API version it targets, and what invariants (status codes, payload fields) it protects. The \texttt{examples/ch09/contract\_runner.py} script reads this metadata, loads the contract file, and orchestrates the verification by hitting a seeded provider container so you can replay the consumer story deterministically before merging.
 
 \subsection{Containerized integration patterns}
 Staging containers per verification job keeps dependencies isolated and reproducible. Use Docker Compose to orchestrate service graphs and Testcontainers to spin up lightweight databases or caches in languages that already power your tests. Always seed these containers with deterministic data (SQL fixtures, recorded HTTP responses) so the same suite produces the same verdict no matter which developer or CI node runs it.
 
 Container startup is rarely instantaneous, so cache warm containers between stages, run health checks after seeding, and tear down or reset volumes between runs to avoid data drift. Automate the seeding scripts by bundling them in the same repository as the contract definitions; that way, contract verification and container seeding live in one commit, ensuring the fixture shape matches the expectations.
 
-Table \ref{tab:contract-stages} outlines the handshake between consumer definition, provider verification, and publishing. The automation in `examples/ch09` mirrors those stages by running a contract against a seeded container and publishing the results to a test artifact so reviewers can confirm all three stages succeeded.
+Table \ref{tab:contract-stages} outlines the handshake between consumer definition, provider verification, and publishing. The automation in \texttt{examples/ch09} mirrors those stages by running a contract against a seeded container and publishing the results to a test artifact so reviewers can confirm all three stages succeeded.
 
 This handshake replicates the consumer-driven contract workflow popularized by Pact and its hosted broker tooling \citep{pactflow2023}, ensuring both sides rely on the same artifacts.
 
@@ -36,7 +36,7 @@ Publish & Share the verified contract (and seed artifacts) with downstream teams
 \subsection{Balancing speed and fidelity}
 Contracts and containers do not have to mean ``slow.'' Sample the most critical contracts for every commit and run the heavier verification only in nightly pipelines to keep merge gates fast. Smoke suites can run against lightweight containers while a full compatibility matrix spins up when you schedule a release candidate.
 
-When you discover a new breaking change, capture the seed, rerun the failing contract locally, and add it to the contract repository before it hits CI. The contract runner in `examples/ch09` already records the provider response that matched the consumer request so you can compare diffs between successful and failing payloads. That makes it easier to understand whether the contract or the provider data drifted, not just ``some test broke again.''
+When you discover a new breaking change, capture the seed, rerun the failing contract locally, and add it to the contract repository before it hits CI. The contract runner in \texttt{examples/ch09} already records the provider response that matched the consumer request so you can compare diffs between successful and failing payloads. That makes it easier to understand whether the contract or the provider data drifted, not just ``some test broke again.''
 
 \section{Anti-patterns and Common Mistakes}
 \begin{tabular}{p{4cm}p{4cm}p{4cm}}
@@ -54,9 +54,9 @@ Treating integration tests as happy-path checks without invariants & They pass e
 \end{quote}
 
 \section{Worked Example}
-The `examples/ch09/contract_runner.py` script loads a consumer contract from `examples/ch09/contracts/offers_contract.json`, seeds the provider container with `examples/ch09/provider_data/offers.json`, and runs a lightweight HTTP request against the containerized fake provider. If the response deviates from the contract, the script prints the mismatched fields, records the seed artifact, and fails with the diff so reviewers can trace the breakage back to the contract or the seed.
+The \texttt{examples/ch09/contract\_runner.py} script loads a consumer contract from \texttt{examples/ch09/contracts/offers\_contract.json}, seeds the provider container with \texttt{examples/ch09/provider\_data/offers.json}, and runs a lightweight HTTP request against the containerized fake provider. If the response deviates from the contract, the script prints the mismatched fields, records the seed artifact, and fails with the diff so reviewers can trace the breakage back to the contract or the seed.
 
-The example keeps the provider data simple yet realistic: each offer has an ID, a counter, and a tier field that maps directly to the consumer's expectations. The accompanying `examples/ch09/README.md` details how to start the Docker Compose stack, rerun the seeding script, and publish the resulting artifacts to CI. Running `python examples/ch09/contract_runner.py` locally executes the full verification choreography and prints the seeded payload so you can eyeball the diff before the job runs in automation.
+The example keeps the provider data simple yet realistic: each offer has an ID, a counter, and a tier field that maps directly to the consumer's expectations. The accompanying \texttt{examples/ch09/README.md} details how to start the Docker Compose stack, rerun the seeding script, and publish the resulting artifacts to CI. Running \texttt{python examples/ch09/contract\_runner.py} locally executes the full verification choreography and prints the seeded payload so you can eyeball the diff before the job runs in automation.
 
 \begin{lstlisting}[language=python, caption={Contract verification runner.}, label=lst:ch09-contract-runner]
 from examples.ch09.contract_runner import run_contract_verification

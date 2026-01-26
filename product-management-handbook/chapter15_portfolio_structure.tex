@@ -1,0 +1,38 @@
+\section{Portfolio Structure and Dependencies}
+Scaling requires a portfolio structure that preserves clarity. Initiatives represent outcomes, Epics represent deliverables, and teams own execution. Use links for dependencies rather than shadow plans.
+
+\subsection{Portfolio structure}
+Initiatives roll up outcomes and span multiple Epics. Epics map to a team or a release. Stories and Tasks live in team backlogs. Teams stay accountable for delivery; the portfolio view stays accountable for outcomes.
+
+\subsection{Dependency tracking via issue links}
+Dependencies are explicit links. Use "blocks" and "depends on". Avoid vague relationships. Assign an owner to every dependency and review them on a cadence.
+
+Sample JQL filters:
+\begin{itemize}
+  \item Blocked items: \texttt{project = PMH AND issueLinkType = blocks AND status != Done}
+  \item Dependencies by team: \texttt{project = PMH AND component = "Data" AND issueLinkType is not EMPTY}
+\end{itemize}
+
+\subsection{Worked scenario: multi-team initiative}
+An Initiative requires changes from three teams. The PM links all Epics to the Initiative and adds dependency links between Epics. The TPM assigns owners to each dependency and reviews the critical path weekly. Jira now shows the true delivery path.
+
+\subsection{Case study insert}
+The portfolio view shows INIT-1 and INIT-2 spanning Growth and Monetization squads, with EPIC-2 and EPIC-5 linked as cross-team dependencies.
+\subsection{Failure modes and fixes}
+\begin{enumerate}
+  \item \textbf{Failure:} Initiatives are just large Epics. \textbf{Fix:} Define outcomes and assign measurable metrics.
+  \item \textbf{Failure:} Dependencies live in slides. \textbf{Fix:} Require Jira issue links for cross-team work.
+  \item \textbf{Failure:} Ownership is unclear. \textbf{Fix:} Assign a dependency owner and review weekly.
+  \item \textbf{Failure:} Teams create duplicate Epics. \textbf{Fix:} Centralize Initiative ownership and link Epics.
+  \item \textbf{Failure:} Portfolio views hide delivery risk. \textbf{Fix:} Require Risk and Target Release fields on Epics.
+\end{enumerate}
+
+
+
+
+
+
+
+
+
+

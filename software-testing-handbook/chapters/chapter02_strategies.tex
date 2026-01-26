@@ -108,17 +108,17 @@ Inputs: baseline unit/integration/end-to-end ratios from previous releases, chan
 - Skipping the deviation documentation means reviewers cannot tell why a release runs more regression versus unit suites; always log the threshold shift and the compensating assurance activity.
 - Ignoring the automation budget (CI minutes) causes the heuristic to generate unsustainable suites; cap total time and adjust coverage by adding doughnut or contract checks instead of heavy end-to-end regression runs.
 
- \section{Anti-patterns and Common Mistakes}
+\section{Anti-patterns and Common Mistakes}
 
- - Building the pyramid without capturing doughnut activities—exploratory charters get forgotten.
- - Letting flaky integration environments dictate release timing.
- - Treating regression runs as "set and forget" without monitoring success trends.
- - Assuming coverage numbers alone prove the pyramid is balanced.
- - Ignoring fixture ownership and letting data drift silently.
+- Building the pyramid without capturing doughnut activities—exploratory charters get forgotten.
+- Letting flaky integration environments dictate release timing.
+- Treating regression runs as "set and forget" without monitoring success trends.
+- Assuming coverage numbers alone prove the pyramid is balanced.
+- Ignoring fixture ownership and letting data drift silently.
 
- \section{Worked Example}
+\section{Worked Example}
 
-The example demonstrates how to annotate a release with pyramid counts and gate release validation runs. For the runnable script and its tests see \texttt{examples/ch02/pyramid\_planner.py} and \texttt{examples/ch02/test\_pyramid\_planner.py}. Run them locally with \texttt{python examples/ch02/pyramid\_planner.py} and \texttt{pytest examples/ch02}.
+The example demonstrates how to annotate a release with pyramid counts and gate release validation runs. For the runnable script and its tests, see \texttt{examples/ch02/pyramid\_planner.py} and \texttt{examples/ch02/test\_pyramid\_planner.py}. Run the planner locally with \texttt{python examples/ch02/pyramid\_planner.py}. Exercise the suite through \texttt{pytest examples/ch02}.
 
 \begin{lstlisting}[language=bash, caption={Release validation workflow example.}, label=lst:ch02-release-validation]
 name: Release Validation

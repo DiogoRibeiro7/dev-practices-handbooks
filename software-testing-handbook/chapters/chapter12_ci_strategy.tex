@@ -9,7 +9,28 @@ Distribute thin jobs across runners: lint, unit smoke, integration, and regressi
 Cache dependencies per job matrix entry (e.g., \texttt{pip-\${{ matrix.python }}}) and restore before running tests. Persist build artifacts such as wheel files or compiled assets so downstream jobs reuse warm data. Invalidate caches deliberately when lockfiles change, and treat cache misses as telemetry: log them and alert when they spike so the team can optimize dependency stability.
 
 \subsection{Selective testing strategies}
-Use heuristic filters (changed-files, tags, directory ownership) to run the most relevant suites first. A change touching only documentation should not trigger the full regression guardrail; instead, run smoke and lint while scheduling deeper suites later or on demand. Record the files that triggered each job so reviewers can confirm the selection logic (e.g., `\texttt{ci/changed\_files.json}`).
+Use heuristic filters (changed-files, tags, directory ownership) to run the most relevant suites first. A change touching only documentation should not trigger the full regression guardrail; instead, run smoke and lint while scheduling deeper suites later or on demand. Record the files that triggered each job so reviewers can confirm the selection logic (e.g., `\texttt{ci/changed\_files.json}`). Feed the coverage artifacts from Chapter 11 into these smoke/regression jobs so reviewers see both execution results and risk-tier coverage evidence together.
+
+\subsection{Pipeline budgets and SLOs}
+Define budgets so the pipeline is enforceable, not aspirational. A practical baseline is a median end-to-end pipeline time of 12 minutes, a critical path budget of 20 minutes, a cache hit rate goal of 85\%, and a flaky failure rerun budget of 2\% of total runs (aligned to Chapter 10's flaky-test guardrails). Treat these as SLOs: if they are breached for a week, pause new CI work until you restore the budget.
+
+Use the planner output to enforce the critical path budget. The optional watchdog (`\texttt{examples/ch12/watchdog.py}`) reads `\texttt{ci/changed\_files.json}` and exits non-zero if the critical path exceeds the budget, allowing CI to fail fast or page the pipeline owner.
+
+\begin{table}[h]
+\centering
+\caption{Pipeline budgets and enforcement signals}
+\label{tab:ci-budgets}
+\begin{tabular}{p{4cm}p{5cm}p{4cm}}
+\toprule
+Metric & How to measure & Alert threshold \\
+\midrule
+Median pipeline duration & CI analytics for completed runs (p50 over 7 days) & > 12 minutes for 5 of 7 days \\
+Critical path duration & Planner output (`critical\_path\_seconds`) & > 20 minutes on any run \\
+Cache hit rate & CI cache metrics or logs (restore hit / total) & < 85\% for 3 days \\
+Flaky failure rerun budget & Flaky test tracker (reruns / total runs) & > 2\% weekly \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \subsection{Reporting and visibility}
 Publish artifacts (logs, coverage, test summaries) after every stage. Annotate PRs with failure context, highlight flaky tests in dashboards, and send alerts that show responsible owners. Keep CI output short but actionable by pointing readers to the artifact that just failed instead of dumping gigabytes of logs.
@@ -34,21 +55,23 @@ Only pushing failures to Slack & Developers get fatigued by unfiltered noise & S
 Table~\ref{tab:ci-anti-patterns} keeps these traps visible so you can tune cunning pipelines instead of amplifying noise.
 
 \section{Worked Example}
-`\texttt{examples/ch12/selective\_runner.py}` models a CI planner that inspects changed files, assigns jobs, and computes cache keys so you can simulate the matrix before it runs. The script accepts a JSON payload with `\texttt{changed\_files}` and optional `\texttt{durations}`, and it prints the staged jobs plus the dependency chains. CI can invoke it as a pre-flight check to ensure the pipeline stays balanced.
+`\texttt{examples/ch12/selective\_runner.py}` models a CI planner that inspects changed files, assigns jobs, and computes cache keys so you can simulate the matrix before it runs. The script accepts a JSON payload with `\texttt{changed\_files}` plus optional `\texttt{durations}`, `\texttt{lock\_hash}`, and `\texttt{repo\_hash}`, and it writes a transparency report to `\texttt{ci/changed\_files.json}` that includes the critical path duration. CI can invoke it as a pre-flight check to ensure the pipeline stays balanced.
 
 \begin{lstlisting}[language=python, caption={CI strategy reporting template.}, label=lst:ch12-ci-strategy]
 from examples.ch12.selective_runner import plan_pipeline
 
 payload = {
     "changed_files": ["src/api/service.py", "tests/unit/test_api.py"],
-    "durations": {"smoke": 120, "regression": 480},
+    "durations": {"lint": 45, "unit": 180, "smoke": 90},
+    "lock_hash": "v1-deps",
+    "repo_hash": "main-abc123",
 }
 
 for job in plan_pipeline(payload):
     print(f"{job.name}: runs-on={job.runner} cache={job.cache_key} needs={job.needs}")
 \end{lstlisting}
 
-The planner also computes a cache key that includes the repository hash so cache restoration stays precise. When CI consumes the planner’s output, dashboards can confirm the jobs matched the triggering files and rerun durations are within the expected range.
+The planner also computes a cache key that includes the repository hash so cache restoration stays precise. When CI consumes the planner’s output, dashboards can confirm the jobs matched the triggering files and the computed critical path is within the expected range.
 
 \section{Checklist}
 \begin{itemize}
@@ -62,10 +85,10 @@ The planner also computes a cache key that includes the repository hash so cache
 \section{Exercises}
 \begin{enumerate}
   \item Split your suite into fast and slow groups; measure and report their durations over a week.
-  \item Emulate selective testing by feeding different file sets to `\texttt{examples/ch12/selective\_runner.py}` and document the triggered jobs.
+  \item Emulate selective testing by feeding doc-only, src, and infra/DB file sets to `\texttt{examples/ch12/selective\_runner.py}` and document the triggered jobs.
   \item Write a script that flags cache keys older than a week and triggers a full refresh.
   \item Design alerts that surface the earliest failing job in the matrix along with its artifacts.
-  \item Introduce a CI watchdog that enforces a time budget per pipeline and fails when the budget is exceeded.
+  \item Introduce a CI watchdog that enforces a time budget using the planner's critical path output.
   \item Propose a strategy for scheduling nightly regression suites and explain how to track their results separately.
   \item Build a lightweight dashboard that shows cache restore percentages and slowest jobs over time.
 \end{enumerate}
@@ -75,7 +98,7 @@ The planner also computes a cache key that includes the repository hash so cache
 - Reporting artifacts and contextual alerts allow reviewers to trust automation and act swiftly when failures occur.
 - Track cache health and job-triggering files to keep feedback loops tight and predictable.
 
-These pipelines consume the coverage artifacts from Chapter 11 and surface the signals that Chapter 13 uses to guide refactors.
+These pipelines consume the coverage artifacts from Chapter 11 and surface CI signals (critical path, flaky failure rate, cache misses) that Chapter 13 uses to guide refactors.
 
 \section{What's Next}
-Bring the CI artifacts (reports, dashboards, cache metrics) into Chapter 13 so refactors remain testable and visible; the next chapter shows how to adjust the codebase when the pipeline signals instability.
+Bring the CI artifacts (coverage.xml, htmlcov/, critical path budgets, flaky failure counts) into Chapter 13 so refactors stay testable and visible. The next chapter shows how to use those signals to choose seams and reduce pipeline instability.

@@ -1,0 +1,92 @@
+\section*{Governance Operating Manual}
+
+\subsection*{Purpose}
+This manual defines the minimum governance loop for a product portfolio using Jira. The goal is to make decisions fast without creating theatre.
+
+\subsection*{Cadence}
+\begin{itemize}
+  \item Weekly portfolio review (30--45 min)
+  \item Monthly product review (60--90 min)
+  \item Quarterly planning (half-day)
+\end{itemize}
+
+\subsection*{Weekly portfolio review}
+\textbf{Inputs}
+\begin{itemize}
+  \item Top 10 Initiatives by risk or impact
+  \item Blocked dependencies
+  \item Critical path items
+  \item Delivery metrics (cycle time, WIP, throughput)
+\end{itemize}
+
+\textbf{Decisions}
+\begin{itemize}
+  \item Escalate or resolve blocked dependencies
+  \item Adjust target releases when capacity shifts
+  \item Reprioritize when risk exceeds tolerance
+\end{itemize}
+
+\textbf{Outputs (record in Jira)}
+\begin{itemize}
+  \item Updated Initiative status
+  \item Updated dependency owners
+  \item New or removed risks
+\end{itemize}
+
+\subsection*{Monthly product review}
+\textbf{Inputs}
+\begin{itemize}
+  \item Outcome metrics by Initiative
+  \item OKR status and evidence
+  \item Release outcomes and learnings
+\end{itemize}
+
+\textbf{Decisions}
+\begin{itemize}
+  \item Continue, pivot, or stop initiatives
+  \item Allocate or remove capacity
+  \item Approve next experiments
+\end{itemize}
+
+\textbf{Outputs (record in Jira)}
+\begin{itemize}
+  \item OKR status updates
+  \item New experiments and owners
+  \item Updated confidence and impact fields
+\end{itemize}
+
+\subsection*{Quarterly planning}
+\textbf{Inputs}
+\begin{itemize}
+  \item Portfolio capacity and throughput
+  \item Strategic goals and constraints
+  \item Major dependencies and risks
+\end{itemize}
+
+\textbf{Decisions}
+\begin{itemize}
+  \item Select top initiatives and funding levels
+  \item Confirm release windows and delivery horizons
+  \item Set guardrails for scope changes
+\end{itemize}
+
+\textbf{Outputs (record in Jira)}
+\begin{itemize}
+  \item Initiative priority order
+  \item Target releases
+  \item Dependency map
+\end{itemize}
+
+\subsection*{Escalation rules}
+\begin{itemize}
+  \item Any S1 incident or risk of data loss escalates immediately.
+  \item Any dependency blocked > 7 days goes to weekly review.
+  \item Any Initiative off track for 2 consecutive reviews triggers a reset plan.
+\end{itemize}
+
+\subsection*{Anti-theatre rules}
+\begin{itemize}
+  \item No status-only updates. Every update must include a decision or a metric change.
+  \item No new fields without a usage rule and owner.
+  \item No duplicate roadmaps; Jira is the source.
+\end{itemize}

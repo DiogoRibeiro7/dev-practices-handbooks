@@ -1,0 +1,52 @@
+\section{OKRs and Outcome Tracking}
+OKRs connect delivery to measurable change. In Jira, OKRs should be linked to Initiatives and Epics so outcomes are visible in the same system as execution.
+
+\subsection{Jira setup steps (OKRs)}
+\begin{enumerate}
+  \item Add an OKR Link field (URL) to Initiatives and Epics.
+  \item Create a dashboard for OKR-linked work using JQL.
+  \item Add a measurable signal field (Metric Name, Baseline, Target).
+  \item Define a review workflow for OKR status (On Track, At Risk, Off Track).
+\end{enumerate}
+
+\subsection{Outcome tracking with measurable signals}
+Each Initiative should have one primary metric and one guardrail. Store the metric and baseline in the Initiative. Update progress on a cadence independent of sprint reviews.
+
+\subsection{Worked scenario: activation OKR}
+An OKR targets a 15\% increase in activation. The PM links the Initiative to the OKR, sets the baseline, and creates Epics for onboarding improvements. After release, the metric is updated in the Initiative and the OKR status is set to On Track.
+
+\subsection{Case study insert}
+INIT-1 is linked to OKR-A with a baseline activation metric. Progress updates are recorded monthly after EPIC-1 changes ship.
+\subsection{Checklist}
+\begin{itemize}
+  \item Every Initiative has a linked OKR and metric.
+  \item Baseline and target are recorded in Jira.
+  \item Outcome reviews happen monthly, not only at sprint reviews.
+  \item Epics roll up to Initiatives with clear ownership.
+  \item Status updates include evidence (dashboards or reports).
+\end{itemize}
+
+\subsection{Failure modes and fixes}
+\begin{enumerate}
+  \item \textbf{Failure:} OKRs exist outside Jira with no link. \textbf{Fix:} Require OKR Link for Initiatives.
+  \item \textbf{Failure:} Metrics are vague. \textbf{Fix:} Record baseline, target, and timeframe.
+  \item \textbf{Failure:} Reviews happen only at quarter end. \textbf{Fix:} Set monthly OKR review cadence.
+  \item \textbf{Failure:} Epics are not tied to outcomes. \textbf{Fix:} Enforce parent Initiative links.
+  \item \textbf{Failure:} Status is updated without evidence. \textbf{Fix:} Require a dashboard or report link.
+\end{enumerate}
+
+Sample JQL filters:
+\begin{itemize}
+  \item OKR-linked initiatives: \texttt{project = PMH AND issuetype = Initiative AND "OKR Link" is not EMPTY}
+  \item Missing metrics: \texttt{project = PMH AND issuetype = Initiative AND "Metric Name" is EMPTY}
+\end{itemize}
+
+
+
+
+
+
+
+
+
+

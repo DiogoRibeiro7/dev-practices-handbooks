@@ -8,8 +8,61 @@ Line coverage tells you whether each statement ran, branch coverage reveals whet
 \subsection{Risk-guided coverage strategy}
 Start with a risk register: map customer-impacting flows (payments, data exports, authentication) to modules. Invest in branch coverage around those flows and accept lower coverage for low-risk plumbing. Annotate coverage gaps with the reason you skipped them so reviewers know you saw the hole and chose automation, monitoring, or manual charters instead.
 
+\subsection{Coverage policy by risk tier}
+Use a tiered policy so teams can copy the thresholds into standards without guessing. Overall coverage is still not a correctness proof; it is a triage signal that must be paired with assertions and operational checks. These risk tiers become CI gate inputs in Chapter 12, where smoke/regression jobs enforce the same thresholds.
+
+\begin{table}[h]
+\centering
+\caption{Coverage policy by risk tier}
+\label{tab:coverage-policy-by-tier}
+\begin{tabular}{p{3cm}p{3cm}p{3cm}p{5cm}}
+\toprule
+Tier & Metric & Threshold & Rationale \\
+\midrule
+Tier 1 (payments, auth, data loss) & Branch coverage & >= 85\% (mutation optional) & Customer-impacting logic must exercise decision paths; mutation is recommended when the logic is dense. \\
+Tier 2 (core workflows, pricing, SLAs) & Branch coverage & >= 75\% & Balance path coverage with delivery speed for important but less catastrophic flows. \\
+Tier 3 (internal tooling, low-risk plumbing) & Line coverage & >= 60\% & Provide a basic regression signal without over-investing in low-risk code. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Decision rule:} add tests when a Tier 1 or Tier 2 gap touches a customer-facing flow, a recent change, or an incident hotspot. Accept the gap only when a mitigation is documented (monitoring alert, manual test charter, or explicit rollback plan) and the owner signs off.
+
 \subsection{Automating instrumentation}
 Add coverage instrumentation to every CI job (`pytest --cov=examples.ch11 --cov-branch`). Persist `coverage.xml` or `htmlcov/index.html` so QA and auditors can see the badge, and gate merges on thresholds that reflect the risk level (e.g., `--cov-fail-under=80`). Use the same instrumentation locally with `coverage run -m pytest` so developers spot branch regressions before pushing.
+
+Listing~\ref{lst:ch11-coverage-ci} shows a reusable CI job (see `ci/snippets/coverage_job.yml`) that runs branch coverage, publishes artifacts, and surfaces a summary in the PR while failing on regressions.
+
+\begin{lstlisting}[language=yaml, caption={Coverage gate with artifacts and PR summary.}, label=lst:ch11-coverage-ci]
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install --upgrade pip pytest pytest-cov
+      - working-directory: software-testing-handbook
+        run: |
+          pytest examples/ch11 --cov=examples.ch11 --cov-branch \
+            --cov-report=term-missing --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov \
+            --cov-fail-under=80
+          coverage report --show-missing --skip-covered > coverage.txt
+          cat coverage.txt >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: |
+            software-testing-handbook/coverage.xml
+            software-testing-handbook/htmlcov/
+            software-testing-handbook/coverage.txt
+\end{lstlisting}
 
 \section{Anti-patterns and Common Mistakes}
 \begin{table}[h]
@@ -30,36 +83,36 @@ Treating instrumentation noise as confidence & Synthetic branches executed only 
 Table~\ref{tab:coverage-antipatterns} keeps these traps visible so you can rebut the urge to chase vanity numbers.
 
 \section{Worked Example}
-The worked example uses `\texttt{examples/ch11/order\_processor.py}` plus its test suite to demonstrate how branch coverage mirrors risk. The module calculates shipping costs and applies discounts; the tests in `\texttt{examples/ch11/test\_order\_processor.py}` defend the high-priority paths (free shipping, coupon discounts, invalid inputs). Run the example via the README instructions (`pytest --cov=examples.ch11 --cov-report=term --cov-report=html`) and open `htmlcov/index.html` to see which branch still needs coverage.
+The worked example uses `\texttt{examples/ch11/order\_processor.py}` plus its test suite to demonstrate how branch coverage mirrors risk. The module enforces validation, a free-shipping threshold, and coupon-based discounts; the tests in `\texttt{examples/ch11/test\_order\_processor.py}` defend the highest-risk flows (standard orders, coupon discounts, validations). Follow the README (`examples/ch11/README.md`) to run `pytest --cov=examples.ch11 --cov-branch --cov-report=term --cov-report=html` and open `htmlcov/index.html` to see the explicit uncovered branch—the intentionally skipped `FREESHIP` coupon path—so you can document that risk instead of masking it with more automation.
 
 \begin{lstlisting}[language=python, caption={Coverage threshold regression.}, label=lst:ch11-coverage-snippet]
 from examples.ch11.order_processor import Order, shipping_cost
 
 orders = [
-    Order(total=150.0, has_coupon=False, items=["widget"]),
-    Order(total=18.0, has_coupon=True, items=["gadget"]),
+    Order(total=150.0, items=["widget"]),
+    Order(total=18.0, items=["gadget"], coupon_code="WELCOME"),
 ]
 
 for order in orders:
-    print(f"order={order.total} coupon={order.has_coupon} shipping={shipping_cost(order)}")
+    print(f"order={order.total} coupon={order.coupon_code} shipping={shipping_cost(order)}")
 \end{lstlisting}
 
-The snippet above exercises the same functions the tests cover. When you run coverage, the report highlights untested combinations (e.g., a coupon with a high total or an empty item list), letting you decide whether to add automation or accept the gap with documentation.
+The snippet exercises the same service the tests cover, yet the `FREESHIP` coupon branch stays uncovered in the report so you can explain why it remains a documented risk in your dashboard.
 
 \section{Checklist}
 \begin{itemize}
   \item Annotate coverage gaps with the mitigation chosen (automation, monitoring, or manual guardrails).
-  \item Gate CI on threat-specific thresholds (branches for payments, mutation for parsers) instead of a single number.
+  \item Apply the tiered policy table and gate CI on tier-appropriate thresholds (branches for Tier 1 and 2, line for Tier 3).
   \item Keep local `coverage run` commands in your pre-commit checklist so regressions surface before pushing.
   \item Surface coverage reports (text/html/xml) on dashboards or PR comments for stakeholders.
-  \item Pair coverage reports with risk statements so every uncovered branch has a documented trade-off.
+  \item Pair coverage reports with the decision rule so every uncovered branch has a documented trade-off.
 \end{itemize}
 
 \section{Exercises}
 \begin{enumerate}
   \item Run coverage locally, inspect the HTML report, and identify two branches that still need risk justification.
   \item Adjust `examples/ch11` to add a new branch (e.g., surcharge for weekend orders) and update the tests to cover it.
-  \item Propose a coverage-threshold policy for payment-critical modules and explain how it maps to your risk register.
+  \item Apply the tiered policy table to your codebase and explain which modules land in each tier.
   \item Create a CI job snippet that publishes coverage artifacts and fails when branch coverage drops below 85\%.
   \item Pair with QA to determine when a coverage gap should become an exploratory charter rather than write more automation.
   \item Document a coverage anti-pattern you encounter (e.g., hiding assertions behind mocks) and describe the fix.
@@ -69,10 +122,11 @@ The snippet above exercises the same functions the tests cover. When you run cov
 
 \section{Summary}
 - Coverage is a risk indicator, not a proof of correctness; interpret its numbers with context.
+- The tiered policy and decision rule make thresholds actionable and reduce debates over gaps.
 - Prioritize branch/mutation coverage on high-risk flows and automate instrumentation both locally and in CI.
 - Link coverage reports to risk statements so reviewers know why you covered what you did.
 
-These coverage reports reinforce the deterministic reruns from Chapter 10 and feed the CI strategy tuning in Chapter 12.
+These coverage artifacts (coverage.xml, htmlcov/) feed the Chapter 12 pipeline reporting so smoke/regression jobs publish the same risk-tier evidence for reviewers.
 
 \section{What's Next}
-Carry the risk-based mindset into Chapter 12: a tuned CI pipeline should surface coverage regressions as quickly as smoke checks and include the same artifacts (coverage reports, dashboards) for reviewers.
+Carry the risk-tier mindset into Chapter 12: tune the CI pipeline so smoke/regression stages publish the coverage artifacts from this chapter and gate on the same thresholds.

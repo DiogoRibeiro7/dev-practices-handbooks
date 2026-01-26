@@ -1,0 +1,40 @@
+\section{Bugs and Incidents: Fast Lanes and Learning}
+Bugs and incidents need speed and structure. Treat them as a separate flow with severity rules, fast lanes, and a postmortem pattern.
+
+\subsection{Jira setup steps (Bugs/Incidents)}
+\begin{enumerate}
+  \item Create a Bug issue type and add Severity (S1–S4) as a field or label.
+  \item Configure a Bug workflow: Triage \textrightarrow{} Fix In Progress \textrightarrow{} Verify \textrightarrow{} Done, with Won’t Fix.
+  \item Create a fast-lane swimlane for Severity S1/S2.
+  \item Add a postmortem issue type or Task template linked to the Bug.
+  \item Automate creation of a postmortem Task when Severity is S1.
+\end{enumerate}
+
+\subsection{Severity model}
+S1: customer outage or data loss. S2: major degradation. S3: minor defect. S4: cosmetic. Severity determines SLA and escalation path.
+
+Sample JQL filters:
+\begin{itemize}
+  \item Active S1/S2: \texttt{project = PMH AND issuetype = Bug AND Severity in (S1, S2) AND status != Done}
+  \item Bugs past SLA: \texttt{project = PMH AND issuetype = Bug AND status != Done AND updated <= -2d}
+\end{itemize}
+
+\subsection{Fast lanes}
+Fast lanes are swimlanes or quick filters that surface critical issues. For S1/S2, bypass standard WIP limits but require EM or TPM approval to enter.
+
+\subsection{Postmortem issue pattern}
+For every S1, create a linked Task called "Postmortem: <incident>" with owners and due dates. Track root cause, fixes, and follow-up items.
+
+Sample JQL filters:
+\begin{itemize}
+  \item Missing postmortem: \texttt{project = PMH AND issuetype = Bug AND Severity = S1 AND issueLinkType is EMPTY}
+\end{itemize}
+
+\subsection{Case study insert}
+BG-124 is marked S1 due to failed upgrade emails. The bug moves through the fast lane and spawns a postmortem task linked to EPIC-5.
+
+
+
+
+
+

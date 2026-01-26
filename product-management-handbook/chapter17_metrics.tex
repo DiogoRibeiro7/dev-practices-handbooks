@@ -1,0 +1,38 @@
+\section{Metrics That Matter: Outcomes and Delivery}
+Metrics should drive decisions. Keep a clean split between product outcomes and delivery health.
+
+\subsection{Delivery metrics}
+Lead time, cycle time, throughput, WIP, predictability, escaped defects. These measure execution health and should be reviewed weekly.
+
+\subsection{Product outcome metrics}
+Activation, retention, revenue, NPS, or other product-specific signals. These measure impact and should be reviewed monthly or quarterly.
+
+Sample JQL filters:
+\begin{itemize}
+  \item Done last 30 days: \texttt{project = PMH AND status = Done AND resolved >= -30d}
+  \item Escaped defects (post-release bugs): \texttt{project = PMH AND issuetype = Bug AND created >= -30d AND "Target Release" is EMPTY}
+\end{itemize}
+
+\subsection{Worked scenario: predictability check}
+The team throughput drops by 30\% and WIP increases. The EM pauses new intake and rebalances work. The PM adjusts the release window. The portfolio view updates with a new forecast based on real flow metrics.
+
+\subsection{Case study insert}
+Escaped defect BG-122 is tracked as a post-release bug tied to EPIC-2. The metric review triggers a WIP pause until the defect rate drops.
+\subsection{Failure modes and fixes}
+\begin{enumerate}
+  \item \textbf{Failure:} Outcomes and delivery metrics are mixed. \textbf{Fix:} Separate dashboards and review cadences.
+  \item \textbf{Failure:} Metrics are collected but not used. \textbf{Fix:} Tie each metric to a decision rule.
+  \item \textbf{Failure:} Teams game the metrics. \textbf{Fix:} Use multiple indicators, not one KPI.
+  \item \textbf{Failure:} Escaped defects are ignored. \textbf{Fix:} Track post-release bugs and review monthly.
+  \item \textbf{Failure:} WIP grows unchecked. \textbf{Fix:} Enforce WIP limits and pause intake.
+\end{enumerate}
+
+
+
+
+
+
+
+
+
+

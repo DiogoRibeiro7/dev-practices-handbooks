@@ -1,0 +1,38 @@
+\section{Jira as an Operating System: Work as a Graph}
+Jira is not a to-do list. It is an operating system for work where issues are nodes, links express dependencies and intent, statuses show state, and time creates the rhythm. This mental model lets you reason about delivery at scale: you can trace how a customer request becomes a release, see where work is stuck, and understand which commitments depend on which teams.
+
+\subsection{Mental model: issues, links, status, time}
+Think of every issue as a node with attributes (type, owner, priority, risk). Links define relationships: blocks, depends on, relates to, duplicates. Statuses represent the workflow state, not the work's value. Time introduces the cadence of decision-making through sprints, releases, and review windows. The system works when links are meaningful, statuses are consistent, and timeboxes are respected.
+
+\subsection{Worked scenario: a new feature request arrives from sales}
+A sales leader requests "bulk user import" for an enterprise deal. The PM creates an Epic with a clear outcome and links it to an Initiative. The PM captures a Story for the core capability and a Spike for technical unknowns. The TPM adds a dependency link to the data team. The EM assigns the Story to the delivery workflow and sets the target release. The graph now shows who owns the work, what must happen first, and when it is expected to land.
+
+\subsection{Case study insert}
+PulseBoard starts with Opportunity OPP-1 in Intake, which becomes Initiative INIT-1. Epic EPIC-1 is created for the checklist, and TS-104 is linked as a dependency so the graph makes the platform reliance explicit.
+\subsection{Checklist}
+\begin{itemize}
+  \item Every customer-facing request starts as an Epic linked to an Initiative or outcome.
+  \item Links use explicit types: blocks, depends on, duplicates.
+  \item Status represents workflow state, not progress estimates.
+  \item Timeboxes (sprints/releases) are used consistently and reviewed on cadence.
+  \item Dependencies are visible and owned, not hidden in comments.
+\end{itemize}
+
+\subsection{Failure modes and fixes}
+\begin{enumerate}
+  \item \textbf{Failure:} Issues are unlinked, so dependencies are invisible. \textbf{Fix:} Require a link for any item with cross-team impact.
+  \item \textbf{Failure:} Statuses mean different things across teams. \textbf{Fix:} Define entry/exit criteria for each status and document it.
+  \item \textbf{Failure:} Timeboxes are created but never closed. \textbf{Fix:} Schedule a fixed sprint/release review and enforce closure.
+  \item \textbf{Failure:} Everything is a Story. \textbf{Fix:} Use Epics for outcomes and Tasks for non-user work.
+  \item \textbf{Failure:} Link types are vague (e.g., “relates to”). \textbf{Fix:} Default to blocks/depends on and audit weekly.
+\end{enumerate}
+
+
+
+
+
+
+
+
+
+

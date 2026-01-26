@@ -1,0 +1,66 @@
+\documentclass[11pt]{book}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{titlesec}
+
+\geometry{margin=1in}
+
+\definecolor{codegray}{gray}{0.95}
+\lstset{
+  backgroundcolor=\color{codegray},
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible,
+}
+
+\title{Product + Project Management in Jira}
+\author{Practical Operating System}
+\date{}
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+\part{Foundations}
+\input{chapter01_mental_model}
+\input{chapter02_roles}
+\input{chapter03_continuous_delivery}
+\input{chapter04_habits}
+
+\part{Delivery Operating System}
+\input{chapter05_scrum}
+\input{chapter06_kanban}
+\input{chapter07_incidents}
+\input{chapter08_estimation}
+\input{chapter09_flow_forecasting}
+
+\part{Product Discovery and Outcomes}
+\input{chapter10_intake}
+\input{chapter11_discovery}
+\input{chapter12_prioritization}
+\input{chapter13_roadmaps}
+\input{chapter14_okrs}
+
+\part{Governance and Scale}
+\input{chapter15_portfolio_structure}
+\input{chapter16_governance_cadence}
+\input{chapter17_metrics}
+\input{chapter18_anti_patterns}
+
+\appendix
+\chapter*{Governance Operating Manual}
+\addcontentsline{toc}{chapter}{Governance Operating Manual}
+\input{appendix_governance_manual}
+
+\end{document}

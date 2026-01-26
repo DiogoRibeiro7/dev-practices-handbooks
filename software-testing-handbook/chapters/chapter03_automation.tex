@@ -109,9 +109,9 @@ Automate sending failing-suite alerts to both chatops and incident trackers. Att
 - Re-running the same flaky pipeline stages without annotating or quarantining them.
 - Ignoring pipeline metrics and letting slow stages go unreviewed.
 
- \section{Worked Example}
+\section{Worked Example}
 
-The YAML snippet runs linting, units, and regression stages while capturing logs. The companion script \texttt{examples/ch03/ci\_pipeline.py} generates the same gates deterministically; run it with \texttt{python examples/ch03/ci\_pipeline.py} or in CI via \texttt{pytest examples/ch03/test\_ci\_pipeline.py}.
+The YAML snippet runs linting, units, and regression stages while capturing logs. The companion script \texttt{examples/ch03/ci\_pipeline.py} generates the same gates deterministically. Run it locally with \texttt{python examples/ch03/ci\_pipeline.py} and execute the CI verification via \texttt{pytest examples/ch03/test\_ci\_pipeline.py}.
 
 \begin{lstlisting}[language=bash, caption={Automation pipeline workflow snippet.}, label=lst:ch03-automation-pipeline]
 name: Automation Pipeline
@@ -133,8 +133,8 @@ jobs:
       - run: ./scripts/run-integration.sh
       - name: Upload logs
         run: ./scripts/upload-logs.sh
-        - name: Notify team
-          run: ./scripts/notify-chatops.sh "Regression stage completed; attach log artifacts."
+      - name: Notify team
+        run: ./scripts/notify-chatops.sh "Regression stage completed; attach log artifacts."
 \end{lstlisting}
 
 \textbf{How to run}
@@ -173,7 +173,8 @@ jobs:
 - Pipeline architecture, resilience, and layered orchestration keep automation reliable.
 - Synthetic data jobs and metadata guard against brittle fixtures.
 - Observability automation and health metrics turn failures into actionable signals.
-\nThese pipelines enforce the pyramid ratios from Chapter 2, and the next chapter turns their artifacts into measurable KPIs.
+
+These pipelines enforce the pyramid ratios from Chapter 2, and the next chapter turns their artifacts into measurable KPIs.
 
 \section{What's Next}
 

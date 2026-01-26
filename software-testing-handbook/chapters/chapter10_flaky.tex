@@ -7,14 +7,14 @@ This chapter trains you to treat flakes as diagnostics rather than inevitabiliti
 \subsection{Flake taxonomy and deterministic detection}
 Flakes come in families: timing hiccups from slow dependencies, resource contention when parallel jobs fight over quotas, shared state bleed between tests, and environmental drift on different nodes. Randomness and concurrency can disguise themselves as flakes, so log every nondeterministic value (seeds, timestamps, request IDs) so reruns reproduce the exact conditions.
 
-Detecting whether a fail is deterministic or noisy means rerunning with the same inputs. Capture the RNG seed, configuration tag, and CI stage in every test log so you can replay it locally or inside a rerun harness. When the same seed fails repeatedly, you have a deterministic bug; when it passes, the issue likely lives in the environment or shared state. The rerun harness in `examples/ch10` maintains history objects that include the seed, verdict, and environment context to simplify that reasoning.
+Detecting whether a fail is deterministic or noisy means rerunning with the same inputs. Capture the RNG seed, configuration tag, and CI stage in every test log so you can replay it locally or inside a rerun harness. When the same seed fails repeatedly, you have a deterministic bug; when it passes, the issue likely lives in the environment or shared state. The rerun harness in \texttt{examples/ch10} maintains history objects that include the seed, verdict, and environment context to simplify that reasoning.
 
 Document the taxonomy in your team glossary: ``timeouts with recorded seeds count as deterministic'' or ``EmojiRoute failed only on Windows containers, so we treat it as environment drift until further investigation.'' This shared language prevents the ``it works on my machine'' blame game and directs attention toward reproducible remedies.
 
 \subsection{Quarantine vs fix decisions}
 Quarantines buy breathing room for triage but regress coverage if left in place. Only quarantine when reruns show the test passing unpredictably but you need a release gate or when the failure requires infra investment (e.g., a shared database that cannot be wired into CI instantly). Every quarantine entry should live on a visible board with an owner, the rerun history, and an expiration date so it does not linger forever.
 
-When a test is quarantined, log the remediation plan: does it need deterministic doubles, a seeded fixture, or a small refactor? Trigger a follow-up verification run every time the surrounding module changes. `examples/ch10` already records the rerun history so you can answer ``Has this flake passed consistently since the last code change?'' and decide whether to unquarantine it.
+When a test is quarantined, log the remediation plan: does it need deterministic doubles, a seeded fixture, or a small refactor? Trigger a follow-up verification run every time the surrounding module changes. \texttt{examples/ch10} already records the rerun history so you can answer ``Has this flake passed consistently since the last code change?'' and decide whether to unquarantine it.
 
 Fixes come when you can determine the root cause—replacing unseeded randomness, resetting shared fixtures, or segregating time-sensitive intervals. Pair the fix with instrumentation that proves stability (new seeds, rerun passes) so reviewers can unquarantine with confidence.
 
@@ -31,9 +31,9 @@ Inputs: failing test name, seed/context, and pipeline stage. Decision steps:
   \item Fix: address the root cause (seed randomness, resets, retries) and rerun multiple times to prove stability.
   \item Prevent: document remediation, add instrumentation, and publish the rerun summary so future engineers benefit from the lesson.
 \end{enumerate}
-Output: a rerun history, a validated fix, and preventive signals that the suite no longer flakes with the recorded inputs. The harness in `examples/ch10` models steps 2–4 with deterministic seeds so CI can replay the playbook without edits.
+Output: a rerun history, a validated fix, and preventive signals that the suite no longer flakes with the recorded inputs. The harness in \texttt{examples/ch10} models steps 2–4 with deterministic seeds so CI can replay the playbook without edits.
 
-Attach links to the rerun harness or logs within failure reports so engineers can replay the exact scenario. The harness in `examples/ch10` writes each attempt to `history` objects, and the tests in `examples/ch10/test_flaky_detection.py` assert the verdict logic and metadata structure so you can treat them as living documentation for any future instrumentation you build.
+Attach links to the rerun harness or logs within failure reports so engineers can replay the exact scenario. The harness in \texttt{examples/ch10} writes each attempt to \texttt{history} objects, and the tests in \texttt{examples/ch10/test\_flaky\_detection.py} assert the verdict logic and metadata structure so you can treat them as living documentation for any future instrumentation you build.
 
 Monitoring flakes over time uncovers patterns: a spike in timeout-related flakiness may signal an overloaded CI agent, while repeated failures only on nightlies may hint at stale fixtures. Use these signals to drive CI improvements—reroute jobs, split tests, or bump resource quotas—and prove the suite’s reliability with metrics rather than gut feel.
 
@@ -74,9 +74,9 @@ Isolating flakes only locally & Developers cannot reproduce issues in CI & Autom
 \end{quote}
 
 \section{Worked Example}
-The rerun harness in `examples/ch10/flaky_detection.py` takes a mutable history, seeds the RNG, and executes the flaky target multiple times until it either passes once or exhausts retries. Each attempt records `attempt`, `seed`, `result`, and `environment` so handbook authors can graph failure trends later. The linked tests in `examples/ch10/test_flaky_detection.py` assert that the history structure respects deterministic rerun logic and that the verdict flips to `pass` once a stable attempt is found.
+The rerun harness in \texttt{examples/ch10/flaky\_detection.py} takes a mutable history, seeds the RNG, and executes the flaky target multiple times until it either passes once or exhausts retries. Each attempt records \texttt{attempt}, \texttt{seed}, \texttt{result}, and \texttt{environment} so handbook authors can graph failure trends later. The linked tests in \texttt{examples/ch10/test\_flaky\_detection.py} assert that the history structure respects deterministic rerun logic and that the verdict flips to \texttt{pass} once a stable attempt is found.
 
-Run the detector locally with `python examples/ch10/flaky_detector.py --seed 42` to reproduce a typical failure. The script prints a deterministic log of each attempt, highlights which seeds failed, and exits with a non-zero status when stability was not achieved. CI jobs can reuse that output to decide whether to quarantine the test, notify the owner, or treat it as a genuine regression.
+Run the detector locally with \texttt{python examples/ch10/flaky\_detector.py --seed 42} to reproduce a typical failure. The script prints a deterministic log of each attempt, highlights which seeds failed, and exits with a non-zero status when stability was not achieved. CI jobs can reuse that output to decide whether to quarantine the test, notify the owner, or treat it as a genuine regression.
 
 \begin{lstlisting}[language=python, caption={Flaky rerun detection harness.}, label=lst:ch10-flaky-detection]
 from examples.ch10.flaky_detection import rerun_flaky_suite

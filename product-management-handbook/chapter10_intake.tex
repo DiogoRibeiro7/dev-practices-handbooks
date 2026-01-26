@@ -1,0 +1,47 @@
+\section{Intake and Triage: From Requests to Opportunities}
+Raw requests arrive from sales, support, and leadership. Intake turns noise into structured opportunities. Triage decides what is worth discovery and what is not.
+
+\subsection{Jira setup steps (intake)}
+\begin{enumerate}
+  \item Create an intake queue (filter + board) scoped to new requests.
+  \item Use a dedicated issue type: Opportunity (preferred) or Epic with label "opportunity".
+  \item Add fields: Customer Impact, Reach, Confidence, Risk, OKR Link.
+  \item Add a lightweight triage workflow: Intake \textrightarrow{} Triage \textrightarrow{} Discovery \textrightarrow{} Parked \textrightarrow{} Closed.
+  \item Create automation: if label = "sales" then notify PM; if Risk = High then notify TPM.
+\end{enumerate}
+
+\subsection{Turning requests into opportunities}
+An opportunity is a structured hypothesis about customer value. It captures the problem, expected outcome, and why now. Raw requests should never go straight to delivery without a brief.
+
+\subsection{Worked scenario: support escalation becomes an opportunity}
+Support reports churn due to slow onboarding. The PM creates an Opportunity issue, links it to the churn OKR, and sets Customer Impact to High. The PO adds a hypothesis: "reducing setup time from 30 to 10 minutes will reduce churn by 5\%." The item moves to Discovery with a clear owner and scope.
+
+\subsection{Case study insert}
+OPP-1 enters Intake from support data and is normalized into an Opportunity brief before it becomes INIT-1. The triage decision is recorded before any delivery work starts.
+\subsection{Checklist}
+\begin{itemize}
+  \item Every request is normalized into an Opportunity or Epic with an opportunity label.
+  \item Customer Impact, Reach, and Risk are set before Discovery.
+  \item No request jumps directly to Ready without a brief.
+  \item Parked items have explicit review dates.
+  \item Closed items include a reason and evidence.
+\end{itemize}
+
+\subsection{Failure modes and fixes}
+\begin{enumerate}
+  \item \textbf{Failure:} Intake is a dumping ground. \textbf{Fix:} Enforce triage within 7 days.
+  \item \textbf{Failure:} Opportunities are vague. \textbf{Fix:} Require a hypothesis and outcome metric.
+  \item \textbf{Failure:} Everything becomes a top priority. \textbf{Fix:} Use explicit scoring and tie-breakers.
+  \item \textbf{Failure:} Parked items never return. \textbf{Fix:} Add review dates and automated reminders.
+  \item \textbf{Failure:} Requests bypass the system. \textbf{Fix:} Block delivery without an Opportunity link.
+\end{enumerate}
+
+
+
+
+
+
+
+
+
+

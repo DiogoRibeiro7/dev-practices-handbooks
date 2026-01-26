@@ -1,0 +1,53 @@
+\section{Prioritization in Jira: RICE, WSJF, and Tie-Breakers}
+Prioritization frameworks keep debate focused on evidence. Jira can encode RICE or WSJF using simple fields so scoring is transparent and repeatable.
+
+\subsection{Jira setup steps (prioritization)}
+\begin{enumerate}
+  \item Add fields: Reach (number), Impact (single select), Confidence (single select), Effort (number).
+  \item Create a custom field for RICE Score (number) or calculate externally and paste.
+  \item Optional: add WSJF fields (Cost of Delay, Job Size).
+  \item Build a dashboard gadget that sorts by score.
+  \item Define tie-breaker rules in the project README or Confluence page.
+\end{enumerate}
+
+\subsection{RICE implementation}
+\textbf{RICE} = $(Reach \times Impact \times Confidence) / Effort$. Use a fixed scale for Impact and Confidence (e.g., 0.5, 1, 2). Keep scales consistent across teams.
+
+\subsection{WSJF implementation (optional)}
+WSJF = Cost of Delay / Job Size. Use it for portfolio-level trade-offs or large bets where delay cost is measurable.
+
+\subsection{Tie-breakers when scores are close}
+When scores are within 10\%, use a tie-breaker list: risk reduction first, dependency unblock second, then time sensitivity. Document the decision in the Opportunity or Epic.
+
+\subsection{Worked scenario: two similar opportunities}
+Two Opportunities score 18 and 17 on RICE. The higher-risk item unlocks a partner integration. The PM applies the tie-breaker: dependency unblock wins. The decision is recorded and visible.
+
+\subsection{Case study insert}
+OPP-2 scores slightly lower than OPP-1 on RICE, but the tie-breaker favors dependency unblock on EPIC-5 because TS-117 is on the critical path.
+\subsection{Checklist}
+\begin{itemize}
+  \item Scoring fields are present and required before Ready.
+  \item Impact and Confidence use a shared scale.
+  \item Scores are recalculated when assumptions change.
+  \item Tie-breaker rules are documented and used.
+  \item Decisions are recorded on the issue.
+\end{itemize}
+
+\subsection{Failure modes and fixes}
+\begin{enumerate}
+  \item \textbf{Failure:} Scores are inflated to win priority. \textbf{Fix:} Require evidence links for high scores.
+  \item \textbf{Failure:} Multiple scoring systems run in parallel. \textbf{Fix:} Pick one per product area.
+  \item \textbf{Failure:} Teams ignore tie-breakers. \textbf{Fix:} Make tie-breakers part of review cadence.
+  \item \textbf{Failure:} Effort is missing or inconsistent. \textbf{Fix:} Standardize estimation units.
+  \item \textbf{Failure:} Scores never change post-discovery. \textbf{Fix:} Re-score after new evidence.
+\end{enumerate}
+
+
+
+
+
+
+
+
+
+

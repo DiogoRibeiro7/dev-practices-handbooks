@@ -11,8 +11,27 @@ Inject dependencies through constructors, factories, or context managers. Prefer
 \subsection{Incremental refactors and verification}
 Refactor in small steps: (1) extract the dependency interface, (2) accept it as a parameter, (3) add a temporary adapter so both old and new call sites compile, and (4) update tests to pass fakes. Verify each step with existing suites and add targeted tests for the seam you expose. Keep a changelog entry or commit note that records the refactor, why the seam matters, and which automation exercises it so future engineers can follow the intent.
 
+\subsection{Refactor playbook for testability}
+Use a repeatable method so refactors stay consistent across teams and releases.
+
+\textbf{Find seams:} flag resource creation (clients, file handles), time and randomness, and direct I/O calls (network, filesystem, environment) as seam candidates.
+
+\textbf{Refactor steps:} extract an interface/protocol, inject it via constructor or factory, add a temporary adapter to keep old call sites compiling, then migrate callers and remove the adapter once the seam is stable.
+
+\textbf{Verify:} run the existing suite to confirm no regressions, then add seam-focused tests that exercise deterministic paths (fixed clocks, fixed randomness, fake I/O).
+
+\textbf{Measure:} record the suite duration delta, CI stability delta (flake reruns before/after), and rerun pass rate so the refactor’s impact is visible.
+
+\textbf{PR checklist:}
+\begin{itemize}
+  \item Seam candidates (resource creation, time, randomness, I/O) are identified and documented.
+  \item Injection point exists, adapter added if needed, and callers migrated or tracked with a follow-up.
+  \item Existing suite remains green; seam-focused tests cover deterministic paths.
+  \item Measurement notes include duration delta, CI stability delta, and rerun pass rate.
+\end{itemize}
+
 \subsection{Measuring testability and automation telemetry}
-Track the impact of refactors with simple metrics: how long suites run before/after the change, how many CI jobs now skip heavy dependencies, and the success rate of rerun harnesses built on the fakes. Add logging around the seam (e.g., which injectors execute) so you can correlate pipeline gates with code branches. Good instrumentation lets the team trust the refactor because you can see the deterministic inputs that keep automation stable.
+Track the impact of refactors with simple metrics: how long suites run before/after the change, how many CI jobs now skip heavy dependencies, and the success rate of rerun harnesses built on the fakes. Add logging around the seam (e.g., which injectors execute) so you can correlate pipeline gates with code branches. Good instrumentation lets the team trust the refactor because you can see the deterministic inputs that keep automation stable. These metrics should map directly to Chapter 12 signals (critical path duration, flaky failure rate, cache hit rate).
 
 \section{Anti-patterns and Common Mistakes}
 \begin{table}[h]
@@ -34,22 +53,26 @@ Skipping documentation of the refactor & Future engineers hesitate to touch the 
 Table~\ref{tab:refactor-antipatterns} identifies common traps so you can refactor conservatively while keeping the automation path visible.
 
 \section{Worked Example}
-The worked example in \texttt{examples/ch13/report\_handler.py} shows a handler that originally creates \texttt{DatabaseClient}, \texttt{EmailNotifier}, and \texttt{Clock} instances internally. The refactored version accepts those collaborators via constructor injection and uses fakes for tests. Run \texttt{examples/ch13/README.md} to see how the deterministic harness replaces real integrations in CI while the production wiring can still instantiate the real clients.
+The worked example in \texttt{examples/ch13/report\_handler\_before.py} shows a handler that constructs \texttt{DatabaseClient}, \texttt{EmailNotifier}, and \texttt{Clock} inside the method, which makes deterministic tests hard. The refactored version in \texttt{examples/ch13/report\_handler.py} accepts those collaborators via constructor injection, while \texttt{examples/ch13/fakes.py} supplies \texttt{FakeDB}, \texttt{FakeClock}, and \texttt{SpyNotifier} for CI. Run \texttt{examples/ch13/README.md} to see how the deterministic harness replaces real integrations in tests while the production wiring still uses \texttt{build\_default\_handler()}.
 
 \begin{lstlisting}[language=python, caption={Refactoring checklist automation.}, label=lst:ch13-refactor-checklist]
-from examples.ch13.report_handler import (
-    Clock,
-    DatabaseClient,
-    EmailNotifier,
-    ReportHandler,
-    build_default_handler,
-)
+from datetime import datetime, timezone
 
-handler = build_default_handler()
-handler.run({"id": "order-42", "owner": "ops"})
+from examples.ch13.fakes import FakeClock, FakeDB, SpyNotifier
+from examples.ch13.report_handler import ReportHandler, build_default_handler
+
+test_handler = ReportHandler(
+    db=FakeDB(records={"order-42": {"summary": "ok"}}),
+    notifier=SpyNotifier(),
+    clock=FakeClock(datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)),
+)
+test_handler.run({"id": "order-42", "owner": "ops"})
+
+prod_handler = build_default_handler()
+prod_handler.run({"id": "order-42", "owner": "ops"})
 \end{lstlisting}
 
-The snippet uses \texttt{build\_default\_handler()} to construct the production wiring (real DB client, notifier, clock). Tests call `ReportHandler` directly with fakes to keep suites fast and deterministic.
+The snippet shows the seam: tests create the handler with fakes, while production uses \texttt{build\_default\_handler()} for real wiring. The tests in \texttt{examples/ch13/test\_report\_handler.py} assert that missing records skip notifications, timestamps stay deterministic, and the notifier fires exactly once.
 
 \section{Checklist}
 \begin{itemize}
@@ -77,7 +100,7 @@ The snippet uses \texttt{build\_default\_handler()} to construct the production 
 - Incremental seam extraction plus deterministic injection keeps CI reruns stable and the code readable.
 - Document the refactor so future engineers see the intention and know which automation covers it.
 
-These refactors consolidate the CI signals surfaced in Chapter 12 and keep the automation artifacts ready for the appendices to document.
+These refactors consolidate the CI signals surfaced in Chapter 12: fewer flaky failures, shorter critical paths, and more reliable smoke/regression selection.
 
 \section{What's Next}
-Merge the refactor learnings into the capstone mini-project: let the readiness scorecard pull the deterministic artifacts you now instrument, so releases feel predictable.
+Carry these refactors into the capstone mini-project: use Chapter 12's CI signals to pick seams, reduce flaky failures, and keep smoke/regression selection reliable as you scale the pipeline.

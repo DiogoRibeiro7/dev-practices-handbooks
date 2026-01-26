@@ -1,6 +1,6 @@
 # Chapter 12 CI Strategy Examples
 
-The selective runner demonstrates how CI decides which suites to run and how cache keys are generated for each job.
+The selective runner demonstrates how CI decides which suites to run, how cache keys are generated, and how to record why each job was selected.
 
 ## Run the planner
 
@@ -9,16 +9,18 @@ python - <<'PY'
 from examples.ch12.selective_runner import plan_pipeline
 
 payload = {
-    "changed_files": ["services/api/main.py", "contracts/payments.yml"],
+    "changed_files": ["src/api/service.py", "tests/unit/test_api.py"],
+    "durations": {"lint": 45, "unit": 180, "smoke": 90},
     "lock_hash": "v1-deps",
+    "repo_hash": "main-abc123",
 }
 
 for job in plan_pipeline(payload):
-    print(job)
+    print(f"{job.name}: runner={job.runner} cache={job.cache_key} needs={job.needs}")
 PY
 ```
 
-The output lists the jobs, their runners, cache keys, and dependencies so CI can render the matrix before execution.
+The planner writes `ci/changed_files.json` with the triggering files, selected jobs, and critical path time so reviewers can see why the pipeline was chosen.
 
 ## Run the tests
 
@@ -26,4 +28,4 @@ The output lists the jobs, their runners, cache keys, and dependencies so CI can
 pytest software-testing-handbook/examples/ch12
 ```
 
-The test suite verifies that the planner picks the right jobs and that cache keys remain stable across invocations.
+The test suite verifies job selection, cache key determinism, critical path computation, and the selection report artifact.

@@ -1,0 +1,33 @@
+\section{Estimation and Forecasting}
+Estimation is a tool for planning, not a promise. Use points to compare relative size, and use throughput for forecasting. Keep the system honest by measuring what actually finishes.
+
+\subsection{Story points vs throughput}
+Story points help with sprint sizing and team learning. Throughput (items completed per sprint) is the strongest predictor of near-term capacity. Use points for in-sprint planning and throughput for external commitments.
+
+Sample JQL filters:
+\begin{itemize}
+  \item Completed last sprint: \texttt{project = PMH AND sprint in closedSprints() AND status = Done}
+  \item Unestimated in current sprint: \texttt{project = PMH AND sprint in openSprints() AND Effort is EMPTY}
+\end{itemize}
+
+\subsection{Probabilistic forecasting (no heavy math)}
+Use past throughput to create ranges. Example: if the team finishes 8--12 items per sprint, forecast delivery in 2--3 sprints for a 20-item Epic. The goal is a confidence range, not a single date. Update the range each sprint based on real throughput.
+
+\subsection{Case study insert}
+Estimates for ST-105 through ST-108 are used to size EPIC-2. Throughput from the last three sprints informs how much import work can fit in R1.
+\subsection{Release burndown pitfalls}
+Burndowns lie when scope changes. If scope grows, the burndown looks worse even if delivery is steady. Always show scope change alongside burn rate.
+
+Sample JQL filters:
+\begin{itemize}
+  \item Scope added mid-sprint: \texttt{project = PMH AND sprint in openSprints() AND createdDate >= startOfSprint()}
+\end{itemize}
+
+
+
+
+
+
+
+
+

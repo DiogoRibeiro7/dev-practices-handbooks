@@ -1,0 +1,34 @@
+\section{Forecasting with Flow Metrics}
+Forecasting improves when you use cycle time and WIP. Flow metrics show whether the system can absorb new work without breaking.
+
+\subsection{Jira setup steps (forecasting)}
+\begin{enumerate}
+  \item Enable Control Chart and Cumulative Flow Diagram on the board.
+  \item Define cycle time boundaries (In Progress to Done).
+  \item Set a target WIP level and monitor WIP breaches.
+  \item Build a dashboard widget for average cycle time and throughput.
+\end{enumerate}
+
+Sample JQL filters:
+\begin{itemize}
+  \item Done last 30 days: \texttt{project = PMH AND status = Done AND resolved >= -30d}
+  \item WIP breach candidates: \texttt{project = PMH AND status in (\"In Progress\", \"In Review\")}
+\end{itemize}
+
+\subsection{Worked example: forecasting a release window}
+An Epic contains 24 Stories. The team last six sprints show 8–10 Stories finished per sprint. The PM forecasts a 3-sprint window with a 70\% confidence range, communicated as "3–4 sprints." Jira dashboards show cycle time and WIP; if WIP rises, the forecast widens.
+
+\subsection{Case study insert}
+Forecasting uses the completion rate of EPIC-4 and EPIC-5 stories. If cycle time rises, the R1 window is widened and the dashboard records the new range.
+\subsection{Release burndown pitfalls revisited}
+Use burndowns only for short horizons and stable scope. If scope shifts weekly, switch to throughput and cycle time to avoid false precision.
+
+
+
+
+
+
+
+
+
+

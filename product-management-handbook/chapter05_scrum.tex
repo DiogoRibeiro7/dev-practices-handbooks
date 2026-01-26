@@ -1,0 +1,69 @@
+\section{Scrum in Jira: From Backlog to Sprint}
+Scrum in Jira is a cadence contract: the backlog is ready, the sprint has a goal, and scope changes are explicit. Use Jira to make the contract visible and enforceable.
+
+\subsection{Jira setup steps (Scrum)}
+\begin{enumerate}
+  \item Create a Scrum board scoped to your project (Board settings \textrightarrow{} Filter).
+  \item Define the Delivery workflow: Backlog \textrightarrow{} Ready \textrightarrow{} In Progress \textrightarrow{} In Review \textrightarrow{} Done.
+  \item Add fields to the screen: Customer Impact, Risk, Effort, Target Release.
+  \item Configure the board columns to match workflow states.
+  \item Enable sprint management and set the default sprint length.
+  \item Create a Definition of Ready checklist and require it before moving to Ready.
+\end{enumerate}
+
+\subsection{Backlog refinement}
+Refinement is where you remove ambiguity. The PO keeps items small, updates acceptance criteria, and confirms dependencies. The PM adjusts priority based on impact and risk. The EM confirms capacity so Ready means “ready to pull.”
+
+Sample JQL filters:
+\begin{itemize}
+  \item Ready for refinement: \texttt{project = PMH AND status = Backlog ORDER BY priority DESC}
+  \item Missing acceptance criteria: \texttt{project = PMH AND status = Backlog AND \"Acceptance Criteria\" is EMPTY}
+  \item High-risk backlog items: \texttt{project = PMH AND status = Backlog AND Risk = High}
+\end{itemize}
+
+\subsection{Sprint planning}
+Planning turns Ready items into a committed sprint. The sprint goal is written first, then items are pulled until capacity is full. Scope changes require explicit trade-offs.
+
+Sample JQL filters:
+\begin{itemize}
+  \item Sprint candidates: \texttt{project = PMH AND status = Ready ORDER BY priority DESC}
+  \item Unestimated in Ready: \texttt{project = PMH AND status = Ready AND Effort is EMPTY}
+\end{itemize}
+
+\subsection{Sprint goal and scope control}
+Use the sprint goal to protect the sprint. If scope changes, update the goal and record what is traded out. Never add work without removing equivalent scope.
+
+Sample JQL filters:
+\begin{itemize}
+  \item Scope changes in sprint: \texttt{project = PMH AND sprint in openSprints() AND status = Backlog}
+  \item Spillover from last sprint: \texttt{project = PMH AND sprint in closedSprints() AND status != Done}
+\end{itemize}
+
+\subsection{Case study insert}
+Sprint 12 has a goal to deliver the setup checklist. The team pulls ST-101 and ST-102, and any change requires trading against EPIC-1 scope.
+\subsection{Cadence calendar}
+\begin{table}[h]
+\centering
+\caption{Scrum cadence calendar}
+\label{tab:scrum-cadence}
+\begin{tabular}{p{4cm}p{4cm}p{6cm}}
+\toprule
+Cadence & Owner & Output \\
+\midrule
+Backlog triage (2x/week) & PM/PO & Updated priority and intake decisions \\
+Refinement (weekly) & PO/EM & Ready items with DoR met \\
+Sprint planning (biweekly) & Team & Sprint goal and committed scope \\
+Sprint review (biweekly) & PM/EM & Done scope and stakeholder feedback \\
+Retro (biweekly) & EM & Improvement actions in Jira \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+
+
+
+
+
+
+
