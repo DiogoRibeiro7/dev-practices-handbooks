@@ -1,0 +1,18 @@
+% figures/specialization.tex
+\documentclass[11pt]{article}
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{tikz}
+\usetikzlibrary{positioning,shapes.geometric,arrows.meta}
+\pagestyle{empty}
+\begin{document}
+\begin{tikzpicture}[node distance=18mm, >=Latex]
+  \node[draw, rectangle, minimum width=3cm, minimum height=1cm] (Super) {Person};
+  \node[draw, circle, minimum size=7mm, below=10mm of Super] (ISA) {is-a};
+  \node[draw, rectangle, minimum width=2.6cm, minimum height=1cm, below left=12mm and 12mm of ISA] (Sub1) {Student};
+  \node[draw, rectangle, minimum width=2.6cm, minimum height=1cm, below right=12mm and 12mm of ISA] (Sub2) {Teacher};
+
+  \draw[->] (Super) -- (ISA);
+  \draw[->] (ISA) -- (Sub1);
+  \draw[->] (ISA) -- (Sub2);
+\end{tikzpicture}
+\end{document}

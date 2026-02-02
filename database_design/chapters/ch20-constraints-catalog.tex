@@ -1,0 +1,95 @@
+% chapters/ch20-constraints-catalog.tex
+\chapter{Constraints Catalog}
+
+\begin{learningobjectives}
+In this chapter you will learn a structured catalog of constraints.
+You will distinguish uniqueness, inclusion, and domain constraints.
+You will practice expressing constraints without SQL.
+\end{learningobjectives}
+
+\section{Why a catalog helps}
+Constraints define valid states.
+A catalog ensures you do not miss common rule types.
+It also improves review discussions.
+
+\section{Uniqueness constraints}
+Uniqueness defines identity and prevents duplicates.
+It can apply to a single attribute or a combination.
+
+\subsection{Single-attribute uniqueness}
+Example: a member is uniquely identified by \texttt{member\_id}.
+This is a primary identity rule.
+
+\subsection{Composite uniqueness}
+Composite uniqueness captures meaning like “no double booking.”
+It is a relationship-level rule expressed as a unique combination.
+
+\begin{examplebox}
+\textbf{Composite uniqueness}\\
+Rule: A doctor cannot have two appointments at the same start time.\\
+Meaning: (doctor\_id, start\_time) is unique in \rel{Appointment}.
+\end{examplebox}
+
+\section{Inclusion dependencies}
+Inclusion dependencies express referential integrity.
+They say one set of values must be contained in another.
+
+\subsection{Mandatory references}
+If a loan references a member, the member must exist.
+This is a core relational meaning, not a storage detail.
+
+\begin{examplebox}
+\textbf{Inclusion dependency}\par\smallskip
+\[
+\rel{Loan}.member\_id \rightarrow \rel{Member}.member\_id
+\]
+The referenced member must exist.
+\end{examplebox}
+
+\section{Domain constraints}
+Domain constraints restrict allowed values.
+They protect meaning at the attribute level.
+
+\subsection{Enumerations}
+Status values should come from a defined set.
+This prevents silent drift in meaning.
+
+\subsection{Value ranges}
+Dates, counts, and measures often have valid ranges.
+These are cheap but powerful constraints.
+
+\begin{principlebox}
+\textbf{Principle}\\
+If a value has meaning, it has constraints.
+\end{principlebox}
+
+\section{Cross-row constraints}
+Some rules depend on multiple rows.
+They are often business constraints.
+They must still be stated conceptually.
+
+\subsection{No overlap}
+Examples include no overlapping reservations or appointments.
+State the rule in words even if enforcement is complex.
+
+\section{Temporal constraints}
+Time introduces ordering and validity windows.
+Rules like “return date after checkout date” are temporal.
+They should be explicit in the model.
+
+\begin{chaptersummary}
+Constraints are not optional.
+Use a catalog to ensure you cover uniqueness, inclusion, and domain rules.
+Cross-row and temporal constraints preserve real-world meaning.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Build a constraint list for a small domain.
+\begin{enumerate}[label=\arabic*.]
+  \item Write two uniqueness constraints (one composite).
+  \item Write two inclusion dependencies.
+  \item Write two domain constraints (enum or range).
+  \item Write one cross-row constraint.
+  \item Explain how each constraint protects meaning.
+\end{enumerate}
+\end{exercisebox}

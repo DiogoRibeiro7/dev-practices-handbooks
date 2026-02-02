@@ -1,0 +1,55 @@
+% chapters/appendix-ch07-sql.tex
+\chapter{SQL Appendix: Chapter 7 (Validation)}
+
+\section{DDL}
+\begin{verbatim}
+CREATE TABLE patient (
+  patient_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE doctor (
+  doctor_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE appointment (
+  appointment_id INT PRIMARY KEY AUTO_INCREMENT,
+  start_time DATETIME NOT NULL,
+  duration_min INT NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  patient_id INT NOT NULL,
+  doctor_id INT NOT NULL,
+  CONSTRAINT fk_appt_patient FOREIGN KEY (patient_id) REFERENCES patient(patient_id),
+  CONSTRAINT fk_appt_doctor FOREIGN KEY (doctor_id) REFERENCES doctor(doctor_id)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO patient (name) VALUES ('Ana Costa'), ('Rui Silva');
+INSERT INTO doctor (name) VALUES ('Joana Reis');
+INSERT INTO appointment (start_time, duration_min, status, patient_id, doctor_id)
+VALUES
+  ('2026-02-06 09:00:00', 60, 'scheduled', 1, 1),
+  ('2026-02-06 09:30:00', 30, 'scheduled', 2, 1);
+\end{verbatim}
+
+\section{Validation queries}
+\begin{verbatim}
+-- Q1: Appointments per doctor
+SELECT doctor_id, COUNT(*) AS appt_count
+FROM appointment
+GROUP BY doctor_id;
+
+-- Q2: Overlap detection (should return empty for valid data)
+SELECT a.appointment_id, b.appointment_id
+FROM appointment a
+JOIN appointment b
+  ON a.doctor_id = b.doctor_id
+ AND a.appointment_id < b.appointment_id
+ AND a.status = 'scheduled'
+ AND b.status = 'scheduled'
+ AND a.start_time < DATE_ADD(b.start_time, INTERVAL b.duration_min MINUTE)
+ AND b.start_time < DATE_ADD(a.start_time, INTERVAL a.duration_min MINUTE);
+\end{verbatim}

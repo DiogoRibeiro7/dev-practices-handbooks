@@ -1,0 +1,248 @@
+% chapters/ch06-integrity-constraints.tex
+\chapter{Integrity Constraints and Correctness}
+
+\begin{learningobjectives}
+In this chapter you will learn how constraints make a relational design reliable.
+You will be able to classify constraints (entity, referential, domain, business), decide which rules can be enforced by the database, and document constraints as part of the schema specification.
+\end{learningobjectives}
+
+\section{Constraints are part of the meaning}
+A schema without constraints is only a storage layout.
+It can hold values, but it does not protect meaning.
+Relational databases become powerful because they are not passive containers: they can reject invalid states.
+
+When a system relies only on application logic to maintain correctness, the database becomes an unsafe shared memory.
+Multiple services, scripts, and manual interventions will eventually bypass the intended rules.
+Constraints exist to prevent this drift.
+
+\begin{definitionbox}
+A \term{constraint} is a condition that every valid database state must satisfy.
+Constraints exist to prevent invalid states and preserve domain meaning over time.
+\end{definitionbox}
+
+In this chapter we continue to avoid SQL.
+We focus on the conceptual role of constraints and how to specify them clearly, independent of implementation.
+
+\section{Constraint types with examples}
+Not all constraints are the same.
+Classifying them helps you know what the database can enforce directly and what may require additional mechanisms.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.75\textwidth]{constraint-types.pdf}
+\caption{Four constraint categories clarify what can be enforced directly and what must be specified explicitly.}
+\end{figure}
+
+\subsection{Entity integrity}
+Entity integrity is the requirement that identity is real.
+Primary keys must uniquely identify rows and must not be missing.
+This is not optional: without it, relationships cannot be trusted.
+
+Even in a prose specification, you should state this clearly.
+For each relation, identity constraints include:
+the primary key attributes, whether they are mandatory, and whether they are stable.
+
+\subsection{Referential integrity}
+Referential integrity is the requirement that references point to real things.
+If \rel{Appointment} references \rel{Patient}, then every appointment must point to an existing patient.
+Otherwise you are modelling relationships to non-existent entities, which breaks the semantics of the model.
+
+Referential integrity also forces you to decide lifecycle behaviour.
+When a referenced entity is removed, what happens to referencing rows?
+Sometimes deletion is forbidden; sometimes references cascade; sometimes a record is archived instead of deleted.
+Even if you postpone the exact policy, you should recognise that it is part of correctness.
+
+\subsection{Domain constraints}
+Domain constraints restrict allowed values.
+They can be as simple as “age is non-negative”, or as meaningful as “due date must be on or after checkout date”.
+They often capture basic validity that is easy to enforce and easy to forget.
+
+Domain constraints are valuable because they prevent silent corruption.
+If invalid values are allowed in, the system will later contain “impossible” states that break analysis and reporting.
+
+\subsection{Business constraints}
+Business constraints express domain-specific rules that go beyond identity, references, and simple value checks.
+These are the most important constraints from a correctness perspective, and also the most often missed.
+
+A clinic rule like “a doctor cannot have two appointments at the same time” is a business constraint.
+A library rule like “a copy cannot have two active loans at the same time” is also a business constraint.
+These constraints define what the system \emph{means}, not merely what it stores.
+
+\begin{examplebox}
+\textbf{University constraint mix}\par\smallskip
+In a course registration model:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Entity: Student.student\_id is present and unique.
+  \item Referential: Enrollment.student\_id references Student.
+  \item Domain: Enrollment.grade is one of the allowed grade symbols.
+  \item Business: A student cannot enroll in the same course twice in the same term.
+\end{itemize}
+\end{examplebox}
+
+\section{Feasibility of enforcement}
+A practical discipline is to treat each business rule as a constraint candidate.
+For each rule, you ask three questions.
+
+First: can the database enforce it directly as a static constraint?
+Some rules map cleanly to uniqueness, not-null requirements, and foreign keys.
+
+Second: if it cannot be enforced as a simple constraint, can it be enforced with a stronger mechanism?
+Some rules require temporal reasoning or overlap checks.
+
+Third: if enforcement cannot realistically live in the database, can violations be detected reliably?
+A rule is still useful if you can detect when it is violated and react.
+
+This discipline makes the design defensible.
+It also makes responsibilities explicit.
+
+\begin{principlebox}
+\textbf{Rule \(\rightarrow\) enforcement discipline}\\[2pt]
+For each business rule:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Can the database enforce it directly?
+  \item If not, can it enforce it with a stronger mechanism?
+  \item If not, how do we detect violations reliably?
+\end{itemize}
+\end{principlebox}
+
+\begin{principlebox}
+\textbf{Constraints are part of the schema}\\
+If a rule is not stated as a constraint, it is not part of the design.
+Write the rules before you choose where to enforce them.
+\end{principlebox}
+
+There is a temptation to say “the database enforces everything”.
+That is not always realistic.
+Some constraints involve complex temporal logic, external systems, or probabilistic rules.
+Others are policy decisions that evolve.
+
+The right goal is not maximal enforcement at the database level.
+The right goal is: enforce what you can, and explicitly handle what you cannot.
+A rule that is unenforced and undocumented is the worst case.
+A rule that is enforced in the application but clearly specified and monitored can be acceptable.
+
+\begin{notebox}
+A practical rule: enforce identity and referential integrity in the database by default.
+For domain and business constraints, enforce in the database when feasible and document the rest with detection strategies.
+\end{notebox}
+
+\section{Constraint catalogs}
+Catalogs make constraints visible.
+They also provide a checklist for validation later.
+
+\subsection{Clinic constraints}
+\begin{itemize}[leftmargin=*,nosep]
+  \item C1: Patient.patient\_id is mandatory and unique.
+  \item C2: Doctor.doctor\_id is mandatory and unique.
+  \item C3: Appointment.appointment\_id is mandatory and unique.
+  \item C4: Appointment.patient\_id references an existing Patient (mandatory).
+  \item C5: Appointment.doctor\_id references an existing Doctor (mandatory).
+  \item C6: Appointment.start\_time is mandatory.
+  \item C7: Appointment.duration\_min is mandatory and positive.
+  \item C8: A doctor cannot have overlapping appointments.
+  \item C9: A patient cannot have overlapping appointments with the same doctor.
+  \item C10: Appointment.room\_id references an existing Room when present.
+  \item C11: A room cannot host overlapping appointments.
+  \item C12: Appointment.status is one of \{scheduled, completed, cancelled\}.
+\end{itemize}
+
+\subsection{Library constraints}
+\begin{itemize}[leftmargin=*,nosep]
+  \item L1: Member.member\_id is mandatory and unique.
+  \item L2: Title.title\_id is mandatory and unique.
+  \item L3: Copy.copy\_id is mandatory and unique.
+  \item L4: Copy.title\_id references an existing Title (mandatory).
+  \item L5: Copy.barcode is unique when present.
+  \item L6: Loan.loan\_id is mandatory and unique.
+  \item L7: Loan.member\_id references an existing Member (mandatory).
+  \item L8: Loan.copy\_id references an existing Copy (mandatory).
+  \item L9: Loan.due\_date must be on or after Loan.checkout\_date.
+  \item L10: A copy has at most one active loan at any time.
+  \item L11: Reservation.member\_id references an existing Member (mandatory).
+  \item L12: Reservations for a title are ordered by request\_date.
+\end{itemize}
+
+\section{Constraint writing style guide}
+Constraints should be written as testable sentences.
+A good constraint is precise, scoped, and observable.
+
+Write constraints in the form: “For every X, condition Y holds.”
+Avoid vague language like “usually” or “should”.
+
+Even without SQL, you should specify constraints as part of the schema.
+A reader should be able to answer: “what does this model allow?”
+
+A compact documentation format works well:
+\begin{itemize}[leftmargin=*,nosep]
+  \item list relations and keys,
+  \item list foreign key references,
+  \item list uniqueness constraints,
+  \item list domain and business constraints as numbered statements.
+\end{itemize}
+
+This style is close to how real systems are specified in design docs.
+It also makes your later SQL chapter easier to write: SQL becomes the translation of an already-clear specification.
+
+\begin{examplebox}
+\textbf{Constraint block example}\par\smallskip
+For \rel{Copy}:
+\begin{itemize}[leftmargin=*,nosep]
+  \item C1: Copy.copy\_id is mandatory and unique.
+  \item C2: Copy.title\_id references an existing Title (mandatory).
+  \item C3: Copy.barcode is unique when present.
+  \item C4: Copy.status is one of \{available, on\_loan, retired\}.
+\end{itemize}
+\end{examplebox}
+
+\section{Common mistakes}
+Constraint mistakes are usually mistakes of silence.
+
+Mistake: Failing to write the rule at all.\\
+Fix: Record each rule as a numbered, testable constraint.
+
+Mistake: Treating a business rule as a convenience.\\
+Fix: Decide whether it is truly a rule; if yes, enforce or detect it.
+
+Mistake: Hiding constraints in unrelated attributes.\\
+Fix: State the constraint explicitly (e.g., uniqueness, no-overlap).
+
+Mistake: Mixing domain and business constraints in prose only.\\
+Fix: Separate value rules (domain) from relationship rules (business).
+
+\section{Mini checklist}
+Before you sign off a schema, check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Are identity and reference rules explicit for every relation?
+  \item Are domain rules stated for key attributes with limited values?
+  \item Are business rules written as constraints, not prose hints?
+  \item Is each constraint placed where it can be enforced or detected?
+  \item Are lifecycle rules (delete, archive) clearly described?
+  \item Do constraint catalogs cover the critical entities and events?
+  \item Are “active” and “overlap” defined unambiguously?
+\end{itemize}
+
+\begin{chaptersummary}
+Constraints are not optional decorations; they are part of the meaning of a relational design.
+Entity and referential integrity provide the foundation for identity and relationships.
+Domain constraints prevent basic invalid values.
+Business constraints preserve domain-specific correctness, such as preventing double booking or concurrent active loans.
+A good design makes enforcement explicit, either directly in the database or through documented detection and control mechanisms.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Answer in full sentences.
+\begin{enumerate}[label=\arabic*.]
+  \item For a domain you know, write 8 business rules and classify each as entity, referential, domain, or business constraint.
+  \item Pick 3 of those rules and explain whether the database can enforce them directly, and why.
+  \item In a library model, propose a precise definition of “active loan” and rewrite the “one active loan per copy” rule using that definition.
+  \item In a clinic model, explain why interval-based appointments make “no double booking” harder than slot-based appointments.
+  \item Write a constraint specification block (C1, C2, ...) for one relation in your schema.
+  \item For a university model, define a business constraint that uses term or semester and state how it could be enforced.
+  \item Choose one rule that cannot be fully enforced by the database and describe how you would detect violations.
+  \item Write a domain constraint for a status field and explain what values are allowed.
+  \item Propose a constraint that prevents overlapping room bookings and state the needed attributes.
+\end{enumerate}
+\end{exercisebox}
+
+In the next chapter we validate designs without SQL.
+The constraint catalogs you wrote here will become inputs to validation.

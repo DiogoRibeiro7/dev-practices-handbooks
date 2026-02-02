@@ -1,0 +1,40 @@
+% chapters/appendix-ch12-sql.tex
+\chapter{SQL Appendix: Chapter 12 (Relationships Advanced)}
+
+\section{DDL (subtypes)}
+\begin{verbatim}
+CREATE TABLE payment (
+  payment_id INT PRIMARY KEY AUTO_INCREMENT,
+  amount DECIMAL(10,2) NOT NULL,
+  created_at DATETIME NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE card_payment (
+  payment_id INT PRIMARY KEY,
+  last4 CHAR(4) NOT NULL,
+  auth_code VARCHAR(40) NOT NULL,
+  CONSTRAINT fk_card_payment FOREIGN KEY (payment_id) REFERENCES payment(payment_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE bank_transfer (
+  payment_id INT PRIMARY KEY,
+  iban VARCHAR(34) NOT NULL,
+  reference VARCHAR(60) NOT NULL,
+  CONSTRAINT fk_bank_transfer FOREIGN KEY (payment_id) REFERENCES payment(payment_id)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO payment (amount, created_at) VALUES (35.00, '2026-02-01 10:00:00');
+INSERT INTO card_payment (payment_id, last4, auth_code) VALUES (1, '1234', 'AUTH-001');
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Payments with subtype details
+SELECT p.payment_id, p.amount, cp.last4, bt.iban
+FROM payment p
+LEFT JOIN card_payment cp ON cp.payment_id = p.payment_id
+LEFT JOIN bank_transfer bt ON bt.payment_id = p.payment_id;
+\end{verbatim}

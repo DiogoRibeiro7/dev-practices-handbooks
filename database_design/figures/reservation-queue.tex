@@ -1,0 +1,18 @@
+% figures/reservation-queue.tex
+\documentclass[11pt]{article}
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+\pagestyle{empty}
+\begin{document}
+\begin{tikzpicture}[node distance=10mm, >=Latex]
+  \node[draw, rectangle, minimum width=2.6cm, minimum height=0.9cm] (m1) {Member A};
+  \node[draw, rectangle, minimum width=2.6cm, minimum height=0.9cm, right=10mm of m1] (m2) {Member B};
+  \node[draw, rectangle, minimum width=2.6cm, minimum height=0.9cm, right=10mm of m2] (m3) {Member C};
+  \node[draw, rectangle, minimum width=2.6cm, minimum height=0.9cm, below=12mm of m2] (title) {Title};
+
+  \draw[->] (m1) -- (title) node[midway, left, font=\scriptsize] {1st};
+  \draw[->] (m2) -- (title) node[midway, left, font=\scriptsize] {2nd};
+  \draw[->] (m3) -- (title) node[midway, right, font=\scriptsize] {3rd};
+\end{tikzpicture}
+\end{document}

@@ -1,0 +1,215 @@
+% chapters/ch16-conceptual-design-review.tex
+\chapter{A Design Review Method: How to Critique a Schema}
+
+\begin{learningobjectives}
+In this chapter you will learn a structured method to review and critique a relational design.
+You will be able to conduct a design review using a small set of questions, identify common failure modes, and produce actionable feedback backed by rules, constraints, and dependencies.
+\end{learningobjectives}
+
+\section{Why a review method matters}
+Most schema problems are not caused by ignorance of the relational model.
+They are caused by missing review.
+A design can look plausible while still allowing invalid states or forcing future duplication.
+
+A review method is valuable because it makes critique repeatable.
+It also makes feedback objective: instead of “I don’t like this table”, you can say “this relation mixes facts that imply the dependency \(A \rightarrow B\) but \(A\) is not a key”.
+
+\begin{definitionbox}
+A \term{design review} is a structured evaluation of a schema and its documentation to check correctness, clarity, and maintainability.
+A good review produces specific issues and specific actions.
+\end{definitionbox}
+
+\section{Inputs to a review}
+A review cannot be done from a schema alone.
+You need a minimal context set.
+
+A good review package includes:
+\begin{itemize}[leftmargin=*,nosep]
+  \item a short domain narrative (6--12 sentences),
+  \item a numbered business rule list,
+  \item the logical schema in book notation,
+  \item a constraint block (C1, C2, ...),
+  \item 6--10 key questions the database must support.
+\end{itemize}
+
+If one of these is missing, the review should start by requesting it, because otherwise critique becomes guessing.
+
+\section{The review flow}
+Use the same flow every time.
+It keeps discussions focused and prevents people from jumping to performance too early.
+
+\begin{principlebox}
+\textbf{Design review flow}\par\smallskip
+\begin{enumerate}[label=\arabic*.]
+  \item Domain clarity: narrative and vocabulary.
+  \item Identity: keys and uniqueness.
+  \item Relationships: cardinality, optionality, and association relations.
+  \item Constraints: what is enforced, what is missing.
+  \item Redundancy: dependencies and normalization signals.
+  \item Time and state: events, history, and temporal constraints.
+  \item Validation: key questions and paper test data.
+\end{enumerate}
+\end{principlebox}
+
+Each step has a small set of concrete checks.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{review-process.pdf}
+\caption{A repeatable review flow turns critique into a controlled loop.}
+\end{figure}
+
+\section{Step 1: Domain clarity checks}
+A schema cannot be correct if the domain is not precise.
+
+Check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Are core terms defined (e.g., title vs copy, appointment vs visit)?
+  \item Are there overloaded words (e.g., “user”, “status”, “date”) used without definition?
+  \item Are the main business rules written as testable statements?
+\end{itemize}
+
+Common issue: the narrative mixes two concepts under one name.
+Fix: split vocabulary first, then redesign.
+
+\section{Step 2: Identity checks}
+Identity failures are catastrophic because they break references.
+
+Check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Does every entity have a primary key?
+  \item Is the key stable (does it change)? Is it available at creation time?
+  \item Are natural identifiers that must be unique actually constrained as unique?
+  \item Are there any “keys” that are actually descriptions (e.g., name as primary key)?
+\end{itemize}
+
+Common issue: using mutable business data as a primary key.
+Fix: introduce surrogate identity and constrain the natural identifier separately.
+
+\section{Step 3: Relationship checks}
+Relationship structure often reveals conceptual mistakes.
+
+Check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Are 1:N relationships represented with FKs on the N side?
+  \item Are N:M relationships represented with association relations?
+  \item Are relationship attributes stored on the association/event relation (not on entities)?
+  \item Is optionality stated and consistent with the rules?
+\end{itemize}
+
+Common issue: encoding many-to-many as a comma-separated list.
+Fix: create an association relation.
+
+\section{Step 4: Constraint checks}
+Constraints make the model safe.
+
+Check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Are entity integrity and referential integrity constraints stated?
+  \item Are domain constraints stated (allowed sets, non-negative values, date ordering)?
+  \item Are the top 3--5 business constraints stated explicitly?
+  \item For each business constraint: is enforcement feasible, or is detection documented?
+\end{itemize}
+
+Common issue: the schema implies constraints in prose, but there is no constraint block.
+Fix: create a numbered constraint block and map rules to constraints.
+
+\section{Step 5: Redundancy and dependency checks}
+Redundancy is often hidden.
+Dependencies expose it.
+
+Check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item For each relation, can you state what determines each attribute?
+  \item Do any non-key attributes determine other non-key attributes (transitive dependencies)?
+  \item Are code/name pairs duplicated (status\_code and status\_name stored together repeatedly)?
+  \item Are entity attributes stored inside association relations (2NF violations)?
+\end{itemize}
+
+Common issue: a relation mixes entity facts and event facts.
+Fix: split into entity relations plus event/association relations.
+
+\section{Step 6: Time and state checks}
+Time-heavy domains break naive schemas.
+
+Check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Are events modelled as entities (Loan, Appointment, Payment)?
+  \item Is “active” defined precisely where it matters (active loan, active reservation)?
+  \item Are temporal constraints stated (no overlap, one active at a time)?
+  \item Is history preserved where needed, or is overwrite acceptable and documented?
+\end{itemize}
+
+Common issue: storing current state on an entity without event history.
+Fix: introduce an event relation and decide authoritative source of truth.
+
+\section{Step 7: Validation checks}
+Validation makes critique concrete.
+
+Check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Can the schema support the key questions without duplication?
+  \item Can you represent two valid scenarios with small paper test data?
+  \item Can you represent an invalid scenario as a clear constraint violation?
+  \item Is there a rule-to-schema traceability map for the important rules?
+\end{itemize}
+
+Common issue: the schema supports the “happy path” but not exceptions (cancellations, returns, replacements).
+Fix: add state/time modelling and constraints.
+
+\section{How to write actionable review comments}
+Good review comments do two things:
+they identify the issue, and they propose a specific repair with justification.
+
+A practical format:
+\begin{itemize}[leftmargin=*,nosep]
+  \item \textbf{Observation:} what is wrong, referencing a relation/attribute.
+  \item \textbf{Risk:} what anomaly or invalid state it allows.
+  \item \textbf{Fix:} what structural change to make.
+  \item \textbf{Justification:} which rule/dependency/constraint motivates it.
+\end{itemize}
+
+\begin{examplebox}
+\textbf{Example review comment}\par\smallskip
+Observation: \rel{AppointmentRecord} stores doctor\_name and doctor\_specialty per appointment.\par
+Risk: update anomaly when a doctor changes specialty; inconsistent doctor naming.\par
+Fix: introduce \rel{Doctor} and reference it from \rel{Appointment}.\par
+Justification: doctor\_id \(\rightarrow\) name, specialty; doctor facts should be determined by doctor identity, not by appointment.
+\end{examplebox}
+
+This tone stays technical and avoids subjective critique.
+
+\section{A short review checklist (printable)}
+Use this as a one-page checklist when reviewing schemas.
+
+\begin{examplebox}
+\textbf{Checklist}\par\smallskip
+\begin{itemize}
+  \item Domain: terms defined; rules testable.
+  \item Keys: every entity has a PK; uniqueness constraints stated.
+  \item Relationships: correct 1:N mapping; N:M via association relation; optionality explicit.
+  \item Constraints: entity/ref integrity; domain checks; top business constraints.
+  \item Redundancy: no mixed facts; dependencies align with keys; no transitive duplication.
+  \item Time: events as entities; “active” defined; temporal constraints stated.
+  \item Validation: key questions; traceability; paper test scenarios.
+\end{itemize}
+\end{examplebox}
+
+\begin{chaptersummary}
+A design review should be repeatable.
+Start from domain clarity, then check identity, relationships, constraints, redundancy, time/state, and validation.
+Use dependencies to justify structural feedback, and write review comments as observation, risk, fix, and justification.
+This makes critique objective and actionable.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Pick one of your schemas (clinic or library) and conduct a self-review.
+Answer in full sentences.
+\begin{enumerate}[label=\arabic*.]
+  \item Identify two domain terms that could be ambiguous and define them precisely.
+  \item Identify one key decision you would challenge and propose an alternative.
+  \item Identify one missing business constraint and write it as a constraint statement.
+  \item Identify one redundancy risk and state the dependency that reveals it.
+  \item Write three review comments using the observation/risk/fix/justification format.
+\end{enumerate}
+\end{exercisebox}

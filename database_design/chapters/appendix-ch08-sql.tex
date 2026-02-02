@@ -1,0 +1,41 @@
+% chapters/appendix-ch08-sql.tex
+\chapter{SQL Appendix: Chapter 8 (Naming and Documentation)}
+
+\section{DDL with comments}
+\begin{verbatim}
+CREATE TABLE member (
+  member_id INT PRIMARY KEY AUTO_INCREMENT,
+  full_name VARCHAR(120) NOT NULL,
+  email VARCHAR(200) NULL UNIQUE,
+  created_at DATETIME NOT NULL
+) ENGINE=InnoDB
+COMMENT='Member records with stable identifiers';
+
+CREATE TABLE loan (
+  loan_id INT PRIMARY KEY AUTO_INCREMENT,
+  member_id INT NOT NULL,
+  checkout_date DATE NOT NULL,
+  due_date DATE NOT NULL,
+  return_date DATE NULL,
+  CONSTRAINT fk_loan_member
+    FOREIGN KEY (member_id) REFERENCES member(member_id)
+) ENGINE=InnoDB
+COMMENT='Loan events; one row per borrowing';
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO member (full_name, email, created_at)
+VALUES ('Ana Costa', 'ana@example.com', '2026-01-10 09:00:00');
+
+INSERT INTO loan (member_id, checkout_date, due_date, return_date)
+VALUES (1, '2026-01-20', '2026-02-03', NULL);
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Member loans with semantic date fields
+SELECT m.full_name, l.checkout_date, l.due_date
+FROM member m
+JOIN loan l ON l.member_id = m.member_id;
+\end{verbatim}

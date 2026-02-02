@@ -1,0 +1,18 @@
+% figures/validation-artifacts.tex
+\documentclass[11pt]{article}
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+\pagestyle{empty}
+\begin{document}
+\begin{tikzpicture}[node distance=12mm, >=Latex]
+  \node[draw, rectangle, minimum width=3.2cm, minimum height=0.9cm, align=center] (rules) {Rules\\(list)};
+  \node[draw, rectangle, minimum width=3.2cm, minimum height=0.9cm, align=center, right=20mm of rules] (trace) {Traceability\\(matrix)};
+  \node[draw, rectangle, minimum width=3.2cm, minimum height=0.9cm, align=center, right=20mm of trace] (data) {Paper\\dataset};
+  \node[draw, rectangle, minimum width=3.2cm, minimum height=0.9cm, align=center, right=20mm of data] (notes) {Review\\notes};
+
+  \draw[->] (rules) -- (trace);
+  \draw[->] (trace) -- (data);
+  \draw[->] (data) -- (notes);
+\end{tikzpicture}
+\end{document}

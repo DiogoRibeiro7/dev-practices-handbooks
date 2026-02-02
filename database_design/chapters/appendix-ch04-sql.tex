@@ -1,0 +1,57 @@
+% chapters/appendix-ch04-sql.tex
+\chapter{SQL Appendix: Chapter 4 (Conceptual to Relational)}
+
+\section{DDL}
+\begin{verbatim}
+CREATE TABLE customer (
+  customer_id INT PRIMARY KEY AUTO_INCREMENT,
+  full_name VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE product (
+  product_id INT PRIMARY KEY AUTO_INCREMENT,
+  sku VARCHAR(40) NOT NULL UNIQUE,
+  name VARCHAR(200) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE `order` (
+  order_id INT PRIMARY KEY AUTO_INCREMENT,
+  placed_at DATETIME NOT NULL,
+  customer_id INT NOT NULL,
+  CONSTRAINT fk_order_customer FOREIGN KEY (customer_id) REFERENCES customer(customer_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE order_line (
+  order_id INT NOT NULL,
+  product_id INT NOT NULL,
+  quantity INT NOT NULL,
+  unit_price DECIMAL(10,2) NOT NULL,
+  PRIMARY KEY (order_id, product_id),
+  CONSTRAINT fk_line_order FOREIGN KEY (order_id) REFERENCES `order`(order_id),
+  CONSTRAINT fk_line_product FOREIGN KEY (product_id) REFERENCES product(product_id)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO customer (full_name) VALUES ('Ana Costa');
+INSERT INTO product (sku, name) VALUES ('BK-001', 'Design Book');
+INSERT INTO `order` (placed_at, customer_id) VALUES ('2026-02-01 10:00:00', 1);
+INSERT INTO order_line (order_id, product_id, quantity, unit_price)
+VALUES (1, 1, 2, 35.00);
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Order summary with line totals
+SELECT o.order_id, p.name, l.quantity, l.unit_price,
+       l.quantity * l.unit_price AS line_total
+FROM `order` o
+JOIN order_line l ON l.order_id = o.order_id
+JOIN product p ON p.product_id = l.product_id;
+
+-- Q2: Orders for a customer
+SELECT order_id, placed_at
+FROM `order`
+WHERE customer_id = 1;
+\end{verbatim}

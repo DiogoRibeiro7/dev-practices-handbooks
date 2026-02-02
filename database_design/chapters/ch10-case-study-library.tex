@@ -1,0 +1,398 @@
+% chapters/ch10-case-study-library.tex
+\chapter{Case Study: Library System (End-to-End)}
+
+\begin{learningobjectives}
+In this chapter you will apply the full workflow to a library domain.
+You will learn how to model titles versus physical copies, how to represent time-based events like loans, and how to encode key constraints such as “one active loan per copy”.
+You will also practise validation with questions, traceability, and controlled test data.
+\end{learningobjectives}
+
+\section{Narrative}
+The library domain is a strong teaching example because it forces two modelling decisions that appear in many real systems:
+distinguishing an abstract item from its physical instances, and modelling events over time.
+
+\begin{examplebox}
+\textbf{Library narrative}\\
+A library registers members.
+The library stores book titles, and each title can have multiple physical copies.
+Copies belong to a branch (a physical location).
+Members borrow copies through loans, with checkout and due dates.
+A copy may be returned later.
+A copy cannot be on loan to two members at the same time.
+Members can also place reservations for titles.
+Reservations are handled in first-come-first-served order.
+Overdue loans can generate fines, and fines can be paid.
+\end{examplebox}
+
+The phrase “title can have multiple copies” is the central constraint.
+If you collapse title and copy, the model becomes confusing and will produce anomalies.
+
+\section{Step 1: Business rules}
+We write rules as testable statements.
+We keep them focused on meaning and constraints.
+
+\begin{examplebox}
+\textbf{Business rules (library)}\\
+R1: A member is uniquely identified by \texttt{member\_id}.\\
+R2: A title is uniquely identified by \texttt{title\_id}.\\
+R3: A copy is uniquely identified by \texttt{copy\_id}.\\
+R4: Each copy belongs to exactly one title.\\
+R5: A title can have zero or many copies.\\
+R6: Each copy belongs to exactly one branch.\\
+R7: A loan is for exactly one member and exactly one copy.\\
+R8: A loan has a checkout date and a due date.\\
+R9: A loan may have a return date (if returned).\\
+R10: A copy has at most one active loan at a time.\\
+R11: A reservation is made by exactly one member for exactly one title.\\
+R12: Reservations are served in first-come-first-served order by request date.\\
+R13: A member can have zero or many reservations over time.\\
+R14: A title can have zero or many reservations over time.\\
+R15: An overdue loan can generate a fine for the member.\\
+R16: A fine can have zero or many payments.
+\end{examplebox}
+
+Rule R9 is the core business constraint.
+It prevents an impossible state that would otherwise be representable.
+
+\section{Step 2: Conceptual model}
+We model the following entities:
+Member, Title, Copy, Branch, Loan, Reservation, Fine, Payment.
+Loan and Reservation are entities because they carry their own meaning and attributes.
+They are not mere relationships.
+
+\subsection{Conceptual decisions}
+Write the meaning in sentences:
+\begin{itemize}
+  \item A title is an abstract bibliographic item; a copy is a physical instance.
+  \item Copies belong to exactly one title; titles can have many copies.
+  \item Copies belong to exactly one branch.
+  \item Loans represent borrowing events over time and must be recorded historically.
+  \item A reservation is for a title (not for a specific copy), because copies may not be available yet.
+  \item Fines are linked to overdue loans; payments are linked to fines.
+\end{itemize}
+
+These decisions are what make the model coherent.
+
+\subsection{ER-style diagram (minimal)}
+\begin{center}
+\resizebox{0.95\textwidth}{!}{%
+\begin{tikzpicture}[node distance=18mm]
+  \erentity{EMember}{}{Member}{member\_id}{name\\email}
+  \erentity{ETitle}{right=55mm of EMember}{Title}{title\_id}{isbn\\title\\author}
+  \erentity{EBranch}{right=55mm of ETitle}{Branch}{branch\_id}{name\\address}
+  \erentity{ECopy}{below=25mm of ETitle}{Copy}{copy\_id}{barcode\\status}
+  \erentity{ELoan}{below=25mm of EMember}{Loan}{loan\_id}{checkout\_date\\due\_date\\return\_date?}
+  \erentity{ERes}{below=25mm of $(EMember)!0.5!(ETitle)$}{Reservation}{reservation\_id}{request\_date\\status}
+  \erentity{EFine}{below=25mm of ELoan}{Fine}{fine\_id}{amount\\assessed\_date\\status}
+  \erentity{EPay}{below=25mm of EFine}{Payment}{payment\_id}{paid\_at\\amount}
+
+  \errel{RHas}{below=7mm of ETitle}{has}
+  \erconnect{ETitle}{RHas}{1}{0..N}
+  \erconnect{RHas}{ECopy}{1}{1}
+
+  \errel{RLocated}{below=7mm of EBranch}{located\_at}
+  \erconnect{EBranch}{RLocated}{1}{0..N}
+  \erconnect{RLocated}{ECopy}{1}{1}
+
+  % Loan edges: conceptual connections to Member and Copy
+  \draw[er line] (ELoan) -- (EMember)
+    node[pos=0.15,er card,above] {1}
+    node[pos=0.85,er card,above] {1};
+  \draw[er line] (ELoan) -- (ECopy)
+    node[pos=0.15,er card,above] {1}
+    node[pos=0.85,er card,above] {1};
+
+  % Reservation edges: conceptual connections to Member and Title
+  \draw[er line] (ERes) -- (EMember)
+    node[pos=0.15,er card,above] {1}
+    node[pos=0.85,er card,above] {1};
+  \draw[er line] (ERes) -- (ETitle)
+    node[pos=0.15,er card,above] {1}
+    node[pos=0.85,er card,above] {1};
+
+  % Fine edges: conceptual connections to Member and Loan
+  \draw[er line] (EFine) -- (EMember)
+    node[pos=0.15,er card,above] {1}
+    node[pos=0.85,er card,above] {1};
+  \draw[er line] (EFine) -- (ELoan)
+    node[pos=0.15,er card,above] {1}
+    node[pos=0.85,er card,above] {1};
+
+  % Payment edges: conceptual connection to Fine
+  \draw[er line] (EPay) -- (EFine)
+    node[pos=0.15,er card,above] {0..N}
+    node[pos=0.85,er card,above] {1};
+\end{tikzpicture}%
+}
+\end{center}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.75\textwidth]{library-case.pdf}
+\caption{The library diagram separates titles from copies and models loans and reservations as events.}
+\end{figure}
+
+The diagram is intentionally simple.
+The “one active loan per copy” constraint is not drawn; it is specified as a constraint.
+
+\section{Step 3: Relational schema (logical, no SQL)}
+Now we translate meaning into relations with keys and references.
+
+\[
+\rel{Member}(\underline{member\_id}, name, email)
+\]
+\[
+\rel{Title}(\underline{title\_id}, isbn, title, author)
+\]
+\[
+\rel{Branch}(\underline{branch\_id}, name, address)
+\]
+\[
+\rel{Copy}(\underline{copy\_id}, barcode, status, title\_id \rightarrow \rel{Title}, branch\_id \rightarrow \rel{Branch})
+\]
+\[
+\begin{aligned}
+\rel{Loan}(&\underline{loan\_id}, checkout\_date, due\_date, return\_date?, \\
+&member\_id \rightarrow \rel{Member}, copy\_id \rightarrow \rel{Copy})
+\end{aligned}
+\]
+\[
+\begin{aligned}
+\rel{Reservation}(&\underline{reservation\_id}, request\_date, status, \\
+&member\_id \rightarrow \rel{Member}, title\_id \rightarrow \rel{Title})
+\end{aligned}
+\]
+\[
+\begin{aligned}
+\rel{Fine}(&\underline{fine\_id}, amount, assessed\_date, status, \\
+&member\_id \rightarrow \rel{Member}, loan\_id \rightarrow \rel{Loan})
+\end{aligned}
+\]
+\[
+\begin{aligned}
+\rel{Payment}(&\underline{payment\_id}, paid\_at, amount, \\
+&fine\_id \rightarrow \rel{Fine})
+\end{aligned}
+\]
+
+\subsection{Attribute notes}
+Two attributes deserve explicit meaning:
+\begin{itemize}
+  \item \texttt{Copy.status} expresses the library’s view of a copy (available, lost, repair, ...).
+  \item \texttt{Reservation.status} expresses the state of a reservation (active, fulfilled, cancelled, ...).
+  \item \texttt{Fine.status} expresses the state of a fine (open, paid, waived, ...).
+\end{itemize}
+
+In later chapters you may model these as reference entities.
+For now, we keep them as constrained domains.
+
+\subsection{Constraints (conceptual specification)}
+We now specify the constraints that preserve meaning.
+
+\begin{examplebox}
+\textbf{Constraints (library)}\\
+C1: Member.member\_id is unique and mandatory.\\
+C2: Title.title\_id is unique and mandatory.\\
+C3: Copy.copy\_id is unique and mandatory.\\
+C4: Branch.branch\_id is unique and mandatory.\\
+C5: Copy.title\_id references an existing Title and is mandatory.\\
+C6: Copy.branch\_id references an existing Branch and is mandatory.\\
+C7: Loan.member\_id references an existing Member and is mandatory.\\
+C8: Loan.copy\_id references an existing Copy and is mandatory.\\
+C9: Loan.due\_date is on or after Loan.checkout\_date.\\
+C10: A Copy has at most one active Loan at a time.\\
+\hspace*{1.6em}(Active loan = loan with return\_date missing, or status = active.)\\
+C11: Reservation.member\_id references an existing Member and is mandatory.\\
+C12: Reservation.title\_id references an existing Title and is mandatory.\\
+C13: Reservations for a title are served by ascending request\_date.\\
+C14: Fine.loan\_id references an existing Loan and is mandatory.\\
+C15: Payment.fine\_id references an existing Fine and is mandatory.
+\end{examplebox}
+
+Constraint C10 is the key business constraint.
+It is the one that protects the meaning “a copy cannot be loaned to two people at the same time”.
+The definition of “active” must be explicit for this constraint to be enforceable or detectable.
+
+In this model, a loan is active when \texttt{return\_date} is missing (or status = active, if you model status).
+This definition should appear in the constraint catalog and in validation scenarios.
+
+\section{Branches, fines, and queue policy}
+These extensions change the operational meaning of the system.
+They also introduce new constraints that must be explicit.
+
+\subsection{Branches}
+Branches are physical locations.
+Copies belong to one branch, and availability is branch-specific.
+This matters for questions like “which branch has an available copy?”
+
+\subsection{Fines and payments}
+Fines are linked to overdue loans and to the member responsible.
+Payments are linked to fines and can be partial.
+This keeps money flow separate from loan events while maintaining traceability.
+
+\subsection{Reservation queue}
+Reservations are served in first-come-first-served order by request date.
+This is a policy rule, not a database default.
+It must be written as a constraint and reflected in validation.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{reservation-queue.pdf}
+\caption{Reservation queues preserve first-come-first-served order for each title.}
+\end{figure}
+
+\section{Step 5: Validation without SQL}
+
+\subsection{Key questions}
+Choose questions that test the purpose of the system and the central constraints.
+
+\begin{itemize}
+  \item Q1: Which copies are available for a given title?
+  \item Q2: What active loans does a member have?
+  \item Q3: What is the loan history of a copy?
+  \item Q4: Which loans are overdue today?
+  \item Q5: Are there any copies with more than one active loan?
+  \item Q6: What is the reservation queue for a title?
+  \item Q7: Which branch holds the available copies of a title?
+  \item Q8: What fines are outstanding for a member?
+\end{itemize}
+
+The schema supports these questions naturally:
+availability comes from copies and active loans,
+history comes from the loan records,
+and reservations connect members to titles.
+
+\subsection{Rule-to-schema traceability}
+We link rules to design elements.
+
+\begin{examplebox}
+\textbf{Traceability map (library)}\\[4pt]
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Rule & Design element(s) \\
+\midrule
+R4, R5 & Copy.title\_id FK to Title expresses 1:N (C5) \\
+R6 & Copy.branch\_id FK to Branch expresses 1:N (C6) \\
+R7 & Loan has mandatory FKs to Member and Copy (C7, C8) \\
+R8, R9 & Loan has checkout/due dates and optional return\_date (C9) \\
+R10 & One active loan per copy (C10) \\
+R11 & Reservation has mandatory FKs to Member and Title (C11, C12) \\
+R12 & Reservation queue order by request\_date (C13) \\
+R13, R14 & Multiple reservations possible because no uniqueness on those FKs \\
+R15 & Fine references Loan and Member (C14) \\
+R16 & Payment references Fine (C15) \\
+\bottomrule
+\end{tabularx}
+\end{examplebox}
+
+\subsection{Controlled test data (paper test)}
+Construct these scenarios:
+\begin{itemize}
+  \item A title with two copies, one available and one on loan.
+  \item A copy loaned and returned, creating history.
+  \item Two loans for the same copy with missing return\_date (invalid under C10).
+  \item Two reservations for the same title (valid).
+\end{itemize}
+
+If the invalid state is not clearly representable as a violation, you need stronger constraint specification.
+If you cannot represent history cleanly, you likely collapsed events into static relationships.
+
+\subsection{Paper dataset: valid scenario}
+\begin{examplebox}
+\textbf{Valid dataset (excerpt)}\par\smallskip
+\begin{tabular}{@{}llll@{}}
+\toprule
+copy\_id & title\_id & branch\_id & status \\
+\midrule
+C1 & T1 & B1 & available \\
+C2 & T1 & B1 & on\_loan \\
+\bottomrule
+\end{tabular}
+\par\smallskip
+\begin{tabular}{@{}lllll@{}}
+\toprule
+loan\_id & copy\_id & member\_id & checkout\_date & return\_date \\
+\midrule
+L1 & C2 & M1 & 2026-02-01 & \text{missing} \\
+L2 & C2 & M1 & 2025-12-10 & 2025-12-20 \\
+\bottomrule
+\end{tabular}
+\end{examplebox}
+
+\subsection{Paper dataset: invalid scenario}
+\begin{examplebox}
+\textbf{Invalid dataset (violates C10)}\par\smallskip
+\begin{tabular}{@{}lllll@{}}
+\toprule
+loan\_id & copy\_id & member\_id & checkout\_date & return\_date \\
+\midrule
+L3 & C1 & M2 & 2026-02-03 & \text{missing} \\
+L4 & C1 & M3 & 2026-02-04 & \text{missing} \\
+\bottomrule
+\end{tabular}
+\end{examplebox}
+Both loans are active for the same copy, violating the “one active loan per copy” rule.
+
+\section{Design note: why reservations are for titles}
+Some readers try to reserve a copy.
+That seems concrete, but it is usually wrong at the conceptual level.
+A reservation is a promise about future availability, and the library typically fulfils it with any available copy of the title.
+
+Modelling reservations for titles also matches real operations:
+a title can have multiple copies, and copies can be lost, repaired, or replaced.
+If reservations are tied to a specific copy, the system becomes brittle.
+
+This is a general modelling lesson:
+when a concept is a policy about a class of items, it should reference the abstract entity, not a specific instance.
+
+\section{Common mistakes}
+Library models often fail in familiar ways.
+
+Mistake: Collapsing Title and Copy.\\
+Fix: Separate entities so availability and history are clean.
+
+Mistake: Treating reservations as copy-level.\\
+Fix: Reserve the title and allocate a copy when available.
+
+Mistake: Leaving “active loan” undefined.\\
+Fix: Define active explicitly (e.g., return\_date missing) and enforce it.
+
+Mistake: Mixing fines into the loan table.\\
+Fix: Keep fines as a separate entity linked to loans and members.
+
+\section{Mini checklist}
+Before finalizing the library model, check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Are Title and Copy separated with a clear 1:N relationship?
+  \item Is “active loan” defined and used consistently?
+  \item Does each copy belong to one branch?
+  \item Are reservation queues ordered by request date?
+  \item Are fines and payments modelled as separate entities?
+  \item Can the schema represent loan history without duplication?
+  \item Do constraints cover availability and queue policy?
+\end{itemize}
+
+\begin{chaptersummary}
+This case study demonstrates the full workflow in a library domain.
+The key modelling decision is separating titles from copies, and representing borrowing as a time-based event via loans.
+Constraints, especially “one active loan per copy”, preserve correctness.
+Validation through questions, traceability, and paper tests makes the design defensible before implementation.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Extend the library model.
+Answer in full sentences, then update the schema in book notation.
+\begin{enumerate}[label=\arabic*.]
+  \item Add support for multiple authors per title. Decide whether Author is an entity and model it.
+  \item Add fines for overdue loans. Decide what facts should be stored versus derived.
+  \item Add a branch concept (multiple library locations) and decide where copies belong.
+  \item Add a rule limiting maximum active loans per member and describe how it would be enforced or detected.
+  \item Update the traceability map for your new rules and constraints.
+  \item Define “active loan” precisely and write the corresponding constraint in words.
+  \item Create a valid and an invalid paper dataset for reservations and explain the queue policy.
+  \item Add payments for fines and list two constraints that protect correctness.
+\end{enumerate}
+\end{exercisebox}
+
+In the next chapter we focus on state and time.
+Loan history, reservation queues, and fine status will connect directly to those concepts.

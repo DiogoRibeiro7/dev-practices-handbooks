@@ -1,0 +1,42 @@
+% chapters/appendix-ch11-sql.tex
+\chapter{SQL Appendix: Chapter 11 (State and Time)}
+
+\section{DDL}
+\begin{verbatim}
+CREATE TABLE copy (
+  copy_id INT PRIMARY KEY AUTO_INCREMENT,
+  status VARCHAR(20) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE loan (
+  loan_id INT PRIMARY KEY AUTO_INCREMENT,
+  copy_id INT NOT NULL,
+  checkout_date DATE NOT NULL,
+  return_date DATE NULL,
+  CONSTRAINT fk_loan_copy FOREIGN KEY (copy_id) REFERENCES copy(copy_id)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO copy (status) VALUES ('available'), ('on_loan');
+INSERT INTO loan (copy_id, checkout_date, return_date)
+VALUES (2, '2026-02-01', NULL);
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Derive active state from events
+SELECT c.copy_id,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM loan l
+         WHERE l.copy_id = c.copy_id AND l.return_date IS NULL
+       ) THEN 'on_loan' ELSE 'available' END AS derived_status
+FROM copy c;
+
+-- Q2: Detect mismatch if status is stored
+SELECT c.copy_id, c.status
+FROM copy c
+WHERE c.status = 'available'
+  AND EXISTS (SELECT 1 FROM loan l WHERE l.copy_id = c.copy_id AND l.return_date IS NULL);
+\end{verbatim}

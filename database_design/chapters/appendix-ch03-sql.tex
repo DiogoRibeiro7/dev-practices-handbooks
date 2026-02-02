@@ -1,0 +1,61 @@
+% chapters/appendix-ch03-sql.tex
+\chapter{SQL Appendix: Chapter 3 (Keys and Identity)}
+
+\section{DDL}
+\begin{verbatim}
+CREATE TABLE student (
+  student_id INT PRIMARY KEY AUTO_INCREMENT,
+  full_name VARCHAR(120) NOT NULL,
+  email VARCHAR(200) NULL UNIQUE
+) ENGINE=InnoDB;
+
+CREATE TABLE course (
+  course_id INT PRIMARY KEY AUTO_INCREMENT,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  title VARCHAR(200) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE enrollment (
+  student_id INT NOT NULL,
+  course_id INT NOT NULL,
+  term VARCHAR(10) NOT NULL,
+  grade VARCHAR(2) NULL,
+  PRIMARY KEY (student_id, course_id, term),
+  CONSTRAINT fk_enroll_student FOREIGN KEY (student_id) REFERENCES student(student_id),
+  CONSTRAINT fk_enroll_course FOREIGN KEY (course_id) REFERENCES course(course_id)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO student (full_name, email)
+VALUES
+  ('Marta Lima', 'marta@uni.edu'),
+  ('Rui Nunes', NULL);
+
+INSERT INTO course (code, title)
+VALUES
+  ('DB101', 'Database Design'),
+  ('CS120', 'Programming Fundamentals');
+
+INSERT INTO enrollment (student_id, course_id, term, grade)
+VALUES
+  (1, 1, '2025-FALL', 'A'),
+  (1, 1, '2026-SPR', NULL),
+  (2, 2, '2026-SPR', NULL);
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Enrollments per student and term
+SELECT student_id, course_id, term
+FROM enrollment
+WHERE student_id = 1;
+
+-- Q2: Students with duplicate emails (should be none)
+SELECT email, COUNT(*)
+FROM student
+WHERE email IS NOT NULL
+GROUP BY email
+HAVING COUNT(*) > 1;
+\end{verbatim}

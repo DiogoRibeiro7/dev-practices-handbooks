@@ -1,0 +1,13 @@
+% figures/documentation-layers.tex
+\documentclass[11pt]{article}
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\pagestyle{empty}
+\begin{document}
+\begin{tikzpicture}[node distance=8mm]
+  \node[draw, rectangle, minimum width=6cm, minimum height=0.9cm, align=center] (readme) {Project README (purpose, scope)};
+  \node[draw, rectangle, minimum width=6cm, minimum height=0.9cm, align=center, below=8mm of readme] (spec) {Schema spec (relations, rules)};
+  \node[draw, rectangle, minimum width=6cm, minimum height=0.9cm, align=center, below=8mm of spec] (dec) {Decision records (why)};
+\end{tikzpicture}
+\end{document}

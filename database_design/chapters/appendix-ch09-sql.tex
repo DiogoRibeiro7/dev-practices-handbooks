@@ -1,0 +1,68 @@
+% chapters/appendix-ch09-sql.tex
+\chapter{SQL Appendix: Chapter 9 (Clinic Case Study)}
+
+\section{DDL}
+\begin{verbatim}
+CREATE TABLE patient (
+  patient_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE doctor (
+  doctor_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE room (
+  room_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(50) NOT NULL UNIQUE
+) ENGINE=InnoDB;
+
+CREATE TABLE appointment (
+  appointment_id INT PRIMARY KEY AUTO_INCREMENT,
+  start_time DATETIME NOT NULL,
+  duration_min INT NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  patient_id INT NOT NULL,
+  doctor_id INT NOT NULL,
+  room_id INT NULL,
+  CONSTRAINT fk_appt_patient FOREIGN KEY (patient_id) REFERENCES patient(patient_id),
+  CONSTRAINT fk_appt_doctor FOREIGN KEY (doctor_id) REFERENCES doctor(doctor_id),
+  CONSTRAINT fk_appt_room FOREIGN KEY (room_id) REFERENCES room(room_id),
+  CONSTRAINT chk_status CHECK (status IN ('scheduled','cancelled')),
+  CONSTRAINT chk_duration CHECK (duration_min > 0)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO patient (name) VALUES ('Ana Costa'), ('Rui Silva');
+INSERT INTO doctor (name) VALUES ('Joana Reis'), ('Hugo Pereira');
+INSERT INTO room (name) VALUES ('R1'), ('R2');
+
+INSERT INTO appointment (start_time, duration_min, status, patient_id, doctor_id, room_id)
+VALUES
+  ('2026-02-06 09:00:00', 60, 'scheduled', 1, 1, 1),
+  ('2026-02-06 10:30:00', 30, 'cancelled', 2, 1, NULL);
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Doctor schedule
+SELECT a.start_time, a.duration_min, a.status, r.name AS room
+FROM appointment a
+LEFT JOIN room r ON r.room_id = a.room_id
+WHERE a.doctor_id = 1
+ORDER BY a.start_time;
+
+-- Q2: Room overlap check
+SELECT a.appointment_id, b.appointment_id
+FROM appointment a
+JOIN appointment b
+  ON a.room_id = b.room_id
+ AND a.appointment_id < b.appointment_id
+ AND a.status = 'scheduled'
+ AND b.status = 'scheduled'
+ AND a.start_time < DATE_ADD(b.start_time, INTERVAL b.duration_min MINUTE)
+ AND b.start_time < DATE_ADD(a.start_time, INTERVAL a.duration_min MINUTE);
+\end{verbatim}

@@ -1,0 +1,290 @@
+% chapters/ch02-core-concepts.tex
+\chapter{Core Concepts: Entities, Relationships, and Constraints}
+
+\begin{learningobjectives}
+In this chapter you will learn the core modelling vocabulary used throughout the book.
+You will be able to identify entities and attributes, describe relationships with cardinality and optionality, and express domain rules as constraints.
+\end{learningobjectives}
+
+\section{Entities and attributes}
+The first modelling decision is to separate \emph{what exists} from \emph{what is merely a property}.
+In relational design, this distinction matters because it determines where identity lives and where rules can be enforced.
+
+An \term{entity} is something you need to refer to as a stable “thing”.
+It persists across time, and you can talk about multiple instances of it.
+In a clinic domain, \term{Doctor} and \term{Patient} are entities because you need to track them independently of any single appointment.
+In a library domain, \term{Member}, \term{Title}, and \term{Copy} are entities for the same reason.
+
+\begin{definitionbox}
+An \term{entity} is a thing with identity.
+An \term{attribute} is a property that describes an entity.
+\end{definitionbox}
+
+Attributes do not have independent identity inside the model.
+You do not “reference” a birth date or an email as a thing; you reference the patient or the member.
+That is why attributes belong \emph{inside} an entity, while entities become relations later.
+
+A practical test helps.
+If you remove the surrounding entity, does the concept still make sense as something you track and reference?
+If yes, it likely deserves entity status.
+If no, it is likely an attribute.
+This test is not perfect, but it prevents many beginner models from turning every noun into a table.
+
+\begin{principlebox}
+Model identity first.
+If you cannot name the thing you are modelling, you cannot reference it.
+\end{principlebox}
+
+\section{Relationships: describing how entities connect}
+Entities do not live in isolation.
+A relational database is mostly about capturing how entities connect, and how those connections constrain what data is valid.
+
+A \term{relationship} expresses an association between entities.
+Some relationships are simple (“a patient has appointments”).
+Others carry meaning that must be preserved (“a member borrows a copy via a loan that has dates”).
+When a relationship carries its own meaning or properties, it often becomes a first-class structure later.
+
+\begin{definitionbox}
+A \term{relationship} is an association between entities, described by:
+\begin{itemize}
+  \item \term{cardinality}: how many instances can participate,
+  \item \term{optionality}: whether participation can be absent,
+  \item and sometimes \term{relationship attributes}: properties that belong to the association itself.
+\end{itemize}
+\end{definitionbox}
+
+Even before drawing any diagram, you should be able to say relationships out loud in a precise sentence.
+For example: “Each appointment is with exactly one doctor and exactly one patient.”
+This sentence already encodes a large part of the final schema.
+
+\section{Cardinality and optionality}
+Cardinality answers “how many”.
+Optionality answers “must it exist”.
+Together they define the shape of the model.
+
+Consider the clinic.
+A patient can have many appointments over time.
+But for any given appointment, there is exactly one patient.
+This is a one-to-many relationship: \(\text{Patient} \rightarrow \text{Appointment}\).
+
+The same logic applies to doctors.
+A doctor can have many appointments, but each appointment refers to exactly one doctor.
+
+Optionality is the second dimension.
+A patient might exist without any appointments yet, which means the patient-to-appointments relationship is optional on the appointment side from the patient’s perspective.
+But an appointment without a patient is typically invalid, so participation of patient in an appointment is mandatory.
+
+You can express this informally with ranges:
+\[
+0..N,\; 1..N,\; 0..1,\; 1..1
+\]
+These ranges are not database syntax.
+They are a disciplined way to state meaning.
+
+\begin{examplebox}
+\textbf{Clinic relationship meaning}\\
+A patient may have zero or many appointments (\(0..N\)).\\
+An appointment must have exactly one patient (\(1..1\)).\\
+A doctor may have zero or many appointments (\(0..N\)).\\
+An appointment must have exactly one doctor (\(1..1\)).
+\end{examplebox}
+
+This level of precision is enough to translate to a correct relational design later.
+It also prevents a common mistake: modelling what is “typical” instead of what is “allowed”.
+If the model says “a patient must have at least one appointment”, you have introduced a rule that the real world usually does not have.
+
+\begin{examplebox}
+\textbf{University relationship meaning}\\
+A student may have zero or many enrollments (\(0..N\)).\\
+An enrollment must have exactly one student (\(1..1\)).\\
+A course may have zero or many enrollments (\(0..N\)).\\
+An enrollment must have exactly one course (\(1..1\)).
+\end{examplebox}
+
+\section{Many-to-many relationships and why they matter}
+Many-to-many relationships are the most important ones to recognise early because they change the structure of the relational schema.
+They cannot be represented as a single foreign key on one side without losing information or creating duplication.
+
+A classic example is “doctors have specialties”.
+A doctor can have many specialties, and a specialty can apply to many doctors.
+If you try to store specialties as a single attribute on Doctor, you either restrict reality (one specialty only) or create repeating groups (“specialty1, specialty2, specialty3”) which breaks basic relational structure.
+
+In the library, the many-to-many shape appears in other ways, such as authors and titles if you model co-authors properly.
+Whenever you see many-to-many, you should anticipate an association structure later.
+
+\begin{examplebox}
+\textbf{Doctor \(\leftrightarrow\) Specialty is many-to-many}\\
+One doctor can have many specialties.\\
+One specialty can belong to many doctors.\\
+This will later require a dedicated association relation.
+\end{examplebox}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.75\textwidth]{many-to-many.pdf}
+\caption{A many-to-many relationship requires an association structure to preserve meaning.}
+\end{figure}
+
+\section{Keys are not optional: identity is the backbone}
+You cannot reason about relationships without identity.
+If you cannot identify an entity instance, you cannot reference it, and you cannot enforce rules about it.
+
+This is why every entity in a conceptual model must have a notion of a key, even if you do not decide the exact implementation yet.
+Sometimes a natural key exists (ISBN for a title).
+Sometimes it is better to use a surrogate key for stability and enforce natural uniqueness separately.
+The important point here is that identity must be explicit.
+
+\begin{principlebox}
+Do not confuse “unique in practice” with “unique by rule.”
+Identity is a rule, not an observation.
+\end{principlebox}
+
+\section{Constraints: turning rules into enforceable structure}
+A model without constraints is a sketch.
+A relational database becomes reliable when constraints encode the rules of the domain.
+Constraints are not “extra”. They are part of the meaning.
+
+\begin{definitionbox}
+A \term{constraint} is a condition that valid data must satisfy.
+Constraints exist to prevent invalid states and preserve domain meaning.
+\end{definitionbox}
+
+It helps to classify constraints, because different constraints are enforced in different ways.
+
+\subsection{Entity integrity}
+Entity integrity is about identity.
+Primary keys must uniquely identify rows, and they must be present.
+If identity can be missing or duplicated, the model collapses.
+
+\subsection{Referential integrity}
+Referential integrity is about relationships.
+When one relation references another, the referenced thing must exist.
+This is how the database prevents “dangling references”, such as an appointment pointing to a patient that does not exist.
+
+\subsection{Domain constraints}
+Domain constraints restrict allowed values.
+A due date should not be before a checkout date.
+A status attribute should come from a defined set.
+Domain constraints are often the cheapest way to prevent silent corruption.
+
+\subsection{Business constraints}
+Business constraints are domain-specific rules that go beyond simple types and references.
+“No double booking” in the clinic is a business constraint.
+“So long as a copy has an active loan, it cannot have another active loan” is a business constraint in the library.
+These constraints are the ones people forget, and they are usually the ones that cause real incidents.
+
+\begin{examplebox}
+\textbf{Clinic constraint idea}\\
+Rule: “A doctor cannot have two appointments at the same start time.”\\
+Design intention: prevent duplicate pairs (doctor\_id, start\_time) in appointments.
+\end{examplebox}
+
+\begin{notebox}
+Do not postpone constraints with the hope that “application logic will handle it.”
+Once invalid states exist, every future analysis becomes suspect.
+\end{notebox}
+
+\section{A small ER-style diagram for communication}
+At this point, diagrams become useful.
+Not because diagrams are the goal, but because they force you to show identity, relationships, and constraints in one place.
+In this book, diagrams are used as communication devices: they help a reader see what the rules imply.
+
+The diagram below is intentionally minimal.
+It is enough to talk about the model and to catch missing relationships early.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.75\textwidth]{er-skeleton.pdf}
+\caption{A minimal ER skeleton shows entities, a relationship, and directional participation.}
+\end{figure}
+
+% Add these lines to your document preamble (before \begin{document}):
+% \usepackage{tikz}
+% \usetikzlibrary{positioning,shapes,arrows}
+
+% Define ER diagram helpers in your preamble:
+% Place the following in your main .tex file preamble (not in the chapter file):
+
+% \usepackage{tikz}
+% \usetikzlibrary{positioning,shapes,arrows}
+% \newcommand{\erentity}[5]{%
+%   \node[draw, rectangle, minimum width=2.5cm, minimum height=1cm, anchor=center] (#1) [#2] {%
+%     \textbf{#3}\\
+%     \scriptsize\texttt{#4}\\
+%     \scriptsize #5
+%   };
+% }
+% \newcommand{\errel}[3]{%
+%   \node[draw, diamond, aspect=2, minimum width=1.5cm, minimum height=1cm, anchor=center] (#1) [#2] {%
+%     \scriptsize #3
+%   };
+% }
+% \newcommand{\erconnect}[4]{%
+%   \draw[->] (#1) -- (#2) node[midway, above, sloped, font=\scriptsize] {#3/#4};
+% }
+
+\begin{center}
+\begin{tikzpicture}[node distance=18mm]
+  \erentity{EPatient}{}{Patient}{patient\_id}{name\\birth\_date}
+  \erentity{EDoctor}{right=48mm of EPatient}{Doctor}{doctor\_id}{name\\specialty}
+  \erentity{EAppt}{below=25mm of $(EPatient)!0.5!(EDoctor)$}{Appointment}{appointment\_id}{start\_time}
+
+  \errel{RBooks}{below=7mm of EPatient}{books}
+  \errel{RSched}{below=7mm of EDoctor}{scheduled\_with}
+
+  \erconnect{EPatient}{RBooks}{1}{0..N}
+  \erconnect{RBooks}{EAppt}{1}{1}
+
+  \erconnect{EDoctor}{RSched}{1}{0..N}
+  \erconnect{RSched}{EAppt}{1}{1}
+\end{tikzpicture}
+\end{center}
+
+If you cannot draw a diagram like this without hesitation, it is usually a sign that the rules are still vague.
+In that case, you should return to the rule list and refine it.
+A diagram should be a consequence of clarity, not a substitute for it.
+
+\section{Common mistakes}
+The core vocabulary is simple, but mistakes are consistent.
+
+The first mistake is treating attributes as entities.
+If a property has no independent identity, it should not be a relation.
+
+The second mistake is ignoring optionality.
+If you do not specify it, your schema will usually allow invalid states.
+
+The third mistake is collapsing many-to-many relationships.
+A list inside one entity is not a relationship; it is a modelling shortcut.
+
+The fourth mistake is describing relationships without constraints.
+If you cannot state the rule as a testable sentence, it will not be enforced.
+
+\section{Mini checklist}
+Before you move to schema translation, check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Each entity has a clear identity rule.
+  \item Every relationship has stated cardinality and optionality.
+  \item Many-to-many relationships are recognized early.
+  \item At least one business constraint is written for each key relationship.
+\end{itemize}
+
+\begin{chaptersummary}
+Relational design starts with a clear conceptual vocabulary.
+Entities represent identity, attributes describe entities, and relationships capture associations with cardinality and optionality.
+Constraints are how rules become enforceable structure.
+If you can state the model precisely in words, you can translate it reliably into a relational schema later.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Write a conceptual model in plain language for a small domain (library, gym, university, online shop).
+Do not draw yet.
+\begin{enumerate}[label=\arabic*.]
+  \item List the entities and write one sentence for each explaining why it needs identity.
+  \item For each pair of entities that connect, write the relationship in a precise sentence.
+  \item For each relationship, state cardinality and optionality (\(0..N, 1..1\), etc.).
+  \item Write 6 constraints: at least 2 referential, 2 domain, and 2 business constraints.
+  \item Identify one many-to-many relationship and explain why it cannot be stored as a single attribute.
+  \item Choose one attribute and argue why it should not be an entity.
+  \item Propose a minimal ER diagram with three entities and one relationship.
+\end{enumerate}
+\end{exercisebox}

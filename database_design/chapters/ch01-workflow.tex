@@ -1,0 +1,239 @@
+% chapters/ch01-workflow.tex
+\chapter{The Design Workflow}
+
+\begin{learningobjectives}
+In this chapter you will learn a repeatable way to design relational databases without relying on SQL.
+You will be able to move from a domain description to a schema that is justified by rules and validated by questions.
+\end{learningobjectives}
+
+\section{What database design is}
+Relational database design is often introduced as “creating tables”. That framing is convenient, but it is not accurate.
+Tables are a \emph{representation}. Design is the work that happens before representation becomes safe.
+
+When design is weak, the system still runs, but meaning becomes unstable.
+Facts get duplicated, updates require manual discipline, and invalid states slip into the data because nothing prevents them.
+In practice, most “data problems” in organisations are design problems: the model did not make the rules explicit.
+
+\begin{definitionbox}
+A \term{relational design} is a model of a domain that preserves meaning and supports correctness.
+It does this by making identity explicit and by enforcing (or supporting enforcement of) the domain rules as constraints.
+\end{definitionbox}
+
+The key idea is simple: data is not just stored, it is \emph{constrained}.
+A schema is a statement about what is allowed to exist.
+If the schema allows the wrong states, the application will eventually contain wrong states.
+
+\section{The workflow as a discipline}
+A beginner often asks: “Where do I start?” The correct answer is: you start with the domain, not with the database.
+You describe the world you are modelling, then you force that description to become precise.
+Only then do you translate it into relational structures.
+
+\begin{principlebox}
+Use this workflow throughout the book:
+\[
+\text{Story} \rightarrow \text{Business rules} \rightarrow \text{Conceptual model} \rightarrow
+\text{Relational schema} \rightarrow \text{Validation}
+\]
+\end{principlebox}
+
+This workflow is not a bureaucratic ritual.
+It exists because each step removes a different kind of ambiguity.
+A story is expressive but vague; rules are precise but incomplete; a conceptual model gives structure; the relational schema commits to enforceable choices; validation tests whether you actually captured the domain.
+
+\section{Step 1: Write a small, realistic story}
+A story is not a requirements document.
+It should be short, concrete, and close to what people say in real life.
+The goal is to capture the domain in a way that a reader can challenge.
+
+\begin{examplebox}
+\textbf{Clinic story (minimal)}\\
+A clinic has doctors and patients.
+Patients book appointments with doctors.
+Each appointment has a start time.
+A doctor cannot have two appointments at the same time.
+\end{examplebox}
+
+Stories can be short in other domains too.
+
+\begin{examplebox}
+\textbf{University story (minimal)}\\
+A university offers courses.
+Students enroll in courses each semester.
+An enrollment records the date and final grade.
+A student cannot enroll in the same course twice in the same semester.
+\end{examplebox}
+
+Notice what is \emph{not} in the story: edge cases, exceptional policies, performance concerns, and implementation details.
+Those belong later.
+If you start with them, you will build complexity before you have correctness.
+
+\section{Step 2: Convert the story into business rules}
+Stories are valuable because they contain meaning, but they are dangerous because they allow interpretation.
+The next step is to write rules that are testable.
+A rule must be something that can be true or false for a given database state.
+If a statement cannot be tested, it will not be enforceable, and it will not guide design decisions.
+
+\begin{definitionbox}
+A \term{business rule} is a testable statement that must always hold for the system to be correct.
+A good rule is unambiguous, stable, and written in plain language.
+\end{definitionbox}
+
+From the clinic story we can extract a small set of rules.
+These are not “final”; they are the first precise version of the domain.
+
+\begin{examplebox}
+\textbf{Business rules (clinic)}\\
+R1: A patient can have many appointments.\\
+R2: A doctor can have many appointments.\\
+R3: An appointment is with exactly one patient.\\
+R4: An appointment is with exactly one doctor.\\
+R5: Every appointment has a start time.\\
+R6: A doctor cannot be double-booked at the same start time.
+\end{examplebox}
+
+Two points matter here.
+First, the words “many” and “exactly one” are doing real work: they imply cardinality and optionality.
+Second, rule R6 is not merely descriptive; it is a constraint that should prevent invalid states.
+
+\begin{deliverablebox}
+For each domain chapter, aim for 10--20 rules.
+At minimum, include: one uniqueness rule, one optionality rule, and one time-related rule.
+If your rules do not include these, your model will usually miss critical constraints.
+\end{deliverablebox}
+
+\begin{principlebox}
+Write rules before drawing structures.
+If a rule is not written, it is not enforceable.
+\end{principlebox}
+
+\section{Step 3: Build a conceptual model}
+Rules are precise, but they are not structured.
+A conceptual model gives structure by identifying what exists and how it connects.
+
+At this stage you decide what the entities are, what attributes belong to them, and which relationships exist between entities.
+You also decide cardinalities: whether a relationship is one-to-one, one-to-many, or many-to-many.
+These decisions are not about database syntax.
+They are about meaning.
+
+For the clinic, the conceptual picture is straightforward.
+The domain contains doctors, patients, and appointments.
+Appointments connect one doctor to one patient at a specific time.
+The relationships “patient has appointments” and “doctor has appointments” are both one-to-many.
+That conceptual understanding is the foundation for the relational schema.
+
+\section{Step 4: Translate into a relational schema (still no SQL)}
+The relational schema is where you commit.
+Entities become relations, identity becomes keys, and relationships become references.
+If your conceptual model is clear, this translation is not creative; it is disciplined.
+
+This book uses a compact notation:
+\[
+\begin{aligned}
+\rel{Appointment}(&\underline{appointment\_id}, start\_time, \\
+&patient\_id \rightarrow \rel{Patient}, doctor\_id \rightarrow \rel{Doctor})
+\end{aligned}
+\]
+The underline indicates the primary key, and the arrow indicates a reference to another relation.
+
+In the clinic, the schema is small:
+\[
+\rel{Patient}(\underline{patient\_id}, name, birth\_date)
+\]
+\[
+\rel{Doctor}(\underline{doctor\_id}, name, specialty)
+\]
+\[
+\begin{aligned}
+\rel{Appointment}(&\underline{appointment\_id}, start\_time, \\
+&patient\_id \rightarrow \rel{Patient}, doctor\_id \rightarrow \rel{Doctor})
+\end{aligned}
+\]
+
+The important work is not the existence of these relations.
+It is the constraints implied by the rules.
+For example, rules R3 and R4 imply that the references from \rel{Appointment} to \rel{Patient} and \rel{Doctor} are mandatory.
+Rule R6 implies a constraint that prevents two appointments from using the same doctor at the same start time.
+In a real database, the enforcement mechanism depends on how time is represented (discrete slots or intervals), but the modelling intention is already clear.
+
+\begin{notebox}
+Do not add SQL early to “make it feel real.”
+SQL can hide weak modelling decisions behind syntax.
+If the meaning is unclear now, SQL will not fix it later.
+\end{notebox}
+
+\section{Step 5: Validate the design without SQL}
+A schema is not correct because it “looks right”.
+It is correct because it supports the rules and the questions the domain must answer.
+Validation is how you prevent elegant-looking diagrams from becoming wrong systems.
+
+One form of validation is question-driven.
+You write the key questions and check whether the schema can represent their answers cleanly.
+For the clinic, typical questions include: listing appointments for a patient, listing a doctor’s schedule for a day, and detecting double bookings.
+If these questions require awkward structures or duplicated facts, the design is usually wrong.
+
+A second form of validation is traceability.
+You map each rule to the schema element that enforces it or supports enforcing it.
+
+\begin{examplebox}
+\textbf{Rule-to-schema traceability (clinic)}\\[4pt]
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Rule & Design element(s) \\
+\midrule
+R3 & Appointment.patient\_id is a mandatory reference to Patient \\
+R4 & Appointment.doctor\_id is a mandatory reference to Doctor \\
+R6 & Constraint preventing duplicate (doctor\_id, start\_time) in Appointment \\
+\bottomrule
+\end{tabularx}
+\end{examplebox}
+
+Traceability is not busywork.
+It is how you prove that your schema matches your intended meaning.
+If a rule has no corresponding design element, it is either missing from the model or being enforced elsewhere.
+Both cases should be explicit.
+
+\section{Common mistakes}
+The workflow fails in predictable ways.
+
+The first mistake is to skip the story and jump straight to relations.
+This produces schemas that look tidy but do not match real rules.
+
+The second mistake is to write vague rules like “a patient has appointments.”
+Vague rules do not tell you whether appointments are mandatory, unique, or time-bound.
+
+The third mistake is to treat validation as optional.
+If you do not test rules against the schema, you are guessing, not designing.
+
+The fourth mistake is to add technical details too early.
+Performance and tooling matter later, but correctness must come first.
+
+\section{Mini checklist}
+Use this list before you move to the next chapter:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Do you have a short story in plain language?
+  \item Do you have 10--20 testable business rules?
+  \item Are entities and relationships named and consistent?
+  \item Do you have a compact schema with keys and references?
+  \item Can you trace the most important rules to the schema?
+\end{itemize}
+
+\begin{chaptersummary}
+Relational design becomes manageable when you treat it as a workflow.
+You start with a small story, force it into testable rules, structure it with a conceptual model, and translate it into a schema with keys and references.
+Finally, you validate the result by checking that rules are traceable and key questions are representable.
+This is how design becomes defensible, even before writing a single SQL statement.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Answer in full sentences.
+\begin{enumerate}[label=\arabic*.]
+  \item Write a short story (6--8 sentences) for a domain you know.
+  \item Extract 12 testable business rules from the story.
+  \item Classify each rule as identity, relationship, domain, or business constraint.
+  \item List the entities and relationships in plain language with cardinalities.
+  \item Write a first relational schema using the book notation.
+  \item Create a traceability map for at least 6 rules.
+  \item State two key questions your schema must answer and explain where the data lives.
+\end{enumerate}
+\end{exercisebox}
+

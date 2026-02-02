@@ -1,0 +1,298 @@
+% chapters/ch05-normalization.tex
+\chapter{Redundancy and Normalization}
+
+\begin{learningobjectives}
+In this chapter you will learn why redundancy is dangerous and how normalization helps.
+You will be able to recognise update, insert, and delete anomalies, explain the idea of functional dependency in plain language, and apply a minimal normalization toolkit (1NF, 2NF, 3NF) without turning the topic into algebra.
+\end{learningobjectives}
+
+\section{Why redundancy is a correctness problem}
+Redundancy looks harmless at first.
+You store the same fact in multiple places, and everything still works.
+The problem is that redundant facts do not remain consistent by accident.
+They remain consistent only if every future update is done perfectly.
+Real systems do not behave that way, especially when multiple people and services write data.
+
+Normalization is not primarily about aesthetics.
+It is a way of designing schemas so that each fact has a clear home.
+When facts have a clear home, you reduce inconsistency and simplify enforcement of rules.
+
+\begin{definitionbox}
+\term{Redundancy} is the repeated storage of the same fact in multiple places.
+A redundancy becomes harmful when it creates \term{anomalies}: situations where valid updates, inserts, or deletes produce invalid states or unintended data loss.
+\end{definitionbox}
+
+\begin{principlebox}
+\textbf{One fact, one home}\\
+If two rows can disagree about the same fact, the schema is already failing.
+Normalization is the discipline of giving each fact a single home.
+\end{principlebox}
+
+\section{How to spot redundancy early}
+Redundancy shows up in predictable ways.
+If you learn to recognise them early, you avoid large refactors later.
+
+Repeated text fields are the first signal.
+If the same name, address, or description appears in many rows, ask which entity actually owns that fact.
+
+Code+name duplication is another signal.
+If you store a code and its label together across many rows, you are likely repeating a fact that should live in its own relation.
+
+Copy-paste facts are the most dangerous signal.
+If you find yourself copying attributes from one table to another “for convenience,” you are creating a future inconsistency.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{normalization-before-after.pdf}
+\caption{Normalization separates entity facts from event facts to remove redundancy.}
+\end{figure}
+
+\section{The three classic anomalies}
+The anomaly triad is worth learning because it gives you a practical detection method.
+
+An \term{update anomaly} happens when a fact appears in several rows and must be updated in all of them.
+If one row is missed, the database ends up containing contradictory facts.
+
+An \term{insert anomaly} happens when you cannot insert one fact without inventing another.
+This often appears when a schema forces you to create a relationship record just to represent an entity that should exist independently.
+
+A \term{delete anomaly} happens when deleting one record removes a fact you did not intend to remove.
+The schema couples facts that should be independent.
+
+These anomalies are not rare edge cases.
+They happen naturally in schemas that mix “entity facts” with “event facts” in the same structure.
+
+\section{Normalization reasoning and worked examples}
+Normalization is easiest to understand when you start from something that looks like a spreadsheet.
+We will use informal dependencies, a minimal toolkit, and two worked examples to show the reasoning.
+Consider a naive attempt to record appointments:
+
+\begin{examplebox}
+\textbf{Bad design: mixed facts in one relation}\par\smallskip
+\[
+\begin{aligned}
+\rel{AppointmentRecord}(&\underline{appointment\_id}, start\_time, doctor\_name, \\
+&doctor\_specialty, patient\_name, patient\_birth\_date)
+\end{aligned}
+\]
+\end{examplebox}
+
+This table mixes appointment facts (start\_time) with doctor facts (name, specialty) and patient facts (name, birth\_date).
+As a result, the same doctor information will be repeated in every row for that doctor.
+The same patient information will be repeated in every row for that patient.
+
+Now the anomalies appear immediately.
+
+If a doctor changes specialty, you must update every appointment row for that doctor.
+That is an update anomaly.
+If you want to register a doctor before any appointments exist, you cannot do it without creating a fake appointment record.
+That is an insert anomaly.
+If you delete the only appointment a patient has, you may lose the only stored copy of that patient’s details.
+That is a delete anomaly.
+
+The table is not merely “not normalized”.
+It makes correct operations fragile.
+
+\subsection{The informal idea of functional dependency}
+Normalization is often taught with formal definitions.
+You can do that later.
+For design work, you mainly need one idea: some attributes determine others.
+
+If knowing one attribute always implies a specific value of another attribute, then the first attribute determines the second.
+For example, if patient\_id uniquely identifies a patient, then patient\_id determines patient\_birth\_date.
+In other words, patient facts should live where patient\_id is the key.
+
+\begin{definitionbox}
+An \term{informal functional dependency} means: “If you know \(X\), you can determine \(Y\).”
+We write this as \(X \rightarrow Y\).
+\end{definitionbox}
+
+In the bad appointment table, we implicitly claim:
+\[
+appointment\_id \rightarrow doctor\_name,\; doctor\_specialty,\; patient\_name,\; patient\_birth\_date
+\]
+But that is conceptually wrong.
+An appointment id should determine appointment details.
+Doctor details should be determined by doctor identity, and patient details by patient identity.
+
+Normalization is the act of aligning “what determines what” with keys and relation boundaries.
+
+\begin{examplebox}
+\textbf{University: course and department facts}\par\smallskip
+If each course belongs to one department, then department data should not be repeated in the course offering rows:
+\[
+\begin{aligned}
+\rel{Course}(&\underline{course\_id}, code \;[\text{unique}], title, \\
+&department\_id \rightarrow \rel{Department})
+\end{aligned}
+\]
+\[
+\rel{Department}(\underline{department\_id}, name, office\_location)
+\]
+Course offerings can then reference \rel{Course} without repeating department facts.
+\end{examplebox}
+
+\subsection{A minimal normalization toolkit}
+You do not need to memorise every normal form in the beginning.
+A minimal toolkit is enough to produce robust schemas in most student projects.
+
+\begin{principlebox}
+\textbf{Normalize by dependency}\\
+If an attribute depends on only part of a key, or on another non-key attribute, it belongs elsewhere.
+Use dependencies to guide where facts live.
+\end{principlebox}
+
+\subsubsection{First Normal Form (1NF)}
+1NF is about representation.
+Attributes should be atomic, and relations should not contain repeating groups.
+If you store multiple values in one field, the relational model cannot constrain or query them reliably.
+
+A common violation is a column like \texttt{phones = "912..., 934..., 965..."}.
+This is not a single attribute.
+It is a collection hidden inside a string.
+
+The correction is not “split the string later”.
+The correction is to represent the collection as a relation.
+
+\begin{examplebox}
+\textbf{From multivalued attribute to relation}\\[2pt]
+Instead of:
+\[
+\rel{Member}(\underline{member\_id}, name, phones)
+\]
+use:
+\[
+\rel{Member}(\underline{member\_id}, name)
+\]
+\[
+\rel{MemberPhone}(\underline{member\_id} \rightarrow \rel{Member}, \underline{phone\_number})
+\]
+\end{examplebox}
+
+\subsubsection{Second Normal Form (2NF)}
+2NF matters when a relation has a composite primary key.
+A relation violates 2NF when a non-key attribute depends on only part of that composite key.
+
+This often happens in association relations where someone incorrectly stores attributes of one side.
+For example, consider an association \rel{DoctorSpecialty}(doctor\_id, specialty\_id).
+If you also store \texttt{doctor\_name} in this relation, then doctor\_name depends only on doctor\_id, not on the pair.
+That creates redundancy and anomalies.
+
+The correction is simple: move doctor attributes to \rel{Doctor}.
+
+\subsubsection{Third Normal Form (3NF)}
+3NF is about avoiding non-key attributes determining other non-key attributes.
+A common pattern is storing a code and its description together in the same relation when the description is determined by the code.
+
+For example, storing \texttt{specialty\_name} inside \rel{Doctor} when \texttt{specialty\_id} exists and determines the name.
+That produces duplication and inconsistent spellings.
+
+The correction is to create \rel{Specialty} and reference it.
+
+\subsection{Clinic: normalized direction}
+A normalized direction is to separate doctor and patient facts from appointment facts.
+
+\begin{examplebox}
+\textbf{Normalized direction (conceptual)}\par\smallskip
+\[
+\rel{Doctor}(\underline{doctor\_id}, name, specialty)
+\]
+\[
+\rel{Patient}(\underline{patient\_id}, name, birth\_date)
+\]
+\[
+\begin{aligned}
+\rel{Appointment}(&\underline{appointment\_id}, start\_time, \\
+&doctor\_id \rightarrow \rel{Doctor}, patient\_id \rightarrow \rel{Patient})
+\end{aligned}
+\]
+\end{examplebox}
+
+Now each fact has a clear home.
+Doctor facts live in \rel{Doctor}, determined by \texttt{doctor\_id}.
+Patient facts live in \rel{Patient}, determined by \texttt{patient\_id}.
+Appointment facts live in \rel{Appointment}, determined by \texttt{appointment\_id}.
+Redundancy is reduced, and the anomalies largely disappear.
+
+\subsection{E-commerce: order lines mixing product facts}
+Order lines often mix product facts that should live elsewhere.
+Consider a naive \rel{OrderLine} that stores product name and category in every row.
+
+\begin{examplebox}
+\textbf{Order line with duplicated product facts}\par\smallskip
+\[
+\begin{aligned}
+\rel{OrderLine}(&\underline{order\_id} \rightarrow \rel{Order}, \\
+&\underline{product\_id}, product\_name, category, quantity, unit\_price)
+\end{aligned}
+\]
+\end{examplebox}
+
+If product\_name changes, you must update every order line that references it.
+The fix is to separate product facts into \rel{Product} and keep only the reference in \rel{OrderLine}.
+
+\section{Normalization boundaries}
+Normalization can be taken too far, especially if taught as a checklist.
+In practice, schemas are sometimes denormalized deliberately for performance or simplicity, but that should be done with clear justification and with compensating controls.
+
+Start by removing the anomalies you can see.
+If a change removes a real inconsistency risk, it is worth doing.
+If you cannot name the anomaly removed, the change is likely cosmetic.
+
+In a first design pass, you should prefer clarity and correctness.
+If you later decide to denormalize, you should do it consciously and document which anomalies you are reintroducing and how you will manage them.
+
+\begin{notebox}
+A safe rule for early designs: normalize until the anomalies you can clearly see are removed.
+If you cannot explain what anomaly a transformation fixes, you may be refactoring for style rather than correctness.
+\end{notebox}
+
+\section{Common mistakes}
+Normalization mistakes usually come from mixing levels of meaning.
+
+Mistake: Treating event data as if it were entity data.\\
+Fix: Move dates and statuses to the event relation (Loan, Appointment, OrderLine).
+
+Mistake: Stopping after the first split without checking dependencies.\\
+Fix: Ask what determines each attribute and move those that depend on other non-key attributes.
+
+Mistake: Over-normalizing without a reason.\\
+Fix: Name the anomaly you are removing; if you cannot, keep the structure.
+
+Mistake: Duplicating code+name pairs across rows.\\
+Fix: Create a separate lookup relation and reference it.
+
+\section{Mini checklist}
+Before you declare a schema “normalized enough,” check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Does each fact have one clear relation where it is stored?
+  \item Are multivalued attributes represented as separate relations?
+  \item Do non-key attributes depend only on the full key?
+  \item Are codes and their descriptions separated when a dependency exists?
+  \item Can you explain which anomaly each split removes?
+  \item Are event facts (dates, statuses, quantities) stored on event relations?
+  \item Are you avoiding copy-paste attributes between relations?
+\end{itemize}
+
+\begin{chaptersummary}
+Normalization is best understood as anomaly prevention.
+Redundancy creates update, insert, and delete anomalies, which eventually produce incorrect states.
+Functional dependency gives you the intuition for where facts belong: attributes should depend on the key and only the key.
+A minimal toolkit (1NF, 2NF, 3NF) is enough to produce robust schemas for most domains.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Answer in full sentences.
+\begin{enumerate}[label=\arabic*.]
+  \item Give one example of each anomaly (update, insert, delete) in a domain you know.
+  \item Show one example of a multivalued attribute and rewrite it as a separate relation (1NF).
+  \item Create a small association relation (N:M) and explain why storing an entity attribute inside it violates 2NF.
+  \item Describe one transitive dependency you might see in a real system and how you would eliminate it (3NF).
+  \item For a chosen domain, identify one place where you might denormalize later and what risks that would introduce.
+  \item For a clinic or library, sketch a table that mixes entity and event facts and explain the anomalies it creates.
+  \item For a university domain, list two attributes that should move to a separate relation and explain the dependency.
+\end{enumerate}
+\end{exercisebox}
+
+In the next chapter we move from redundancy to explicit constraints.
+Normalization reduces anomalies, but constraints make the remaining rules enforceable.

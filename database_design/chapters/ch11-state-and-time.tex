@@ -1,0 +1,260 @@
+% chapters/ch11-state-and-time.tex
+\chapter{Modelling State and Time}
+
+\begin{learningobjectives}
+In this chapter you will learn how to model concepts that evolve over time.
+You will be able to distinguish entities from events, choose between storing state versus deriving it, and express time-based business constraints clearly.
+You will also learn common patterns for modelling status, history, and temporal correctness.
+\end{learningobjectives}
+
+\section{Why time changes everything}
+Many beginner schemas look correct until time enters the picture.
+Once you need history, active versus inactive states, or “what was true at a past moment”, naive structures stop working.
+
+Time introduces two challenges.
+First, facts can change: a member changes email, a copy changes status, an appointment gets cancelled.
+Second, the system must preserve history: you want to know what happened, not just what is true right now.
+
+Relational design remains stable under time if you decide, explicitly, what should be stored as a changing attribute and what should be represented as a sequence of events.
+
+\begin{definitionbox}
+A \term{state} is a property of an entity at a point in time (e.g., copy is available).
+An \term{event} is a record of something that happened at a time (e.g., a loan checkout).
+\end{definitionbox}
+
+\section{Choosing authoritative truth}
+When both events and current state are stored, one must be authoritative.
+If the event stream says “returned” but the state says “on loan,” the model is undefined.
+
+In a library, the authoritative truth might be the event stream of loans.
+In a clinic, the authoritative truth might be the current appointment schedule.
+The choice depends on what you must audit and how often state changes.
+
+\section{Entities versus events}
+A reliable modelling decision is to treat “things” as entities and “happenings” as events.
+Loans and appointments are not static links; they are happenings with time and attributes.
+This is why \rel{Loan} and \rel{Appointment} are typically entities in a relational schema, even though they connect two other entities.
+
+If you model an event as a static relationship, you often lose:
+\begin{itemize}[leftmargin=*,nosep]
+  \item history (you overwrite old values),
+  \item constraint clarity (active state becomes unclear),
+  \item and auditability (you cannot explain how you reached the current state).
+\end{itemize}
+
+\begin{examplebox}
+\textbf{Bad idea: store current borrower on Copy}\par\smallskip
+\[
+\rel{Copy}(\underline{copy\_id}, title\_id \rightarrow \rel{Title}, current\_member\_id?)
+\]
+This loses history and makes “when was it borrowed?” hard to represent.
+A \rel{Loan} event is a cleaner model.
+\end{examplebox}
+
+\section{Storing state versus deriving state}
+A design often has two options.
+
+Option A: store the state directly (e.g., \texttt{Copy.status = available/on\_loan/lost}).
+
+Option B: derive the state from event history (e.g., “a copy is on loan if it has an active loan”).
+
+Both options can be correct.
+The choice depends on how the domain behaves and what needs to be enforced.
+
+\subsection{When storing state helps}
+Storing state is useful when:
+\begin{itemize}[leftmargin=*,nosep]
+  \item state changes are not always implied by one event stream,
+  \item you need explicit human decisions (e.g., marking a copy as lost),
+  \item you want fast access to current state and you can enforce consistency.
+\end{itemize}
+
+\subsection{When deriving state helps}
+Deriving state is useful when:
+\begin{itemize}[leftmargin=*,nosep]
+  \item “current state” is fully implied by event history,
+  \item you want a single source of truth (events),
+  \item correctness depends on history (auditing, analytics).
+\end{itemize}
+
+In many real designs, you combine both:
+events as the source of truth, with a stored current-state attribute as a cache.
+If you do that, you must define consistency rules clearly, otherwise you create contradictory truths.
+
+\begin{notebox}
+If you store both events and a current-state attribute, you must decide which one is authoritative.
+If both can disagree, the model is not well-defined.
+\end{notebox}
+
+\section{Status as a state machine}
+Many domains have “status” attributes: appointment status, reservation status, loan status.
+Status modelling is often handled poorly because it is treated as a free-form string.
+
+At minimum, status should come from a defined set:
+\[
+status \in \{\text{scheduled, cancelled}\}
+\]
+That is a domain constraint.
+
+For more complex domains, statuses behave like a state machine.
+Some transitions are allowed; others are not.
+A reservation might transition from \texttt{active} to \texttt{fulfilled} or \texttt{cancelled}, but not back to \texttt{active} without a new action.
+If your book intends to teach correctness, it is useful to express this as rules.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{loan-state-machine.pdf}
+\caption{A status lifecycle can be modeled as explicit transitions.}
+\end{figure}
+
+\begin{examplebox}
+\textbf{Status transition rules (reservation)}\\
+R1: active \(\rightarrow\) fulfilled is allowed.\\
+R2: active \(\rightarrow\) cancelled is allowed.\\
+R3: fulfilled \(\rightarrow\) active is not allowed.
+\end{examplebox}
+
+Implementation details can wait.
+The modelling point is that status is not only a value; it is behaviour.
+
+\subsection{Diagram 1: reservation lifecycle (described)}
+Imagine a simple state diagram with three nodes: \texttt{active}, \texttt{fulfilled}, \texttt{cancelled}.
+Arrows go from \texttt{active} to the other two states.
+There are no arrows back to \texttt{active}.
+
+\subsection{Diagram 2: loan lifecycle (described)}
+Imagine a diagram with nodes \texttt{checked\_out}, \texttt{returned}, \texttt{lost}.
+Arrows go from \texttt{checked\_out} to \texttt{returned} and \texttt{lost}.
+A \texttt{lost} item may later be marked \texttt{returned}, but that transition should be explicit in rules.
+
+\section{Temporal constraints patterns}
+The hardest constraints in introductory relational design are temporal.
+Two common patterns appear repeatedly.
+
+\subsection{Pattern 1: No overlap (interval conflicts)}
+Clinic scheduling is a textbook example.
+Each appointment defines an interval:
+\[
+[start\_time,\; start\_time + duration)
+\]
+The constraint “a doctor cannot have overlapping scheduled appointments” means:
+for any doctor, no two scheduled appointment intervals may overlap.
+
+This constraint cannot be captured by a simple uniqueness constraint when durations vary.
+You can still specify it clearly as a business constraint.
+
+\begin{examplebox}
+\textbf{No-overlap constraint (conceptual)}\\
+For any doctor, for any two appointments \(A\) and \(B\) with status = scheduled,\\
+the intervals of \(A\) and \(B\) must not overlap.
+\end{examplebox}
+
+The schema must store enough information to evaluate overlap.
+That means start time and a duration (or end time).
+If you only store a start time with variable duration hidden elsewhere, you cannot validate the constraint.
+
+\subsection{Pattern 2: One active record per entity}
+In the library, the core rule is:
+a copy has at most one active loan at a time.
+
+This is a temporal constraint expressed via state.
+If “active” is defined as “return\_date is missing”, then the rule becomes:
+for each copy, there may be at most one loan with return\_date missing.
+This is a constraint over a filtered subset of rows.
+
+\begin{examplebox}
+\textbf{One-active constraint (conceptual)}\\
+For each copy, there must be at most one loan such that return\_date is missing.
+\end{examplebox}
+
+The modelling lesson is that “active” must be defined precisely.
+If “active” is not defined, correctness cannot be enforced or tested.
+
+\subsection{Pattern 3: Effective dating}
+Effective dating stores validity periods explicitly:
+\[
+valid\_from, valid\_to
+\]
+The rule is that periods must not overlap for the same entity when only one value should be active.
+This pattern is common for prices, memberships, and roles.
+
+\section{History: overwrite versus append}
+When values change over time, you have two general approaches.
+
+Overwrite means you store only the current value.
+This is simpler but loses history.
+
+Append means you store changes as new rows (events or history records).
+This preserves history but increases structure.
+
+Both can be correct depending on the domain.
+For teaching, it helps to show a common pattern:
+a current-value table plus an optional history table.
+
+\begin{examplebox}
+\textbf{Optional history pattern}\\
+Current state:
+\[
+\rel{Member}(\underline{member\_id}, name, email)
+\]
+History:
+\[
+\begin{aligned}
+\rel{MemberEmailHistory}(&\underline{member\_id} \rightarrow \rel{Member}, \\
+&\underline{changed\_at}, old\_email, new\_email)
+\end{aligned}
+\]
+\end{examplebox}
+
+This preserves important changes without forcing every attribute into a history structure.
+
+\section{Common mistakes}
+Time modelling mistakes are common and costly.
+
+Mistake: Storing only current state when history is required.\\
+Fix: Add event or history relations for changes that matter.
+
+Mistake: Defining “active” informally.\\
+Fix: Write a precise definition tied to attributes and time.
+
+Mistake: Mixing end times and durations inconsistently.\\
+Fix: Choose one representation and derive the other if needed.
+
+Mistake: Allowing overlapping validity periods unintentionally.\\
+Fix: Add no-overlap constraints for effective-dated records.
+
+\section{Mini checklist}
+Before you finalize time modelling, check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Which facts are events and which are state?
+  \item Which source of truth is authoritative (events or state)?
+  \item How is “active” defined for each temporal rule?
+  \item Are overlap rules explicit for intervals or validity periods?
+  \item Is the time representation consistent across relations?
+  \item Do you need history, and if so, where is it stored?
+  \item Are status transitions specified as rules?
+\end{itemize}
+
+\begin{chaptersummary}
+Time forces clarity.
+You must distinguish entities from events, and decide whether state is stored, derived, or both.
+Status attributes should be constrained and, in richer domains, treated as state machines with explicit allowed transitions.
+Temporal constraints such as “no overlap” and “one active at a time” must be defined precisely, because correctness depends on those definitions.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Answer in full sentences.
+\begin{enumerate}[label=\arabic*.]
+  \item In a clinic model, define precisely what it means for two appointments to overlap.
+  \item In a library model, define precisely what “active loan” means and propose two alternative definitions.
+  \item Choose one entity and decide which of its attributes should keep history. Justify why.
+  \item Write three status transition rules for a concept in your chosen domain.
+  \item Identify one place where storing both events and current state might help, and state which one is authoritative.
+  \item Write a validity-period rule using valid\_from and valid\_to for a membership.
+  \item Propose a no-overlap constraint for room bookings and define the overlap test.
+  \item Give an example of a temporal rule that cannot be fully enforced and explain how to detect violations.
+\end{enumerate}
+\end{exercisebox}
+
+In the next chapter we examine advanced relationship modelling.
+The time and state patterns here will reappear in specializations and optionality decisions.

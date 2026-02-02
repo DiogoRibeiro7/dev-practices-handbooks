@@ -1,0 +1,55 @@
+% chapters/appendix-ch05-sql.tex
+\chapter{SQL Appendix: Chapter 5 (Normalization)}
+
+\section{DDL (normalized)}
+\begin{verbatim}
+CREATE TABLE doctor (
+  doctor_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL,
+  specialty VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE patient (
+  patient_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL,
+  birth_date DATE NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE appointment (
+  appointment_id INT PRIMARY KEY AUTO_INCREMENT,
+  start_time DATETIME NOT NULL,
+  doctor_id INT NOT NULL,
+  patient_id INT NOT NULL,
+  CONSTRAINT fk_appt_doctor FOREIGN KEY (doctor_id) REFERENCES doctor(doctor_id),
+  CONSTRAINT fk_appt_patient FOREIGN KEY (patient_id) REFERENCES patient(patient_id)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO doctor (name, specialty) VALUES
+  ('Joana Reis', 'cardiology'),
+  ('Hugo Pereira', 'pediatrics');
+
+INSERT INTO patient (name, birth_date) VALUES
+  ('Ana Costa', '1990-04-11'),
+  ('Rui Silva', '1985-09-03');
+
+INSERT INTO appointment (start_time, doctor_id, patient_id) VALUES
+  ('2026-02-03 09:00:00', 1, 1),
+  ('2026-02-03 09:30:00', 1, 2);
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Appointments with doctor and patient names
+SELECT a.appointment_id, a.start_time, d.name AS doctor, p.name AS patient
+FROM appointment a
+JOIN doctor d ON d.doctor_id = a.doctor_id
+JOIN patient p ON p.patient_id = a.patient_id;
+
+-- Q2: Detect redundant specialty storage (should be in doctor only)
+SELECT a.appointment_id, d.specialty
+FROM appointment a
+JOIN doctor d ON d.doctor_id = a.doctor_id;
+\end{verbatim}

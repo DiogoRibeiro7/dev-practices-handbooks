@@ -1,0 +1,214 @@
+% chapters/ch13-functional-dependencies.tex
+\chapter{Functional Dependencies as a Design Tool}
+
+\begin{learningobjectives}
+In this chapter you will learn to use functional dependencies to justify schema structure.
+You will be able to write dependencies from domain meaning, detect when a relation mixes facts that should be separated, and explain normalization decisions as correctness decisions rather than as formalisms.
+\end{learningobjectives}
+
+\section{Why dependencies matter}
+When people first learn normalization, it often feels like a set of abstract rules.
+In practice, normalization is a consequence of a simple idea: some facts determine others.
+If you place facts together in a relation where the key does not determine them, you create redundancy.
+That redundancy later becomes anomalies.
+
+Functional dependencies are a language for stating “what determines what” precisely.
+They are not only a theoretical tool.
+They are a way to make your design decisions auditable.
+
+\begin{definitionbox}
+A \term{functional dependency} \(X \rightarrow Y\) means:
+if two rows agree on \(X\), they must also agree on \(Y\).
+In plain language: knowing \(X\) uniquely determines \(Y\).
+\end{definitionbox}
+
+You do not need heavy notation to benefit from this.
+You need the habit of writing a few dependencies and checking whether your schema respects them.
+
+\section{How to write dependencies from rules}
+A common mistake is to infer dependencies from a small dataset.
+Dependencies should come from domain rules, policies, and definitions.
+They are claims about reality as modelled by the system.
+
+\subsection{Example 1: identity-based dependency}
+If \texttt{member\_id} is the identity of a member, then:
+\[
+member\_id \rightarrow name,\; email
+\]
+This is a statement about identity, not about observed data.
+
+\subsection{Example 2: catalog dependency}
+If ISBN identifies a title in your domain, then:
+\[
+isbn \rightarrow title,\; author
+\]
+If ISBN is optional or unreliable, this dependency may not hold, and the key choice should change.
+
+\section{The dependency test for mixed relations}
+Suppose you have a relation with key \(K\) and attributes \(A, B, C\).
+If the meaning implies that some attribute \(B\) is determined by something other than \(K\), you are probably mixing facts.
+
+This is the heart of normalization, stated as a practical test.
+
+\begin{principlebox}
+\textbf{Dependency test}\\
+In a well-structured relation, non-key attributes should be determined by the key.
+If a non-key attribute is determined by something else, you likely need a new relation.
+\end{principlebox}
+
+This is not a rigid law.
+It is a strong signal.
+When you break it deliberately, you should document why.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.75\textwidth]{fd-decomposition.pdf}
+\caption{Dependencies guide decomposition into relations whose keys determine their attributes.}
+\end{figure}
+
+\section{Worked example: clinic scheduling}
+Consider a naive relation:
+\[
+\begin{aligned}
+\rel{AppointmentRecord}(&\underline{appointment\_id}, start\_time, doctor\_name, \\
+&doctor\_specialty, patient\_name)
+\end{aligned}
+\]
+If \texttt{appointment\_id} is the key, this relation claims:
+\[
+appointment\_id \rightarrow doctor\_name,\; doctor\_specialty,\; patient\_name
+\]
+But from meaning, we also have:
+\[
+\begin{aligned}
+doctor\_id &\rightarrow doctor\_name,\; doctor\_specialty \\
+patient\_id &\rightarrow patient\_name
+\end{aligned}
+\]
+So doctor facts and patient facts are being repeated across many appointments.
+That repetition is what creates update anomalies.
+
+The correct structural move is to separate entities:
+\[
+\rel{Doctor}(\underline{doctor\_id}, name, specialty)
+\]
+\[
+\rel{Patient}(\underline{patient\_id}, name)
+\]
+\[
+\begin{aligned}
+\rel{Appointment}(&\underline{appointment\_id}, start\_time, \\
+&doctor\_id \rightarrow \rel{Doctor}, patient\_id \rightarrow \rel{Patient})
+\end{aligned}
+\]
+
+Now the dependencies align with keys:
+\[
+\begin{aligned}
+doctor\_id &\rightarrow name,\; specialty \\
+patient\_id &\rightarrow name \\
+appointment\_id &\rightarrow start\_time,\; doctor\_id,\; patient\_id
+\end{aligned}
+\]
+
+\section{Worked example: address modelling}
+Suppose you store a customer’s address directly in \rel{Customer}:
+\[
+\rel{Customer}(\underline{customer\_id}, name, street, city, postal\_code)
+\]
+If customers can have multiple addresses, this structure is wrong.
+The dependency is:
+\[
+customer\_id \nrightarrow street,\; city,\; postal\_code
+\]
+because a customer can have more than one address.
+
+The correction is to introduce an association:
+\[
+\begin{aligned}
+\rel{Address}(&\underline{address\_id}, street, city, postal\_code)
+\end{aligned}
+\]
+\[
+\begin{aligned}
+\rel{CustomerAddress}(&\underline{customer\_id} \rightarrow \rel{Customer}, \\
+&\underline{address\_id} \rightarrow \rel{Address}, \\
+&address\_type)
+\end{aligned}
+\]
+Now address facts depend on \texttt{address\_id}, and the association captures the relationship.
+
+\section{Transitive dependencies and why they create redundancy}
+A transitive dependency happens when:
+\[
+K \rightarrow A
+\quad \text{and} \quad
+A \rightarrow B
+\]
+so \(K \rightarrow B\) indirectly.
+
+In design terms, this usually means you stored a code and its description in the same relation.
+For example, storing \texttt{specialty\_name} inside \rel{Doctor} when \texttt{specialty\_id} exists and determines the name.
+
+The redundancy is subtle at first, then painful later:
+multiple spellings, inconsistent naming, and unclear governance.
+
+The structural fix is to create a separate relation:
+\[
+\rel{Specialty}(\underline{specialty\_id}, name)
+\]
+and reference it from \rel{Doctor}.
+
+\section{Dependencies and many-to-many relationships}
+Dependencies also explain why many-to-many relationships require association relations.
+
+If a doctor can have many specialties and a specialty can belong to many doctors, then neither of these holds:
+\[
+doctor\_id \rightarrow specialty\_id
+\quad \text{nor} \quad
+specialty\_id \rightarrow doctor\_id
+\]
+So the relationship itself must be represented as its own structure:
+\[
+\rel{DoctorSpecialty}(\underline{doctor\_id} \rightarrow \rel{Doctor}, \underline{specialty\_id} \rightarrow \rel{Specialty})
+\]
+This is not an implementation trick.
+It is the correct representation of meaning.
+
+\section{Dependencies as review language}
+Dependencies are not just for normalization.
+They give reviewers a precise language for critique.
+
+When you say “this relation mixes facts,” you can support it with a dependency:
+\[
+A \rightarrow B \quad \text{but} \quad A \text{ is not a key}
+\]
+This turns a vague concern into a concrete design signal.
+
+\begin{principlebox}
+\textbf{Dependency review checklist}\\
+For a relation \(\rel{R}(\underline{K}, A_1, \dots, A_n)\):
+\begin{itemize}[leftmargin=*,nosep]
+  \item Write 2--5 dependencies that come from meaning.
+  \item Check that non-key attributes are determined by \(K\).
+  \item If you find \(A \rightarrow B\) where \(A\) is not a key, ask whether you mixed facts.
+\end{itemize}
+\end{principlebox}
+
+\begin{chaptersummary}
+Functional dependencies express what determines what.
+They come from domain meaning, not from sample data.
+They provide a practical test for mixed relations: non-key attributes should be determined by the key.
+When a non-key attribute is determined by something else, you are likely storing redundant facts and inviting anomalies.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Answer in full sentences and then write dependencies.
+\begin{enumerate}[label=\arabic*.]
+  \item Choose a domain and write a relation that you suspect is mixing facts.
+  \item Propose a primary key and write the implied dependency \(K \rightarrow \text{(all other attributes)}\).
+  \item Write two additional dependencies that come from meaning and show why redundancy exists.
+  \item Restructure the schema into at least two relations and rewrite the dependencies so they align with keys.
+  \item Give one example of a transitive dependency and show how you would eliminate it structurally.
+\end{enumerate}
+\end{exercisebox}

@@ -1,0 +1,210 @@
+% chapters/ch14-normalization-patterns.tex
+\chapter{Normalization Patterns in Real Domains}
+
+\begin{learningobjectives}
+In this chapter you will learn a set of recurring normalization patterns used in real relational designs.
+You will be able to recognise the underlying dependency behind each pattern, choose an appropriate schema structure, and explain what anomaly the pattern prevents.
+\end{learningobjectives}
+
+\section{Why patterns help}
+After you learn the workflow and the core mapping rules, most design work becomes recognition.
+You see a requirement and you match it to a known structure.
+Patterns are not shortcuts for thinking.
+They are a way to avoid repeating the same mistakes.
+
+Each pattern below is presented with:
+\begin{itemize}
+  \item the situation in plain language,
+  \item the dependency intuition,
+  \item a compact schema in book notation,
+  \item and the anomaly it prevents.
+\end{itemize}
+
+\section{Pattern 1: Order and OrderLine (the line-item pattern)}
+\subsection{Situation}
+A customer places an order.
+An order contains multiple items.
+Each item has a quantity and a price at the time of purchase.
+
+The modelling trap is to store “items” as repeating groups inside \rel{Order}, or to store order attributes inside the line table.
+
+\subsection{Dependency intuition}
+Order facts are determined by \texttt{order\_id}.
+Line facts are determined by (order\_id, line\_no) or by a surrogate \texttt{order\_line\_id}.
+Product facts are determined by \texttt{product\_id}.
+Do not mix them.
+
+\subsection{Schema}
+\[
+\rel{Customer}(\underline{customer\_id}, name, email \;[\text{unique}])
+\]
+\[
+\rel{Order}(\underline{order\_id}, created\_at, status, customer\_id \rightarrow \rel{Customer})
+\]
+\[
+\rel{Product}(\underline{product\_id}, sku \;[\text{unique}], name, list\_price)
+\]
+\[
+\rel{OrderLine}(\underline{order\_id} \rightarrow \rel{Order}, \underline{line\_no}, product\_id \rightarrow \rel{Product}, quantity, unit\_price)
+\]
+
+\subsection{What it prevents}
+This structure prevents update anomalies like “customer name duplicated across order lines”.
+It also supports history correctly: \texttt{unit\_price} is stored at purchase time, independent of future \texttt{list\_price} changes.
+
+\section{Pattern 2: Address modelling (entity vs attribute)}
+\subsection{Situation}
+A system stores people or organisations and their addresses.
+People can have multiple addresses (billing, shipping, current, previous).
+Addresses can change over time.
+
+A common failure is to place address fields directly on \rel{Customer}:
+\texttt{street1, street2, city, zip, ...}.
+That fails immediately when there is more than one address.
+
+\subsection{Dependency intuition}
+A customer does not determine a single address.
+Instead, a customer determines a set of address relationships, possibly with types and validity periods.
+
+\subsection{Schema (address as entity)}
+\[
+\rel{Address}(\underline{address\_id}, street, city, postal\_code, country)
+\]
+\[
+\begin{aligned}
+\rel{CustomerAddress}(&\underline{customer\_id} \rightarrow \rel{Customer}, \\
+&\underline{address\_id} \rightarrow \rel{Address}, type, valid\_from, valid\_to?)
+\end{aligned}
+\]
+
+\subsection{What it prevents}
+This prevents repeating groups and allows history.
+It also avoids mixing “what the address is” with “how the customer uses it” (billing/shipping), which belongs to the association.
+
+\section{Pattern 3: Code and description (the lookup pattern)}
+\subsection{Situation}
+You store a code (status, category, specialty, role) and also store its human-readable name in multiple places.
+
+This often creates inconsistent spellings and conflicting definitions.
+
+\subsection{Dependency intuition}
+If \texttt{status\_code} determines \texttt{status\_name}, then storing both together repeatedly creates redundancy.
+The name belongs in one place.
+
+\subsection{Schema}
+\[
+\rel{Status}(\underline{status\_code}, name, description)
+\]
+\[
+\rel{Appointment}(\underline{appointment\_id}, start\_time, status\_code \rightarrow \rel{Status}, \dots)
+\]
+
+\subsection{What it prevents}
+This prevents update anomalies where “cancelled” appears as “canceled” in some rows.
+It also makes governance explicit: status definitions live in one relation.
+
+\section{Pattern 4: Enrollment (association with attributes)}
+\subsection{Situation}
+A student can enroll in many courses.
+A course has many students.
+Enrollment has attributes like enrollment date, grade, and status.
+
+\subsection{Dependency intuition}
+Neither \texttt{student\_id} nor \texttt{course\_id} determines the other.
+The association is the identity.
+Enrollment attributes are determined by the pair.
+
+\subsection{Schema}
+\[
+\rel{Student}(\underline{student\_id}, name, email)
+\]
+\[
+\rel{Course}(\underline{course\_id}, code \;[\text{unique}], title)
+\]
+\[
+\rel{Enrollment}(\underline{student\_id} \rightarrow \rel{Student}, \underline{course\_id} \rightarrow \rel{Course}, enrolled\_at, status, grade?)
+\]
+
+\subsection{What it prevents}
+This prevents forced duplication such as storing a list of student ids inside a course row.
+It also keeps enrollment history and supports constraints like “a student can be enrolled at most once in a course per term” (if you add \texttt{term}).
+
+\section{Pattern 5: Inventory by location (context-dependent identity)}
+\subsection{Situation}
+A product exists across multiple locations (stores, warehouses).
+You want quantity-on-hand per location.
+
+A common mistake is to store one \texttt{quantity} on \rel{Product}.
+That loses the location dimension.
+
+\subsection{Dependency intuition}
+Quantity is not determined by product alone.
+It is determined by (product, location).
+
+\subsection{Schema}
+\[
+\rel{Location}(\underline{location\_id}, name)
+\]
+\[
+\rel{StockLevel}(\underline{product\_id} \rightarrow \rel{Product}, \underline{location\_id} \rightarrow \rel{Location}, quantity\_on\_hand)
+\]
+
+\subsection{What it prevents}
+This prevents inconsistent inventory reporting and forces the model to represent location as a first-class dimension.
+
+\section{Pattern 6: Audit log (append-only event history)}
+\subsection{Situation}
+You need a history of changes: who changed what, when, and from which value to which value.
+
+A naive approach is to overwrite values and keep no record.
+Another naive approach is to add many “previous\_*” columns.
+
+\subsection{Dependency intuition}
+History is not an attribute of the entity.
+It is a stream of events, each with its own time and author.
+
+\subsection{Schema}
+\[
+\rel{AuditEvent}(\underline{event\_id}, entity\_type, entity\_id, action, actor, occurred\_at)
+\]
+\[
+\rel{AuditFieldChange}(\underline{event\_id} \rightarrow \rel{AuditEvent}, \underline{field\_name}, old\_value, new\_value)
+\]
+
+\subsection{What it prevents}
+This avoids lossy overwrites and keeps traceability.
+It also keeps audit structure separate from domain entities, preventing clutter and anomalies in core tables.
+
+\section{How to apply patterns without forcing them}
+Patterns are helpful, but they can be applied blindly.
+The correct approach is:
+\begin{itemize}
+  \item start from domain meaning and rules,
+  \item write a few dependencies in plain language,
+  \item then choose the pattern that makes those dependencies align with keys.
+\end{itemize}
+
+When you choose a pattern, you should be able to say:
+\emph{“This prevents this specific anomaly.”}
+If you cannot, you may be restructuring for style rather than correctness.
+
+\begin{chaptersummary}
+Most relational schemas are combinations of a small set of patterns.
+Line items separate order facts from item facts.
+Addresses become entities because customers can have many addresses and address usage is a relationship.
+Lookup tables centralize code meanings.
+Association relations represent many-to-many membership and carry relationship attributes.
+Context-dependent facts (like stock per location) belong to the pair.
+Audit logs are append-only event history, separate from core entities.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Pick one domain you know and answer in full sentences, then write the schema fragments.
+\begin{enumerate}[label=\arabic*.]
+  \item Identify one place where you need a line-item pattern and write \rel{Order}/\rel{OrderLine}-style relations.
+  \item Identify one attribute that is really a lookup code and design the lookup relation.
+  \item Identify one many-to-many relationship that needs an association relation with attributes.
+  \item Identify one context-dependent fact (product-by-location, member-by-branch, etc.) and model it.
+  \item Choose one entity and propose a minimal audit logging structure for changes to it.
+\end{enumerate}
+\end{exercisebox}

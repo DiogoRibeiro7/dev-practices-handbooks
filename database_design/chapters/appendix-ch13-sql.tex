@@ -1,0 +1,31 @@
+% chapters/appendix-ch13-sql.tex
+\chapter{SQL Appendix: Chapter 13 (Functional Dependencies)}
+
+\section{DDL (decomposed)}
+\begin{verbatim}
+CREATE TABLE specialty (
+  specialty_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL UNIQUE
+) ENGINE=InnoDB;
+
+CREATE TABLE doctor (
+  doctor_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL,
+  specialty_id INT NOT NULL,
+  CONSTRAINT fk_doctor_specialty FOREIGN KEY (specialty_id) REFERENCES specialty(specialty_id)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO specialty (name) VALUES ('cardiology');
+INSERT INTO doctor (name, specialty_id) VALUES ('Joana Reis', 1);
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Doctor with specialty name
+SELECT d.doctor_id, d.name, s.name AS specialty
+FROM doctor d
+JOIN specialty s ON s.specialty_id = d.specialty_id;
+\end{verbatim}

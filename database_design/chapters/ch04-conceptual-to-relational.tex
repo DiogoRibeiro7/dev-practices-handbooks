@@ -1,0 +1,359 @@
+% chapters/ch04-conceptual-to-relational.tex
+\chapter{From Conceptual Model to Relational Schema}
+
+\begin{learningobjectives}
+In this chapter you will learn how to translate conceptual models into relational schemas in a disciplined way.
+You will be able to map entities and relationships to relations, choose foreign key placement correctly, and recognise when you need association relations.
+You will also learn how to write a schema specification that is meaningful even before SQL is introduced.
+\end{learningobjectives}
+
+\section{Translation as rule-based work}
+Once the domain is clear and identity is defined, moving to a relational schema should not feel like invention.
+It should feel like applying rules.
+This mindset matters because beginners often “design by improvisation”, adding columns and tables until the model seems to work.
+That approach produces schemas that are hard to justify and even harder to maintain.
+
+A relational schema is a statement about:
+what exists (relations), what uniquely identifies it (primary keys), how it connects (foreign keys), and what is allowed (constraints).
+The translation step is where meaning becomes enforceable structure.
+
+\subsection{Schema notation used in this book}
+We will specify relations without SQL, using a compact notation.
+For example:
+\[
+\begin{aligned}
+\rel{Appointment}(&\underline{appointment\_id}, start\_time, \\
+&patient\_id \rightarrow \rel{Patient}, \\
+&doctor\_id \rightarrow \rel{Doctor})
+\end{aligned}
+\]
+Underline indicates the primary key.
+An arrow indicates a foreign key reference.
+Optional attributes may be written with a question mark (e.g., \texttt{return\_date?}) when the idea of optionality matters.
+
+This notation is intentionally simple.
+It is designed for clarity and discussion.
+It forces you to state identity and references explicitly.
+
+\section{The core mapping rules}
+The following rules cover most designs you will meet at introductory level.
+They are written as design rules, not as SQL steps.
+
+\begin{principlebox}
+\textbf{Core mapping rules}
+\begin{enumerate}[label=\arabic*.]
+  \item Each entity becomes a relation.
+  \item Each relation has a primary key that represents identity.
+  \item A 1:N relationship becomes a foreign key on the N side.
+  \item A 1:1 relationship becomes a foreign key on one side, with a uniqueness constraint.
+  \item An N:M relationship becomes an association relation with two foreign keys.
+  \item Multivalued attributes become separate relations.
+  \item Attributes of a relationship belong in the structure that represents that relationship.
+\end{enumerate}
+\end{principlebox}
+
+The final rule is often the most important.
+If a property describes the association, not either entity alone, then it belongs with the relationship.
+Dates on a loan are not properties of the member or the copy; they are properties of the borrowing event.
+
+\section{Mapping entities and relationships}
+
+\subsection{Mapping entities: the easy part}
+Mapping an entity is straightforward.
+You create a relation and choose its primary key.
+The harder part is deciding which attributes are actually attributes, and which are hidden entities.
+
+For example, in a clinic story, “specialty” might look like an attribute of Doctor.
+That can be fine for a minimal model.
+But if specialties have their own identity, descriptions, and governance (and doctors can have multiple specialties), then Specialty is an entity, not a string attribute.
+Translation works best when those conceptual decisions are made explicitly.
+
+\subsection{Mapping 1:N relationships: foreign keys and meaning}
+A one-to-many relationship means that one instance on the “one” side can be related to many on the “many” side.
+In the relational schema, this is represented by storing the primary key of the “one” side as a foreign key in the “many” side relation.
+
+The important point is not the mechanical placement of the foreign key.
+The important point is that the foreign key expresses a constraint: each “many” row points to exactly one “one” row (if the relationship is mandatory).
+
+\begin{examplebox}
+\textbf{Clinic: Patient \(\rightarrow\) Appointment is 1:N}\par\smallskip
+Conceptual meaning: a patient can have many appointments; each appointment has one patient.\par\smallskip
+Relational schema:
+\[
+\rel{Patient}(\underline{patient\_id}, name, birth\_date)
+\]
+\[
+\rel{Appointment}(\underline{appointment\_id}, start\_time, patient\_id \rightarrow \rel{Patient})
+\]
+\end{examplebox}
+
+Optionality matters here.
+If an appointment must have a patient, then \texttt{patient\_id} is mandatory.
+If an appointment could exist without a patient (usually not true), then \texttt{patient\_id} would be optional.
+This is not a technical detail.
+It is a statement about what data states are valid.
+
+\subsection{Mapping 1:1 relationships: choose a direction, then enforce it}
+One-to-one relationships require care.
+A 1:1 relationship means that each instance on either side is associated with at most one instance on the other side.
+In the relational schema, you can represent this with a foreign key on one side, but you must enforce uniqueness to maintain the one-to-one meaning.
+
+Where you place the foreign key is a design choice guided by optionality and lifecycle.
+If one side can exist without the other, place the foreign key on the optional side.
+This avoids NULLs on the mandatory side and usually matches creation workflows.
+
+\begin{examplebox}
+\textbf{Example: Patient \(\leftrightarrow\) InsuranceProfile (1:1)}\par\smallskip
+If a patient may have no insurance profile yet, then:
+\[
+\rel{Patient}(\underline{patient\_id}, \dots)
+\]
+\[
+\begin{aligned}
+\rel{InsuranceProfile}(&\underline{insurance\_profile\_id}, \\
+&patient\_id \rightarrow \rel{Patient} \;[\text{unique}], \\
+&provider, policy\_number)
+\end{aligned}
+\]
+Uniqueness on \texttt{patient\_id} in \rel{InsuranceProfile} enforces the 1:1 relationship.
+\end{examplebox}
+
+The main mistake is to store both foreign keys in both tables.
+That duplicates the relationship and creates inconsistency risk.
+A one-to-one relationship should be represented once, with the right constraint.
+
+\begin{principlebox}
+\textbf{One-to-one placement rule}\\
+Place the foreign key on the optional side and enforce uniqueness there.
+This preserves the 1:1 meaning without introducing mandatory NULLs.
+\end{principlebox}
+
+\subsection{Mapping N:M relationships: association relations}
+Many-to-many relationships cannot be represented as a single foreign key without losing information.
+The relational model represents them using an association relation (also called a junction table).
+This relation contains at least two foreign keys, one to each participating entity.
+Its primary key is often the pair of foreign keys.
+
+\begin{examplebox}
+\textbf{Doctor \(\leftrightarrow\) Specialty (N:M)}\par\smallskip
+\[
+\rel{Doctor}(\underline{doctor\_id}, name)
+\]
+\[
+\rel{Specialty}(\underline{specialty\_id}, name)
+\]
+\[
+\begin{aligned}
+\rel{DoctorSpecialty}(&\underline{doctor\_id} \rightarrow \rel{Doctor}, \\
+&\underline{specialty\_id} \rightarrow \rel{Specialty})
+\end{aligned}
+\]
+\end{examplebox}
+
+This structure becomes even more important when the relationship has attributes.
+For instance, if a doctor has a specialty \emph{since a date}, that date belongs to the association relation:
+\[
+\rel{DoctorSpecialty}(\underline{doctor\_id}, \underline{specialty\_id}, since\_date)
+\]
+This follows the principle: relationship attributes belong where the relationship is represented.
+
+\begin{notebox}
+If you add relationship attributes to an entity instead of the association relation, you silently change the meaning.
+Dates and roles are almost never properties of a single side.
+\end{notebox}
+
+\subsection{Multivalued attributes are a hidden relationship}
+When you see an attribute that can take multiple values for a single entity, you are not looking at a single attribute.
+You are looking at a separate structure.
+In relational design, this becomes its own relation, typically with a foreign key back to the owning entity.
+
+For example, if a member can have multiple phone numbers, “phone\_numbers” is not an attribute in the relational sense.
+A separate relation is appropriate:
+\[
+\rel{MemberPhone}(\underline{member\_id} \rightarrow \rel{Member}, \underline{phone\_number})
+\]
+Whether \texttt{phone\_number} is part of the primary key depends on the domain rules, but the modelling decision is the key point.
+
+\section{Relationship attributes and event entities}
+Some relationships are really events.
+If a relationship has time, status, or quantities, it usually deserves its own entity.
+This keeps the attributes where they belong and preserves history.
+
+\begin{examplebox}
+\textbf{Loan as event, not just a FK}\par\smallskip
+Instead of storing a \texttt{current\_copy\_id} on \rel{Member}, represent the borrowing as:
+\[
+\begin{aligned}
+\rel{Loan}(&\underline{loan\_id}, checkout\_date, due\_date, return\_date?, \\
+&member\_id \rightarrow \rel{Member}, copy\_id \rightarrow \rel{Copy})
+\end{aligned}
+\]
+This captures the event and allows multiple loans over time.
+\end{examplebox}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{relationship-event.pdf}
+\caption{When a relationship has its own attributes, treat it as an event entity.}
+\end{figure}
+
+\section{Optionality mapping rules}
+Optionality should be decided explicitly.
+It changes where you place foreign keys and whether nulls are acceptable.
+
+Rule A: If the relationship is mandatory on the “many” side, the FK is mandatory.\\
+Rule B: If the relationship is optional, the FK may be optional.\\
+Rule C: In 1:1, place the FK on the optional side.
+
+\begin{examplebox}
+\textbf{Optionality fragments}\par\smallskip
+Mandatory 1:N:
+\[
+\rel{Appointment}(\underline{appointment\_id}, patient\_id \rightarrow \rel{Patient})
+\]
+Optional 1:N:
+\[
+\rel{Reservation}(\underline{reservation\_id}, member\_id? \rightarrow \rel{Member})
+\]
+Optional 1:1:
+\[
+\rel{InsuranceProfile}(\underline{insurance\_profile\_id}, patient\_id \rightarrow \rel{Patient} \;[\text{unique}])
+\]
+\end{examplebox}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{optionality-mapping.pdf}
+\caption{Three common ways to represent optional information in a relational schema.}
+\end{figure}
+
+\section{A worked example: Library loans and reservations}
+The library domain is useful because it forces you to distinguish between a \term{Title} and a physical \term{Copy}.
+It also forces you to model events over time, such as loans, which are relationship-like structures with their own attributes.
+
+Start with entities:
+Member, Title, Copy.
+A Title has many Copies (1:N).
+A Member borrows a Copy over time, which is best represented as a Loan entity because it carries dates and status.
+
+The conceptual meaning “member borrows copy” is not a static relationship.
+It is a time-indexed event that must be recorded.
+That is why \rel{Loan} exists.
+
+\begin{examplebox}
+\textbf{Library schema (logical, no SQL)}\par\smallskip
+\[
+\rel{Member}(\underline{member\_id}, name, email \;[\text{unique}])
+\]
+\[
+\rel{Title}(\underline{title\_id}, isbn \;[\text{unique}], title, author)
+\]
+\[
+\begin{aligned}
+\rel{Copy}(&\underline{copy\_id}, barcode \;[\text{unique}], status, \\
+&title\_id \rightarrow \rel{Title})
+\end{aligned}
+\]
+\[
+\begin{aligned}
+\rel{Loan}(&\underline{loan\_id}, checkout\_date, due\_date, return\_date?, \\
+&member\_id \rightarrow \rel{Member}, copy\_id \rightarrow \rel{Copy})
+\end{aligned}
+\]
+\[
+\begin{aligned}
+\rel{Reservation}(&\underline{reservation\_id}, request\_date, status, \\
+&member\_id \rightarrow \rel{Member}, title\_id \rightarrow \rel{Title})
+\end{aligned}
+\]
+\end{examplebox}
+
+The important constraints are not cosmetic.
+They preserve meaning:
+a Copy belongs to exactly one Title,
+a Loan references exactly one Member and one Copy,
+and a Copy should not have two active loans at the same time.
+That last rule is not automatically guaranteed by foreign keys; it is a business constraint you must state and later enforce.
+
+\section{Mini-case: E-commerce orders}
+An order is an event with its own identity.
+Line items are not attributes of the order; they are entities that link products to orders with quantities.
+
+\begin{examplebox}
+\textbf{Order and order line (conceptual)}\par\smallskip
+\[
+\rel{Order}(\underline{order\_id}, placed\_at, customer\_id \rightarrow \rel{Customer})
+\]
+\[
+\begin{aligned}
+\rel{OrderLine}(&\underline{order\_id} \rightarrow \rel{Order}, \\
+&\underline{product\_id} \rightarrow \rel{Product}, quantity, unit\_price)
+\end{aligned}
+\]
+The line is the association; quantities belong there, not on \rel{Order}.
+\end{examplebox}
+
+\section{Common mistakes}
+There are recurring errors at this stage.
+
+Mistake: Collapsing Title and Copy into a single relation.\\
+Fix: Separate entities so availability and history can be represented cleanly.
+
+Mistake: Treating time-indexed events as static relationships.\\
+Fix: Model the event as its own relation (Loan, Appointment, Enrollment).
+
+Mistake: Forgetting optionality.\\
+Fix: Decide mandatory vs optional and place FKs accordingly.
+
+Mistake: Putting relationship attributes on an entity.\\
+Fix: Move dates, quantities, and roles to the association relation.
+
+\section{Checklist: mapping rules you can apply mechanically}
+Use these rules as a quick mechanical pass:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Each entity becomes one relation.
+  \item Each relation has a primary key that represents identity.
+  \item 1:N becomes a foreign key on the N side.
+  \item 1:1 becomes a foreign key with a uniqueness constraint.
+  \item N:M becomes an association relation with two FKs.
+  \item Multivalued attributes become their own relations.
+\end{itemize}
+
+\section{Mini checklist}
+Before finalizing the relational schema, check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Does every relationship map to exactly one structure in the schema?
+  \item Are all 1:1 relationships enforced with uniqueness, not duplication?
+  \item Are relationship attributes stored on the association relation?
+  \item Are multivalued attributes separated into their own relations?
+  \item Are mandatory and optional references explicit?
+  \item Can you explain why each foreign key is placed where it is?
+  \item Are event entities used for time- or status-rich relationships?
+\end{itemize}
+
+\begin{chaptersummary}
+Translating a conceptual model into a relational schema is a disciplined application of mapping rules.
+Entities become relations with keys.
+One-to-many relationships become foreign keys on the many side.
+Many-to-many relationships become association relations.
+If a relationship has attributes or time semantics, it usually needs its own structure.
+A schema is correct when it preserves meaning through identity, references, and constraints, even before SQL is introduced.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Choose a domain (clinic, library, university, online shop) and answer in full sentences.
+\begin{enumerate}[label=\arabic*.]
+  \item Identify one 1:N relationship and write the corresponding two relations in book notation.
+  \item Identify one N:M relationship and write the association relation.
+  \item Identify one relationship that has attributes (e.g., dates) and explain where those attributes belong.
+  \item Identify one multivalued attribute and rewrite it as a separate relation.
+  \item Write three business constraints that are not automatically enforced by foreign keys.
+  \item Show a 1:1 relationship and explain where you placed the foreign key and why.
+  \item Give one example where optionality changes the schema and explain the difference.
+  \item Sketch an order/order-line schema and justify where quantities and prices belong.
+  \item Write a constraint that enforces “one active loan per copy” in words.
+\end{enumerate}
+\end{exercisebox}
+
+In the next chapter we examine redundancy and normalization.
+The mapping choices here determine where redundancy appears and how it can be removed.

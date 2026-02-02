@@ -1,0 +1,93 @@
+% book/main.tex
+\documentclass[11pt,a4paper,oneside]{book}
+
+% ========================
+% Book preamble / style
+% ========================
+\makeatletter
+\def\input@path{{../styles/}{../frontmatter/}{../backmatter/}{../chapters/}}
+\makeatother
+\input{preamble.tex}
+
+% ========================
+% Metadata
+% ========================
+\title{Relational Database Design\\\large A Concept-First Book (No SQL Required)}
+\author{Diogo Ribeiro}
+\date{\today}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\maketitle
+
+\cleardoublepage
+\thispagestyle{empty}
+\begin{center}
+  \vspace*{0.2\textheight}
+  {\small Copyright \textcopyright\ \the\year\ \author.}\\
+  {\small All rights reserved.}\\
+  {\small Placeholder copyright page.}
+\end{center}
+\cleardoublepage
+\hypersetup{pageanchor=true}
+
+\frontmatter
+
+\input{preface.tex}
+\input{how-to-use.tex}
+
+\tableofcontents
+
+\mainmatter
+
+% ========================
+% Chapters
+% ========================
+\input{ch01-workflow}
+\input{ch02-core-concepts}
+\input{ch03-keys-identity}
+\input{ch04-conceptual-to-relational}
+\input{ch05-normalization}
+\input{ch06-integrity-constraints}
+\input{ch07-validation}
+\input{ch08-naming-documentation}
+\input{ch09-case-study-clinic}
+\input{ch10-case-study-library}
+\input{ch11-state-and-time}
+\input{ch12-relationships-advanced}
+\input{ch13-functional-dependencies}
+\input{ch14-normalization-patterns}
+\input{ch15-design-tradeoffs}
+\input{ch16-conceptual-design-review}
+\input{ch17-requirements-and-scope}
+\input{ch18-modelling-nulls}
+\input{ch19-decomposition-heuristics}
+\input{ch20-constraints-catalog}
+\input{ch21-conclusion-next-steps}
+
+\appendix
+\input{appendix-ch01-sql}
+\input{appendix-ch02-sql}
+\input{appendix-ch03-sql}
+\input{appendix-ch04-sql}
+\input{appendix-ch05-sql}
+\input{appendix-ch06-sql}
+\input{appendix-ch07-sql}
+\input{appendix-ch08-sql}
+\input{appendix-ch09-sql}
+\input{appendix-ch10-sql}
+\input{appendix-ch11-sql}
+\input{appendix-ch12-sql}
+\input{appendix-ch13-sql}
+\input{appendix-ch14-sql}
+\input{appendix-ch15-sql}
+\input{appendix-ch16-sql}
+
+\backmatter
+\renewcommand{\listfigurename}{Figure Index}
+\listoffigures
+
+\input{bibliography.tex}
+
+\end{document}

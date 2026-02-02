@@ -1,0 +1,90 @@
+% chapters/ch21-conclusion-next-steps.tex
+\chapter{Conclusion and Next Steps}
+
+\begin{learningobjectives}
+In this chapter you will consolidate the conceptual design workflow.
+You will see what is required to move toward implementation later.
+You will identify the artifacts needed for a clean handoff.
+\end{learningobjectives}
+
+\section{What you have built}
+You now have a conceptual model grounded in meaning.
+It includes entities, relationships, and constraints.
+It is independent of any SQL dialect.
+
+\section{From model to implementation}
+Implementation is a translation step, not a redesign.
+The model provides the rules.
+The implementation provides the mechanics.
+
+\subsection{Mapping as a disciplined translation}
+Entities become relations.
+Relationships become references or association relations.
+Constraints become enforceable checks.
+
+\section{Documentation as a deliverable}
+A model is only useful if it is shared and understood.
+Your documentation should be precise and minimal.
+
+\subsection{Core artifacts}
+At minimum, provide:
+\begin{itemize}
+  \item A diagram for communication.
+  \item A rule list with explicit constraints.
+  \item A glossary of terms and relationships.
+\end{itemize}
+
+\begin{examplebox}
+\textbf{Handoff package}\
+Diagram, rule list, constraint catalog, and a short glossary.\\
+These are enough for implementation without ambiguity.
+\end{examplebox}
+
+\section{Readiness checks}
+Before implementation, confirm these points.
+They prevent late surprises.
+
+\subsection{Model stability}
+Do key entities and rules remain consistent under edge cases?
+If not, return to requirements.
+
+\subsection{Stakeholder agreement}
+A model is valid only when stakeholders agree with the rules.
+Review is part of design, not an afterthought.
+
+\begin{principlebox}
+\textbf{Principle}\
+Clarity comes before optimization.
+\end{principlebox}
+
+\section{What comes next (but not yet)}
+Implementation will introduce SQL, indexes, and performance choices.
+Those topics are important, but they belong to a later phase.
+For now, focus on meaning and correctness.
+
+\begin{examplebox}
+\textbf{Tease the next phase}\
+You will later choose keys, constraints, and indexes in SQL.\\
+Those choices should mirror the conceptual rules, not replace them.
+\end{examplebox}
+
+\section{Closing loop}
+A good model is a living artifact.
+It should be revisited as the domain evolves.
+Treat it as part of the system, not a one-off document.
+
+\begin{chaptersummary}
+You have a complete conceptual framework for relational design.
+The next step is implementation, but only after clarity and agreement.
+Documentation, rules, and constraints form a reliable handoff.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Reflect on a model you have built or reviewed.
+\begin{enumerate}[label=\arabic*.]
+  \item List three rules that were most critical to meaning.
+  \item Identify one place where the model was still ambiguous.
+  \item Write a short handoff checklist for a future implementation team.
+  \item Describe one risk if implementation starts too early.
+\end{enumerate}
+\end{exercisebox}

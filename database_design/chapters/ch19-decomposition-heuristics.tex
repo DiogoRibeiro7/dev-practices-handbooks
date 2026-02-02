@@ -1,0 +1,98 @@
+% chapters/ch19-decomposition-heuristics.tex
+\chapter{Decomposition Heuristics}
+
+\begin{learningobjectives}
+In this chapter you will learn how to split relations by meaning.
+You will recognize mixed-grain structures and repeating groups.
+You will practice decomposition without relying on convenience.
+\end{learningobjectives}
+
+\section{One relation, one meaning}
+A relation should describe one kind of fact.
+If it mixes meanings, it invites contradictions.
+This is the core heuristic.
+
+\begin{principlebox}
+\textbf{Principle}\\
+Split by meaning, not by convenience.
+\end{principlebox}
+
+\section{Repeating groups and collections}
+If an attribute holds many values, the meaning is unclear.
+Lists hide multiplicity.
+They belong in a separate relation.
+
+\subsection{Multi-valued attributes}
+If an entity can have many phone numbers, the phone numbers are a collection.
+Collections deserve their own identity and constraints.
+
+\begin{examplebox}
+\textbf{Repeating group}\\
+\rel{Member}(member\_id, name, phone1, phone2, phone3)\\
+Better meaning: \rel{Member}(member\_id, name) and \rel{MemberPhone}(member\_id, phone).
+\end{examplebox}
+
+\section{Mixed grain}
+A mixed-grain relation blends entity facts with event facts.
+This causes duplication and update anomalies.
+
+\subsection{Entity versus event}
+A person’s name is stable.
+An appointment time is an event.
+Do not store them in the same relation unless the event is the entity.
+
+\begin{examplebox}
+\textbf{Mixed grain}\par\smallskip
+\[
+\rel{Appointment}(appointment\_id, start\_time, doctor\_name, patient\_name)
+\]
+Better meaning:
+\[
+\begin{aligned}
+\rel{Doctor}(&doctor\_id, name), \\
+\rel{Patient}(&patient\_id, name), \\
+\rel{Appointment}(&appointment\_id, start\_time, \\
+&doctor\_id \rightarrow \rel{Doctor}, patient\_id \rightarrow \rel{Patient})
+\end{aligned}
+\]
+\end{examplebox}
+
+\section{Derived data}
+Derived attributes can be useful, but they are not primary facts.
+If you include them, be explicit that they are derived.
+Otherwise they will be mistaken for ground truth.
+
+\section{Stability and change}
+If part of a relation changes at a different rate, you likely have two meanings.
+Split slow-changing facts from fast-changing facts.
+This keeps history consistent.
+
+\subsection{Time-varying attributes}
+When a value changes over time, consider a separate relation to track history.
+This is a conceptual decision before any SQL.
+
+\section{Decomposition checklist}
+Ask three questions:
+\begin{itemize}
+  \item Does each attribute describe the same kind of fact?
+  \item Can the attributes change together?
+  \item Would a missing subset still make sense?
+\end{itemize}
+If any answer is no, decomposition is likely needed.
+
+\begin{chaptersummary}
+Decomposition is about meaning, not performance.
+Repeating groups, mixed grain, and time-varying facts signal a need to split.
+A single relation should represent a single kind of fact.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Choose a small domain and draft a single relation that mixes facts.
+\begin{enumerate}[label=\arabic*.]
+  \item Identify at least two different meanings in the relation.
+  \item Decompose it into two or more relations with clear meaning.
+  \item Describe the relationships between the new relations.
+  \item State one constraint that is easier to express after decomposition.
+  \item Explain how the decomposition improves clarity.
+\end{enumerate}
+\end{exercisebox}

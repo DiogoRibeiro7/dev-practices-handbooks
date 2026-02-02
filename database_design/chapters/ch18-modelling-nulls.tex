@@ -1,0 +1,103 @@
+% chapters/ch18-modelling-nulls.tex
+\chapter{Modelling Nulls and Optional Data}
+
+\begin{learningobjectives}
+In this chapter you will learn the meaning of missing data.
+You will distinguish unknown values from not-applicable values.
+You will connect optionality in relationships to optionality in attributes.
+\end{learningobjectives}
+
+\section{Why nulls are a conceptual issue}
+Nulls are often treated as a storage detail.
+That is a mistake.
+A null encodes meaning.
+If the meaning is unclear, the data becomes ambiguous.
+
+\section{Optionality versus missingness}
+Optionality describes whether a relationship can be absent.
+Missingness describes whether an attribute value is unknown or not applicable.
+These are different ideas.
+
+\subsection{Optional relationships}
+An appointment must have a patient.
+A patient may have zero appointments.
+The relationship is optional from the patient side.
+
+\subsection{Optional attributes}
+A return date may not be present.
+This does not mean the loan is optional.
+It means the value is not yet known.
+
+\begin{examplebox}
+\textbf{Optional relationship vs optional attribute}\
+A patient may have zero appointments.\\
+A loan may have a return date after it is returned.\\
+These are different kinds of optionality.
+\end{examplebox}
+
+\section{Unknown versus not applicable}
+Unknown means the value exists but is not yet known.
+Not applicable means the value does not exist for that instance.
+This distinction should be explicit.
+
+\subsection{Unknown}
+“Unknown” is a temporary state.
+It should usually be resolved over time.
+
+\subsection{Not applicable}
+“Not applicable” is permanent for that instance.
+It should not be forced into a placeholder value.
+
+\begin{examplebox}
+\textbf{Unknown vs not applicable}\
+A patient’s insurance number may be unknown at registration.\\
+A walk-in patient may not have an insurance number at all.
+\end{examplebox}
+
+\section{Temporal missingness}
+Some values are missing because the event has not occurred.
+A return date before return is unknown, not applicable.
+A graduation date before graduation is unknown.
+After graduation, it is known.
+
+\section{Defaults and placeholders}
+Defaults can hide missingness.
+Placeholders are often worse.
+They make meaning ambiguous.
+Use explicit rules instead.
+
+\begin{principlebox}
+\textbf{Principle}\
+Every null must have a meaning.
+\end{principlebox}
+
+\section{Impact on constraints}
+Constraints must match the intended meaning.
+If a value can be unknown, allow it explicitly.
+If a value is not applicable, model the condition that makes it inapplicable.
+
+\subsection{Conceptual constraints}
+State whether the value is required, optional, or conditional.
+If conditional, write the rule in words.
+
+\subsection{Relational mapping}
+When you later map to relations, nullability follows these rules.
+Do not decide nullability based on convenience.
+
+\begin{chaptersummary}
+Nulls are not just storage markers.
+They encode meaning about unknown or not-applicable values.
+Optionality in relationships is not the same as missingness in attributes.
+Clear rules prevent silent ambiguity.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Consider a domain such as a clinic or library.
+\begin{enumerate}[label=\arabic*.]
+  \item List five attributes that might be missing.
+  \item For each, classify as unknown or not applicable.
+  \item Write a rule that explains when each value becomes known.
+  \item Identify one relationship that is optional and explain why.
+  \item Rewrite one ambiguous rule to remove null confusion.
+\end{enumerate}
+\end{exercisebox}

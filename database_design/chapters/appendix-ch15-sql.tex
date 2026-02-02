@@ -1,0 +1,44 @@
+% chapters/appendix-ch15-sql.tex
+\chapter{SQL Appendix: Chapter 15 (Design Trade-offs)}
+
+\section{DDL (denormalized read model)}
+\begin{verbatim}
+CREATE TABLE loan (
+  loan_id INT PRIMARY KEY AUTO_INCREMENT,
+  member_id INT NOT NULL,
+  checkout_date DATE NOT NULL,
+  due_date DATE NOT NULL,
+  return_date DATE NULL
+) ENGINE=InnoDB;
+
+-- Denormalized read model (trade-off example)
+CREATE TABLE loan_read_model (
+  loan_id INT PRIMARY KEY,
+  member_id INT NOT NULL,
+  due_date DATE NOT NULL,
+  overdue_flag TINYINT(1) NOT NULL DEFAULT 0
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO loan (member_id, checkout_date, due_date, return_date)
+VALUES (1, '2026-01-10', '2026-01-24', NULL);
+
+INSERT INTO loan_read_model (loan_id, member_id, due_date, overdue_flag)
+VALUES (1, 1, '2026-01-24', 0);
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Read model usage
+SELECT loan_id, member_id, overdue_flag
+FROM loan_read_model
+WHERE overdue_flag = 1;
+
+-- Q2: Recompute overdue flag (derived truth)
+SELECT loan_id,
+       CASE WHEN return_date IS NULL AND due_date < CURRENT_DATE()
+            THEN 1 ELSE 0 END AS derived_overdue
+FROM loan;
+\end{verbatim}

@@ -1,0 +1,337 @@
+% chapters/ch07-validation.tex
+\chapter{Design Validation Without SQL}
+
+\begin{learningobjectives}
+In this chapter you will learn how to validate a relational design before implementing it.
+You will be able to validate a schema by questions, by rule-to-schema traceability, and by controlled test data.
+You will also learn a practical review checklist that catches most modelling errors early.
+\end{learningobjectives}
+
+\section{Validation is part of design}
+A design is not correct because it looks reasonable.
+It is correct because it preserves meaning under use.
+Validation is the stage where you try to break the model on purpose, using the rules and the questions the system must support.
+
+This book delays SQL, but validation does not require SQL.
+Validation is about logic, not syntax.
+A schema can be validated with careful reading, traceability, and small thought experiments.
+
+\begin{definitionbox}
+\term{Design validation} is the process of checking that a schema:
+\begin{itemize}
+  \item represents the intended domain meaning,
+  \item supports the required questions,
+  \item and prevents (or makes detectable) invalid states.
+\end{itemize}
+\end{definitionbox}
+
+\section{Validation artifacts as deliverables}
+Validation should leave artifacts you can review and reuse.
+These artifacts make the design auditable and easier to improve.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{validation-artifacts.pdf}
+\caption{Validation artifacts connect rules to evidence and review notes.}
+\end{figure}
+
+\subsection{Questions list}
+Keep a short list of key questions that the system must answer.
+These questions drive the structure and keep validation grounded in use.
+
+\subsection{Traceability map}
+Write a rule-to-schema table that links each rule to constraints or structures.
+This makes omissions visible.
+
+\subsection{Paper datasets}
+Create small, explicit datasets that include valid and invalid scenarios.
+They expose hidden ambiguity before implementation.
+
+\subsection{Review notes}
+Capture the decisions and open issues from validation.
+These notes become the starting point for the next review.
+
+\section{Method 1: Validate with key questions}
+Every domain has questions it must answer.
+If your schema cannot express the answers cleanly, the design is not finished.
+
+The point is not to list every possible query.
+The point is to identify a small set of \emph{key questions} that reflect the purpose of the system.
+These questions should include:
+questions about current state, historical state, and exceptional states.
+
+A useful discipline is to write at least:
+\begin{itemize}[leftmargin=*,nosep]
+  \item 3 questions about lists and lookups,
+  \item 3 questions about summaries and counts,
+  \item 2 questions about detecting violations or anomalies.
+\end{itemize}
+
+\begin{principlebox}
+\textbf{Questions reveal structure}\\
+If a key question requires awkward joins or duplicated facts, the structure is wrong.
+Validate the schema by the questions it must answer.
+\end{principlebox}
+
+\subsection{Clinic: key questions}
+For the clinic domain, a minimal set could be:
+\begin{itemize}
+  \item Q1: What appointments does a patient have this week?
+  \item Q2: What is a doctor’s schedule for a given day?
+  \item Q3: Which patients have no future appointments booked?
+  \item Q4: How many appointments did each doctor have last month?
+  \item Q5: Are there any double bookings for a doctor?
+\end{itemize}
+
+Even without SQL, you can check if each question maps naturally to relations and relationships.
+If a question requires duplicated data or unnatural structures, the schema is signalling a problem.
+
+\subsection{Library: key questions}
+For the library domain:
+\begin{itemize}
+  \item Q1: Which copies are available for a given title?
+  \item Q2: What active loans does a member have?
+  \item Q3: What is the loan history of a copy?
+  \item Q4: Which loans are overdue today?
+  \item Q5: Are there copies with more than one active loan?
+  \item Q6: What is the reservation queue for a title?
+\end{itemize}
+
+Notice how these questions force the “title vs copy” separation.
+If you cannot answer Q1 and Q3 cleanly, your model is usually collapsing those concepts.
+
+\begin{examplebox}
+\textbf{University: key questions}\par\smallskip
+\begin{itemize}
+  \item Q1: Which courses is a student enrolled in this term?
+  \item Q2: Which students are on the waitlist for a course?
+  \item Q3: Which courses have no enrolled students yet?
+  \item Q4: Are there students enrolled without meeting prerequisites?
+\end{itemize}
+\end{examplebox}
+
+\section{Method 2: Rule-to-schema traceability}
+Rules are the strongest validation tool because they are explicit.
+Traceability means that every important rule is linked to the design element that enforces it or supports it.
+
+A traceability map is a short table.
+It turns vague assurance (“yes, we modelled that”) into concrete evidence.
+
+\begin{principlebox}
+\textbf{Traceability discipline}\\[2pt]
+For each important rule:
+\begin{itemize}[leftmargin=*,nosep]
+  \item identify where it is enforced (constraint), or
+  \item identify how it is supported (structure), or
+  \item explicitly state that enforcement is external and how violations are detected.
+\end{itemize}
+\end{principlebox}
+
+\begin{examplebox}
+\textbf{Clinic traceability example}\\[4pt]
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Rule & Design element(s) \\
+\midrule
+Appointment has exactly one patient & Appointment.patient\_id is mandatory FK to Patient \\
+Appointment has exactly one doctor & Appointment.doctor\_id is mandatory FK to Doctor \\
+No double booking (slot-based) & Unique(doctor\_id, start\_time) on Appointment \\
+\bottomrule
+\end{tabularx}
+\end{examplebox}
+
+\begin{examplebox}
+\textbf{Library traceability example}\\[4pt]
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Rule & Design element(s) \\
+\midrule
+Each Copy belongs to one Title & Copy.title\_id is mandatory FK to Title \\
+Each Loan references one Member & Loan.member\_id is mandatory FK to Member \\
+Each Loan references one Copy & Loan.copy\_id is mandatory FK to Copy \\
+Due date not before checkout date & Loan.due\_date \(\ge\) Loan.checkout\_date \\
+One active loan per copy & No two Loans with same copy\_id and missing return\_date \\
+Reservation references a Title & Reservation.title\_id is mandatory FK to Title \\
+Reservation references a Member & Reservation.member\_id is mandatory FK to Member \\
+Copy barcode unique when present & Unique(Copy.barcode) when not null \\
+Loan history preserved & Loan is an event relation, not a status field on Copy \\
+\bottomrule
+\end{tabularx}
+\end{examplebox}
+
+Traceability also reveals missing design elements.
+If you have a rule and cannot point to any place in the design that supports it, the model is incomplete.
+
+\section{Method 3: Validate with controlled test data (on paper)}
+Even without SQL, you can validate by constructing small example datasets.
+This is an underrated technique.
+You propose a handful of rows for each relation and see whether:
+\begin{itemize}[leftmargin=*,nosep]
+  \item valid scenarios are representable without awkward duplication,
+  \item invalid scenarios are prevented or at least visible as violations,
+  \item history can be represented when time is involved.
+\end{itemize}
+
+This method is especially useful for business constraints.
+
+\subsection{Clinic thought experiment}
+Try to represent:
+\begin{itemize}
+  \item a doctor with no appointments yet,
+  \item a patient with two future appointments,
+  \item an invalid double booking attempt.
+\end{itemize}
+
+If your design cannot represent the first two scenarios, it is too restrictive.
+If it cannot represent the invalid scenario as an explicit violation, it is too permissive.
+
+\begin{examplebox}
+\textbf{Clinic paper dataset (sketch)}\par\smallskip
+\begin{tabular}{@{}lll@{}}
+\toprule
+\multicolumn{3}{@{}l@{}}{\textbf{Patient}} \\
+\midrule
+patient\_id & name & birth\_date \\
+P1 & Ana Costa & 1990-04-11 \\
+P2 & Rui Silva & 1985-09-03 \\
+P3 & Marta Lima & 2001-01-22 \\
+\bottomrule
+\end{tabular}
+\par\smallskip
+\begin{tabular}{@{}lll@{}}
+\toprule
+\multicolumn{3}{@{}l@{}}{\textbf{Doctor}} \\
+\midrule
+doctor\_id & name & specialty \\
+D1 & Joana Reis & cardiology \\
+D2 & Hugo Pereira & pediatrics \\
+D3 & Sara Pinto & dermatology \\
+\bottomrule
+\end{tabular}
+\par\smallskip
+\begin{tabular}{@{}llll@{}}
+\toprule
+\multicolumn{4}{@{}l@{}}{\textbf{Appointment}} \\
+\midrule
+appointment\_id & start\_time & patient\_id & doctor\_id \\
+A1 & 2026-02-03 09:00 & P1 & D1 \\
+A2 & 2026-02-03 09:30 & P2 & D1 \\
+A3 & 2026-02-03 10:00 & P3 & D2 \\
+\bottomrule
+\end{tabular}
+\end{examplebox}
+
+\subsection{Library thought experiment}
+Try to represent:
+\begin{itemize}
+  \item one title with two copies,
+  \item one copy loaned and returned,
+  \item one copy loaned to two members at the same time (invalid),
+  \item two reservations for the same title.
+\end{itemize}
+
+A good design makes the invalid state either impossible (ideal) or immediately detectable.
+If the invalid state blends in without obvious contradiction, you need stronger constraints or clearer state modelling.
+
+\begin{examplebox}
+\textbf{Library test rows (sketch)}\par\smallskip
+\[
+\rel{Copy}(\underline{copy\_id}, status, title\_id \rightarrow \rel{Title})
+\]
+Rows: (C1, on\_loan, T1), (C2, available, T1)\par
+\[
+\rel{Loan}(\underline{loan\_id}, copy\_id \rightarrow \rel{Copy}, member\_id \rightarrow \rel{Member}, return\_date?)
+\]
+Rows: (L1, C1, M1, \text{missing}), (L2, C1, M2, \text{missing})\par
+If both L1 and L2 are allowed, the “one active loan per copy” rule is violated.
+\end{examplebox}
+
+\begin{notebox}
+Keep test datasets small and explicit.
+Two or three rows per relation are usually enough to expose hidden ambiguity.
+\end{notebox}
+
+\section{Common mistakes}
+Most beginner designs fail in repeatable ways.
+Validation methods catch them early.
+
+\subsection{Collapsing distinct concepts}
+Title vs copy, customer vs address, order vs payment, doctor vs specialty.
+If you collapse them, you will struggle to represent history, multiplicity, or policy.
+Key questions usually reveal this immediately.
+
+\subsection{Treating events as static relationships}
+Loans, appointments, payments, enrollments, subscriptions.
+These are events with time and state.
+If you model them as a single foreign key or a simple relationship, you lose history and constraints.
+Controlled test data exposes the problem fast.
+
+\subsection{Missing optionality decisions}
+If you do not decide what is mandatory, your schema quietly allows invalid states.
+Traceability catches this because rules like “exactly one” demand a mandatory reference.
+
+\subsection{Encoding collections inside attributes}
+Comma-separated lists, repeated columns, and JSON blobs used as a shortcut.
+These break 1NF and make constraints hard to express.
+Controlled test data exposes the awkwardness, and normalization principles give the fix.
+
+\section{Limits of validation}
+Validation improves correctness, but it cannot guarantee it.
+Some errors only appear under real data volume or evolving business rules.
+
+\begin{notebox}
+\textbf{What validation cannot guarantee}\\
+Validation cannot prove a design is perfect.
+It can only reduce risk by exposing contradictions, missing rules, and weak assumptions.
+\end{notebox}
+
+\section{A practical review checklist}
+Use this checklist to review any schema before implementation.
+
+\begin{examplebox}
+\textbf{Schema review checklist}\par\smallskip
+\begin{itemize}
+  \item Identity: Does every entity have a clear primary key? Is it stable?
+  \item Relationships: Are 1:N and N:M represented correctly (FK vs association relation)?
+  \item Optionality: For each FK, is it mandatory or optional, and does that match the rules?
+  \item Redundancy: Are you repeating the same facts across multiple relations?
+  \item Time: Are time-based events represented as entities (Loan, Appointment) with their own attributes?
+  \item Constraints: Are key business constraints stated and mapped to enforcement or detection?
+  \item Questions: Can you answer the key questions naturally from the structure?
+\end{itemize}
+\end{examplebox}
+
+This checklist is short on purpose.
+If you apply it consistently, it catches most structural issues before a single line of SQL exists.
+
+\section{Mini checklist}
+Before moving to implementation, confirm:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Each key question has a clear path through the schema.
+  \item Every business rule is mapped to a constraint or detection plan.
+  \item Test rows can represent both valid and invalid scenarios.
+\end{itemize}
+
+\begin{chaptersummary}
+Validation is design work.
+You can validate a schema without SQL by checking whether it supports key questions, by building a rule-to-schema traceability map, and by constructing small controlled datasets to test representability and constraint behaviour.
+The goal is to ensure your model preserves meaning under real use, not only on paper.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Pick one domain (clinic, library, university, online shop) and answer in full sentences.
+\begin{enumerate}[label=\arabic*.]
+  \item Write 8 key questions (at least 2 about violations or anomalies).
+  \item Write 10 business rules and create a traceability table for at least 6 of them.
+  \item Propose a small dataset (3--5 rows per relation) that represents two valid scenarios.
+  \item Propose one invalid scenario and explain how your schema would prevent or detect it.
+  \item Use the checklist to find one improvement to your current model.
+  \item Identify one common mistake your schema might still contain and explain how you would test for it.
+  \item Add one question that forces a decision about optionality and explain how the schema answers it.
+  \item Write a short validation note that documents one assumption and one open issue.
+  \item Create a traceability row for a constraint that cannot be enforced directly and state how to detect violations.
+\end{enumerate}
+\end{exercisebox}
+
+In the next chapter we focus on naming and documentation.
+The artifacts you created here become inputs to those decisions.

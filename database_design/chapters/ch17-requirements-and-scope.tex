@@ -1,0 +1,117 @@
+% chapters/ch17-requirements-and-scope.tex
+\chapter{Requirements and Scope}
+
+\begin{learningobjectives}
+In this chapter you will learn how to define scope for a conceptual design.
+You will be able to separate requirements that shape meaning from those that belong to later implementation.
+You will practice writing clear scope boundaries and assumptions.
+\end{learningobjectives}
+
+\section{Why scope matters}
+A model is only as clear as its boundaries.
+If the scope is too wide, the model becomes vague.
+If it is too narrow, it becomes brittle.
+Scope is not a technical detail.
+It is a design decision about meaning.
+
+\section{What belongs in conceptual design}
+Conceptual design captures facts, rules, and relationships.
+It answers: what exists, what it means, and what is allowed.
+It does not answer how data will be stored or optimized.
+
+\subsection{Entities, attributes, and relationships}
+Entities represent identity.
+Attributes describe those entities.
+Relationships express associations and constraints.
+This is the core vocabulary of the model.
+
+\subsection{Rules and constraints}
+Rules belong in the conceptual model when they define valid states.
+A model without constraints is a story, not a design.
+
+\begin{examplebox}
+\textbf{In-scope statements}\
+A member is uniquely identified by \texttt{member\_id}.\\
+A loan must reference exactly one member and one copy.\\
+A copy may have at most one active loan at a time.
+\end{examplebox}
+
+\section{What does not belong yet}
+Some topics are important, but not conceptual.
+They are deliberately out of scope in this phase.
+
+\subsection{Performance and storage}
+Indexes, caching, and partitioning are implementation concerns.
+They depend on workload and technology choices.
+They do not change meaning.
+
+\subsection{SQL and physical schemas}
+SQL expresses the model, but it is not the model.
+The conceptual design should be complete without a specific dialect.
+
+\subsection{User interfaces and workflows}
+UI workflows influence data needs, but they are not rules of the domain.
+Keep the model neutral and stable.
+
+\begin{examplebox}
+\textbf{Out-of-scope statements}\
+“Add an index on member\_id.”\\
+“Use a JSON column for tags.”\\
+“Show a drop-down for status.”
+\end{examplebox}
+
+\section{Sources of requirements}
+Requirements come from people, documents, and existing systems.
+No single source is enough.
+You need triangulation.
+
+\subsection{Stakeholder interviews}
+Listen for nouns, verbs, and constraints.
+Ask for exceptions and edge cases.
+Those define the shape of the model.
+
+\subsection{Policies and artifacts}
+Policies describe rules.
+Forms and reports reveal attribute expectations.
+Existing databases reveal legacy assumptions.
+
+\section{Writing requirements as rules}
+A good rule is testable and specific.
+It avoids “usually” and “typically”.
+It uses explicit cardinality and optionality.
+
+\begin{principlebox}
+\textbf{Principle}\
+Model meaning, not implementation.
+\end{principlebox}
+
+\section{Defining boundaries and assumptions}
+State what you are not modelling.
+State what you assume to be true.
+This makes the model stable and reviewable.
+
+\subsection{Boundary statements}
+Examples include regions, time ranges, and product lines.
+They reduce ambiguity and prevent scope creep.
+
+\subsection{Assumption log}
+Assumptions should be explicit and revisited.
+They are part of the model’s contract.
+
+\begin{chaptersummary}
+Scope is a design decision, not a formality.
+Conceptual design includes entities, attributes, relationships, and rules.
+It excludes SQL, performance tuning, and UI decisions.
+Clear boundaries make the model coherent and reviewable.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Define scope for a small domain of your choice.
+\begin{enumerate}[label=\arabic*.]
+  \item Write five in-scope rules as precise statements.
+  \item List three out-of-scope concerns you will not model yet.
+  \item Identify two sources you would use to validate the rules.
+  \item Write three assumptions that might change later.
+  \item Explain how you would communicate scope to stakeholders.
+\end{enumerate}
+\end{exercisebox}

@@ -1,0 +1,88 @@
+% styles/preamble.tex
+
+% ========================
+% Encoding / fonts
+% ========================
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ========================
+% Layout
+% ========================
+\usepackage[a4paper,margin=2.5cm]{geometry}
+
+% ========================
+% Math / tables / lists
+% ========================
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{fvextra}
+
+% ========================
+% Colors / links
+% ========================
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+% ========================
+% Headers / footers
+% ========================
+\usepackage{fancyhdr}
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[R]{\thepage}
+\fancyhead[L]{\nouppercase{\rightmark}}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ========================
+% Boxes
+% ========================
+\usepackage{tcolorbox}
+
+% ========================
+% TikZ (optional)
+% ========================
+\newif\iftikzavailable
+\IfFileExists{tikz.sty}{\tikzavailabletrue}{\tikzavailablefalse}
+\iftikzavailable
+  \usepackage{tikz}
+  \usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc}
+  \usetikzlibrary{positioning,shapes,arrows}
+\fi
+
+% ========================
+% Book style layer
+% ========================
+\usepackage{../styles/book}
+\graphicspath{{figures/}{../figures/}}
+
+% Wrap long verbatim lines (SQL appendices)
+\DefineVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere}
+
+% ER helpers (only if TikZ is available)
+\iftikzavailable
+  \newcommand{\erentity}[5]{%
+    \node[draw, rectangle, minimum width=2.5cm, minimum height=1cm, anchor=center, align=center] (#1) [#2] {%
+      \textbf{#3}\\
+      \scriptsize\texttt{#4}\\
+      \scriptsize #5
+    };
+  }
+  \newcommand{\errel}[3]{%
+    \node[draw, diamond, aspect=2, minimum width=1.5cm, minimum height=1cm, anchor=center] (#1) [#2] {%
+      \scriptsize #3
+    };
+  }
+  \newcommand{\erconnect}[4]{%
+    \draw[->] (#1) -- (#2) node[midway, above, sloped, font=\scriptsize] {#3/#4};
+  }
+  \tikzset{
+    er line/.style={-Latex, thick},
+    er card/.style={font=\scriptsize}
+  }
+\fi

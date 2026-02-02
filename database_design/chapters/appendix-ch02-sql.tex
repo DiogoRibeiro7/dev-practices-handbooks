@@ -1,0 +1,49 @@
+% chapters/appendix-ch02-sql.tex
+\chapter{SQL Appendix: Chapter 2 (Core Concepts)}
+
+\section{DDL}
+\begin{verbatim}
+CREATE TABLE title (
+  title_id INT PRIMARY KEY AUTO_INCREMENT,
+  isbn VARCHAR(20) NULL UNIQUE,
+  title_name VARCHAR(200) NOT NULL,
+  author_name VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE copy (
+  copy_id INT PRIMARY KEY AUTO_INCREMENT,
+  barcode VARCHAR(50) NULL UNIQUE,
+  status VARCHAR(20) NOT NULL,
+  title_id INT NOT NULL,
+  CONSTRAINT fk_copy_title
+    FOREIGN KEY (title_id) REFERENCES title(title_id)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO title (isbn, title_name, author_name)
+VALUES
+  ('9780131103627', 'The C Programming Language', 'Kernighan, Ritchie'),
+  (NULL, 'Local History Archive', 'City Council');
+
+INSERT INTO copy (barcode, status, title_id)
+VALUES
+  ('BC-001', 'available', 1),
+  ('BC-002', 'on_loan', 1),
+  ('BC-003', 'available', 2);
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Copies for a title
+SELECT c.copy_id, c.barcode, c.status
+FROM copy c
+WHERE c.title_id = 1;
+
+-- Q2: Titles with no copies
+SELECT t.title_id, t.title_name
+FROM title t
+LEFT JOIN copy c ON c.title_id = t.title_id
+WHERE c.copy_id IS NULL;
+\end{verbatim}

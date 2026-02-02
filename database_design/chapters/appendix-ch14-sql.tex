@@ -1,0 +1,66 @@
+% chapters/appendix-ch14-sql.tex
+\chapter{SQL Appendix: Chapter 14 (Normalization Patterns)}
+
+\section{DDL (patterns)}
+\begin{verbatim}
+CREATE TABLE role (
+  role_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(80) NOT NULL UNIQUE
+) ENGINE=InnoDB;
+
+CREATE TABLE user_account (
+  user_id INT PRIMARY KEY AUTO_INCREMENT,
+  full_name VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE user_role (
+  user_id INT NOT NULL,
+  role_id INT NOT NULL,
+  valid_from DATE NOT NULL,
+  valid_to DATE NULL,
+  PRIMARY KEY (user_id, role_id, valid_from),
+  CONSTRAINT fk_user_role_user FOREIGN KEY (user_id) REFERENCES user_account(user_id),
+  CONSTRAINT fk_user_role_role FOREIGN KEY (role_id) REFERENCES role(role_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE setting_definition (
+  setting_key VARCHAR(60) PRIMARY KEY,
+  description VARCHAR(200) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE entity_setting (
+  entity_type VARCHAR(40) NOT NULL,
+  entity_id INT NOT NULL,
+  setting_key VARCHAR(60) NOT NULL,
+  setting_value VARCHAR(200) NOT NULL,
+  PRIMARY KEY (entity_type, entity_id, setting_key),
+  CONSTRAINT fk_setting_key FOREIGN KEY (setting_key) REFERENCES setting_definition(setting_key)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO role (name) VALUES ('admin'), ('librarian');
+INSERT INTO user_account (full_name) VALUES ('Ana Costa');
+INSERT INTO user_role (user_id, role_id, valid_from)
+VALUES (1, 2, '2026-01-01');
+
+INSERT INTO setting_definition (setting_key, description)
+VALUES ('max_loans', 'Maximum active loans per member');
+INSERT INTO entity_setting (entity_type, entity_id, setting_key, setting_value)
+VALUES ('member', 1, 'max_loans', '5');
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Active roles today
+SELECT ur.user_id, r.name
+FROM user_role ur
+JOIN role r ON r.role_id = ur.role_id
+WHERE ur.valid_to IS NULL OR ur.valid_to >= CURRENT_DATE();
+
+-- Q2: Settings for one member
+SELECT setting_key, setting_value
+FROM entity_setting
+WHERE entity_type = 'member' AND entity_id = 1;
+\end{verbatim}

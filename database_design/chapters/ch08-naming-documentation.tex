@@ -1,0 +1,216 @@
+% chapters/ch08-naming-documentation.tex
+\chapter{Naming, Documentation, and Design Hygiene}
+
+\begin{learningobjectives}
+In this chapter you will learn how naming and documentation affect correctness.
+You will be able to choose consistent names, document schemas at the right level of detail, and write small design records that make your modelling decisions auditable.
+\end{learningobjectives}
+
+\section{Why hygiene matters}
+A relational schema is a long-lived artifact.
+Even small projects accumulate time: new features, new people, new interpretations.
+When a schema is unclear, the database becomes a place where meaning drifts silently.
+
+This is why naming and documentation are not cosmetic.
+They are part of correctness.
+If two developers interpret the same column differently, the system will store contradictory facts while still “working”.
+Good hygiene reduces interpretability, and therefore reduces hidden bugs.
+
+\begin{definitionbox}
+\term{Design hygiene} is the practice of keeping naming, structure, and documentation consistent so that the schema has a single stable interpretation.
+\end{definitionbox}
+
+\section{Naming principles}
+Naming is about reducing ambiguity.
+A reader should guess the meaning of a relation or attribute correctly without needing a meeting.
+
+\begin{principlebox}
+\textbf{Naming goals}\\[2pt]
+Names should be:
+\begin{itemize}[leftmargin=*,nosep]
+  \item consistent across the schema,
+  \item specific enough to avoid multiple interpretations,
+  \item stable over time (avoid names tied to temporary implementation choices).
+\end{itemize}
+\end{principlebox}
+
+\subsection{Entity names}
+Use singular nouns for entity relations: \rel{Patient}, \rel{Doctor}, \rel{Appointment}, \rel{Loan}.
+This matches the idea “a row represents one instance”.
+
+For association relations, use compound names that communicate meaning:
+\rel{DoctorSpecialty}, \rel{StudentCourseEnrollment}, \rel{OrderLine}.
+Avoid generic names like \rel{Mapping} or \rel{Link} because they hide semantics.
+
+\subsection{Attribute names}
+Attribute names should communicate:
+what the value is, and what it refers to.
+
+A reliable convention is:
+\begin{itemize}[leftmargin=*,nosep]
+  \item primary key: \texttt{<entity>\_id} (e.g., \texttt{patient\_id}),
+  \item foreign key: same naming pattern, matching the referenced entity,
+  \item booleans: \texttt{is\_*}, \texttt{has\_*} (e.g., \texttt{is\_active}),
+  \item timestamps/dates: include the semantic moment.\par
+        Example: \texttt{checkout\_date}, \texttt{return\_date}, \texttt{created\_at}.
+\end{itemize}
+
+Avoid names like \texttt{date} or \texttt{status} when multiple “dates” or “statuses” exist in the same domain.
+Ambiguous names force readers to search for meaning and increase the chance of misuse.
+
+\subsection{Do not encode meaning in magic abbreviations}
+Abbreviations can be useful, but they also hide meaning.
+If you use abbreviations, keep them standard and document them.
+Avoid project-specific abbreviations in the schema unless the domain itself uses them.
+
+\section{Naming conventions that scale}
+Small naming decisions become expensive when a schema grows.
+Use conventions that survive more tables, more teams, and more time.
+
+\subsection{Identifiers}
+Use \texttt{<entity>\_id} for primary keys and match foreign keys to the referenced entity.
+This keeps joins readable and reduces misinterpretation.
+
+\subsection{Timestamps and dates}
+Name dates by their semantic moment: \texttt{created\_at}, \texttt{checkout\_date}, \texttt{valid\_from}.
+Avoid generic \texttt{date} or \texttt{timestamp} in domains with multiple time concepts.
+
+\subsection{Booleans and state fields}
+Use \texttt{is\_*} or \texttt{has\_*} for booleans.
+For multi-state attributes, use a noun like \texttt{status} with a documented domain.
+If there are multiple statuses, name them explicitly (e.g., \texttt{loan\_status}, \texttt{membership\_status}).
+
+\section{Documentation layers}
+Documentation fails in two ways.
+It can be too small, leaving meaning undefined.
+Or it can be too large, becoming outdated.
+
+Use layers so that each artifact has a clear purpose:
+\begin{itemize}[leftmargin=*,nosep]
+  \item README-level overview: domain narrative and goals.
+  \item Schema specification: relations, keys, and constraints.
+  \item Decision records: why modelling choices were made.
+\end{itemize}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{documentation-layers.pdf}
+\caption{Layered documentation keeps purpose, structure, and decisions aligned.}
+\end{figure}
+
+This set is stable because it explains \emph{meaning}, not implementation details.
+
+\begin{notebox}
+Avoid documenting things that will change frequently unless they are generated automatically.
+For example, detailed index plans or performance notes often drift.
+Meaning and constraints drift less, and are more valuable in early design.
+\end{notebox}
+
+\section{Schema spec block you can paste into any project}
+A compact schema block prevents most confusion.
+It forces you to state purpose, identity, and constraints in a repeatable format.
+
+\begin{examplebox}
+\textbf{Schema spec block}\\[4pt]
+Relation: \rel{Appointment}\\
+Purpose: Stores appointments scheduled between a patient and a doctor.\\
+Primary key: \texttt{appointment\_id} (surrogate).\\
+Foreign keys: \texttt{patient\_id} \(\rightarrow\) \rel{Patient} (mandatory), \texttt{doctor\_id} \(\rightarrow\) \rel{Doctor} (mandatory).\\
+Key constraints: start\_time mandatory; no double booking per doctor at same start\_time (slot-based).\\
+Notes: If appointment duration varies, double booking becomes an interval overlap constraint.
+\end{examplebox}
+
+\begin{examplebox}
+\textbf{Constraint block template}\\[4pt]
+C1: Appointment.patient\_id references an existing Patient and is mandatory.\\
+C2: Appointment.doctor\_id references an existing Doctor and is mandatory.\\
+C3: Appointment.start\_time is mandatory.\\
+C4: No two appointments may share the same (doctor\_id, start\_time) if time is slot-based.
+\end{examplebox}
+
+When a constraint cannot be enforced directly, document how violations are detected.
+This keeps correctness visible even when enforcement is external.
+
+\section{Decision records: making modelling choices auditable}
+Some decisions are not obvious from the final schema.
+A decision record is a short note that explains why a choice was made.
+It is especially useful for identity choices, normalization boundaries, and state modelling.
+
+A decision record should include:
+\begin{itemize}[leftmargin=*,nosep]
+  \item the decision,
+  \item the alternatives considered,
+  \item the rationale,
+  \item and the implications.
+\end{itemize}
+
+\begin{examplebox}
+\textbf{Decision record: Title vs Copy}\\[4pt]
+Decision: Model \rel{Title} and \rel{Copy} as separate entities.\\
+Alternatives: Single relation with one row per physical copy containing title metadata.\\
+Rationale: Avoid duplication of title facts across copies; support availability and loan history; support multiple copies per title.\\
+Implications: Loans reference copies; reservations reference titles; requires an “active loan” constraint per copy.
+\end{examplebox}
+
+\begin{examplebox}
+\textbf{Decision record: Surrogate vs natural key}\\[4pt]
+Decision: Use a surrogate key for \rel{Patient}.\\
+Alternatives: Use national health number as primary key.\\
+Rationale: Identifiers may be missing at first contact; surrogate keys keep identity stable across merges.\\
+Implications: National health number stored as optional unique attribute; matching rules documented separately.
+\end{examplebox}
+
+This format is useful in teaching because it shows that design is deliberate.
+It also mirrors how real teams justify schema decisions.
+
+\section{Common mistakes}
+Naming and documentation mistakes are easy to introduce.
+
+Mistake: Using ambiguous attribute names (e.g., \texttt{date}, \texttt{status}).\\
+Fix: Name attributes by their semantic role (\texttt{checkout\_date}, \texttt{loan\_status}).
+
+Mistake: Mixing naming styles across the schema.\\
+Fix: Choose one convention for identifiers and use it everywhere.
+
+Mistake: Writing decision records only after problems appear.\\
+Fix: Capture key decisions when you make them, even if brief.
+
+Mistake: Documenting implementation details instead of meaning.\\
+Fix: Prioritize rules, constraints, and identity.
+
+\section{Mini checklist}
+Before you share a schema, check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Are relation names singular and meaningful?
+  \item Do identifiers follow a consistent pattern (\texttt{<entity>\_id})?
+  \item Are date/time attributes named by their semantic moment?
+  \item Are boolean attributes named with \texttt{is\_*} or \texttt{has\_*}?
+  \item Is each multi-state field documented with allowed values?
+  \item Are key decisions recorded in short decision records?
+  \item Do schema blocks include purpose, keys, and constraints?
+  \item Is documentation focused on meaning rather than implementation?
+\end{itemize}
+
+\begin{chaptersummary}
+Design hygiene protects meaning.
+Consistent naming reduces ambiguity, and compact documentation makes modelling decisions stable over time.
+A good schema specification includes rules, constraints, and traceability, not just relation names.
+Decision records make the non-obvious choices auditable and teach readers how to reason about trade-offs.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Answer in full sentences.
+\begin{enumerate}[label=\arabic*.]
+  \item Choose a domain and propose naming conventions for relations and identifiers. Give three examples.
+  \item Write relation-level documentation blocks for two relations in your schema.
+  \item Write a constraint block (C1, C2, ...) for one relation with at least five constraints.
+  \item Write one decision record for a modelling decision that could be debated (e.g., surrogate vs natural key, denormalization boundary, state modelling).
+  \item Review your schema and rename at least three attributes to reduce ambiguity. Explain why.
+  \item Create a mini schema spec block for one relation in your project using the template above.
+  \item Identify two ambiguous names in a domain you know and propose better alternatives.
+  \item Write a documentation layer outline (README, schema spec, decision records) for a small project.
+\end{enumerate}
+\end{exercisebox}
+
+In the next chapter we apply these practices in a clinic case study.
+Naming and documentation choices will be part of the model, not an afterthought.

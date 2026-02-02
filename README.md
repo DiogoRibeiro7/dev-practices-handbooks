@@ -166,6 +166,13 @@ pdflatex main.tex
 latexmk -pdf main.tex
 ```
 
+#### Relational Database Design (Concept-First)
+
+```bash
+cd database_design
+latexmk -pdf book/main.tex
+```
+
 ### Using Docker (Alternative)
 
 If you prefer not to install LaTeX locally:

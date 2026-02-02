@@ -1,0 +1,57 @@
+% chapters/appendix-ch06-sql.tex
+\chapter{SQL Appendix: Chapter 6 (Integrity Constraints)}
+
+\section{DDL}
+\begin{verbatim}
+CREATE TABLE room (
+  room_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(50) NOT NULL UNIQUE
+) ENGINE=InnoDB;
+
+CREATE TABLE doctor (
+  doctor_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE appointment (
+  appointment_id INT PRIMARY KEY AUTO_INCREMENT,
+  start_time DATETIME NOT NULL,
+  duration_min INT NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  doctor_id INT NOT NULL,
+  room_id INT NOT NULL,
+  CONSTRAINT chk_duration CHECK (duration_min > 0),
+  CONSTRAINT chk_status CHECK (status IN ('scheduled','cancelled')),
+  CONSTRAINT fk_appt_doctor FOREIGN KEY (doctor_id) REFERENCES doctor(doctor_id),
+  CONSTRAINT fk_appt_room FOREIGN KEY (room_id) REFERENCES room(room_id)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO room (name) VALUES ('R1'), ('R2');
+INSERT INTO doctor (name) VALUES ('Joana Reis'), ('Hugo Pereira');
+INSERT INTO appointment (start_time, duration_min, status, doctor_id, room_id)
+VALUES
+  ('2026-02-05 09:00:00', 60, 'scheduled', 1, 1),
+  ('2026-02-05 10:30:00', 30, 'cancelled', 1, 1);
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Find invalid durations (should be none)
+SELECT appointment_id
+FROM appointment
+WHERE duration_min <= 0;
+
+-- Q2: Detect overlapping appointments per room (conceptual validation)
+SELECT a.appointment_id, b.appointment_id
+FROM appointment a
+JOIN appointment b
+  ON a.room_id = b.room_id
+ AND a.appointment_id < b.appointment_id
+ AND a.status = 'scheduled'
+ AND b.status = 'scheduled'
+ AND a.start_time < DATE_ADD(b.start_time, INTERVAL b.duration_min MINUTE)
+ AND b.start_time < DATE_ADD(a.start_time, INTERVAL a.duration_min MINUTE);
+\end{verbatim}

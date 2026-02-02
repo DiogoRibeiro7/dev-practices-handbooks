@@ -1,0 +1,94 @@
+% chapters/appendix-ch10-sql.tex
+\chapter{SQL Appendix: Chapter 10 (Library Case Study)}
+
+\section{DDL}
+\begin{verbatim}
+CREATE TABLE member (
+  member_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE branch (
+  branch_id INT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE title (
+  title_id INT PRIMARY KEY AUTO_INCREMENT,
+  isbn VARCHAR(20) NULL UNIQUE,
+  title_name VARCHAR(200) NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE copy (
+  copy_id INT PRIMARY KEY AUTO_INCREMENT,
+  status VARCHAR(20) NOT NULL,
+  title_id INT NOT NULL,
+  branch_id INT NOT NULL,
+  CONSTRAINT fk_copy_title FOREIGN KEY (title_id) REFERENCES title(title_id),
+  CONSTRAINT fk_copy_branch FOREIGN KEY (branch_id) REFERENCES branch(branch_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE loan (
+  loan_id INT PRIMARY KEY AUTO_INCREMENT,
+  checkout_date DATE NOT NULL,
+  due_date DATE NOT NULL,
+  return_date DATE NULL,
+  member_id INT NOT NULL,
+  copy_id INT NOT NULL,
+  CONSTRAINT fk_loan_member FOREIGN KEY (member_id) REFERENCES member(member_id),
+  CONSTRAINT fk_loan_copy FOREIGN KEY (copy_id) REFERENCES copy(copy_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE reservation (
+  reservation_id INT PRIMARY KEY AUTO_INCREMENT,
+  request_date DATE NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  member_id INT NOT NULL,
+  title_id INT NOT NULL,
+  CONSTRAINT fk_res_member FOREIGN KEY (member_id) REFERENCES member(member_id),
+  CONSTRAINT fk_res_title FOREIGN KEY (title_id) REFERENCES title(title_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE fine (
+  fine_id INT PRIMARY KEY AUTO_INCREMENT,
+  amount DECIMAL(10,2) NOT NULL,
+  assessed_date DATE NOT NULL,
+  status VARCHAR(20) NOT NULL,
+  member_id INT NOT NULL,
+  loan_id INT NOT NULL,
+  CONSTRAINT fk_fine_member FOREIGN KEY (member_id) REFERENCES member(member_id),
+  CONSTRAINT fk_fine_loan FOREIGN KEY (loan_id) REFERENCES loan(loan_id)
+) ENGINE=InnoDB;
+
+CREATE TABLE payment (
+  payment_id INT PRIMARY KEY AUTO_INCREMENT,
+  paid_at DATETIME NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  fine_id INT NOT NULL,
+  CONSTRAINT fk_payment_fine FOREIGN KEY (fine_id) REFERENCES fine(fine_id)
+) ENGINE=InnoDB;
+\end{verbatim}
+
+\section{Sample data}
+\begin{verbatim}
+INSERT INTO member (name) VALUES ('Ana Costa');
+INSERT INTO branch (name) VALUES ('Central');
+INSERT INTO title (isbn, title_name) VALUES ('9780131103627', 'The C Programming Language');
+INSERT INTO copy (status, title_id, branch_id) VALUES ('available', 1, 1);
+INSERT INTO loan (checkout_date, due_date, return_date, member_id, copy_id)
+VALUES ('2026-02-01', '2026-02-15', NULL, 1, 1);
+\end{verbatim}
+
+\section{Example queries}
+\begin{verbatim}
+-- Q1: Active loans per member
+SELECT l.loan_id, l.copy_id
+FROM loan l
+WHERE l.member_id = 1 AND l.return_date IS NULL;
+
+-- Q2: Reservation queue for a title
+SELECT reservation_id, member_id, request_date
+FROM reservation
+WHERE title_id = 1
+ORDER BY request_date ASC;
+\end{verbatim}

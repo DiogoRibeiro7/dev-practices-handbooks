@@ -1,0 +1,274 @@
+% chapters/ch03-keys-identity.tex
+\chapter{Keys and Identity}
+
+\begin{learningobjectives}
+In this chapter you will learn how identity drives relational design.
+You will be able to choose appropriate keys, distinguish natural and surrogate identity, and design composite keys for association relations.
+You will also learn how key choices affect correctness, not just convenience.
+\end{learningobjectives}
+
+\section{Why identity comes first}
+Identity is the backbone of a relational model.
+If you cannot identify an entity instance, you cannot reference it, and constraints cannot bind it to anything else.
+All relationships depend on identity, and all constraints depend on references.
+
+In practice, unclear identity produces duplicate rows that look different but represent the same thing.
+Once that happens, every rule is weakened.
+Two rows for the same patient mean two appointment histories, two sets of constraints, and two conflicting truths.
+
+\begin{principlebox}
+Identity is not optional.
+Every entity must have a stable way to be referenced.
+\end{principlebox}
+
+\section{Natural keys and surrogate keys}
+A \term{natural key} is a real-world identifier that already exists in the domain.
+An ISBN can identify a book title.
+A national health number might identify a patient.
+These keys can be meaningful, but they are not always stable or available.
+
+A \term{surrogate key} is an identifier created for the system (often a numeric id).
+It carries no meaning, but it is stable and easy to reference.
+Many systems use surrogate keys for consistency and then enforce natural uniqueness separately.
+
+\begin{examplebox}
+\textbf{Library title identity}\par\smallskip
+If ISBN is unique and stable in your domain, it can be a natural key:\par
+\[
+\rel{Title}(\underline{isbn}, title, author)
+\]
+If ISBN is missing or unreliable, use a surrogate key and enforce uniqueness on ISBN when present.
+\end{examplebox}
+
+\begin{examplebox}
+\textbf{Clinic patient identity}\\
+Patients may not have a stable external identifier at first contact.
+A surrogate key avoids ambiguity:
+\[
+\rel{Patient}(\underline{patient\_id}, name, birth\_date)
+\]
+Other identifiers can be stored as attributes with uniqueness constraints if required.
+\end{examplebox}
+
+\section{Key stability and lifecycle}
+Keys live through events: creation, correction, merges, and splits.
+If a key is not available at creation time, a surrogate key is usually safer.
+If a key can change, you must plan for updates across every reference.
+
+\subsection{Creation time and missing identifiers}
+Some identifiers arrive later.
+Clinic patients may receive a national identifier after the first visit.
+Library copies may receive a barcode after cataloguing.
+If you model these identifiers as primary keys, you will be forced to invent placeholders or delay record creation.
+
+\subsection{Merges and splits}
+Real entities can merge or split.
+Two patient records can be merged when a duplicate is discovered.
+A university course code can be split into two courses when curriculum changes.
+These events are manageable when identity is stable and references are consistent.
+They are chaotic when identity is tied to mutable attributes.
+
+\begin{examplebox}
+\textbf{Merging duplicate patients}\par\smallskip
+If two rows represent the same person, you need to preserve references:
+\[
+\rel{Patient}(\underline{patient\_id}, name, birth\_date, national\_id? \;[\text{unique}])
+\]
+Merging uses a single \texttt{patient\_id} while keeping optional external identifiers for matching.
+\end{examplebox}
+
+\section{Key quality criteria}
+Good keys share a few properties.
+These criteria are not formal rules, but they prevent most identity failures.
+
+\begin{principlebox}
+\textbf{Key selection criteria}\\
+Prefer keys that are:
+\begin{itemize}[leftmargin=*,nosep]
+  \item stable over time,
+  \item always available at creation time,
+  \item minimal (no unnecessary attributes),
+  \item and meaningful only if the meaning is truly stable.
+\end{itemize}
+\end{principlebox}
+
+If a key can change, you risk cascading updates to every reference.
+If a key is not available when the entity is created, you will be forced to invent placeholder values.
+Both outcomes degrade correctness.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.75\textwidth]{key-types.pdf}
+\caption{Primary, alternate, and surrogate keys all point to the same entity identity.}
+\end{figure}
+
+\begin{notebox}
+Do not use names as primary keys unless the domain explicitly treats them as stable identifiers.
+Names change, collide, and create hidden duplicates.
+\end{notebox}
+
+\section{Uniqueness beyond the primary key}
+Primary keys are not the only uniqueness rules.
+Many domains have alternate identifiers that must be unique when present.
+These are sometimes called alternate or candidate keys.
+
+\subsection{Alternate and candidate keys}
+A \term{candidate key} is any set of attributes that could serve as a primary key.
+Only one is chosen as the primary key, but the others still carry identity meaning.
+
+\subsection{Partial uniqueness}
+Some identifiers are optional but must be unique when present.
+This is common with email addresses, national IDs, or barcodes.
+The rule is not “always present” but “never duplicated.”
+
+\begin{examplebox}
+\textbf{Unique-when-present}\par\smallskip
+\[
+\rel{Member}(\underline{member\_id}, name, email? \;[\text{unique}])
+\]
+Email is optional, but if two members have the same email, the identity model is broken.
+\end{examplebox}
+
+\section{Composite keys and association relations}
+Composite keys are common in association relations and in history tables.
+They combine two or more attributes to form identity.
+
+The most important example is a many-to-many association.
+If a student can enroll in many courses, and a course can have many students, then the enrollment is identified by the pair.
+
+\begin{examplebox}
+\textbf{University enrollment identity}\par\smallskip
+\[
+\begin{aligned}
+\rel{Enrollment}(&\underline{student\_id} \rightarrow \rel{Student}, \\
+&\underline{course\_id} \rightarrow \rel{Course}, \\
+&enrolled\_at, grade?)
+\end{aligned}
+\]
+The pair (student\_id, course\_id) is the identity of the enrollment.
+\end{examplebox}
+
+Composite keys can also include a time attribute.
+If you track historical states, the identity might be (entity\_id, effective\_from).
+This keeps each historical record distinct.
+
+\section{Key availability in workflows}
+Key choice must fit how the system is used.
+In a clinic, you may need to create a patient record before any external identifier exists.
+In a library, a copy might be catalogued before its barcode is printed.
+These are workflow facts, not technical details.
+
+\begin{examplebox}
+\textbf{Copy identity in a library}\\
+If a barcode is assigned later, a surrogate key avoids placeholders:
+\[
+\rel{Copy}(\underline{copy\_id}, barcode \;[\text{unique}], status, title\_id \rightarrow \rel{Title})
+\]
+Barcode is unique when present, but not required for identity at creation time.
+\end{examplebox}
+
+The same logic applies to university enrollment.
+The enrollment exists when the student registers, not when a final grade is assigned.
+So the grade must not be part of the key.
+
+\section{Choosing keys in clinic, library, and university}
+Key decisions become clearer when you compare domains.
+
+Clinic:
+patients and doctors often need surrogate keys because external identifiers are inconsistent.
+Appointments typically use a surrogate key because multiple appointments can share time or participants.
+
+Library:
+titles can sometimes use a natural key (ISBN), but copies almost never should.
+Loans and reservations are events; a surrogate key or a composite key with a timestamp both work, depending on how the domain defines uniqueness.
+
+University:
+students often have an institutional id that is stable and can be a natural key.
+Courses often have a code, but if codes are reused across years, a surrogate key is safer.
+Enrollment is usually a composite key (student\_id, course\_id, term) if the domain allows repeat enrollment across terms.
+
+\section{Worked mini-example: university keys}
+A university model forces you to make identity choices early.
+Students often have a stable institutional id, but courses may have reused codes.
+Enrollment identity depends on the rule for retaking courses.
+
+\begin{examplebox}
+\textbf{University keys discussion}\par\smallskip
+\[
+\rel{Student}(\underline{student\_id}, name, email? \;[\text{unique}])
+\]
+\[
+\rel{Course}(\underline{course\_id}, code \;[\text{unique}], title)
+\]
+\[
+\begin{aligned}
+\rel{Enrollment}(&\underline{student\_id} \rightarrow \rel{Student}, \\
+&\underline{course\_id} \rightarrow \rel{Course}, \\
+&\underline{term}, status)
+\end{aligned}
+\]
+If the same course code can be reused across years, \texttt{course\_id} should be a surrogate key.
+\end{examplebox}
+
+\begin{examplebox}
+\textbf{Enrollment with term}\\
+If students can retake courses, include term in the identity:
+\[
+\rel{Enrollment}(\underline{student\_id} \rightarrow \rel{Student}, \underline{course\_id} \rightarrow \rel{Course}, \underline{term}, grade?)
+\]
+This preserves the rule “one enrollment per student, course, and term.”
+\end{examplebox}
+
+\section{Common mistakes}
+Identity mistakes are easy to make and hard to fix later.
+
+Mistake: Using email or name as a primary key.\\
+Fix: Use a surrogate key and enforce email uniqueness when present.
+
+Mistake: Using composite keys everywhere “for purity.”\\
+Fix: Use composite keys only when the domain rule truly defines identity.
+
+Mistake: Ignoring uniqueness of domain identifiers (barcode, national ID).\\
+Fix: State alternate keys as explicit uniqueness constraints.
+
+Mistake: Putting status or time attributes in the key.\\
+Fix: Keep status and timestamps as non-key attributes unless the rule demands them.
+
+\section{Mini checklist}
+Before you finalize keys, check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Is every entity’s identity explicit and stable?
+  \item Is the key available at creation time?
+  \item If you use a natural key, is it truly unique by rule?
+  \item Are alternate identifiers stated as uniqueness constraints?
+  \item Do association relations have composite keys that match their uniqueness rules?
+  \item Are time or status attributes excluded from keys unless the rule requires them?
+  \item Can you explain how merges or splits would affect references?
+  \item Are keys protected from changes in UI or workflow convenience?
+\end{itemize}
+
+\begin{chaptersummary}
+Keys define identity and make relationships possible.
+Natural keys can be powerful when stable and universal, but surrogate keys often provide safer identity.
+Composite keys are common in association relations and history structures.
+Key choices must match the domain rules and the workflow that creates records.
+If identity is unclear, the rest of the schema cannot be trusted.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Answer in full sentences and then write the corresponding schema fragments.
+\begin{enumerate}[label=\arabic*.]
+  \item For a clinic, propose natural identifiers for Patient and Doctor and explain why they are or are not suitable as keys.
+  \item For a library, decide whether Title should use ISBN as a key and justify your choice.
+  \item Design a composite key for an association relation in a university domain and state the rule it enforces.
+  \item Give one example where a key attribute might change and explain the risk.
+  \item Propose a surrogate key strategy for a domain you know and list two benefits.
+  \item Show a relation where term or time belongs in the key, and explain the uniqueness rule.
+  \item Identify one attribute that should never be part of a key and justify why.
+  \item Write a uniqueness rule that is “unique when present” and show it in schema notation.
+  \item Describe a merge scenario (duplicates) and explain how your key choice makes it manageable.
+\end{enumerate}
+\end{exercisebox}
+
+In the next chapter we translate conceptual models into relational schemas.
+The mapping rules build directly on the identity and uniqueness choices made here.

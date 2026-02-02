@@ -1,0 +1,16 @@
+% figures/er-skeleton.tex
+\documentclass[11pt]{article}
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{tikz}
+\usetikzlibrary{positioning,shapes.geometric,arrows.meta,calc}
+\pagestyle{empty}
+\begin{document}
+\begin{tikzpicture}[node distance=18mm, >=Latex]
+  \node[draw, rectangle, minimum width=2.6cm, minimum height=1cm] (E1) {Entity A};
+  \node[draw, rectangle, minimum width=2.6cm, minimum height=1cm, right=30mm of E1] (E2) {Entity B};
+  \node[draw, diamond, aspect=2, minimum width=1.6cm, minimum height=1cm, below=12mm of $(E1)!0.5!(E2)$] (R) {relates};
+
+  \draw[->] (E1) -- (R) node[midway, left, font=\scriptsize] {0..N};
+  \draw[->] (E2) -- (R) node[midway, right, font=\scriptsize] {1..1};
+\end{tikzpicture}
+\end{document}

@@ -1,0 +1,23 @@
+% figures/relationship-event.tex
+\documentclass[11pt]{article}
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{tikz}
+\usetikzlibrary{positioning,shapes.geometric,arrows.meta,calc}
+\pagestyle{empty}
+\begin{document}
+\begin{tikzpicture}[node distance=12mm, >=Latex]
+  % Left: relationship only
+  \node[draw, rectangle, minimum width=2.4cm, minimum height=0.9cm] (m1) {Member};
+  \node[draw, rectangle, minimum width=2.4cm, minimum height=0.9cm, right=28mm of m1] (c1) {Copy};
+  \node[draw, diamond, aspect=2, minimum width=1.6cm, minimum height=0.8cm, below=10mm of $(m1)!0.5!(c1)$] (r1) {borrows};
+  \draw[->] (m1) -- (r1);
+  \draw[->] (c1) -- (r1);
+
+  % Right: event entity
+  \node[draw, rectangle, minimum width=2.4cm, minimum height=0.9cm, right=40mm of c1] (m2) {Member};
+  \node[draw, rectangle, minimum width=2.8cm, minimum height=1cm, below=10mm of m2] (loan) {Loan\\(checkout, due, return)};
+  \node[draw, rectangle, minimum width=2.4cm, minimum height=0.9cm, below=10mm of loan] (c2) {Copy};
+  \draw[->] (m2) -- (loan);
+  \draw[->] (c2) -- (loan);
+\end{tikzpicture}
+\end{document}

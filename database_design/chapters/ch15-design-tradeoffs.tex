@@ -1,0 +1,179 @@
+% chapters/ch15-design-tradeoffs.tex
+\chapter{Design Trade-offs: Correctness, Complexity, and Change}
+
+\begin{learningobjectives}
+In this chapter you will learn how to reason about trade-offs in relational design.
+You will be able to justify when to keep a design strict versus flexible, when to introduce new relations versus keep attributes, and how to plan for change without making the schema vague.
+\end{learningobjectives}
+
+\section{Why trade-offs belong in a design book}
+If a database design book only teaches “rules”, it teaches a false picture.
+Real design is constrained by change, deadlines, governance, and the fact that domains evolve.
+
+Trade-offs are not excuses for weak design.
+They are decisions that should be explicit and documented.
+A good schema is not the one with the most tables.
+It is the one that preserves meaning while staying maintainable under expected change.
+
+\begin{definitionbox}
+A \term{design trade-off} is a deliberate choice between competing goals (e.g., strictness vs flexibility) where no single option is universally correct.
+A trade-off is acceptable only if the consequences are understood and controlled.
+\end{definitionbox}
+
+\section{Trade-off 1: Strict schema versus flexible schema}
+Some teams try to represent everything as structured relations with tight constraints.
+Others push variability into “free-form” fields such as JSON blobs or generic key-value tables.
+
+Strict structure improves correctness and queryability.
+Flexibility improves speed of iteration and handles unknown future attributes.
+The danger is that flexibility often becomes ambiguity.
+
+A useful rule is to be strict about:
+\begin{itemize}[leftmargin=*,nosep]
+  \item identity,
+  \item relationships that matter for correctness,
+  \item and constraints that prevent invalid states.
+\end{itemize}
+
+Be flexible mainly about:
+\begin{itemize}[leftmargin=*,nosep]
+  \item optional descriptive attributes that do not affect core rules,
+  \item rapidly changing metadata where enforcement is not critical.
+\end{itemize}
+
+\section{Trade-off 2: Attribute versus entity}
+A recurring modelling question is whether something deserves its own entity.
+For example: Specialty, Category, Department, PaymentMethod.
+
+You can model “specialty” as a string attribute on \rel{Doctor}.
+Or you can model it as a \rel{Specialty} entity referenced by \rel{Doctor}.
+Neither is always correct.
+The decision depends on meaning and governance.
+
+\subsection{When an attribute is enough}
+An attribute is often enough when:
+\begin{itemize}[leftmargin=*,nosep]
+  \item the value is purely descriptive,
+  \item it is not governed as a controlled list,
+  \item it does not carry additional properties,
+  \item and it does not participate in relationships.
+\end{itemize}
+
+\subsection{When you need an entity}
+An entity is usually the right choice when:
+\begin{itemize}[leftmargin=*,nosep]
+  \item the concept has its own identity and lifecycle,
+  \item you need a controlled list with stable meanings,
+  \item it carries additional attributes (description, category, validity),
+  \item or it participates in relationships (many-to-many).
+\end{itemize}
+
+The safe way to teach this is to frame it as a dependency question:
+if you have \texttt{specialty\_id} and \texttt{specialty\_name}, and \(specialty\_id \rightarrow specialty\_name\), then an entity is often appropriate.
+
+\section{Trade-off 3: Surrogate keys versus natural keys}
+This book already introduced the key decision.
+Here we add a decision-making frame.
+
+Natural keys reduce joins and align with domain meaning.
+But they can be missing at creation time, can change, or can be governed externally.
+Surrogate keys are stable, but require explicit uniqueness constraints on natural identifiers if those identifiers matter.
+
+A practical compromise is common:
+use surrogate primary keys for stability, and enforce natural uniqueness separately.
+
+The trade-off is acceptable only if you document what the natural uniqueness constraints are and how changes are handled.
+
+\section{Trade-off 4: Normalization versus denormalization}
+Normalization reduces anomalies and makes correctness easier.
+Denormalization can improve performance or simplify read models, but it reintroduces redundancy.
+
+The key is not to forbid denormalization.
+The key is to make it explicit:
+\begin{itemize}[leftmargin=*,nosep]
+  \item what is duplicated,
+  \item what anomaly it could create,
+  \item and what mechanism keeps it consistent.
+\end{itemize}
+
+In many systems, denormalization is not a schema choice but a system architecture choice.
+You keep a normalized source of truth, and you build denormalized read models for queries.
+Even without discussing specific tools, the design lesson remains: keep one authoritative representation.
+
+\section{Trade-off 5: Derived values versus stored values}
+Many values can be derived from other data.
+Examples include “is overdue”, “active loan count”, “account balance”, “available copies”.
+
+Storing derived values improves speed but risks inconsistency.
+Deriving values improves correctness but can be expensive.
+
+A safe guideline:
+store derived values only when:
+\begin{itemize}[leftmargin=*,nosep]
+  \item they are expensive to compute frequently,
+  \item you can define exactly when and how they update,
+  \item and you can recover them from the source data if needed.
+\end{itemize}
+
+If you cannot explain the update rule, you should not store the derived value.
+
+\section{Trade-off 6: Hard deletion versus soft deletion}
+Deletion is a correctness decision.
+If you delete a patient, what happens to their appointments?
+If you delete a member, what happens to their loan history?
+
+Hard deletion removes history and can break references.
+Soft deletion preserves history but adds state complexity.
+
+A reasonable default for many domains is:
+do not hard-delete core entities that participate in historical events.
+Instead, use an “inactive” state or an archive mechanism.
+This is not a database feature; it is a modelling decision about preserving meaning over time.
+
+\section{Making trade-offs auditable}
+Trade-offs become dangerous when they are implicit.
+The simplest fix is a short decision record for each major trade-off.
+The goal is not paperwork.
+The goal is that a future reader can understand why the model looks like this.
+
+\begin{examplebox}
+\textbf{Decision record (template)}\\[2pt]
+Decision: (one sentence).\\
+Alternatives: (two or three).\\
+Rationale: (why this is chosen, in domain terms).\\
+Consequences: (what you must now enforce, monitor, or accept).
+\end{examplebox}
+
+\section{A short framework: expected change}
+A useful way to decide is to think about which parts of the domain are stable and which will change.
+
+Ask:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Which identifiers will never change?
+  \item Which relationships are core and must be enforced?
+  \item Which attributes will evolve often (metadata)?
+  \item Which constraints are policy-driven and likely to change?
+\end{itemize}
+
+Then you design strictness around the stable core.
+You design flexibility around the evolving edges.
+This keeps the schema meaningful without making it brittle.
+
+\begin{chaptersummary}
+Trade-offs are unavoidable in relational design, but they must be explicit.
+Strictness protects identity, relationships, and constraints.
+Flexibility should be limited to non-core descriptive information.
+Key choices, normalization boundaries, derived values, and deletion policies must be justified and documented.
+A good design is not the most complex; it is the clearest under expected change.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Pick one domain (clinic, library, university, online shop) and answer in full sentences.
+\begin{enumerate}[label=\arabic*.]
+  \item Identify one place where you would choose an attribute over an entity and justify it.
+  \item Identify one place where you would choose an entity over an attribute and justify it.
+  \item Choose one derived value and decide whether to store it or derive it. State the update rule if stored.
+  \item Decide whether you allow hard deletion for one core entity. Justify your policy.
+  \item Write two decision records using the template above for two trade-offs in your model.
+\end{enumerate}
+\end{exercisebox}

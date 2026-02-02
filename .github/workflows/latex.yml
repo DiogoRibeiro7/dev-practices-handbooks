@@ -1,0 +1,32 @@
+name: Build Database Design Book
+
+on:
+  push:
+    paths:
+      - 'database_design/**'
+      - '.github/workflows/latex.yml'
+      - 'scripts/**'
+  pull_request:
+    paths:
+      - 'database_design/**'
+      - '.github/workflows/latex.yml'
+      - 'scripts/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build PDF with TeX Live
+        uses: xu-cheng/latex-action@v3
+        with:
+          working_directory: database_design
+          latexmk_use_lualatex: false
+          latexmk_shell_escape: false
+          args: -pdf -interaction=nonstopmode -halt-on-error book/main.tex
+      - name: Upload PDF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-design-pdf
+          path: database_design/build/main.pdf
+          if-no-files-found: error

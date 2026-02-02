@@ -1,0 +1,256 @@
+% chapters/ch12-relationships-advanced.tex
+\chapter{Relationships in Practice: Optionality, Specialization, and Association}
+
+\begin{learningobjectives}
+In this chapter you will deepen your understanding of relationships.
+You will learn how optionality affects schema structure, how to model specialization (subtypes) without ambiguity, and how to treat association relations as first-class parts of the model when they carry meaning.
+\end{learningobjectives}
+
+\section{Optionality is a design decision}
+Optionality is often treated as a small detail: “nullable or not”.
+In reality, optionality is a statement about what the domain allows.
+It affects correctness, lifecycle, and how you validate data.
+
+Consider the sentence: “An appointment has a doctor.”
+This implies mandatory participation.
+But consider: “A patient may have an insurance profile.”
+This implies optional participation.
+The difference is not about storage.
+It is about whether the system accepts the state “patient exists but no insurance profile exists”.
+
+Optionality decisions should be explicit in the rules.
+If optionality is left implicit, the schema will often drift into permissiveness, allowing states that the domain does not allow.
+
+\begin{examplebox}
+\textbf{Optionality in words}\\
+Mandatory: “Each appointment is with exactly one doctor.”\\
+Optional: “A patient may have an insurance profile.”
+\end{examplebox}
+
+\subsection{Optionality and foreign key placement}
+In one-to-one relationships, optionality guides where the foreign key goes.
+If one side can exist without the other, place the foreign key on the optional side and enforce uniqueness there.
+This reduces nulls and matches typical creation workflows.
+
+In one-to-many relationships, optionality decides whether the foreign key can be missing.
+For example, if an appointment must reference a doctor, \texttt{doctor\_id} is mandatory.
+If you make it optional, you allow “unassigned appointments”, which might be correct in some domains and incorrect in others.
+The schema should follow the rule, not the other way around.
+
+\section{Association relations are not “just join tables”}
+Many-to-many relationships are represented with association relations.
+Beginners often treat these as purely technical structures, but they are often conceptually central.
+An association relation is not a workaround.
+It is the correct representation of a relationship that has its own identity.
+
+When an association has attributes, it becomes clearly meaningful.
+In a university domain, enrollment is the association between student and course, and it has attributes such as enrollment date and grade.
+In a clinic domain, doctor specialties may include the date the doctor was certified.
+
+Even when an association has no attributes, it still represents meaning: membership, eligibility, assignment, coverage.
+
+\begin{definitionbox}
+An \term{association relation} represents a many-to-many relationship.
+It becomes conceptually central when the relationship carries attributes or when it represents an event or membership over time.
+\end{definitionbox}
+
+\begin{examplebox}
+\textbf{Enrollment as a first-class association}\par\smallskip
+\[
+\begin{aligned}
+\rel{Enrollment}(&\underline{student\_id} \rightarrow \rel{Student}, \\
+&\underline{course\_id} \rightarrow \rel{Course}, enrolled\_at, grade?)
+\end{aligned}
+\]
+Enrollment is not a technical join; it is a meaningful entity in the domain.
+\end{examplebox}
+
+A good teaching move is to ask: “If I delete this association row, what real-world thing disappears?”
+If the answer is “an enrollment” or “a certification” or “a membership”, then you are looking at a real concept, not a technical artefact.
+
+\section{Specialization: modelling subtypes}
+Many domains contain “kinds of” entities.
+A user can be a student or a staff member.
+An appointment can be an exam or a consultation.
+A payment can be a card payment or a bank transfer.
+
+This is called \term{specialization} or \term{subtyping}.
+The key modelling question is: do the subtypes have distinct attributes or constraints that matter?
+If not, they can remain as a simple attribute.
+If yes, subtyping becomes useful.
+
+\begin{definitionbox}
+A \term{specialization} models a supertype entity with one or more subtypes.
+Subtypes inherit identity from the supertype and add subtype-specific attributes or constraints.
+\end{definitionbox}
+
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.75\textwidth]{specialization.pdf}
+\caption{A specialization shows a supertype with subtypes linked by an is-a relationship.}
+\end{figure}
+
+\subsection{Two constraints: disjointness and completeness}
+Subtype models have two structural rules.
+
+Disjointness answers: can an instance belong to more than one subtype?
+A person might be both a staff member and a student, depending on the domain.
+In other domains, a vehicle is either a car or a motorcycle, but not both.
+
+Completeness answers: must every supertype instance belong to at least one subtype?
+Sometimes yes (every payment is exactly one payment type).
+Sometimes no (you may create a person record before deciding their role).
+
+These rules must be stated.
+If they are not, the subtype model becomes ambiguous.
+
+\begin{examplebox}
+\textbf{Subtype constraints in words}\\
+Disjoint: “An appointment is either an exam or a consultation, not both.”\\
+Overlapping: “A person may be both a student and a staff member.”\\
+Complete: “Every payment must have exactly one payment subtype.”\\
+Incomplete: “A person may exist without a role assigned yet.”
+\end{examplebox}
+
+\section{Implementing subtypes in a relational schema (concept-first)}
+There are three common relational patterns for subtypes.
+We describe them conceptually without committing to SQL.
+
+\subsection{Pattern 1: Single table with a type attribute}
+You store all attributes in one relation and add a type attribute.
+This works when subtype-specific attributes are few, optional, and not essential for correctness.
+
+Example:
+\[
+\begin{aligned}
+\rel{Appointment}(&\underline{appointment\_id}, \dots, \\
+&type \in \{\text{exam, consultation}\}, exam\_room?, exam\_code?)
+\end{aligned}
+\]
+The risk is that you end up with many nullable columns and weak enforcement of subtype constraints.
+
+\subsection{Pattern 2: Supertype + subtype tables (shared primary key)}
+You create one relation for the supertype and one for each subtype.
+Subtype relations use the same primary key value as the supertype.
+This is clean when subtype attributes matter and you want strong structure.
+
+\begin{examplebox}
+\textbf{Supertype + subtype schema}\par\smallskip
+\[
+\rel{Payment}(\underline{payment\_id}, amount, created\_at)
+\]
+\[
+\rel{CardPayment}(\underline{payment\_id} \rightarrow \rel{Payment}, last4, auth\_code)
+\]
+\[
+\rel{BankTransfer}(\underline{payment\_id} \rightarrow \rel{Payment}, iban, reference)
+\]
+\end{examplebox}
+
+This pattern represents inheritance clearly.
+It also matches the conceptual idea: every card payment is a payment.
+
+\subsection{Pattern 3: Separate tables per subtype (no explicit supertype)}
+Sometimes you keep completely separate relations for each subtype.
+This can work when subtypes are operationally separate and rarely treated uniformly.
+But it becomes awkward if you need cross-subtype reporting or shared relationships.
+For teaching, this pattern is often less helpful as a default.
+
+\section{Subtype modelling decision guide}
+Deciding whether to use subtypes should be explicit.
+Use the following criteria:
+\begin{itemize}[leftmargin=*,nosep]
+  \item subtype-specific attributes are substantial,
+  \item subtype-specific constraints are important,
+  \item subtype lifecycles differ (states or transitions),
+  \item completeness/disjointness must be enforced,
+  \item reports or rules treat subtypes differently.
+\end{itemize}
+
+\subsection{Attribute versus subtype}
+If type is mostly for labeling or filtering, and there are no meaningful subtype-specific constraints, an attribute is often enough.
+If correctness depends on subtype-specific rules or attributes, use subtypes.
+
+\subsection{Optionality and completeness}
+If subtype membership is incomplete, you allow a supertype instance with no subtype row.
+If it is complete, you must ensure every supertype row has exactly one subtype row (disjoint) or at least one subtype row (overlapping).
+Subtype structures are only correct when their disjointness and completeness rules are specified and validated.
+
+\section{Worked example: Payment subtypes}
+Assume payments can be made by card or bank transfer.
+Each subtype has attributes that matter for correctness.
+
+\begin{examplebox}
+\textbf{Payment subtypes (complete, disjoint)}\par\smallskip
+\[
+\rel{Payment}(\underline{payment\_id}, amount, created\_at)
+\]
+\[
+\rel{CardPayment}(\underline{payment\_id} \rightarrow \rel{Payment}, last4, auth\_code)
+\]
+\[
+\rel{BankTransfer}(\underline{payment\_id} \rightarrow \rel{Payment}, iban, reference)
+\]
+Every payment is exactly one of these subtypes.
+\end{examplebox}
+
+\section{Completeness and disjointness test cases}
+Subtype rules should be validated with simple tests.
+
+Test 1: Can a \rel{Payment} exist without any subtype row? If not, completeness is required.\\
+Test 2: Can a \rel{Payment} be both card and bank transfer? If not, disjointness is required.\\
+Test 3: Are subtype-specific attributes allowed to be missing? If not, subtype tables are needed.
+
+\section{Anti-patterns}
+Subtype modelling has common traps.
+
+EAV misuse: modelling subtypes as generic attribute/value rows hides constraints.\\
+Type field with many nulls: a single table with dozens of optional columns weakens correctness.
+
+\section{Common mistakes}
+Mistakes here often lead to inconsistent data.
+
+Mistake: Using a type attribute without enforcing subtype rules.\\
+Fix: Add subtype tables or explicit constraints.
+
+Mistake: Placing shared relationships on subtype tables.\\
+Fix: Keep shared relationships on the supertype.
+
+Mistake: Leaving disjointness/completeness unspecified.\\
+Fix: State and validate these rules explicitly.
+
+\section{Mini checklist}
+Before finalizing subtypes, check:
+\begin{itemize}[leftmargin=*,nosep]
+  \item Are subtype-specific attributes meaningful and required?
+  \item Is completeness specified (every supertype has a subtype)?
+  \item Is disjointness specified (can instances be in multiple subtypes)?
+  \item Are shared relationships placed on the supertype?
+  \item Are subtype rules validated with test cases?
+  \item Would a simple type attribute be sufficient instead?
+  \item Are anti-patterns (EAV, many nulls) avoided?
+\end{itemize}
+
+\begin{chaptersummary}
+Optionality is a statement about allowed states, not a nullable column choice.
+Association relations represent many-to-many meaning and often become central entities when they carry attributes or time semantics.
+Specialization (subtypes) is useful when “kinds of” entities have distinct attributes, constraints, or lifecycles.
+Subtype models require explicit rules about disjointness and completeness, and the relational pattern should be chosen to preserve those rules clearly.
+\end{chaptersummary}
+
+\begin{exercisebox}
+Answer in full sentences and then write the corresponding schema fragments in book notation.
+\begin{enumerate}[label=\arabic*.]
+  \item Give one example of a relationship where optionality is mandatory in your domain and justify why.
+  \item Create a many-to-many relationship and design an association relation with at least two relationship attributes.
+  \item Choose a concept (payment, appointment, user role) and decide whether to model it as a subtype or a type attribute. Justify your choice.
+  \item If you chose subtypes, state whether they are disjoint and whether the specialization is complete.
+  \item Design a supertype + subtype schema fragment using shared primary keys.
+  \item Write two test cases that would detect violations of completeness or disjointness.
+  \item Show an anti-pattern using a type field with many nulls and explain how you would fix it.
+  \item Add subtype-specific constraints to your schema and explain where they belong.
+\end{enumerate}
+\end{exercisebox}
+
+In the next chapter we formalize dependencies.
+Subtypes and associations often reveal hidden functional dependencies.
