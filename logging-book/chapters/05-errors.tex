@@ -1,0 +1,43 @@
+\chapter{Errors and Exceptions}
+Errors are valuable when they include context. A stack trace without IDs and fields is just a puzzle.
+
+\section{Log at the Boundary}
+Log failures where the system meets the outside world: request handlers, job runners, and queue consumers. That is where you can record the event name, the outcome, and the key fields in one place.
+
+\section{Avoid Duplicate Noise}
+If an error is logged with full context at the boundary, avoid logging the same error again at lower levels unless you add meaningfully different data.
+
+\section{Checklist: Error Logging}
+\begin{itemize}
+\item Event name and outcome are present.
+\item A stable ID is included.
+\item The error type is captured in a field.
+\item Duration and attempt count are included when relevant.
+\end{itemize}
+
+\section{Python Example}
+\begin{lstlisting}[language=Python]
+import logging
+
+logger = logging.getLogger("importer")
+
+try:
+    raise ValueError("schema mismatch")
+except Exception as exc:
+    logger.error(
+        "record.validate: outcome=failure",
+        extra={
+            "event_name": "record.validate",
+            "level": "error",
+            "outcome": "failure",
+            "ids": {"batch_id": "batch_44"},
+            "fields": {
+                "error_type": type(exc).__name__,
+                "duration_ms": 12,
+                "rows_in": 1,
+                "rows_out": 0,
+            },
+        },
+    )
+\end{lstlisting}
+

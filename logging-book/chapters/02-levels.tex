@@ -1,0 +1,32 @@
+\chapter{Log Levels and Intent}
+Levels are filters, not decorations. They help people skim, and they help alerts route. A misused level creates noise or hides risk.
+
+\section{Default Mapping}
+Use a small set of levels. Keep meaning consistent across services.
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+Level & Use it when \\
+\midrule
+DEBUG & You need internal state for diagnosis. Do not ship to production unless controlled. \\
+INFO & The event is expected and the outcome is normal. \\
+WARN & The outcome is unusual but the request still completes. \\
+ERROR & The event failed or data could not be processed. \\
+FATAL & The process cannot continue safely. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Outcome Drives Level}
+The outcome should drive the level. If the outcome is \texttt{success}, the level is usually info. If it is \texttt{failure}, use error. If the system recovered, use warn. Rare exceptions are fine, but they should be explicit.
+
+\section{Checklist: Level Hygiene}
+\begin{itemize}
+\item Every error-level event has an outcome of \texttt{failure}.
+\item Warnings explain why recovery happened.
+\item Debug logs are safe to disable without hiding important events.
+\item Fatal logs are rare and always include a clear next step.
+\end{itemize}
+

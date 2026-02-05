@@ -1,0 +1,62 @@
+\chapter{AWS Lambda Correlation IDs}
+Serverless functions are short-lived and often noisy. You need correlation to connect events across services. This chapter focuses on AWS Lambda and how to keep IDs consistent.
+
+\section{Request ID vs Correlation ID}
+The Lambda \texttt{request\_id} is unique per invocation. A \texttt{correlation\_id} should link multiple services and retries. Use both. The request id tells you which execution produced the event. The correlation id tells you which larger operation it belongs to.
+
+\section{ContextVar and Filter}
+Use a context variable to hold the correlation id. A logging filter can inject it into every record.
+
+\begin{lstlisting}[language=Python]
+import json
+import logging
+from contextvars import ContextVar
+
+correlation_id = ContextVar("correlation_id", default="unknown")
+
+class CorrelationIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.correlation_id = correlation_id.get()
+        return True
+
+logger = logging.getLogger("lambda")
+logger.addFilter(CorrelationIdFilter())
+\end{lstlisting}
+
+\section{Minimal JSON Formatter}
+A small formatter keeps logs structured without heavy dependencies.
+
+\begin{lstlisting}[language=Python]
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {
+            "event_name": getattr(record, "event_name", record.getMessage().split()[0]),
+            "level": record.levelname.lower(),
+            "outcome": getattr(record, "outcome", "unknown"),
+            "ids": {
+                "request_id": getattr(record, "request_id", "unknown"),
+                "correlation_id": getattr(record, "correlation_id", "unknown"),
+            },
+            "fields": getattr(record, "fields", {}),
+            "message": record.getMessage(),
+        }
+        return json.dumps(payload)
+\end{lstlisting}
+
+\section{Putting It Together}
+\begin{lstlisting}[language=Python]
+import logging
+
+def handler(event, context):
+    correlation_id.set(event.get("correlation_id", "unknown"))
+    logger.info(
+        "job.start: outcome=success",
+        extra={
+            "event_name": "job.start",
+            "outcome": "success",
+            "request_id": context.aws_request_id,
+            "fields": {"attempt": 1},
+        },
+    )
+    return {"status": "ok"}
+\end{lstlisting}

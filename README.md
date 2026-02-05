@@ -264,6 +264,13 @@ jobs:
 
 We welcome contributions that improve clarity, add relevant examples, or extend coverage to new domains.
 
+### Repository Docs
+
+- [Contributing guide](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
+- [License](LICENSE)
+- [Code owners](.github/CODEOWNERS)
+
 ### Types of Contributions
 
 - **Content Improvements**: Better examples, clearer explanations, updated practices
@@ -295,6 +302,22 @@ We follow semantic versioning for major content updates:
 - **Major** (1.0.0 → 2.0.0): Significant structural changes or new handbooks
 - **Minor** (1.0.0 → 1.1.0): New chapters or substantial content additions
 - **Patch** (1.0.0 → 1.0.1): Bug fixes, typos, and minor improvements
+
+## 🚀 Releases
+
+Use the release helper to build the PDF and print the GitHub CLI command:
+
+```bash
+scripts/release.sh
+```
+
+The script builds the PDF and copies it to `dist/main.pdf`. It will also create the `v0.1.0` tag if missing, then print the `gh release create ...` command so you can run it manually.
+
+To create a GitHub release yourself:
+
+1. Build the PDF and ensure `dist/main.pdf` exists.
+2. Create the tag if needed: `git tag v0.1.0`.
+3. Run the command printed by `scripts/release.sh` to publish the release with `dist/main.pdf` attached.
 
 
 ## 📄 License

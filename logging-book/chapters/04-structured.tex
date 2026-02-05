@@ -1,0 +1,45 @@
+\chapter{Structured Logging}
+Structured logging separates the message from the fields. It makes logs searchable, joinable, and easy to aggregate. It also makes mistakes visible.
+
+\section{A Minimal Schema}
+Keep a consistent schema so tools and people can rely on it.
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+Field & Purpose \\
+\midrule
+\texttt{event\_name} & Short verb phrase for the event. \\
+\texttt{level} & The severity filter. \\
+\texttt{outcome} & success, failure, retry, or partial. \\
+\texttt{ids} & Request, correlation, job, or user IDs. \\
+\texttt{fields} & Event-specific details like \texttt{duration\_ms}. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Stable Keys}
+Keep field names stable across services. Renaming keys breaks queries and dashboards. If you must change a key, support both for a migration period.
+
+\section{Python Example with \texttt{extra}}
+\begin{lstlisting}[language=Python]
+import logging
+
+logger = logging.getLogger("pipeline")
+
+logger.warning(
+    "batch.load: outcome=retry",
+    extra={
+        "event_name": "batch.load",
+        "level": "warn",
+        "outcome": "retry",
+        "ids": {"job_id": "job_103"},
+        "fields": {
+            "attempt": 2,
+            "backoff_ms": 5000,
+            "duration_ms": 920,
+        },
+    },
+)
+\end{lstlisting}

@@ -1,0 +1,55 @@
+\chapter{Testing and Review}
+Log messages are part of your operational API. Tests keep them stable. Review keeps them readable.
+
+\section{pytest caplog Basics}
+\begin{lstlisting}[language=Python]
+import logging
+
+def test_log_message(caplog):
+    logger = logging.getLogger("worker")
+    with caplog.at_level(logging.INFO):
+        logger.info(
+            "queue.processed: outcome=success",
+            extra={
+                "event_name": "queue.processed",
+                "outcome": "success",
+                "ids": {"message_id": "m-9"},
+                "fields": {"duration_ms": 12, "rows_out": 3},
+            },
+        )
+
+    record = caplog.records[0]
+    assert record.event_name == "queue.processed"
+    assert record.outcome == "success"
+\end{lstlisting}
+
+\section{Checking Required Fields}
+\begin{lstlisting}[language=Python]
+import logging
+
+def test_required_fields(caplog):
+    logger = logging.getLogger("pipeline")
+    with caplog.at_level(logging.WARNING):
+        logger.warning(
+            "batch.load: outcome=retry",
+            extra={
+                "event_name": "batch.load",
+                "outcome": "retry",
+                "fields": {"attempt": 2, "backoff_ms": 1000},
+                "ids": {"job_id": "job_22"},
+            },
+        )
+
+    record = caplog.records[0]
+    assert "job_id" in record.ids
+    assert record.fields["attempt"] == 2
+\end{lstlisting}
+
+\section{Checklist: Review and Tests}
+\begin{itemize}
+\item Tests assert event name and outcome.
+\item Required IDs are present.
+\item Fields include duration and attempt when relevant.
+\item Levels match the outcome.
+\end{itemize}
+

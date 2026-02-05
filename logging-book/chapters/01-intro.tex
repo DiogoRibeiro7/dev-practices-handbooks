@@ -1,0 +1,40 @@
+\chapter{Why Logging Matters}
+Logging is how a system narrates events to the people who operate it. A good log message explains the event name, the outcome, and the key fields and IDs. It should do this fast, without drama. The goal is simple: make investigation cheaper.
+
+\section{What a Good Log Gives You}
+A strong log message helps you answer three questions:
+\begin{itemize}
+\item What event happened?
+\item What was the outcome and level?
+\item Which IDs or fields let me trace it?
+\end{itemize}
+
+When those answers are present, the message is actionable. When they are missing, every incident becomes a hunt.
+
+\section{The Core Vocabulary}
+Use consistent terms across the book and across services. This keeps team conversations short and precise.
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+Term & Meaning \\
+\midrule
+Event name & A short verb phrase that describes the action, for example \texttt{job.completed}. \\
+Level & The severity filter: debug, info, warn, error, or fatal. \\
+Outcome & The result of the event: success, failure, or retry. \\
+Fields & Structured data attached to the event. \\
+IDs & Stable identifiers such as request id, correlation id, user id, or job id. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Checklist: The Minimum Message}
+\begin{itemize}
+\item Event name is explicit.
+\item Outcome is stated.
+\item Level matches the outcome.
+\item IDs are present and stable.
+\item Fields cover the minimum context.
+\end{itemize}
+

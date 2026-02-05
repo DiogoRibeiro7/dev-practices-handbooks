@@ -1,0 +1,31 @@
+\chapter{Safety, Privacy, and Compliance}
+Logs are data. Treat them as production data with risk. The easiest security incident to avoid is the one you never log.
+
+\section{What Not to Log}
+Never log secrets or full tokens. Avoid personal data unless it is required and approved. Use opaque IDs instead of names or emails.
+
+\section{Redaction and Sampling}
+Redaction should happen before logging, not in the log backend. Sampling is useful for high-volume debug events, but it must keep the level and outcome accurate.
+
+\section{Checklist: Safe Logging}
+\begin{itemize}
+\item Fields are reviewed for sensitive values.
+\item IDs are opaque and stable.
+\item Sampling does not drop error events.
+\item Retention matches legal requirements.
+\end{itemize}
+
+\section{Table: Risk Examples}
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+Risk & Safer alternative \\
+\midrule
+Email address in fields & Use a user id. \\
+Access token in message & Do not log; store in secret manager. \\
+Full payload on error & Log a payload hash and key fields. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+

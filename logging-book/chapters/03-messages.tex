@@ -1,0 +1,40 @@
+\chapter{Writing Clear Messages}
+A log message is a short report. It should say what happened and why it matters. The message is still useful even when fields are stripped or hidden.
+
+\section{Message Shape}
+Use a compact pattern: event name, outcome, and one strong noun. Example: \texttt{job.completed: success} or \texttt{http.call: failure}. That makes the first scan fast.
+
+\section{Prefer Concrete Words}
+Avoid vague words like \texttt{"unexpected"} or \texttt{"something"}. Name the event, the outcome, and the target. If you can name a field, do it.
+
+\section{Checklist: Message Review}
+\begin{itemize}
+\item Event name and outcome are in the message.
+\item At least one ID appears in fields.
+\item The message is still meaningful without fields.
+\item No sensitive values appear in message or fields.
+\end{itemize}
+
+\section{Python Example}
+\begin{lstlisting}[language=Python]
+import logging
+
+logger = logging.getLogger("payments")
+
+logger.info(
+    "charge.attempt: outcome=success",
+    extra={
+        "event_name": "charge.attempt",
+        "level": "info",
+        "outcome": "success",
+        "ids": {"request_id": "req_7f9a"},
+        "fields": {
+            "amount": 2400,
+            "currency": "USD",
+            "duration_ms": 185,
+            "attempt": 1,
+        },
+    },
+)
+\end{lstlisting}
+

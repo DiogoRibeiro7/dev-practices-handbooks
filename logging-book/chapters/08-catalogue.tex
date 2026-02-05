@@ -1,0 +1,79 @@
+\chapter{Message Catalogue for Data Pipelines}
+Data pipelines need clear, repeatable messages. The catalogue below focuses on batch jobs, HTTP calls, queues, storage writes, and validation.
+
+\section{Batch Jobs}
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+Event name & Fields \\
+\midrule
+\texttt{batch.start} & \texttt{job\_id}, \texttt{rows\_in}, \texttt{attempt} \\
+\texttt{batch.completed} & \texttt{rows\_in}, \texttt{rows\_out}, \texttt{duration\_ms} \\
+\texttt{batch.failed} & \texttt{error\_type}, \texttt{rows\_in}, \texttt{attempt} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{HTTP Calls}
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+Event name & Fields \\
+\midrule
+\texttt{http.call} & \texttt{url\_host}, \texttt{status\_code}, \texttt{duration\_ms}, \texttt{attempt} \\
+\texttt{http.retry} & \texttt{backoff\_ms}, \texttt{attempt}, \texttt{status\_code} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Queue Processing (SQS-like)}
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+Event name & Fields \\
+\midrule
+\texttt{queue.receive} & \texttt{queue\_name}, \texttt{message\_id}, \texttt{attempt} \\
+\texttt{queue.processed} & \texttt{message\_id}, \texttt{duration\_ms}, \texttt{rows\_out} \\
+\texttt{queue.failed} & \texttt{message\_id}, \texttt{error\_type}, \texttt{backoff\_ms} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Storage Writes (DynamoDB or Iceberg)}
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+Event name & Fields \\
+\midrule
+\texttt{storage.write} & \texttt{table}, \texttt{rows\_out}, \texttt{duration\_ms} \\
+\texttt{storage.commit} & \texttt{table}, \texttt{attempt}, \texttt{duration\_ms} \\
+\texttt{storage.failed} & \texttt{table}, \texttt{error\_type}, \texttt{attempt} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Validation and Data Quality}
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+Event name & Fields \\
+\midrule
+\texttt{validation.start} & \texttt{rule\_set}, \texttt{rows\_in} \\
+\texttt{validation.failed} & \texttt{rule}, \texttt{rows\_out}, \texttt{outcome} \\
+\texttt{validation.summary} & \texttt{rows\_in}, \texttt{rows\_out}, \texttt{duration\_ms} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Checklist: Catalogue Use}
+\begin{itemize}
+\item Event name is consistent across jobs.
+\item Fields match the table entries.
+\item IDs are present for traceability.
+\item Outcome matches the level.
+\end{itemize}
