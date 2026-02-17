@@ -1,0 +1,54 @@
+\chapter{Jobs and steps}
+
+A workflow is a set of jobs.
+Jobs can run in parallel unless you connect them with \code{needs}.
+
+\section{Job dependencies}
+\begin{lstlisting}[language=YAML]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "tests"
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "build"
+\end{lstlisting}
+
+\section{Environment variables}
+There are two layers:
+\begin{itemize}[nosep]
+  \item \code{env:} at workflow/job/step level
+  \item exported variables inside a shell (step-local unless written to \code{GITHUB_ENV})
+\end{itemize}
+
+\begin{lstlisting}[language=YAML]
+- name: Export env for later steps
+  run: |
+    echo "APP_MODE=ci" >> "$GITHUB_ENV"
+
+- name: Use env
+  run: echo "mode=$APP_MODE"
+\end{lstlisting}
+
+\section{Timeouts and retries}
+Add timeouts where you can.
+Avoid hidden infinite waits.
+
+\begin{lstlisting}[language=YAML]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+\end{lstlisting}
+
+\begin{patternbox}{Pattern: separate setup from execution}
+One step installs dependencies.
+Another step runs tests.
+It makes failures easier to locate and caching easier to reason about.
+\end{patternbox}

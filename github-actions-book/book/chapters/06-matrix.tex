@@ -1,0 +1,49 @@
+\chapter{Matrix builds}
+
+Matrix builds let you test across versions and OS.
+They can also waste compute if you let them grow without discipline.
+
+\section{A basic matrix}
+\begin{lstlisting}[language=YAML]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python --version
+\end{lstlisting}
+
+\section{Include and exclude}
+Use \code{include} for special cases.
+
+\begin{lstlisting}[language=YAML]
+strategy:
+  matrix:
+    os: [ubuntu-latest, macos-latest]
+    python-version: ["3.11", "3.12"]
+    include:
+      - os: ubuntu-latest
+        python-version: "3.12"
+        extra-checks: true
+\end{lstlisting}
+
+\section{Matrix patterns}
+\begin{patternbox}{Pattern: one “full” job, others “cheap”}
+Run expensive checks once (coverage, integration, packaging).
+Run fast checks in the matrix.
+\end{patternbox}
+
+\begin{checklistbox}{Checklist: control matrix costs}
+\begin{itemize}[nosep]
+  \item Avoid unnecessary OS combinations.
+  \item Turn off \code{fail-fast} only when you need full results.
+  \item Keep matrix logic readable; if it grows, extract to reusable workflows.
+\end{itemize}
+\end{checklistbox}

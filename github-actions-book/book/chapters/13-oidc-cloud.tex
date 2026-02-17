@@ -1,0 +1,31 @@
+\chapter{OIDC and cloud authentication}
+
+Static cloud keys in secrets are hard to govern.
+OIDC enables short-lived credentials, minted per workflow run.
+
+\section{The basic idea}
+\begin{itemize}[nosep]
+  \item Workflow requests an OIDC token.
+  \item Cloud provider trusts GitHub as an identity provider.
+  \item Cloud returns temporary credentials based on claims (repo, branch, environment).
+\end{itemize}
+
+\section{Why it matters}
+\begin{itemize}[nosep]
+  \item You reduce long-lived secrets.
+  \item Rotation is simpler.
+  \item You can scope trust to a repo, branch, or environment.
+\end{itemize}
+
+\begin{warningbox}{Warning: scope your trust}
+OIDC is only safer if your trust policy is strict.
+Do not allow “any repo in the org” unless you really mean it.
+\end{warningbox}
+
+\begin{checklistbox}{Checklist: OIDC adoption}
+\begin{itemize}[nosep]
+  \item Use environment protections for production.
+  \item Bind trust to repository and branch/tag.
+  \item Require reviewers for deployments.
+\end{itemize}
+\end{checklistbox}

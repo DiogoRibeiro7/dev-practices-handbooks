@@ -1,0 +1,49 @@
+\chapter{Triggers and filters}
+
+Triggers decide when a workflow runs.
+Filters decide when it should \emph{not} run.
+
+\section{Core triggers}
+\begin{itemize}[nosep]
+  \item \code{push}
+  \item \code{pull_request}
+  \item \code{workflow_dispatch} (manual)
+  \item \code{schedule} (cron)
+  \item \code{workflow_call} (reusable workflows)
+\end{itemize}
+
+\section{Branch and path filters}
+Run only when it matters.
+
+\begin{lstlisting}[language=YAML]
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "src/**"
+      - ".github/workflows/**"
+\end{lstlisting}
+
+\section{PR triggers: common pitfalls}
+\begin{itemize}[nosep]
+  \item \code{pull_request} runs on PR events, not on merge commits.
+  \item Use \code{pull_request_target} carefully; it runs with base repo privileges.
+\end{itemize}
+
+\begin{warningbox}{Warning: pull\_request\_target}
+It is useful for labeling and triage, but it can expose secrets if you run untrusted code.
+If you use it, do not checkout and run PR code with write permissions.
+\end{warningbox}
+
+\section{Manual inputs}
+Manual runs are good for releases and maintenance.
+
+\begin{lstlisting}[language=YAML]
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "staging"
+\end{lstlisting}

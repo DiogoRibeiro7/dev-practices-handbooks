@@ -1,0 +1,55 @@
+\chapter{YAML and expressions}
+
+YAML is not the hard part.
+The hard part is how GitHub evaluates expressions and contexts.
+
+\section{Quoting and multiline}
+Use \code{|} for multiline shell scripts.
+Prefer double quotes for strings with \code{:} or special characters.
+
+\begin{lstlisting}[language=YAML]
+- name: Multiline script
+  run: |
+    set -euo pipefail
+    echo "Start"
+    echo "Done"
+\end{lstlisting}
+
+\section{Contexts}
+Contexts are objects available at runtime.
+Common ones:
+\code{github}, \code{env}, \code{inputs}, \code{secrets}, \code{runner}, \code{steps}, \code{jobs}.
+
+\begin{lstlisting}[language=YAML]
+- name: Print a few values
+  run: |
+    echo "ref=${{ github.ref }}"
+    echo "sha=${{ github.sha }}"
+\end{lstlisting}
+
+\section{Expressions and conditionals}
+Expressions live inside \code{\$\{\{ ... \}\}}.
+You will use them in \code{if:}, \code{env:}, and \code{with:}.
+
+\begin{lstlisting}[language=YAML]
+- name: Only on main
+  if: ${{ github.ref == 'refs/heads/main' }}
+  run: echo "main branch"
+\end{lstlisting}
+
+\begin{warningbox}{Warning: strings vs booleans}
+Inputs are strings by default.
+If you need booleans, be explicit with comparisons like \code{inputs.flag == 'true'}.
+\end{warningbox}
+
+\section{Step outputs}
+You can set outputs from a step and use them later.
+
+\begin{lstlisting}[language=YAML]
+- id: vars
+  run: |
+    echo "name=world" >> "$GITHUB_OUTPUT"
+
+- name: Use output
+  run: echo "Hello ${{ steps.vars.outputs.name }}"
+\end{lstlisting}

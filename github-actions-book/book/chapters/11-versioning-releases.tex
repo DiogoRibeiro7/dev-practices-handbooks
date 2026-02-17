@@ -1,0 +1,40 @@
+\chapter{Versioning and releases}
+
+If your automation is important, it needs versioning discipline.
+
+\section{Pinning actions}
+Use stable versions:
+\begin{itemize}[nosep]
+  \item \code{actions/checkout@v4}
+  \item \code{actions/setup-node@v4}
+\end{itemize}
+
+For high-security environments, pin to commit SHA.
+It is less convenient, but more predictable.
+
+\section{Release workflows}
+A typical release workflow:
+\begin{enumerate}[nosep]
+  \item runs on tags
+  \item builds artifacts
+  \item publishes to a registry (or creates a GitHub Release)
+\end{enumerate}
+
+\begin{lstlisting}[language=YAML]
+on:
+  push:
+    tags:
+      - "v*.*.*"
+\end{lstlisting}
+
+\section{Changelogs}
+Changelogs make automation safer to upgrade.
+Even a short changelog is better than none.
+
+\begin{checklistbox}{Checklist: release hygiene}
+\begin{itemize}[nosep]
+  \item Tag releases.
+  \item Keep a changelog.
+  \item Avoid silent breaking changes in reusable workflows.
+\end{itemize}
+\end{checklistbox}

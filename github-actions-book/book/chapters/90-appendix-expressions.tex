@@ -1,0 +1,28 @@
+\chapter{Expression cheatsheet}
+
+This appendix is intentionally short.
+The point is recall, not completeness.
+
+\section{Common comparisons}
+\begin{lstlisting}[language=YAML]
+if: ${{ github.ref == 'refs/heads/main' }}
+if: ${{ github.event_name == 'pull_request' }}
+if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+\end{lstlisting}
+
+\section{Useful functions}
+\begin{itemize}[nosep]
+  \item \code{hashFiles('**/poetry.lock')}
+  \item \code{contains(string, 'x')}
+  \item \code{startsWith(string, 'prefix')}
+  \item \code{endsWith(string, 'suffix')}
+  \item \code{toJSON(obj)} and \code{fromJSON(str)}
+\end{itemize}
+
+\section{Job status helpers}
+\begin{lstlisting}[language=YAML]
+if: ${{ always() }}
+if: ${{ failure() }}
+if: ${{ success() }}
+if: ${{ cancelled() }}
+\end{lstlisting}

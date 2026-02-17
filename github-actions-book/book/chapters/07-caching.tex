@@ -1,0 +1,47 @@
+\chapter{Caching}
+
+Caching is the main lever for speed.
+It also introduces correctness risks if you cache the wrong things.
+
+\section{What to cache}
+Cache build inputs, not outputs.
+Examples:
+\begin{itemize}[nosep]
+  \item dependency downloads (\code{pip}, \code{poetry}, \code{yarn})
+  \item build tool caches (Gradle, Cargo)
+\end{itemize}
+
+\section{Cache with setup actions}
+Many setup actions support caching directly.
+
+\begin{lstlisting}[language=YAML]
+- uses: actions/setup-node@v4
+  with:
+    node-version: "20"
+    cache: "yarn"
+\end{lstlisting}
+
+\section{Cache keys}
+Keys should change when dependencies change.
+The simplest reliable approach is hashing lockfiles.
+
+\begin{lstlisting}[language=YAML]
+- uses: actions/cache@v4
+  with:
+    path: |
+      ~/.cache/pip
+    key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+\end{lstlisting}
+
+\begin{warningbox}{Warning: caching virtual environments}
+Caching whole virtualenv folders often causes subtle corruption across runner images.
+Prefer caching download directories and rebuilding environments.
+\end{warningbox}
+
+\begin{checklistbox}{Checklist: safe caching}
+\begin{itemize}[nosep]
+  \item Cache by lockfile hash.
+  \item Keep caches OS-specific.
+  \item Prefer restoring caches as an optimization, not a requirement.
+\end{itemize}
+\end{checklistbox}

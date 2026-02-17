@@ -1,0 +1,56 @@
+\chapter{Composite actions}
+
+Composite actions let you package a repeatable sequence of steps.
+They live inside the repository (or another repo) and are versioned like code.
+
+\section{A minimal composite action}
+Create \code{.github/actions/setup-python-poetry/action.yml} in a repo when you implement it.
+This chapter focuses on the structure.
+
+\begin{lstlisting}[language=YAML]
+name: "Setup Python + Poetry"
+description: "Install Python and Poetry, then install dependencies"
+inputs:
+  python-version:
+    description: "Python version"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Poetry
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        pip install poetry
+
+    - name: Install deps
+      shell: bash
+      run: |
+        poetry install --no-interaction
+\end{lstlisting}
+
+\section{Calling a composite action}
+\begin{lstlisting}[language=YAML]
+- uses: ./.github/actions/setup-python-poetry
+  with:
+    python-version: "3.12"
+\end{lstlisting}
+
+\begin{warningbox}{Warning: shells and working directories}
+Composite actions do not inherit a shell by default in a portable way.
+Set \code{shell: bash} explicitly.
+Be explicit about paths and working directories.
+\end{warningbox}
+
+\begin{checklistbox}{Checklist: composite actions}
+\begin{itemize}[nosep]
+  \item Keep them small and composable.
+  \item Expose stable inputs; avoid leaking internal assumptions.
+  \item Document expected side effects (files created, env vars set).
+\end{itemize}
+\end{checklistbox}

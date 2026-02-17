@@ -1,0 +1,37 @@
+\chapter{Debugging workflows}
+
+Debugging Actions is mostly about reducing ambiguity.
+
+\section{Step summaries}
+Write structured output to the step summary.
+
+\begin{lstlisting}[language=YAML]
+- name: Summary
+  run: |
+    {
+      echo "## Build summary"
+      echo ""
+      echo "- Ref: ${{ github.ref }}"
+      echo "- SHA: ${{ github.sha }}"
+    } >> "$GITHUB_STEP_SUMMARY"
+\end{lstlisting}
+
+\section{Make failures obvious}
+\begin{itemize}[nosep]
+  \item Name steps clearly.
+  \item Print tool versions.
+  \item Use \code{set -euo pipefail} in bash scripts.
+\end{itemize}
+
+\section{Re-run strategy}
+If failures are flaky:
+\begin{itemize}[nosep]
+  \item identify what is nondeterministic (network, mirrors, timeouts)
+  \item add retries only around the unstable part
+  \item add timeouts so hangs become failures
+\end{itemize}
+
+\begin{warningbox}{Warning: retries hide real failures}
+Retries are sometimes necessary, but they can turn real issues into noise.
+Prefer fixing the underlying instability.
+\end{warningbox}

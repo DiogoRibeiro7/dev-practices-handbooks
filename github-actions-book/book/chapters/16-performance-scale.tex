@@ -1,0 +1,40 @@
+\chapter{Performance and scale}
+
+Fast CI is not a luxury.
+It changes developer behaviour.
+
+\section{The main levers}
+\begin{enumerate}[nosep]
+  \item caching
+  \item parallelism and matrices
+  \item avoiding unnecessary triggers
+  \item keeping scripts efficient
+\end{enumerate}
+
+\section{Concurrency control}
+Use concurrency groups to avoid stampedes, especially for deployments.
+
+\begin{lstlisting}[language=YAML]
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+\end{lstlisting}
+
+\section{Scaling across repositories}
+Reusable workflows are the cleanest tool for organisations.
+Composite actions help inside a single repo, but are harder to govern across many repos.
+
+\begin{patternbox}{Pattern: workflow platform repo}
+Create a dedicated repo with reusable workflows.
+Require consumers to pin versions.
+Add CI that tests the reusable workflows against fixtures.
+\end{patternbox}
+
+\begin{checklistbox}{Checklist: keeping CI healthy over time}
+\begin{itemize}[nosep]
+  \item Review pipeline duration every month.
+  \item Remove dead steps and unused triggers.
+  \item Keep “release” separate from “PR CI”.
+  \item Treat workflow changes as high-risk changes.
+\end{itemize}
+\end{checklistbox}

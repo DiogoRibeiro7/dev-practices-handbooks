@@ -1,0 +1,52 @@
+\chapter{Introduction}
+
+GitHub Actions is a CI/CD system driven by events in your repository.
+A workflow is a YAML file.
+It reacts to events, runs jobs, and produces outputs.
+
+This book assumes you can read YAML and you know what a CI pipeline should do.
+The goal is to build automation that is predictable and easy to change.
+
+\section{What you will build}
+You will build workflows that cover:
+\begin{itemize}[nosep]
+  \item lint + type-check + tests
+  \item caching to keep builds fast
+  \item artifacts for reports and binaries
+  \item composite actions for reuse inside a repo
+  \item reusable workflows for reuse across repos
+  \item secure permissions and secret handling
+\end{itemize}
+
+\section{A first workflow}
+This example runs on pushes to \code{main} and on pull requests.
+It checks out code and runs a script.
+
+\begin{lstlisting}[language=YAML]
+name: CI (basic)
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Say hello
+        run: |
+          echo "Hello from GitHub Actions"
+\end{lstlisting}
+
+\begin{checklistbox}{Checklist: keep the first workflow boring}
+\begin{itemize}[nosep]
+  \item Add \code{permissions} explicitly.
+  \item Prefer small steps with clear names.
+  \item Keep \code{run} scripts short; move logic to repo scripts as soon as it grows.
+\end{itemize}
+\end{checklistbox}

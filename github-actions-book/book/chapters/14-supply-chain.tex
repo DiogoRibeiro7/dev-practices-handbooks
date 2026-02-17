@@ -1,0 +1,31 @@
+\chapter{Supply chain and hardening}
+
+CI systems build and publish artifacts.
+That is supply chain by definition.
+
+\section{Pin dependencies}
+There are two layers:
+\begin{itemize}[nosep]
+  \item Actions you \code{uses:}
+  \item Dependencies inside your builds (npm/pip/etc.)
+\end{itemize}
+
+Pin actions to major versions at minimum.
+Pin to SHAs in strict environments.
+
+\section{Provenance mindset}
+If a workflow can publish, it is a high-trust path.
+Protect it.
+
+\begin{patternbox}{Pattern: split CI from release}
+Run CI on PRs with minimal permissions.
+Run releases on tags with strict protections and approvals.
+\end{patternbox}
+
+\section{Common controls}
+\begin{itemize}[nosep]
+  \item Branch protection and required checks
+  \item CODEOWNERS for \code{.github/workflows/}
+  \item Review requirements for environments
+  \item Dependency scanning and alerts
+\end{itemize}

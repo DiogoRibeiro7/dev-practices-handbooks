@@ -1,0 +1,36 @@
+\chapter{Artifacts and reports}
+
+Artifacts are files you upload from a workflow run.
+They are useful for debugging and for distributing build outputs.
+
+\section{Upload artifacts}
+\begin{lstlisting}[language=YAML]
+- name: Run tests
+  run: |
+    mkdir -p reports
+    echo "example" > reports/test.txt
+
+- name: Upload reports
+  uses: actions/upload-artifact@v4
+  with:
+    name: test-reports
+    path: reports/
+\end{lstlisting}
+
+\section{When to use artifacts}
+\begin{itemize}[nosep]
+  \item Test reports and logs for failures
+  \item Coverage outputs
+  \item Build binaries from PRs
+  \item Generated documentation previews
+\end{itemize}
+
+\section{Artifact discipline}
+Artifacts are not a cache.
+They are not a package registry.
+Keep them scoped and short-lived.
+
+\begin{patternbox}{Pattern: attach artifacts only on failure}
+Upload logs and debug bundles only when the job fails.
+It keeps runs clean and cheap.
+\end{patternbox}

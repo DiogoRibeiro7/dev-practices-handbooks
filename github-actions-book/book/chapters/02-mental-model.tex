@@ -1,0 +1,39 @@
+\chapter{The mental model}
+
+Before YAML details, you need the model.
+
+\section{Key terms}
+\begin{itemize}[nosep]
+  \item \textbf{Event}: something happened (push, pull request, schedule, manual).
+  \item \textbf{Workflow}: a YAML file under \code{.github/workflows/}.
+  \item \textbf{Job}: runs on a runner (VM). Jobs can run in parallel.
+  \item \textbf{Step}: a single action or shell command.
+  \item \textbf{Action}: reusable unit. It can be JavaScript, Docker, or composite.
+  \item \textbf{Runner}: the environment. Hosted or self-hosted.
+\end{itemize}
+
+\section{How execution really feels}
+A workflow run is a directed graph of jobs.
+Within a job, steps run sequentially.
+Each job starts from a clean environment (unless self-hosted and you keep state, which you should avoid).
+
+\begin{patternbox}{Pattern: treat workflows as code}
+\begin{itemize}[nosep]
+  \item Store scripts in the repository.
+  \item Version your internal actions.
+  \item Write tests for scripts that a workflow calls.
+  \item Use code review for YAML changes.
+\end{itemize}
+\end{patternbox}
+
+\section{The three surfaces}
+You write automation across three surfaces:
+\begin{enumerate}[nosep]
+  \item \textbf{Workflow YAML} (orchestration)
+  \item \textbf{Scripts} (business logic)
+  \item \textbf{Actions} (reusable glue)
+\end{enumerate}
+
+If you put business logic in YAML, you will regret it.
+Keep YAML for orchestration.
+Keep logic in scripts or actions.
