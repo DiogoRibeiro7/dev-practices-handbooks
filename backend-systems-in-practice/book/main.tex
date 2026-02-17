@@ -1,1 +1,62 @@
+\documentclass[11pt,a4paper,oneside]{book}
 
+\input{preamble}
+\input{macros}
+
+\title{Backend Development: Practical Engineering for Production Systems}
+\author{Diogo Ribeiro}
+\date{\today}
+
+\begin{document}
+
+\frontmatter
+\maketitle
+\tableofcontents
+
+\chapter*{Preface}
+This book is about building backends that are easy to change and safe to operate.
+It is written for engineers who want to ship services and keep them healthy in production.
+
+The approach is opinionated:
+\begin{itemize}
+  \item keep business logic out of frameworks
+  \item design APIs for change
+  \item treat data as a first-class interface
+  \item measure what matters (latency, errors, saturation)
+  \item keep security and reliability in the default path
+\end{itemize}
+
+\mainmatter
+
+\include{chapters/01-introduction}
+\include{chapters/02-backend-mental-model}
+\include{chapters/03-http-that-matters}
+\include{chapters/04-api-design}
+\include{chapters/05-data-modeling}
+\include{chapters/06-project-structure}
+\include{chapters/07-validation-errors}
+\include{chapters/08-authn-authz}
+\include{chapters/09-observability}
+\include{chapters/10-performance}
+\include{chapters/11-background-work}
+\include{chapters/12-consistency}
+\include{chapters/13-reliability}
+\include{chapters/14-security}
+\include{chapters/15-testing}
+\include{chapters/16-deployments}
+\include{chapters/17-architecture-choices}
+\include{chapters/18-event-driven}
+\include{chapters/19-multi-tenancy}
+\include{chapters/20-production-readiness}
+
+\appendix
+\include{chapters/90-appendix-checklists}
+\include{chapters/91-appendix-templates}
+
+\backmatter
+\chapter*{Closing note}
+Backends are systems.
+Code quality matters, but the system behaviour matters more.
+Make tradeoffs explicit, keep interfaces stable, and build feedback loops into the product.
+
+\end{document}

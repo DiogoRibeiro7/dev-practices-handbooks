@@ -1,0 +1,89 @@
+% Encoding / fonts
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+% Layout
+\usepackage[a4paper,margin=2.4cm]{geometry}
+\usepackage{microtype}
+\usepackage{parskip}
+
+% Links / graphics
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+% Tables / lists
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{enumitem}
+
+% Boxes
+\usepackage[most]{tcolorbox}
+
+% Code listings
+\usepackage{listings}
+
+\lstdefinelanguage{YAML}{
+  keywords={true,false,null,y,n,yes,no,on,off},
+  sensitive=false,
+  comment=[l]{\#},
+  morestring=[b]',
+  morestring=[b]"
+}
+
+\lstdefinelanguage{JSON}{
+  morestring=[b]",
+  morecomment=[l]{//},
+  sensitive=true
+}
+
+\lstdefinelanguage{SQL}{
+  morekeywords={SELECT,FROM,WHERE,JOIN,LEFT,RIGHT,INNER,OUTER,ON,CREATE,ALTER,DROP,INSERT,UPDATE,DELETE,VALUES,INTO,PRIMARY,KEY,FOREIGN,REFERENCES,UNIQUE,NOT,NULL,INDEX,AND,OR,ORDER,BY,GROUP,HAVING,LIMIT,OFFSET},
+  sensitive=false,
+  morecomment=[l]{--},
+  morestring=[b]'
+}
+
+\lstdefinelanguage{Bash}{
+  morekeywords={set,echo,exit,export,if,then,fi,for,in,do,done,case,esac},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]"
+}
+
+\lstdefinelanguage{Python}{
+  morekeywords={def,class,return,import,from,as,if,elif,else,for,while,try,except,with,lambda,yield,True,False,None},
+  sensitive=true,
+  morecomment=[l]{\#},
+  morestring=[b]",
+  morestring=[b]'
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  breaklines=true,
+  frame=single,
+  showstringspaces=false,
+  tabsize=2,
+  xleftmargin=0.2cm,
+  xrightmargin=0.2cm
+}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue
+}
+
+\tcbset{
+  enhanced,
+  boxrule=0.5pt,
+  arc=2mm,
+  left=2mm,
+  right=2mm,
+  top=1mm,
+  bottom=1mm
+}
