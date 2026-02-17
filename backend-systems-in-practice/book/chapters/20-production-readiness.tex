@@ -1,0 +1,28 @@
+\chapter{Production readiness}
+
+Production readiness is not a ceremony.
+It is a set of defaults.
+
+\section{A production readiness review}
+Before shipping a service, be able to answer:
+\begin{itemize}[nosep]
+  \item What happens when the database is slow?
+  \item What happens when an external API fails?
+  \item Can we deploy without downtime?
+  \item Can we roll back safely?
+  \item Do we know how to debug a user report?
+\end{itemize}
+
+\section{Runbooks}
+Runbooks reduce incident time.
+They should include:
+\begin{itemize}[nosep]
+  \item symptoms
+  \item likely causes
+  \item safe actions
+  \item dashboards and links
+\end{itemize}
+
+\begin{patternbox}{Pattern: default playbook}
+Every service should have a ``first 15 minutes'' playbook for incidents.
+\end{patternbox}

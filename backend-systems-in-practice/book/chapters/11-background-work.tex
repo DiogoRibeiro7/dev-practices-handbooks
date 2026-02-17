@@ -1,0 +1,29 @@
+\chapter{Background work}
+
+Background jobs handle tasks that should not block a request.
+
+Examples:
+\begin{itemize}[nosep]
+  \item sending emails
+  \item generating exports
+  \item synchronizing external systems
+  \item rebuilding search indexes
+\end{itemize}
+
+\section{Queues and retries}
+Retries need:
+\begin{itemize}[nosep]
+  \item exponential backoff
+  \item jitter
+  \item a maximum attempt count
+  \item a dead-letter queue
+\end{itemize}
+
+\begin{warningbox}{Warning: poison messages}
+Some messages always fail.
+Without a DLQ, they can block progress and inflate costs.
+\end{warningbox}
+
+\section{Idempotency}
+Workers should be idempotent.
+Assume the same job can be delivered more than once.

@@ -1,0 +1,40 @@
+\chapter{Data modeling}
+
+Your database schema is an interface.
+Treat it with the same care as an API.
+
+\section{Constraints}
+Constraints prevent data drift.
+Prefer database constraints for invariants:
+\begin{itemize}[nosep]
+  \item \code{NOT NULL} for required fields
+  \item \code{UNIQUE} for natural keys
+  \item foreign keys where they help integrity
+\end{itemize}
+
+\section{Indexes}
+Indexes are a performance feature and a cost.
+Index what you query.
+Do not index what you do not query.
+
+\begin{lstlisting}[language=SQL]
+CREATE TABLE tasks (
+  id            BIGSERIAL PRIMARY KEY,
+  project_id    BIGINT NOT NULL,
+  title         TEXT NOT NULL,
+  status        TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_tasks_project_created
+ON tasks (project_id, created_at DESC);
+\end{lstlisting}
+
+\begin{warningbox}{Warning: migrations are production code}
+Treat migrations like code that can fail.
+Make them safe to run twice, and measure how long they take.
+\end{warningbox}
+
+\section{Denormalization}
+Denormalize only when it removes real cost.
+Make denormalization explicit, with a job that keeps it consistent.

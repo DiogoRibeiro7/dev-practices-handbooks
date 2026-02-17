@@ -1,0 +1,21 @@
+\chapter{Architecture choices}
+
+Architecture is a set of constraints and a plan for change.
+
+\section{Modular monolith vs microservices}
+A modular monolith can scale far if boundaries are clear.
+Microservices add operational cost but can help with independent scaling and ownership.
+
+\begin{patternbox}{Pattern: start with a modular monolith}
+Start with one deployable, many modules.
+Split into services when a boundary is stable and worth the cost.
+\end{patternbox}
+
+\section{Boundaries}
+Boundaries should follow:
+\begin{itemize}[nosep]
+  \item ownership
+  \item data consistency needs
+  \item change rate
+  \item latency requirements
+\end{itemize}

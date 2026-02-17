@@ -1,0 +1,40 @@
+\chapter{Validation and error handling}
+
+Validation prevents bad state.
+Error handling prevents bad user experience and operational noise.
+
+\section{Validation}
+Validation should occur at the boundary:
+\begin{itemize}[nosep]
+  \item request body validation
+  \item query parameter validation
+  \item path parameter validation
+\end{itemize}
+
+\section{Error format}
+Pick a stable error format.
+Include:
+\begin{itemize}[nosep]
+  \item a machine-readable error code
+  \item a human-readable message
+  \item optional field-level details
+  \item a request id
+\end{itemize}
+
+\begin{lstlisting}[language=JSON]
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid request payload",
+    "details": [
+      {"field": "title", "issue": "required"}
+    ]
+  },
+  "request_id": "01H..."
+}
+\end{lstlisting}
+
+\begin{warningbox}{Warning: leaking internals}
+Do not return stack traces to clients.
+Log them internally with correlation ids.
+\end{warningbox}

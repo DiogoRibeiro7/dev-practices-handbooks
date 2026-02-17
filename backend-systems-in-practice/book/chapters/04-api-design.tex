@@ -1,0 +1,37 @@
+\chapter{API design}
+
+API design is about change.
+You want to add features without breaking existing clients.
+
+\section{Resource modeling}
+Model resources as nouns:
+\begin{itemize}[nosep]
+  \item \code{/projects}
+  \item \code{/projects/\{projectId\}/tasks}
+  \item \code{/tasks/\{taskId\}}
+\end{itemize}
+
+Use actions sparingly, usually for workflows:
+\code{/tasks/\{taskId\}/complete}.
+
+\section{Pagination}
+Avoid returning unbounded collections.
+Pick one pagination scheme and apply it everywhere.
+
+Offset pagination is simple but can be unstable under concurrent writes.
+Cursor pagination is harder but more stable.
+
+\begin{patternbox}{Pattern: cursor pagination for high-write collections}
+For activity logs and events, cursor pagination prevents duplicates and missing items under load.
+\end{patternbox}
+
+\section{Versioning}
+Prefer backwards-compatible changes:
+\begin{itemize}[nosep]
+  \item add new fields, do not rename existing fields
+  \item keep defaults stable
+  \item do not change meanings silently
+\end{itemize}
+
+If you must break compatibility, version explicitly.
+Keep the number of versions small.

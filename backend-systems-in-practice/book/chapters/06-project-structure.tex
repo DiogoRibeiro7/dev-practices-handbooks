@@ -1,0 +1,26 @@
+\chapter{Project structure}
+
+A good structure makes behaviour easy to find.
+It also makes testing and refactoring safer.
+
+\section{Layers}
+A practical layering for services:
+\begin{itemize}[nosep]
+  \item \textbf{HTTP layer}: routing, auth, validation, request/response mapping
+  \item \textbf{Domain}: business rules and use cases
+  \item \textbf{Data access}: repositories/queries
+  \item \textbf{Integration}: external services, queues, email, payment
+\end{itemize}
+
+\begin{patternbox}{Pattern: pure domain logic}
+Domain code should not import the web framework.
+It should accept typed inputs and return typed outputs.
+\end{patternbox}
+
+\section{Configuration}
+Configuration should:
+\begin{itemize}[nosep]
+  \item come from environment variables
+  \item be validated at startup
+  \item be observable (log the config shape, not secrets)
+\end{itemize}

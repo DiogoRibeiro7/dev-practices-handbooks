@@ -1,0 +1,41 @@
+\chapter{HTTP that matters}
+
+HTTP is a transport protocol, but it shapes your system.
+Small decisions here affect caching, retries, and client behaviour.
+
+\section{Methods and idempotency}
+Idempotency matters for retries.
+\begin{itemize}[nosep]
+  \item \code{GET} should be safe and idempotent
+  \item \code{PUT} should be idempotent
+  \item \code{POST} is often not idempotent unless you add an idempotency key
+\end{itemize}
+
+\section{Status codes}
+Status codes are a control surface for clients:
+\begin{itemize}[nosep]
+  \item \code{200} OK with a response body
+  \item \code{201} Created for resource creation
+  \item \code{204} No Content for successful actions without a body
+  \item \code{400} validation errors
+  \item \code{401} unauthenticated
+  \item \code{403} unauthorized
+  \item \code{404} resource not found
+  \item \code{409} conflict (e.g., uniqueness)
+  \item \code{429} rate limited
+  \item \code{5xx} server faults
+\end{itemize}
+
+\section{Headers that pay rent}
+\begin{itemize}[nosep]
+  \item \code{Content-Type}
+  \item \code{Authorization}
+  \item \code{ETag} / \code{If-None-Match} for caching
+  \item \code{Idempotency-Key} for safe retries
+  \item \code{X-Request-Id} (or a standard correlation header) for tracing
+\end{itemize}
+
+\begin{patternbox}{Pattern: stable error format}
+Define one error format and never deviate.
+Clients will depend on it more than you expect.
+\end{patternbox}

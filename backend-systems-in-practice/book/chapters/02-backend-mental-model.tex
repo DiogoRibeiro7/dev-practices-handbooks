@@ -1,0 +1,36 @@
+\chapter{A backend mental model}
+
+A backend is a set of components:
+\begin{itemize}[nosep]
+  \item \textbf{Edge}: load balancer, gateway, TLS termination
+  \item \textbf{Service}: request handlers and business logic
+  \item \textbf{Data}: databases and caches
+  \item \textbf{Async}: queues and background workers
+  \item \textbf{Observability}: logs, metrics, traces
+\end{itemize}
+
+\section{Request lifecycle}
+A good lifecycle is consistent across endpoints:
+\begin{enumerate}[nosep]
+  \item authenticate the caller
+  \item authorize the action
+  \item validate inputs
+  \item apply business rules
+  \item read/write data
+  \item return a stable response shape
+\end{enumerate}
+
+\begin{warningbox}{Warning: mixing concerns}
+When authorization and validation happen inside business logic, you will duplicate checks.
+Put them in the request pipeline, then keep core logic framework-agnostic.
+\end{warningbox}
+
+\section{State and side effects}
+Most complexity is state and side effects:
+\begin{itemize}[nosep]
+  \item a database write is a side effect
+  \item sending emails is a side effect
+  \item charging a payment method is a side effect
+\end{itemize}
+
+Backend engineering is controlling these side effects.

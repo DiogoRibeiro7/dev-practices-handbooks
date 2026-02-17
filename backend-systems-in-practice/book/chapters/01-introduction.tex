@@ -1,0 +1,29 @@
+\chapter{Introduction}
+
+Backend development is the work of building systems that other systems depend on.
+A backend receives requests, validates them, applies business rules, changes state, and returns results.
+
+Most teams do not fail because they cannot write endpoints.
+They fail because the backend becomes hard to change.
+This happens when interfaces drift, data models become inconsistent, and operational reality is ignored.
+
+\section{A reference system}
+Throughout the book, assume a simple product:
+a \textbf{Task API} that supports projects, tasks, and activity logs.
+It is enough to discuss real constraints:
+authentication, pagination, background work, indexing, and deployments.
+
+\section{What ``good'' looks like}
+A backend is in good shape when:
+\begin{itemize}[nosep]
+  \item changes are local and predictable
+  \item failures are visible and recoverable
+  \item performance is measured, not guessed
+  \item security does not rely on developer memory
+  \item operations are boring
+\end{itemize}
+
+\begin{patternbox}{Pattern: treat interfaces as products}
+The API is not a technical detail.
+It is a contract with clients, future developers, and your operations team.
+\end{patternbox}

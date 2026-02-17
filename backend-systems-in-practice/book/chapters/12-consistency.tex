@@ -1,0 +1,31 @@
+\chapter{Consistency and transactions}
+
+Consistency is the gap between what you want and what distributed systems give you.
+
+\section{Transactions}
+Use transactions for invariants inside a single database:
+\begin{itemize}[nosep]
+  \item account balance updates
+  \item status transitions that must be atomic
+\end{itemize}
+
+\section{Outbox pattern}
+When you need to publish an event after a DB write:
+\begin{enumerate}[nosep]
+  \item write business data and an outbox row in one transaction
+  \item a worker reads the outbox and publishes events
+  \item mark outbox rows as sent
+\end{enumerate}
+
+\begin{patternbox}{Pattern: prefer at-least-once delivery}
+At-least-once is easier to achieve than exactly-once.
+It shifts complexity into idempotency, which you can control.
+\end{patternbox}
+
+\section{Sagas}
+For multi-step workflows across services, you need explicit orchestration:
+\begin{itemize}[nosep]
+  \item a coordinator
+  \item compensating actions
+  \item durable state for the workflow
+\end{itemize}

@@ -1,0 +1,31 @@
+\chapter{Performance}
+
+Performance work starts with measurement.
+Then you choose the best lever.
+
+\section{The usual bottlenecks}
+\begin{itemize}[nosep]
+  \item database queries (missing indexes, too much data)
+  \item N+1 patterns (repeated queries)
+  \item slow external APIs
+  \item inefficient serialization
+\end{itemize}
+
+\section{Caching}
+Caching is a latency feature.
+It is also a correctness risk.
+Be explicit about:
+\begin{itemize}[nosep]
+  \item cache key
+  \item TTL
+  \item invalidation rules
+\end{itemize}
+
+\begin{patternbox}{Pattern: cache reads, not writes}
+Cache query results and derived views.
+Do not cache write outcomes unless you have strict idempotency.
+\end{patternbox}
+
+\section{Connection pooling}
+Many outages are connection pool outages.
+Define sane limits and timeouts, and monitor pool usage.

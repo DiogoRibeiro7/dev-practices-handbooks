@@ -1,0 +1,28 @@
+\chapter{Testing strategy}
+
+Testing is a portfolio, not a single type.
+
+\section{Unit tests}
+Unit tests verify pure logic.
+They should be fast and deterministic.
+
+\section{Integration tests}
+Integration tests verify behaviour across boundaries:
+\begin{itemize}[nosep]
+  \item database queries
+  \item message publishing
+  \item external API integration (often mocked at the HTTP boundary)
+\end{itemize}
+
+\section{Contract tests}
+Contract tests keep clients and services aligned.
+They prevent silent breakages.
+
+\section{End-to-end tests}
+Use sparingly.
+They are slow and expensive, but useful for critical workflows.
+
+\begin{patternbox}{Pattern: test the data model}
+Most backend bugs are data bugs.
+Add tests that assert migrations, constraints, and indexes.
+\end{patternbox}

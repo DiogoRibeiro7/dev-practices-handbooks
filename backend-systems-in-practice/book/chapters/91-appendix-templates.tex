@@ -1,0 +1,54 @@
+\chapter{Templates}
+
+These templates are intentionally small.
+They are a starting point, not a framework.
+
+\section{OpenAPI fragment (conceptual)}
+\begin{lstlisting}[language=YAML]
+openapi: 3.0.0
+info:
+  title: Task API
+  version: 1.0.0
+paths:
+  /projects:
+    get:
+      summary: List projects
+      responses:
+        "200":
+          description: OK
+\end{lstlisting}
+
+\section{Error response template}
+\begin{lstlisting}[language=JSON]
+{
+  "error": {
+    "code": "SOME_CODE",
+    "message": "Human readable message",
+    "details": []
+  },
+  "request_id": "01H..."
+}
+\end{lstlisting}
+
+\section{SQL migration template}
+\begin{lstlisting}[language=SQL]
+-- 2026-02-17_add_tasks_table.sql
+CREATE TABLE tasks (
+  id BIGSERIAL PRIMARY KEY,
+  project_id BIGINT NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_tasks_project_created
+ON tasks (project_id, created_at DESC);
+\end{lstlisting}
+
+\section{Bash healthcheck snippet}
+\begin{lstlisting}[language=Bash]
+set -euo pipefail
+
+curl -fsS http://localhost:8080/healthz > /dev/null
+echo "ok"
+\end{lstlisting}

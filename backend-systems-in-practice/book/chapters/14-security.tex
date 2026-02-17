@@ -1,0 +1,30 @@
+\chapter{Security}
+
+Security is not a checklist.
+It is a system property.
+
+\section{Common risks}
+\begin{itemize}[nosep]
+  \item injection (SQL, command, template)
+  \item broken access control
+  \item leaked secrets
+  \item insecure deserialization
+  \item dependency vulnerabilities
+\end{itemize}
+
+\section{Secrets management}
+Secrets should:
+\begin{itemize}[nosep]
+  \item not be stored in code
+  \item be scoped and rotated
+  \item be accessible only where needed
+\end{itemize}
+
+\begin{warningbox}{Warning: logging sensitive data}
+Logs are often more widely accessible than databases.
+Do not log tokens, passwords, or personal data.
+\end{warningbox}
+
+\section{Transport security}
+TLS should be default.
+Pin down cipher suites and enforce HTTPS at the edge.

@@ -1,0 +1,35 @@
+\chapter{Observability}
+
+If you cannot see the system, you cannot operate it.
+
+\section{Logs}
+Logs should be structured.
+Include:
+\begin{itemize}[nosep]
+  \item timestamp
+  \item level
+  \item request id / trace id
+  \item route name
+  \item user id (if applicable)
+  \item duration
+\end{itemize}
+
+\section{Metrics}
+A minimal set:
+\begin{itemize}[nosep]
+  \item request rate
+  \item error rate
+  \item latency percentiles
+  \item saturation (CPU, memory, DB connections)
+\end{itemize}
+
+\section{Traces}
+Traces connect services.
+They answer: where did the time go?
+Always propagate correlation ids.
+
+\begin{patternbox}{Pattern: one dashboard per service}
+A service should have a default dashboard that any engineer can use.
+Put it in the repo.
+Treat it as code.
+\end{patternbox}

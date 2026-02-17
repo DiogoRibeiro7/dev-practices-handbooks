@@ -1,0 +1,29 @@
+\chapter{Reliability}
+
+Reliability is engineering for failure.
+
+\section{Timeouts}
+Every network call should have a timeout.
+Every request should have a budget.
+
+\section{Circuit breakers}
+If a dependency is failing, stop calling it for a while.
+Return a degraded response if possible.
+
+\section{Rate limiting}
+Rate limits protect the service.
+They also protect downstream dependencies.
+
+\begin{patternbox}{Pattern: protect your dependencies}
+Many outages are caused by a healthy service overwhelming an unhealthy dependency.
+Backpressure is a feature.
+\end{patternbox}
+
+\section{SLOs}
+Define service-level objectives:
+\begin{itemize}[nosep]
+  \item availability
+  \item latency
+  \item correctness (where measurable)
+\end{itemize}
+Then decide what error budget means for releases.

@@ -1,0 +1,32 @@
+\chapter{Deployments}
+
+Deployment is where code meets reality.
+
+\section{Deployment styles}
+\begin{itemize}[nosep]
+  \item rolling
+  \item blue/green
+  \item canary
+\end{itemize}
+
+\section{Schema migrations}
+Treat schema migrations as part of release design.
+Prefer expand-and-contract:
+\begin{enumerate}[nosep]
+  \item add new schema elements (expand)
+  \item deploy code that supports both old and new
+  \item migrate data
+  \item remove old schema elements (contract)
+\end{enumerate}
+
+\begin{warningbox}{Warning: locks}
+Large migrations can lock tables.
+Measure impact in staging and schedule carefully.
+\end{warningbox}
+
+\section{Health checks}
+Define:
+\begin{itemize}[nosep]
+  \item liveness: process is alive
+  \item readiness: process can serve traffic
+\end{itemize}

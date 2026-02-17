@@ -1,0 +1,30 @@
+\chapter{Event-driven systems}
+
+Events can decouple services.
+They can also hide complexity.
+
+\section{When events help}
+\begin{itemize}[nosep]
+  \item multiple consumers of the same business fact
+  \item asynchronous workflows
+  \item audit and replay requirements
+\end{itemize}
+
+\section{When events hurt}
+\begin{itemize}[nosep]
+  \item low maturity observability
+  \item unclear ownership of event schemas
+  \item strong consistency requirements
+\end{itemize}
+
+\section{Event schemas}
+Treat event schemas like APIs.
+Version them.
+Document them.
+Test them.
+
+\begin{warningbox}{Warning: ``just add an event''}
+Adding events is easy.
+Operating an event-driven system is the hard part.
+Budget for tooling, tracing, and replay.
+\end{warningbox}

@@ -1,0 +1,32 @@
+\chapter{Authentication and authorization}
+
+Authentication answers ``who are you?''.
+Authorization answers ``what are you allowed to do?''.
+
+\section{Authentication}
+Common approaches:
+\begin{itemize}[nosep]
+  \item sessions (cookies)
+  \item bearer tokens (JWT or opaque tokens)
+  \item API keys (service-to-service)
+\end{itemize}
+
+\section{Authorization models}
+\begin{itemize}[nosep]
+  \item RBAC: roles and permissions
+  \item ABAC: attributes and policies
+  \item resource-based: ownership and ACLs
+\end{itemize}
+
+\begin{patternbox}{Pattern: enforce authorization at the use-case boundary}
+Authorization checks should happen before side effects.
+Do not rely on client behaviour.
+\end{patternbox}
+
+\section{Multi-service auth}
+If services call services, you need:
+\begin{itemize}[nosep]
+  \item identity between services
+  \item scoped permissions
+  \item token rotation or short-lived tokens
+\end{itemize}
