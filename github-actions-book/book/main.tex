@@ -1,1 +1,48 @@
+\documentclass[11pt,a4paper,oneside]{book}
 
+\input{preamble}
+\input{macros}
+
+\title{GitHub Actions: Practical CI/CD in Real Repositories}
+\author{Diogo Ribeiro}
+\date{\today}
+
+\begin{document}
+
+\frontmatter
+\maketitle
+\tableofcontents
+
+\chapter*{Preface}
+This book is a practical guide to building reliable pipelines with GitHub Actions.
+It focuses on patterns that survive real repositories: permissions, caching, reuse, testing, and debugging.
+
+\mainmatter
+
+\include{chapters/01-intro}
+\include{chapters/02-mental-model}
+\include{chapters/03-yaml-expressions}
+\include{chapters/04-triggers}
+\include{chapters/05-jobs-steps}
+\include{chapters/06-matrix}
+\include{chapters/07-caching}
+\include{chapters/08-artifacts}
+\include{chapters/09-composite-actions}
+\include{chapters/10-reusable-workflows}
+\include{chapters/11-versioning-releases}
+\include{chapters/12-permissions-secrets}
+\include{chapters/13-oidc-cloud}
+\include{chapters/14-supply-chain}
+\include{chapters/15-debugging}
+\include{chapters/16-performance-scale}
+
+\appendix
+\include{chapters/90-appendix-expressions}
+\include{chapters/91-appendix-templates}
+
+\backmatter
+\chapter*{Closing note}
+If you treat workflows as code, you will naturally build better automation.
+Keep examples runnable, keep permissions minimal, and keep reuse explicit.
+
+\end{document}
