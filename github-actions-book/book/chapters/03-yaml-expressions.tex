@@ -1,55 +1,101 @@
 \chapter{YAML and expressions}
 
-YAML is not the hard part.
-The hard part is how GitHub evaluates expressions and contexts.
+Workflows are YAML files, but GitHub adds an expression language on top.
+The combination is powerful and easy to misuse.
 
-\section{Quoting and multiline}
-Use \code{|} for multiline shell scripts.
-Prefer double quotes for strings with \code{:} or special characters.
+\section{YAML basics that matter}
+YAML is whitespace-sensitive.
+Two spaces for indentation is a safe default.
+Avoid tabs and mixed indentation.
 
-\begin{lstlisting}[language=YAML]
-- name: Multiline script
-  run: |
-    set -euo pipefail
-    echo "Start"
-    echo "Done"
-\end{lstlisting}
+\begin{patternbox}{Pattern: keep YAML simple}
+Avoid anchors and advanced YAML features in workflows.
+Stick to lists and maps so the workflow stays readable in reviews.
+\end{patternbox}
 
-\section{Contexts}
-Contexts are objects available at runtime.
-Common ones:
-\code{github}, \code{env}, \code{inputs}, \code{secrets}, \code{runner}, \code{steps}, \code{jobs}.
-
-\begin{lstlisting}[language=YAML]
-- name: Print a few values
-  run: |
-    echo "ref=${{ github.ref }}"
-    echo "sha=${{ github.sha }}"
-\end{lstlisting}
-
-\section{Expressions and conditionals}
-Expressions live inside \code{\$\{\{ ... \}\}}.
-You will use them in \code{if:}, \code{env:}, and \code{with:}.
+\section{Expressions}
+Expressions are written as \code{\$\{\{ ... \}\}} and evaluated by GitHub.
+Use them for conditions, values, and dynamic strings.
 
 \begin{lstlisting}[language=YAML]
 - name: Only on main
   if: ${{ github.ref == 'refs/heads/main' }}
-  run: echo "main branch"
+  run: ./scripts/deploy
 \end{lstlisting}
 
-\begin{warningbox}{Warning: strings vs booleans}
-Inputs are strings by default.
-If you need booleans, be explicit with comparisons like \code{inputs.flag == 'true'}.
-\end{warningbox}
+\section{Common contexts}
+\begin{itemize}[nosep]
+  \item \code{github}: repository, ref, actor, event payload
+  \item \code{inputs}: workflow or action inputs
+  \item \code{secrets}: encrypted secrets
+  \item \code{env}: environment variables
+  \item \code{steps}: step outputs
+  \item \code{jobs}: job outputs
+\end{itemize}
 
-\section{Step outputs}
-You can set outputs from a step and use them later.
+\section{String interpolation}
+Expressions can be embedded inside strings.
 
 \begin{lstlisting}[language=YAML]
-- id: vars
-  run: |
-    echo "name=world" >> "$GITHUB_OUTPUT"
-
-- name: Use output
-  run: echo "Hello ${{ steps.vars.outputs.name }}"
+- name: Tag image
+  run: echo "image:${{ github.sha }}"
 \end{lstlisting}
+
+\section{Boolean logic}
+Conditions are evaluated with JavaScript-like semantics.
+Prefer explicit comparisons over truthy checks.
+
+\begin{lstlisting}[language=YAML]
+if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' }}
+\end{lstlisting}
+
+\section{Functions you will use often}
+\begin{itemize}[nosep]
+  \item \code{contains(list, item)}
+  \item \code{startsWith(string, prefix)}
+  \item \code{endsWith(string, suffix)}
+  \item \code{format(format, ...)}
+  \item \code{hashFiles(path)}
+\end{itemize}
+
+\section{Expression pitfalls}
+\begin{itemize}[nosep]
+  \item Use quotes around strings inside expressions.
+  \item Use \code{toJSON} when passing complex values to \code{run} steps.
+  \item The \code{env} context is not the same as \code{secrets}.
+\end{itemize}
+
+\begin{warningbox}{Warning: quoting}
+YAML parsing happens before expression evaluation.
+If an expression contains \code{:} or \code{\#}, quote the whole value.
+\end{warningbox}
+
+\section{Readable expressions}
+Prefer named steps and keep \code{if} conditions short.
+When a condition becomes complex, move logic into a script and pass a boolean output.
+
+\begin{lstlisting}[language=YAML]
+- id: plan
+  run: echo "deploy=false" >> "$GITHUB_OUTPUT"
+
+- name: Deploy
+  if: ${{ steps.plan.outputs.deploy == 'true' }}
+  run: ./scripts/deploy
+\end{lstlisting}
+
+\section{Defaults and env}
+Set defaults at the top of the workflow when many jobs share the same values.
+Use \code{env} for stable values and inputs for changeable values.
+
+\section{Expression safety}
+Avoid relying on implicit type conversions.
+If a value may be empty, compare against explicit strings.
+When you pass JSON to a script, use \code{toJSON} to avoid parsing surprises.
+
+\begin{checklistbox}{Checklist: expressions}
+\begin{itemize}[nosep]
+  \item Prefer explicit comparisons.
+  \item Keep expressions short and local to a step.
+  \item When an expression becomes complex, move logic to a script.
+\end{itemize}
+\end{checklistbox}

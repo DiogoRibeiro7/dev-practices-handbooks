@@ -1,40 +1,54 @@
 \chapter{Performance and scale}
 
-Fast CI is not a luxury.
-It changes developer behaviour.
+As repositories grow, workflows become slower and more expensive.
+Performance work is about removing unnecessary work and controlling concurrency.
 
-\section{The main levers}
-\begin{enumerate}[nosep]
-  \item caching
-  \item parallelism and matrices
-  \item avoiding unnecessary triggers
-  \item keeping scripts efficient
-\end{enumerate}
-
-\section{Concurrency control}
-Use concurrency groups to avoid stampedes, especially for deployments.
+\section{Cancel redundant runs}
+Use concurrency to cancel obsolete runs when new commits arrive.
 
 \begin{lstlisting}[language=YAML]
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 \end{lstlisting}
 
-\section{Scaling across repositories}
-Reusable workflows are the cleanest tool for organisations.
-Composite actions help inside a single repo, but are harder to govern across many repos.
-
-\begin{patternbox}{Pattern: workflow platform repo}
-Create a dedicated repo with reusable workflows.
-Require consumers to pin versions.
-Add CI that tests the reusable workflows against fixtures.
-\end{patternbox}
-
-\begin{checklistbox}{Checklist: keeping CI healthy over time}
+\section{Reduce the work}
 \begin{itemize}[nosep]
-  \item Review pipeline duration every month.
-  \item Remove dead steps and unused triggers.
-  \item Keep “release” separate from “PR CI”.
-  \item Treat workflow changes as high-risk changes.
+  \item Use path filters to skip workflows when nothing relevant changed.
+  \item Split expensive tests into shards.
+  \item Cache dependencies aggressively.
+\end{itemize}
+
+\section{Parallelize safely}
+Matrix jobs increase parallelism but also cost.
+Limit with \code{max-parallel} and avoid large cartesian products.
+
+\section{Self-hosted runners}
+Self-hosted runners can be faster and cheaper for heavy workloads.
+They also require patching, monitoring, and security hardening.
+
+\section{Workflow reuse}
+Reuse workflows instead of duplicating logic across repos.
+Centralized workflows are easier to optimize.
+
+\section{Measuring performance}
+Track total pipeline time, queue time, and failure rate.
+Optimize the slowest 20 percent of jobs first.
+
+\section{Queue time}
+Long queue times often indicate limited runners or oversized matrices.
+Reduce the matrix size or add runners before optimizing job steps.
+
+\section{Cost controls}
+Use path filters, job timeouts, and max-parallel limits to control costs.
+Review which workflows run on every push and reduce unnecessary triggers.
+
+\begin{checklistbox}{Checklist: performance}
+\begin{itemize}[nosep]
+  \item Cancel redundant runs.
+  \item Filter by paths and branches.
+  \item Cache what is expensive to rebuild.
+  \item Limit matrix size.
+  \item Measure and prioritize the slowest jobs.
 \end{itemize}
 \end{checklistbox}

@@ -1,21 +1,51 @@
 \chapter{Introduction}
 
 GitHub Actions is a CI/CD system driven by events in your repository.
-A workflow is a YAML file.
-It reacts to events, runs jobs, and produces outputs.
+A workflow is a YAML file stored in \code{.github/workflows}.
+It reacts to events, runs jobs on runners, and produces outputs you can trust.
 
 This book assumes you can read YAML and you know what a CI pipeline should do.
-The goal is to build automation that is predictable and easy to change.
+The goal is to build automation that is predictable, secure, and easy to change.
+
+\section{Who this book is for}
+This book is for engineers who own real repositories:
+\begin{itemize}[nosep]
+  \item teams with multiple services or packages
+  \item projects that need repeatable builds and tests
+  \item repos with a mix of contributors and release cadence
+\end{itemize}
+
+If you are entirely new to CI, read this alongside a short CI primer.
+If you already use GitHub Actions, use this as a guide to harden and scale workflows.
 
 \section{What you will build}
 You will build workflows that cover:
 \begin{itemize}[nosep]
-  \item lint + type-check + tests
-  \item caching to keep builds fast
+  \item lint, type-check, and tests on every pull request
+  \item caching to keep builds fast and deterministic
   \item artifacts for reports and binaries
   \item composite actions for reuse inside a repo
   \item reusable workflows for reuse across repos
   \item secure permissions and secret handling
+  \item release and deployment pipelines that are auditable
+\end{itemize}
+
+\section{How to read this book}
+Each chapter introduces a narrow concept and a small, runnable example.
+Copy the examples into a sandbox repository and adjust them to your stack.
+Avoid premature complexity; only add features you can explain to a teammate.
+
+\begin{patternbox}{Pattern: treat workflows as product code}
+If a workflow is hard to read, it will be hard to maintain.
+Keep naming consistent, add comments only where needed, and prefer scripts over inline logic.
+\end{patternbox}
+
+\section{Repository layout}
+Most examples assume this structure:
+\begin{itemize}[nosep]
+  \item \code{.github/workflows/} for workflow files
+  \item \code{scripts/} for repeatable project commands
+  \item \code{docs/} for generated reports or artifacts
 \end{itemize}
 
 \section{A first workflow}
@@ -43,10 +73,65 @@ jobs:
           echo "Hello from GitHub Actions"
 \end{lstlisting}
 
+\section{A realistic first pipeline}
+Most teams start with lint and tests, then add cache and artifacts.
+
+\begin{lstlisting}[language=YAML]
+name: CI (lint + test)
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install
+        run: ./scripts/install
+
+      - name: Lint
+        run: ./scripts/lint
+
+      - name: Test
+        run: ./scripts/test
+\end{lstlisting}
+
+\section{Common early mistakes}
+\begin{itemize}[nosep]
+  \item Keeping the workflow logic in YAML instead of scripts.
+  \item Running privileged steps in pull request workflows.
+  \item Ignoring caching until the pipeline is already slow.
+\end{itemize}
+
+\section{Scope and non-goals}
+This book focuses on practical workflow design, not on every GitHub Actions feature.
+We do not cover marketplace action authoring in depth or advanced runner orchestration.
+Use the patterns here as a foundation, then layer in advanced features as you need them.
+
+\section{A minimal scripts layout}
+Move logic out of YAML into small scripts so it can be run locally.
+Keep the scripts boring and composable.
+
+\begin{lstlisting}[language=YAML]
+scripts/
+  install
+  lint
+  test
+  build
+\end{lstlisting}
+
 \begin{checklistbox}{Checklist: keep the first workflow boring}
 \begin{itemize}[nosep]
   \item Add \code{permissions} explicitly.
   \item Prefer small steps with clear names.
   \item Keep \code{run} scripts short; move logic to repo scripts as soon as it grows.
+  \item Treat the workflow as a thin orchestrator, not the place for business logic.
 \end{itemize}
 \end{checklistbox}

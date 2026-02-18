@@ -1,31 +1,401 @@
 \chapter{Performance}
 
-Performance work starts with measurement.
-Then you choose the best lever.
+Performance is a user feature.
+Measure before you optimize, but plan for growth.
 
-\section{The usual bottlenecks}
-\begin{itemize}[nosep]
-  \item database queries (missing indexes, too much data)
-  \item N+1 patterns (repeated queries)
-  \item slow external APIs
-  \item inefficient serialization
-\end{itemize}
+\section{Latency budgets}
+Define a budget per request and per dependency.
+Keep the sum of all dependencies below the target latency.
+
+\section{Profiling}
+Profile the slowest endpoints first.
+Most latency comes from a small number of queries or slow calls.
 
 \section{Caching}
-Caching is a latency feature.
-It is also a correctness risk.
-Be explicit about:
-\begin{itemize}[nosep]
-  \item cache key
-  \item TTL
-  \item invalidation rules
-\end{itemize}
+Cache what is expensive to compute.
+Use short-lived caches for dynamic data and long-lived caches for static data.
 
-\begin{patternbox}{Pattern: cache reads, not writes}
-Cache query results and derived views.
-Do not cache write outcomes unless you have strict idempotency.
+\section{Pagination and limits}
+Large payloads are slow and expensive.
+Use limits and pagination for any list endpoint.
+
+\begin{patternbox}{Pattern: measure p95 and p99}
+Average latency hides tail problems.
+Track high percentiles to see real user experience.
 \end{patternbox}
 
 \section{Connection pooling}
-Many outages are connection pool outages.
-Define sane limits and timeouts, and monitor pool usage.
+Database connections are a limited resource.
+Use a pool sized to your database and avoid unbounded concurrency.
+If the pool is saturated, requests will queue and latency will spike.
+
+\section{Query optimization}
+Most performance issues are in queries.
+Use \code{EXPLAIN} plans and add indexes for actual query patterns.
+Avoid \code{SELECT *} on large tables.
+
+\section{N+1 queries}
+N+1 queries can multiply latency.
+Use joins or batch loads when listing resources with related data.
+Measure query counts per request in tests.
+
+\section{Caching layers}
+Caching can happen at multiple layers:
+\begin{itemize}[nosep]
+  \item in-memory cache in the service
+  \item distributed cache for shared reads
+  \item HTTP caching for public responses
+\end{itemize}
+
+\section{Load testing}
+Load tests should mimic real traffic patterns.
+Include bursts, not just steady load.
+Capture p95 and error rates during the test.
+
+\section{Capacity planning}
+Estimate peak requests and data growth.
+Plan for a buffer so you can handle unexpected spikes.
+Capacity planning is cheaper than emergency scaling.
+
+\section{Backpressure}
+When the system is saturated, shed load early.
+Use rate limits and queue thresholds to keep the system stable.
+
+\section{Serialization costs}
+Large JSON payloads cost CPU.
+Avoid deeply nested responses and allow field selection.
+Compress large responses if latency budgets allow it.
+
+\section{Performance regression tests}
+Track a small set of performance benchmarks in CI.
+If latency increases beyond a threshold, block the release.
+
+\section{Example performance budget}
+\begin{tabularx}{\textwidth}{@{}lXr@{}}
+\toprule
+Component & Purpose & Budget (ms) \\
+\midrule
+Database read & fetch task list & 40 \\
+Cache read & project metadata & 5 \\
+Serialization & build JSON response & 15 \\
+Network & response delivery & 20 \\
+\bottomrule
+\end{tabularx}
+
+\section{Async offloading}
+Move expensive work out of the request path.
+If work can complete later, return a job id and process asynchronously.
+This keeps latency predictable for user-facing endpoints.
+
+\section{Compression tradeoffs}
+Compression saves bandwidth but costs CPU.
+Use compression for large responses and measure the impact on tail latency.
+
+\section{Database tuning}
+Tune connection limits, statement timeouts, and query caches.
+A fast query plan is often more valuable than more CPU.
+
+\section{Hot path optimization}
+Identify the hot path and keep it lean.
+Avoid unnecessary allocations, logging, and serialization on the hot path.
+
+\section{Concurrency limits}
+Unlimited concurrency will collapse under load.
+Use bounded queues and worker pools.
+This protects downstream dependencies from overload.
+
+\section{Index maintenance}
+Indexes drift as data grows.
+Periodically review index usage and drop unused indexes.
+Unused indexes slow writes and waste memory.
+
+\section{Read replicas}
+Read replicas can help with scale but introduce replication lag.
+Use them for eventually consistent reads only.
+Do not rely on replicas for read-after-write behavior.
+
+\section{Performance debugging}
+When latency spikes, isolate the layer:
+\begin{itemize}[nosep]
+  \item check database latency
+  \item check cache hit rates
+  \item check external dependency latency
+  \item check CPU and memory saturation
+\end{itemize}
+
+\section{Benchmarking}
+Benchmarks should be repeatable and versioned.
+Keep a small suite of benchmarks for critical endpoints.
+If a benchmark regresses, block the release.
+
+\section{Case study: slow list endpoint}
+Suppose \code{GET /tasks} is slow at high volume.
+Add a covering index, switch to cursor pagination, and cache project metadata.
+Measure each change to confirm the improvement.
+
+\section{Throughput and latency}
+High throughput can still have poor latency.
+Track both requests per second and latency percentiles.
+Performance work should improve user experience, not just raw capacity.
+
+\section{Tail latency drivers}
+The slowest requests often come from noisy neighbors or cold caches.
+Identify which dependencies dominate the p99.
+Reducing tail latency usually produces the biggest user-visible gains.
+
+\section{Cache invalidation}
+Cache invalidation is harder than caching.
+Prefer short TTLs when correctness is critical.
+For strong consistency, use write-through caches or cache busting on updates.
+
+\section{Warmup behavior}
+Cold starts can dominate latency in autoscaled systems.
+Warm critical caches and connections on startup.
+Measure cold-start latency separately from steady-state latency.
+
+\section{Batching}
+Batching reduces overhead for external calls and database access.
+Aggregate work when it does not hurt user-visible latency.
+Use batching windows that are short enough to avoid queue buildup.
+
+\section{Client timeouts}
+Set timeouts for every external call.
+If a call has no timeout, it will eventually hang the hot path.
+Align timeouts with your latency budget.
+
+\section{Circuit breakers}
+Circuit breakers prevent cascading failures.
+When dependencies fail, open the circuit and degrade gracefully.
+This stabilizes latency under partial outages.
+
+\section{Queue sizing}
+Queues absorb bursts but add latency.
+Set queue limits that reflect how long users can wait.
+If the queue is full, fail fast instead of building unbounded backlog.
+
+\section{Data model choices}
+Data model decisions affect performance for years.
+Normalize for write-heavy workloads, denormalize for read-heavy workloads.
+Measure the tradeoff before committing to a schema change.
+
+\section{Serialization formats}
+JSON is easy but not always fast.
+Consider binary formats for high-volume internal services.
+If you change formats, document and test compatibility carefully.
+
+\section{Memory pressure}
+Memory pressure increases garbage collection and latency.
+Monitor heap usage and allocation rates.
+Avoid large object graphs in hot paths.
+
+\section{Concurrency versus parallelism}
+More concurrency is not always better.
+The goal is to keep resources busy without oversubscription.
+Use load tests to find the knee of the curve.
+
+\section{Pagination strategy}
+Offset pagination is simple but slow for large datasets.
+Cursor pagination is faster and more consistent at scale.
+Document cursor formats and ensure they are opaque.
+
+\section{Example cache strategy}
+\begin{lstlisting}[language=YAML]
+cache:
+  hot_ttl_seconds: 30
+  cold_ttl_seconds: 300
+  write_through: true
+  max_entries: 50000
+\end{lstlisting}
+
+\section{Performance budgets per tier}
+\begin{tabularx}{\textwidth}{@{}lXr@{}}
+\toprule
+Tier & Notes & Budget (ms) \\
+\midrule
+API layer & parsing, auth, validation & 20 \\
+Database & primary queries & 60 \\
+External calls & third-party APIs & 80 \\
+Serialization & response build & 20 \\
+\bottomrule
+\end{tabularx}
+
+\section{Performance review checklist}
+Before releasing a new feature:
+\begin{itemize}[nosep]
+  \item validate the latency budget impact
+  \item run a representative load test
+  \item check cache hit rates in staging
+  \item verify timeouts and retries
+\end{itemize}
+
+\section{Cache stampede}
+High-traffic cache misses can overload databases.
+Use request coalescing or locking around cache fills.
+Stagger expirations to avoid synchronized misses.
+
+\section{Critical path analysis}
+List the steps on the critical path for key endpoints.
+Remove any step that does not change the response.
+Critical path analysis makes optimizations obvious.
+
+\section{Async IO}
+Use async IO for high-latency external calls.
+Avoid blocking threads on long operations.
+Async IO is most useful when waiting dominates compute.
+
+\section{Thread and worker pools}
+Pools should be sized for the workload and dependencies.
+If pools are too small, latency spikes.
+If pools are too large, you waste memory and increase contention.
+
+\section{Load shedding strategies}
+When under extreme load, shed low-value traffic first.
+Return graceful errors for non-critical endpoints.
+Load shedding protects core user flows.
+
+\section{Autoscaling policies}
+Autoscaling can hide performance regressions.
+Scale should not replace optimization.
+Set scaling policies that align with latency goals.
+
+\section{Index selectivity}
+Indexes only help when they filter well.
+Low-selectivity indexes add overhead without improving reads.
+Regularly review query plans and index usage.
+
+\section{Network latency}
+Network latency adds up across dependencies.
+Keep calls within regions when possible.
+Batch remote calls to reduce round trips.
+
+\section{TLS overhead}
+TLS handshakes add latency on short-lived connections.
+Reuse connections and enable keep-alive.
+Measure TLS overhead in benchmarks for high-traffic services.
+
+\section{Compression thresholds}
+Compression should be applied above a size threshold.
+Below that threshold, CPU costs outweigh savings.
+Tune thresholds based on payload sizes and latency budgets.
+
+\section{Performance incident checklist}
+When latency regresses:
+\begin{itemize}[nosep]
+  \item check recent deploys and feature flags
+  \item compare p95 and p99 trends
+  \item isolate dependency latency shifts
+  \item verify cache hit rate changes
+\end{itemize}
+
+\section{Example critical path}
+\begin{lstlisting}[language=YAML]
+critical_path:
+  - auth
+  - validation
+  - primary_query
+  - cache_enrichment
+  - serialization
+\end{lstlisting}
+
+\section{Database contention}
+Lock contention can dominate latency.
+Watch for long-running transactions and hot rows.
+Shorten transactions and use optimistic concurrency where possible.
+
+\section{Hot key mitigation}
+Some keys receive disproportionate traffic.
+Use request sharding or cache partitioning for hot keys.
+Hot key mitigation prevents localized slowdowns.
+
+\section{Write amplification}
+Writes can trigger multiple secondary updates.
+Batch writes when possible and avoid unnecessary index updates.
+Write amplification often appears during peak traffic.
+
+\section{Profiling in production}
+Staging rarely matches production load.
+Use low-overhead profiling in production for short windows.
+Ensure profiling is gated and safe to enable.
+
+\section{Example load test plan}
+\begin{lstlisting}[language=YAML]
+test:
+  duration_minutes: 30
+  ramp_users: 1000
+  peak_rps: 800
+  scenarios:
+    - name: "browse"
+    - name: "create_task"
+    - name: "bulk_import"
+\end{lstlisting}
+
+\section{Slow query logging}
+Enable slow query logs with a sensible threshold.
+Review slow queries weekly and fix the highest impact first.
+Slow query logs are an ongoing feedback loop.
+
+\section{Cache consistency}
+Decide how much staleness users can tolerate.
+Use cache invalidation when correctness is critical.
+Document which endpoints may return stale data.
+
+\section{Sharding considerations}
+Sharding can increase throughput but adds operational complexity.
+Shard keys should align with access patterns.
+Avoid shard keys that require cross-shard joins.
+
+\section{IO profiling}
+Disk and network IO often dominate tail latency.
+Profile IO during load tests to find bottlenecks.
+If IO is the bottleneck, CPU optimizations will not help.
+
+\section{Memory leak detection}
+Memory leaks cause gradual performance degradation.
+Monitor memory growth and GC pauses over time.
+Add automated alerts for abnormal memory trends.
+
+\section{Latency regression triage}
+When regressions appear, compare before and after traces.
+Identify which span added time.
+Make regressions actionable by linking them to code changes.
+
+\section{Cold cache benchmarking}
+Benchmark cold cache behavior separately from warm cache behavior.
+Cold cache tests reveal worst-case latency.
+Plan for cold-start scenarios in autoscaled environments.
+
+\section{Client-side caching}
+Not all caching belongs on the server.
+Use client caching for static resources and rarely changing data.
+Document cache headers so clients behave predictably.
+
+\section{Lock contention profiling}
+Lock contention can hide under normal load.
+Use profiling tools that expose lock wait times.
+Reduce contention with shorter transactions and better indexing.
+
+\section{SLA versus SLO}
+SLOs are internal targets; SLAs are contractual.
+Avoid promising SLAs you cannot measure accurately.
+Use SLOs to inform realistic SLAs.
+
+\section{Connection pool tuning}
+Pool sizes should match database capacity and workload shape.
+Monitor pool wait time and saturation.
+If wait time grows, scale or reduce concurrency.
+
+\section{Connection pool example}
+\begin{lstlisting}[language=YAML]
+db_pool:
+  max_connections: 50
+  min_idle: 5
+  acquire_timeout_ms: 200
+\end{lstlisting}
+
+\begin{checklistbox}{Checklist: performance}
+\begin{itemize}[nosep]
+  \item Define latency budgets.
+  \item Profile before optimizing.
+  \item Cache the expensive paths.
+\end{itemize}
+\end{checklistbox}

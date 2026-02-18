@@ -1,31 +1,69 @@
 \chapter{OIDC and cloud authentication}
 
-Static cloud keys in secrets are hard to govern.
-OIDC enables short-lived credentials, minted per workflow run.
+OpenID Connect (OIDC) allows workflows to get short-lived cloud credentials.
+This removes the need for long-lived access keys in secrets.
 
-\section{The basic idea}
+\section{How OIDC works}
+GitHub issues an identity token to the workflow.
+Your cloud provider validates that token and issues temporary credentials.
+
+\section{Required permissions}
+You must allow the \code{id-token} permission in your workflow.
+
+\begin{lstlisting}[language=YAML]
+permissions:
+  contents: read
+  id-token: write
+\end{lstlisting}
+
+\section{Example: AWS}
+This example exchanges the OIDC token for AWS credentials.
+
+\begin{lstlisting}[language=YAML]
+- uses: aws-actions/configure-aws-credentials@v4
+  with:
+    role-to-assume: arn:aws:iam::123456789012:role/ci-deploy
+    aws-region: us-east-1
+\end{lstlisting}
+
+\section{Example: Azure}
+\begin{lstlisting}[language=YAML]
+- uses: azure/login@v2
+  with:
+    client-id: ${{ secrets.AZURE_CLIENT_ID }}
+    tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+    subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+\end{lstlisting}
+
+\section{Example: GCP}
+\begin{lstlisting}[language=YAML]
+- uses: google-github-actions/auth@v2
+  with:
+    workload_identity_provider: ${{ secrets.GCP_WORKLOAD_PROVIDER }}
+    service_account: ci-deploy@project.iam.gserviceaccount.com
+\end{lstlisting}
+
+\section{Trust policies}
+OIDC only works if the cloud trust policy restricts which workflows can assume a role.
+Always pin repository, branch, and workflow identifiers.
+
+\section{Audience and claims}
+Cloud providers often validate the token audience and claims.
+Use the default audience unless your provider requires a custom value.
+
+\section{Debugging OIDC}
+If authentication fails, log the provider response and verify the trust policy.
+Most issues come from mismatched repository or branch claims.
+
+\begin{patternbox}{Pattern: prefer OIDC for deployments}
+If your cloud provider supports OIDC, use it.
+It reduces secret sprawl and limits credential lifetime.
+\end{patternbox}
+
+\begin{checklistbox}{Checklist: OIDC}
 \begin{itemize}[nosep]
-  \item Workflow requests an OIDC token.
-  \item Cloud provider trusts GitHub as an identity provider.
-  \item Cloud returns temporary credentials based on claims (repo, branch, environment).
-\end{itemize}
-
-\section{Why it matters}
-\begin{itemize}[nosep]
-  \item You reduce long-lived secrets.
-  \item Rotation is simpler.
-  \item You can scope trust to a repo, branch, or environment.
-\end{itemize}
-
-\begin{warningbox}{Warning: scope your trust}
-OIDC is only safer if your trust policy is strict.
-Do not allow “any repo in the org” unless you really mean it.
-\end{warningbox}
-
-\begin{checklistbox}{Checklist: OIDC adoption}
-\begin{itemize}[nosep]
-  \item Use environment protections for production.
-  \item Bind trust to repository and branch/tag.
-  \item Require reviewers for deployments.
+  \item Enable \code{id-token: write} only where needed.
+  \item Use short-lived roles with narrow permissions.
+  \item Audit trust policies regularly.
 \end{itemize}
 \end{checklistbox}

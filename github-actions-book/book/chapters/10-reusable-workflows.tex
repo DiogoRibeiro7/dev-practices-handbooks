@@ -1,48 +1,83 @@
 \chapter{Reusable workflows}
 
-Reusable workflows are the right tool for cross-repo reuse.
-They run as a normal workflow, but are invoked via \code{workflow\_call}.
+Reusable workflows allow you to share pipelines across repositories.
+They are defined like normal workflows but triggered with \code{workflow\_call}.
 
 \section{Defining a reusable workflow}
 \begin{lstlisting}[language=YAML]
-name: "CI: Python"
+name: Reusable CI
+
 on:
   workflow_call:
     inputs:
-      python-version:
+      node-version:
         required: true
         type: string
     secrets:
-      TOKEN:
-        required: false
-
-permissions:
-  contents: read
+      npm_token:
+        required: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: ${{ inputs.python-version }}
-      - run: python -m pip install -r requirements.txt
-      - run: pytest -q
+          node-version: ${{ inputs.node-version }}
+      - run: npm ci
+      - run: npm test
+        env:
+          NPM_TOKEN: ${{ secrets.npm_token }}
 \end{lstlisting}
 
-\section{Calling it from another workflow}
+\section{Calling a reusable workflow}
 \begin{lstlisting}[language=YAML]
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
 jobs:
   ci:
-    uses: org/repo/.github/workflows/ci-python.yml@v1
+    uses: org/shared-workflows/.github/workflows/node-ci.yml@v1
     with:
-      python-version: "3.12"
+      node-version: "20"
     secrets:
-      TOKEN: ${{ secrets.MY_TOKEN }}
+      npm_token: ${{ secrets.NPM_TOKEN }}
 \end{lstlisting}
 
-\begin{patternbox}{Pattern: version reusable workflows with tags}
-Pin to tags like \code{@v1} and keep backward compatibility within a major line.
-If you pin to a branch, you trade stability for convenience.
+\section{Inputs and defaults}
+Treat inputs like an API.
+Provide defaults for common cases and keep optional inputs minimal.
+
+\section{Permissions and inheritance}
+Reusable workflows do not automatically inherit permissions.
+Set permissions in the caller or inside the reusable workflow explicitly.
+
+\begin{patternbox}{Pattern: lock versions}
+Reference reusable workflows by a tag or commit SHA.
+This makes upgrades explicit and auditable.
 \end{patternbox}
+
+\section{Testing shared workflows}
+Create a small sandbox repository that calls the reusable workflow.
+This keeps changes verifiable before a broad rollout.
+
+\section{Input validation}
+Validate inputs early in the workflow and fail fast with clear messages.
+Do not allow a workflow to proceed with an invalid environment or missing secret.
+
+\section{Compatibility}
+If many repos depend on a shared workflow, keep changes backward compatible.
+Introduce new inputs with defaults and deprecate old ones gradually.
+
+\begin{checklistbox}{Checklist: reusable workflows}
+\begin{itemize}[nosep]
+  \item Keep inputs and secrets small and explicit.
+  \item Define permissions deliberately.
+  \item Version shared workflows and document changes.
+\end{itemize}
+\end{checklistbox}

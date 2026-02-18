@@ -1,28 +1,28 @@
 \chapter{Production readiness}
 
-Production readiness is not a ceremony.
-It is a set of defaults.
-
-\section{A production readiness review}
-Before shipping a service, be able to answer:
-\begin{itemize}[nosep]
-  \item What happens when the database is slow?
-  \item What happens when an external API fails?
-  \item Can we deploy without downtime?
-  \item Can we roll back safely?
-  \item Do we know how to debug a user report?
-\end{itemize}
+Production readiness is a discipline.
+A backend is ready when it can be deployed, observed, and operated safely.
 
 \section{Runbooks}
-Runbooks reduce incident time.
-They should include:
-\begin{itemize}[nosep]
-  \item symptoms
-  \item likely causes
-  \item safe actions
-  \item dashboards and links
-\end{itemize}
+Write runbooks for common incidents.
+Keep them short and specific.
 
-\begin{patternbox}{Pattern: default playbook}
-Every service should have a ``first 15 minutes'' playbook for incidents.
-\end{patternbox}
+\section{Alerts}
+Alerts should be actionable.
+Page on symptoms, not on every metric.
+
+\section{Capacity}
+Know your limits before you hit them.
+Track usage and plan for growth.
+
+\section{On-call}
+On-call is part of the product.
+Improve the system when you are paged, not just the alert.
+
+\begin{checklistbox}{Checklist: production readiness}
+\begin{itemize}[nosep]
+  \item Have runbooks for critical incidents.
+  \item Alert on user-visible symptoms.
+  \item Review capacity regularly.
+\end{itemize}
+\end{checklistbox}

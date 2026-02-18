@@ -1,28 +1,453 @@
-\chapter{Testing strategy}
+\chapter{Testing}
 
-Testing is a portfolio, not a single type.
+Testing is how you keep change safe.
+Tests should reflect how the system is used, not just how it is built.
 
 \section{Unit tests}
-Unit tests verify pure logic.
-They should be fast and deterministic.
+Unit tests validate small pieces of logic quickly.
+Use them for validation rules and pure functions.
 
 \section{Integration tests}
-Integration tests verify behaviour across boundaries:
-\begin{itemize}[nosep]
-  \item database queries
-  \item message publishing
-  \item external API integration (often mocked at the HTTP boundary)
-\end{itemize}
+Integration tests validate the system against real dependencies.
+Use them for database access and external APIs.
 
 \section{Contract tests}
-Contract tests keep clients and services aligned.
-They prevent silent breakages.
+Contract tests ensure client and server stay compatible.
+They are valuable in multi-team environments.
+
+\section{Test data}
+Use deterministic fixtures.
+Avoid shared state across tests.
+
+\section{Test pyramid}
+Balance unit, integration, and end-to-end tests.
+Most tests should be fast unit tests.
+Use end-to-end tests for critical user journeys only.
 
 \section{End-to-end tests}
-Use sparingly.
-They are slow and expensive, but useful for critical workflows.
+End-to-end tests verify the full system.
+They are slow and brittle if overused.
+Limit them to core flows such as sign-in and checkout.
 
-\begin{patternbox}{Pattern: test the data model}
-Most backend bugs are data bugs.
-Add tests that assert migrations, constraints, and indexes.
-\end{patternbox}
+\section{Property-based testing}
+Property-based tests explore many inputs automatically.
+They are effective for validators and parsers.
+Use them to uncover edge cases not covered by examples.
+
+\section{Fuzz testing}
+Fuzzing sends random input to find crashes.
+It is useful for parsers and boundary-heavy code.
+Run fuzz tests on a schedule to find regressions.
+
+\section{Mutation testing}
+Mutation testing measures test quality by introducing small code changes.
+If tests still pass, coverage is weak.
+Use mutation testing sparingly due to cost.
+
+\section{Flaky tests}
+Flaky tests erode trust in the test suite.
+Quarantine flaky tests and fix them quickly.
+Track flakiness as a metric.
+
+\section{Test environments}
+Keep test environments consistent with production.
+Use the same database engine and similar configuration.
+Environment drift causes false confidence.
+
+\section{CI pipelines}
+CI should run fast tests on every commit.
+Longer integration tests can run on a schedule or before release.
+Fail fast for obvious regressions.
+
+\section{Test data management}
+Reset data between tests to avoid cross-test pollution.
+Use database transactions or containerized databases.
+Test data should be reproducible.
+
+\section{Contract testing}
+Contract tests prevent breaking changes between teams.
+Store contracts in version control.
+Fail builds when contracts are violated.
+
+\section{Mocking strategy}
+Mock external dependencies that are slow or unreliable.
+Avoid mocking your own code.
+Use real dependencies for integration tests.
+
+\section{Performance testing}
+Performance tests validate latency budgets.
+Run them before major releases.
+Track regressions over time.
+
+\section{Canary testing}
+Canary releases are a form of testing in production.
+Use feature flags and gradual rollouts.
+Monitor metrics closely during canaries.
+
+\section{Example test matrix}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Test type & Primary goal \\
+\midrule
+Unit & validate logic quickly \\
+Integration & validate dependencies and IO \\
+End-to-end & validate user journeys \\
+\bottomrule
+\end{tabularx}
+
+\section{Example test config}
+\begin{lstlisting}[language=YAML]
+tests:
+  unit: "pytest -m unit"
+  integration: "pytest -m integration"
+  e2e: "pytest -m e2e"
+\end{lstlisting}
+
+\section{Snapshot testing}
+Snapshot tests capture output for regression detection.
+Use them for stable outputs only.
+Large snapshots are hard to review and maintain.
+
+\section{Database migration tests}
+Migrations should be tested against realistic data sizes.
+Run migrations on a copy of production schema when possible.
+Migration failures are costly in production.
+
+\section{Test isolation}
+Tests must be isolated to be reliable.
+Avoid shared global state.
+Use per-test databases or transaction rollbacks.
+
+\section{Test coverage}
+Coverage is a signal, not a goal.
+Focus on critical code paths and edge cases.
+High coverage with weak assertions is still risky.
+
+\section{Data factories}
+Data factories create realistic test data.
+Factories reduce duplication and keep tests readable.
+Keep factories deterministic to avoid flakiness.
+
+\section{Golden path testing}
+Ensure at least one golden path test per major feature.
+Golden paths verify the most common user flows.
+They are useful as smoke tests in CI.
+
+\section{Security testing}
+Security tests validate common attack vectors.
+Include tests for authorization boundaries.
+Security tests are critical for high-risk endpoints.
+
+\section{Test reports}
+Test reports should be readable and actionable.
+Include failure context, logs, and artifacts.
+Poor reports slow down debugging.
+
+\section{Static analysis}
+Static analysis catches issues before runtime.
+Use linters and type checkers where possible.
+Static analysis complements tests, it does not replace them.
+
+\section{Test selection}
+Run only relevant tests when possible.
+Use change detection to scope test runs.
+Test selection speeds up feedback without sacrificing coverage.
+
+\section{Parallelization}
+Parallel test execution reduces CI time.
+Ensure tests are isolated before parallelizing.
+If tests share state, parallelization increases flakiness.
+
+\section{Release testing}
+Release testing validates the system in a staging environment.
+Run a small suite of critical tests before production.
+Release tests reduce deployment risk.
+
+\section{Example CI pipeline}
+\begin{lstlisting}[language=YAML]
+pipeline:
+  stages: [lint, unit, integration, e2e]
+  lint: "ruff check ."
+  unit: "pytest -m unit"
+  integration: "pytest -m integration"
+  e2e: "pytest -m e2e"
+\end{lstlisting}
+
+\section{Test ownership}
+Assign ownership for critical tests.
+Owners keep tests updated as the system evolves.
+Ownership reduces abandoned or stale tests.
+
+\section{Test strategy document}
+Maintain a test strategy document per service.
+It should describe test types and critical flows.
+The document keeps testing aligned with architecture.
+
+\section{Test debt}
+Test debt accumulates when features ship without coverage.
+Track test debt explicitly and pay it down.
+High test debt increases release risk.
+
+\section{Flaky test triage}
+Create a triage path for flaky tests.
+Quarantine, investigate, and fix.
+Do not ignore flakiness, it spreads.
+
+\section{Non-functional testing}
+Non-functional tests include performance and reliability tests.
+Run them for critical services on a schedule.
+Non-functional testing prevents hidden regressions.
+
+\section{Contract evolution}
+When contracts change, update tests in lockstep.
+Use versioned contracts for breaking changes.
+Contract evolution should be deliberate.
+
+\section{Example test strategy outline}
+\begin{lstlisting}[language=YAML]
+strategy:
+  goals:
+    - "fast feedback"
+    - "protect critical flows"
+  test_types:
+    - unit
+    - integration
+    - e2e
+\end{lstlisting}
+
+\section{Environment parity}
+Test environments should mirror production where possible.
+Differences in databases or caches lead to missed bugs.
+Document any unavoidable differences.
+
+\section{Test data seeding}
+Seed data should be minimal and purposeful.
+Large seed sets slow tests and hide intent.
+Use factories for most test data.
+
+\section{Test containers}
+Containers can provide consistent dependencies.
+Use containers for databases and queues in integration tests.
+Containerized tests reduce environment drift.
+
+\section{Test stability metrics}
+Track pass rate and duration trends.
+Large changes in duration can indicate regressions.
+Stability metrics help keep the suite healthy.
+
+\section{Example stability metric}
+\begin{lstlisting}[language=YAML]
+stability:
+  pass_rate: 0.995
+  avg_duration_minutes: 12
+\end{lstlisting}
+
+\section{Testing in production}
+Testing in production includes canaries and shadow traffic.
+Shadow traffic validates behavior without user impact.
+Always gate production tests with feature flags.
+
+\section{Contract test example}
+\begin{lstlisting}[language=JSON]
+{
+  "contract": "tasks.create",
+  "request": {"title": "Test"},
+  "response": {"id": "task_1", "title": "Test"}
+}
+\end{lstlisting}
+
+\section{Test naming}
+Clear names make failures easier to diagnose.
+Include the behavior and context in the test name.
+Avoid generic names like \code{test\_1}.
+
+\section{Test refactoring}
+Tests should be refactored like production code.
+Remove duplication and improve clarity.
+Unmaintained tests become liabilities.
+
+\section{Observability for tests}
+Collect logs and traces for failing tests.
+Artifacts speed up debugging.
+If a test fails without context, fix the test.
+
+\section{Test environments table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Environment & Purpose \\
+\midrule
+CI & fast feedback \\
+Staging & release validation \\
+Production & canary and shadow traffic \\
+\bottomrule
+\end{tabularx}
+
+\section{Data migration testing}
+Test migrations with realistic data volumes.
+Validate both forward and rollback migrations.
+Migration testing prevents production outages.
+
+\section{Performance regression tests}
+Keep a small suite of performance tests.
+Track p95 and p99 latency over time.
+Block releases on significant regressions.
+
+\section{Chaos testing in staging}
+Chaos tests validate system behavior under failure.
+Run chaos tests in staging before major releases.
+Chaos testing reveals missing resilience.
+
+\section{Test suite hygiene}
+Remove obsolete tests regularly.
+Obsolete tests waste time and reduce clarity.
+Hygiene keeps the suite fast and relevant.
+
+\section{Test data cleanup}
+Clean up test data after runs.
+Orphaned data can pollute environments.
+Cleanup keeps environments stable.
+
+\section{Test performance budgets}
+Set budgets for total test runtime.
+If tests exceed the budget, optimize or split them.
+Runtime budgets keep CI fast.
+
+\section{Example test budget}
+\begin{lstlisting}[language=YAML]
+test_budget:
+  total_minutes: 20
+  unit_minutes: 5
+  integration_minutes: 10
+\end{lstlisting}
+
+\section{Test prioritization}
+Prioritize tests that protect critical revenue paths.
+Low-value tests can run less frequently.
+Prioritization keeps CI fast and focused.
+
+\section{Flake quarantine}
+If a test flakes, quarantine it and assign an owner.
+Quarantined tests should not block releases.
+Track quarantine counts as a health metric.
+
+\section{Boundary testing}
+Boundary tests validate behavior at limits.
+Test max sizes, empty inputs, and invalid types.
+Boundary tests catch edge cases before production does.
+
+\section{Concurrency testing}
+Concurrent access can break otherwise correct logic.
+Test for races in caches, queues, and database updates.
+Use deterministic schedulers when possible.
+
+\section{Clock control}
+Time-dependent logic needs controlled clocks in tests.
+Use fake clocks to avoid sleeps and flakiness.
+Clock control keeps tests fast and reliable.
+
+\section{Test doubles}
+Use the right kind of double for the situation.
+Stubs provide data, mocks verify interactions, fakes provide behavior.
+Choose doubles that keep tests readable and stable.
+
+\section{Test doubles table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Double & Purpose \\
+\midrule
+Stub & returns fixed data \\
+Mock & verifies interactions \\
+Fake & simplified behavior \\
+\bottomrule
+\end{tabularx}
+
+\section{Schema testing}
+APIs and events should be validated against schemas.
+Schema tests catch breaking changes early.
+Use versioned schemas for evolvable systems.
+
+\section{Replay testing}
+Replay tests run production traffic against new versions.
+They catch behavior drift without user impact.
+Ensure data is anonymized before replay.
+
+\section{Data privacy in tests}
+Never use raw production data in lower environments.
+Anonymize or synthesize test data.
+Privacy violations in tests are still violations.
+
+\section{Test review}
+Review tests with the same rigor as production code.
+Reject tests with weak assertions or poor isolation.
+Test review improves suite quality over time.
+
+\section{Risk-based testing}
+Prioritize tests based on business impact.
+High-risk features need deeper coverage.
+Risk-based testing keeps efforts aligned with priorities.
+
+\section{Example risk matrix}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Risk level & Testing focus \\
+\midrule
+High & end-to-end plus integration \\
+Medium & integration plus unit \\
+Low & unit only \\
+\bottomrule
+\end{tabularx}
+
+\section{API testing}
+API tests should validate status codes and error shapes.
+Include authentication and authorization scenarios.
+APIs are the contract boundary for most systems.
+
+\section{Queue processing tests}
+Async workers need tests for retries and idempotency.
+Validate that duplicates do not corrupt data.
+Queue tests prevent silent failures in background work.
+
+\section{Feature flag testing}
+Test both enabled and disabled flag paths.
+Ensure flags are removed after rollout completes.
+Flags are code paths that can rot quickly.
+
+\section{Rollback testing}
+Rollbacks should be tested like deployments.
+Validate that schema changes are backward compatible.
+Rollback tests reduce risk during incidents.
+
+\section{Load test fixtures}
+Use realistic workloads and data distributions.
+Synthetic uniform loads hide bottlenecks.
+Load tests should match real usage patterns.
+
+\section{Test tagging}
+Tag tests by scope and criticality.
+Use tags to run a minimal smoke suite quickly.
+Tags help balance speed and coverage.
+
+\section{Example test tags}
+\begin{lstlisting}[language=YAML]
+tags:
+  smoke: ["auth", "checkout"]
+  slow: ["e2e", "load"]
+\end{lstlisting}
+
+\section{Schema migration rehearsal}
+Run migrations in staging with production-like volumes.
+Measure duration and verify data integrity.
+Rehearsals prevent surprises during release windows.
+
+\section{Eventual consistency tests}
+Systems with async flows need tests for timing windows.
+Assert eventual outcomes with bounded retries.
+Explicitly document expected delays.
+
+\begin{checklistbox}{Checklist: testing}
+\begin{itemize}[nosep]
+  \item Keep unit tests fast.
+  \item Use integration tests for critical flows.
+  \item Keep fixtures deterministic.
+\end{itemize}
+\end{checklistbox}

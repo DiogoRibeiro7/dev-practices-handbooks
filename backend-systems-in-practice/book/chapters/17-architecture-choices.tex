@@ -1,21 +1,32 @@
 \chapter{Architecture choices}
 
-Architecture is a set of constraints and a plan for change.
+There is no perfect architecture.
+You choose based on team size, domain complexity, and operational maturity.
 
-\section{Modular monolith vs microservices}
-A modular monolith can scale far if boundaries are clear.
-Microservices add operational cost but can help with independent scaling and ownership.
+\section{Monoliths}
+Monoliths are simpler to build and deploy.
+They are often the right choice early on.
 
-\begin{patternbox}{Pattern: start with a modular monolith}
-Start with one deployable, many modules.
-Split into services when a boundary is stable and worth the cost.
-\end{patternbox}
+\section{Microservices}
+Microservices introduce operational and coordination costs.
+Only split when you need independent scaling or ownership.
 
-\section{Boundaries}
-Boundaries should follow:
+\section{Modular monoliths}
+A modular monolith keeps one deployable but enforces internal boundaries.
+It is often the best of both worlds.
+
+\section{Decision criteria}
 \begin{itemize}[nosep]
-  \item ownership
-  \item data consistency needs
-  \item change rate
-  \item latency requirements
+  \item team ownership boundaries
+  \item scaling needs
+  \item release cadence
+  \item dependency isolation
 \end{itemize}
+
+\begin{checklistbox}{Checklist: architecture}
+\begin{itemize}[nosep]
+  \item Prefer a monolith until you cannot.
+  \item Split services only with clear ownership.
+  \item Keep boundaries explicit.
+\end{itemize}
+\end{checklistbox}

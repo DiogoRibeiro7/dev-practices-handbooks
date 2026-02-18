@@ -1,40 +1,431 @@
-\chapter{Validation and error handling}
+\chapter{Validation and errors}
 
-Validation prevents bad state.
-Error handling prevents bad user experience and operational noise.
+Validation is the first line of defense.
+If you accept bad input, every downstream system pays the cost.
 
-\section{Validation}
-Validation should occur at the boundary:
-\begin{itemize}[nosep]
-  \item request body validation
-  \item query parameter validation
-  \item path parameter validation
-\end{itemize}
+\section{Validation strategy}
+Validate at the edge and again at the core for critical invariants.
+Use strict schemas for external requests.
 
-\section{Error format}
-Pick a stable error format.
-Include:
-\begin{itemize}[nosep]
-  \item a machine-readable error code
-  \item a human-readable message
-  \item optional field-level details
-  \item a request id
-\end{itemize}
+\section{Error shape}
+Return one error format to clients and log a richer internal error.
 
 \begin{lstlisting}[language=JSON]
 {
   "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Invalid request payload",
-    "details": [
-      {"field": "title", "issue": "required"}
-    ]
-  },
-  "request_id": "01H..."
+    "code": "invalid_request",
+    "message": "title is required",
+    "field": "title"
+  }
 }
 \end{lstlisting}
 
-\begin{warningbox}{Warning: leaking internals}
-Do not return stack traces to clients.
-Log them internally with correlation ids.
-\end{warningbox}
+\section{Field errors}
+Expose field errors for forms and batch operations.
+Keep error codes stable across versions.
+
+\section{Mapping errors to status codes}
+Validation errors should be \code{400}.
+Permission errors should be \code{403}.
+Missing resources should be \code{404}.
+
+\section{Where validation lives}
+Validation happens at multiple layers:
+\begin{itemize}[nosep]
+  \item edge validation for request shape
+  \item domain validation for business rules
+  \item database constraints for invariants
+\end{itemize}
+
+If any layer is missing, invalid data will leak through.
+
+\section{Schema validation}
+Use explicit schemas for external inputs.
+Schema validation should reject unknown fields when you want strict contracts.
+If you allow unknown fields, document that behavior clearly.
+
+\section{Partial update validation}
+For \code{PATCH}, validate only the fields provided.
+Do not allow partial updates to break invariants.
+If a field depends on another field, validate that dependency explicitly.
+
+\section{Error taxonomy}
+Keep a small, stable set of error codes.
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Code & Meaning \\
+\midrule
+invalid\_request & request payload is malformed or missing fields \\
+validation\_error & input fails business rule validation \\
+not\_found & resource does not exist or is not visible \\
+conflict & request violates a uniqueness or state constraint \\
+rate\_limited & request exceeded a rate limit \\
+\bottomrule
+\end{tabularx}
+
+\section{Batch validation}
+Batch operations should return per-item errors.
+Do not fail an entire batch when only one item is invalid.
+
+\begin{lstlisting}[language=JSON]
+{
+  "results": [
+    {"id": "task_1", "status": "created"},
+    {"id": null, "status": "error", "error": "validation_error"}
+  ]
+}
+\end{lstlisting}
+
+\section{Localization and messages}
+Error messages are for humans, error codes are for machines.
+If you localize messages, keep the codes stable across languages.
+
+\section{Logging and observability}
+Log validation failures with a consistent structure.
+This makes it easy to detect which fields cause the most errors.
+Do not log sensitive values such as passwords or tokens.
+
+\section{Retry guidance}
+Validation errors are not retryable.
+Conflict errors may be retryable with updated input.
+Rate limit errors should include \code{Retry-After}.
+
+\section{Example validation flow}
+For \code{POST /projects/:id/tasks}:
+\begin{itemize}[nosep]
+  \item validate JSON shape and required fields
+  \item confirm project exists and membership is valid
+  \item enforce status and date rules
+  \item return a structured error on failure
+\end{itemize}
+
+\section{Constraint violations}
+Database constraints are a final safety net.
+Map constraint errors to stable error codes.
+Do not leak internal table or column names to clients.
+
+\section{Consistency with logging}
+Client errors should be logged at a lower level.
+Server errors should be logged at error level with full context.
+Avoid logging full request bodies for privacy reasons.
+
+\section{Validation for imports}
+Bulk imports need different validation.
+Provide an error report with row numbers and field errors.
+This helps users fix data without guessing.
+
+\section{Normalization}
+Normalize inputs before validation when possible.
+Trim whitespace, normalize case, and parse dates consistently.
+This reduces surprising validation failures.
+
+\section{Reserved values}
+Some values are reserved or system-defined.
+Validate them explicitly:
+\begin{itemize}[nosep]
+  \item prevent reserved names
+  \item block forbidden status transitions
+  \item enforce unique identifiers
+\end{itemize}
+
+\section{Error metadata}
+Error responses should include a request id.
+If a support ticket comes in, that id should locate the error in logs.
+
+\section{Example error response with metadata}
+\begin{lstlisting}[language=JSON]
+{
+  "error": {
+    "code": "validation_error",
+    "message": "status is invalid",
+    "field": "status",
+    "request_id": "req_42"
+  }
+}
+\end{lstlisting}
+
+\section{Validation in async jobs}
+Background jobs should validate inputs too.
+If a job receives invalid data, fail the job and surface the error.
+Silent failures create data drift.
+
+\section{Client-side validation}
+Client-side validation improves UX but is not a security boundary.
+Server-side validation is the source of truth.
+
+\section{Idempotency and validation}
+If a request is retried, validation should be consistent.
+Do not allow a retried request to pass validation when the first one failed.
+
+\section{Error contracts}
+Treat error shapes as part of the API contract.
+Changing them can break clients just as much as changing fields.
+
+\section{Validation as a product surface}
+Users experience validation failures before they see your core features.
+Clear, precise error messages reduce support load and increase adoption.
+Treat validation text as part of your product design.
+
+\section{Field path conventions}
+Standardize field paths so clients can map them to UI elements.
+Use dot-notation or JSON pointer and keep it consistent across endpoints.
+Do not invent new field path formats per API.
+
+\section{Partial update rules}
+PATCH endpoints need explicit rules about missing fields.
+Define which fields can be cleared, which are immutable, and which require validation only when present.
+Ambiguity here is a common source of regressions.
+
+\section{Example partial update policy}
+\begin{lstlisting}[language=JSON]
+{
+  "update_policy": {
+    "title": "optional",
+    "status": "optional",
+    "owner_id": "immutable",
+    "due_date": "nullable"
+  }
+}
+\end{lstlisting}
+
+\section{Batch validation details}
+Batch APIs should return per-item errors with stable indexes.
+Do not stop at the first failure unless the operation is transactional.
+Return a summary error and per-item details.
+
+\section{Error category semantics}
+Clients need to know if an error is fixable.
+Separate errors into validation, authorization, conflict, and system categories.
+Expose a stable \code{type} value for each category.
+
+\section{Error category table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Category & Client action \\
+\midrule
+Validation & Fix input and retry \\
+Authorization & Request access or credentials \\
+Conflict & Refresh state and retry if still relevant \\
+System & Retry with backoff, or contact support \\
+\bottomrule
+\end{tabularx}
+
+\section{Error code ownership}
+Assign ownership of error codes to modules.
+If everyone can mint codes, you end up with duplicates.
+Ownership also helps with documentation and deprecation.
+
+\section{Localization strategy}
+Decide whether servers return localized messages or message keys.
+Message keys keep the API stable and let clients localize independently.
+If you localize server-side, document supported locales and fallbacks.
+
+\section{Normalization and preprocessing}
+Normalize inputs before validation.
+Trim whitespace, normalize Unicode, and coerce types where appropriate.
+Validation without normalization leads to inconsistent results.
+
+\section{Reserved values revisited}
+Reserve values like \code{admin} or \code{root} explicitly.
+Do not rely on implicit checks scattered across the codebase.
+Centralize reserved value checks in one validation module.
+
+\section{Constraint evolution}
+Constraints change over time.
+Introduce new constraints in warning mode before enforcing them.
+This avoids breaking existing clients without notice.
+
+\section{Async validation}
+Some validations require external calls.
+Separate async validation from synchronous checks.
+Return a distinct error type so clients can handle the difference.
+
+\section{Logging and privacy}
+Validation errors can include sensitive data.
+Log only sanitized versions of fields.
+Avoid logging full payloads in production.
+
+\section{Retries and idempotency}
+Some errors are safe to retry, others are not.
+Include a \code{retryable} flag when relevant.
+If retries are allowed, ensure the operation is idempotent.
+
+\section{Example error envelope}
+\begin{lstlisting}[language=JSON]
+{
+  "error": {
+    "type": "validation",
+    "code": "task.title.too_long",
+    "message": "Title must be 80 characters or fewer",
+    "field": "title",
+    "retryable": false
+  }
+}
+\end{lstlisting}
+
+\section{Auditability}
+Validation rules are part of system policy.
+Document them and version them.
+This helps audits and reduces ambiguity in regulated environments.
+
+\section{Testing validation}
+Tests should cover boundary values, not just happy paths.
+Include property-based tests for input ranges where possible.
+Regression tests for validation are cheap and valuable.
+
+\section{Validation architecture}
+Keep validation rules close to the domain model.
+Transport layers should handle parsing, but core validation should live with business logic.
+This prevents duplicate logic across HTTP, CLI, and background jobs.
+
+\section{Strict versus lenient modes}
+Some endpoints need strict validation, others tolerate extra fields.
+Define which mode each endpoint uses.
+Switching modes silently is a breaking change.
+
+\section{Backward compatibility}
+Changing validation rules can be a breaking change.
+If you tighten rules, consider a deprecation window.
+Provide guidance to clients before enforcement.
+
+\section{Error documentation}
+Document error codes and fields.
+If clients need to guess, they will implement brittle logic.
+Error docs are part of your API surface.
+
+\section{CSV import example}
+CSV imports need row-level feedback.
+Return a summary and a per-row error list with line numbers.
+This is often more useful than a single failure message.
+
+\section{Example import error report}
+\begin{lstlisting}[language=JSON]
+{
+  "summary": {"processed": 200, "errors": 12},
+  "errors": [
+    {"row": 14, "field": "email", "code": "invalid_format"},
+    {"row": 87, "field": "status", "code": "reserved_value"}
+  ]
+}
+\end{lstlisting}
+
+\section{Constraint mapping}
+Map database errors to user-facing codes.
+Do not expose SQL errors or internal constraint names.
+Keep a mapping table per database.
+
+\section{Example constraint mapping}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Constraint & Public code \\
+\midrule
+users\_email\_unique & conflict.email\_exists \\
+tasks\_due\_date\_check & validation.due\_date\_range \\
+\bottomrule
+\end{tabularx}
+
+\section{Security validation}
+Validate inputs that affect queries or templates.
+Reject unexpected characters where appropriate.
+Sanitize output even when validation passes.
+
+\section{Field metadata}
+Include metadata for client UX, such as max length or allowed values.
+Metadata reduces guesswork in clients.
+Keep metadata versioned to avoid mismatches.
+
+\section{Error aggregation}
+Aggregate multiple errors instead of returning one at a time.
+This improves client efficiency and user experience.
+Limit the error count to avoid huge payloads.
+
+\section{Validation pipeline}
+A simple pipeline keeps logic predictable:
+\begin{itemize}[nosep]
+  \item normalize input
+  \item run schema validation
+  \item run business validation
+  \item enforce persistence constraints
+\end{itemize}
+
+\section{Rate limit errors}
+Rate limits are a validation boundary.
+Return \code{429} with a clear retry time.
+Expose a stable error code for rate limit failures.
+
+\section{Client UX guidance}
+If possible, include human-friendly messages.
+Messages should be short and specific.
+Avoid blaming language such as \emph{invalid} when you can explain the fix.
+
+\section{State transition validation}
+Many fields have allowed state transitions.
+Validate transitions explicitly rather than relying on ad-hoc checks.
+State validation prevents invalid workflows from entering the system.
+
+\section{Warning responses}
+Sometimes you want to accept input but warn about future behavior.
+Provide warnings separately from errors.
+Warnings prepare clients for upcoming constraint changes.
+
+\section{Example warning response}
+\begin{lstlisting}[language=JSON]
+{
+  "warnings": [
+    {"code": "deprecated_field", "field": "legacy_id"}
+  ]
+}
+\end{lstlisting}
+
+\section{Help links}
+Include a stable help link for common error codes.
+Help links reduce support burden.
+Keep links versioned when the documentation changes.
+
+\section{Limits and caps}
+Validation includes limits like maximum list size or payload size.
+Return clear errors when limits are hit.
+Do not silently truncate user input.
+
+\section{Contract tests}
+Add contract tests for validation responses.
+These tests verify that error shapes and codes remain stable.
+Contract tests prevent accidental breaking changes.
+
+\section{Numeric precision}
+Validate numeric precision explicitly.
+Money values should use integer cents or decimal types.
+Floating-point errors create subtle data issues.
+
+\section{Time zones}
+Date validation must account for time zones.
+Store timestamps in UTC and validate input offsets.
+Reject ambiguous local times during daylight transitions.
+
+\section{Schema versioning}
+When schemas evolve, version them explicitly.
+Support multiple schema versions during migrations.
+Document the version negotiation strategy for clients.
+
+\section{Error quotas}
+Limit the number of errors returned for large payloads.
+Provide a count of suppressed errors to signal incomplete feedback.
+This keeps error responses fast and predictable.
+
+\section{Example error quota}
+\begin{lstlisting}[language=JSON]
+{
+  "error_count": 500,
+  "returned_errors": 100,
+  "suppressed_errors": 400
+}
+\end{lstlisting}
+
+\begin{checklistbox}{Checklist: validation}
+\begin{itemize}[nosep]
+  \item Validate at the edge.
+  \item Keep error shapes consistent.
+  \item Use stable error codes for clients.
+\end{itemize}
+\end{checklistbox}

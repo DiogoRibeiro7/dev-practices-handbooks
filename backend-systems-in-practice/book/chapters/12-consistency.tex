@@ -1,31 +1,405 @@
-\chapter{Consistency and transactions}
+\chapter{Consistency}
 
-Consistency is the gap between what you want and what distributed systems give you.
+Distributed systems trade consistency for availability and latency.
+You must choose where to be strict and where to be flexible.
 
 \section{Transactions}
-Use transactions for invariants inside a single database:
-\begin{itemize}[nosep]
-  \item account balance updates
-  \item status transitions that must be atomic
-\end{itemize}
+Use transactions for multi-step writes that must be atomic.
+Keep transactions short to avoid lock contention.
+
+\section{Read-after-write}
+If the user must see a change immediately, ensure read-after-write consistency.
+Use primary reads or cache invalidation where needed.
+
+\section{Eventual consistency}
+Eventual consistency is fine for analytics and notifications.
+Document where lag is acceptable.
 
 \section{Outbox pattern}
-When you need to publish an event after a DB write:
-\begin{enumerate}[nosep]
-  \item write business data and an outbox row in one transaction
-  \item a worker reads the outbox and publishes events
-  \item mark outbox rows as sent
-\end{enumerate}
+Write events to the database within the same transaction.
+Then publish them asynchronously to a queue.
 
-\begin{patternbox}{Pattern: prefer at-least-once delivery}
-At-least-once is easier to achieve than exactly-once.
-It shifts complexity into idempotency, which you can control.
+\begin{patternbox}{Pattern: consistency by intent}
+Pick consistency levels by user expectation, not by technical convenience.
 \end{patternbox}
 
+\section{Consistency models}
+Common models include strong consistency, eventual consistency, and causal consistency.
+Strong consistency simplifies reasoning but can reduce availability.
+Eventual consistency scales well but requires careful user communication.
+
+\section{Isolation levels}
+Databases provide isolation levels such as read committed and serializable.
+Higher isolation prevents anomalies but can reduce throughput.
+Pick the lowest isolation that still preserves invariants.
+
+\section{Read your writes}
+Users expect to see their own changes immediately.
+Route their reads to primary replicas when needed.
+If a cache sits in front, invalidate or bypass it for these reads.
+
+\section{Monotonic reads}
+Monotonic reads prevent data from appearing to move backward.
+They are essential for timelines and user-facing counters.
+Use session-aware routing when possible.
+
+\section{Write skew}
+Write skew can occur with concurrent transactions.
+If it matters, use serializable isolation or explicit locks.
+Document which invariants require stronger isolation.
+
+\section{Quorum reads and writes}
+Distributed stores often use quorums.
+Define read and write quorum sizes explicitly.
+Quorums can balance latency and consistency.
+
+\section{Replication lag}
+Replication lag makes reads stale.
+Measure lag and expose it in monitoring.
+If lag exceeds a threshold, route reads to primaries.
+
+\section{Cache consistency}
+Caches are a common source of inconsistency.
+Use cache invalidation on writes or short TTLs.
+Document which endpoints may serve stale data.
+
+\section{Dual writes}
+Writing to two systems risks divergence.
+Avoid dual writes when possible.
+If unavoidable, use an outbox and replayable events.
+
+\section{Outbox processing}
+Outbox processing guarantees that events are published.
+Use a background worker to read the outbox and publish events.
+Ensure the outbox is idempotent on retries.
+
+\section{Conflict resolution}
+Conflicts are inevitable in eventually consistent systems.
+Define how conflicts resolve: last-write-wins, merge, or rejection.
+Make the policy explicit and test it.
+
+\section{Versioning for writes}
+Use version numbers or etags to detect concurrent updates.
+Reject writes with stale versions to prevent lost updates.
+Clients can retry with fresh data.
+
+\section{Example optimistic concurrency}
+\begin{lstlisting}[language=JSON]
+{
+  "id": "task_7",
+  "version": 12,
+  "title": "New title"
+}
+\end{lstlisting}
+
 \section{Sagas}
-For multi-step workflows across services, you need explicit orchestration:
+Sagas coordinate multi-step workflows across services.
+Each step has a compensating action.
+Sagas trade immediate consistency for eventual convergence.
+
+\section{Idempotency and consistency}
+Idempotency reduces the impact of retries.
+If operations can be replayed, consistency errors are easier to recover.
+Idempotency keys should be part of the API contract.
+
+\section{Consistency budget}
+Define a maximum acceptable lag for eventual consistency.
+If lag exceeds the budget, treat it as an incident.
+Consistency budgets align product expectations with engineering limits.
+
+\section{Consistency examples}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Use case & Consistency choice \\
+\midrule
+Payment processing & strong consistency \\
+Activity feed & eventual consistency \\
+Permissions updates & strong or causal consistency \\
+\bottomrule
+\end{tabularx}
+
+\section{Testing consistency}
+Test for consistency under concurrency.
+Use stress tests to reproduce race conditions.
+Add integration tests for known anomalies.
+
+\section{CAP tradeoffs}
+The CAP theorem forces tradeoffs between consistency and availability.
+Distributed systems can only fully satisfy two of the three in a partition.
+Make the tradeoff explicit for each critical workflow.
+
+\section{Consistency and latency}
+Stronger consistency often increases latency.
+If users tolerate a short delay, eventual consistency may be acceptable.
+Latency budgets should inform consistency choices.
+
+\section{Session guarantees}
+Session guarantees include read-your-writes and monotonic reads.
+They improve user experience without requiring global consistency.
+Implement them by routing reads to primaries for a session.
+
+\section{Anomaly table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Anomaly & Description \\
+\midrule
+Dirty read & read uncommitted data \\
+Non-repeatable read & same query returns different results \\
+Phantom read & new rows appear during a transaction \\
+\bottomrule
+\end{tabularx}
+
+\section{Read repair}
+Read repair fixes inconsistent replicas on read.
+It is useful in eventually consistent systems.
+Read repair should be throttled to avoid write storms.
+
+\section{Quorum example}
+\begin{lstlisting}[language=YAML]
+replication:
+  replicas: 5
+  read_quorum: 3
+  write_quorum: 3
+\end{lstlisting}
+
+\section{Multi-region consistency}
+Multi-region deployments add latency to strong consistency.
+Use regional primaries for latency-sensitive workflows.
+Cross-region replication should be treated as eventually consistent.
+
+\section{Leader election}
+Leader election defines where writes go.
+If the leader changes, clients must handle transient errors.
+Leader election failures are a major source of inconsistency.
+
+\section{Clock skew}
+Distributed systems rely on time.
+Clock skew can cause stale writes or out-of-order events.
+Use synchronized clocks and avoid relying on timestamps for ordering.
+
+\section{Idempotent events}
+Events should be idempotent to handle retries.
+Idempotent events reduce inconsistency from duplicate processing.
+Include event ids and dedupe in consumers.
+
+\section{Conflict example}
+\begin{lstlisting}[language=JSON]
+{
+  "conflict": {
+    "field": "status",
+    "expected": "open",
+    "actual": "closed"
+  }
+}
+\end{lstlisting}
+
+\section{Consistency communication}
+Users need to know when data is eventually consistent.
+Expose messaging in the UI where appropriate.
+Unexplained lag feels like a bug.
+
+\section{Causal consistency}
+Causal consistency preserves the order of related operations.
+It is weaker than strong consistency but stronger than eventual consistency.
+Causal consistency is often enough for user-facing timelines.
+
+\section{Search indexes}
+Search indexes are usually eventually consistent.
+Document indexing lag and provide refresh options where needed.
+If search is critical, prioritize index updates.
+
+\section{Materialized views}
+Materialized views improve read performance but add consistency lag.
+Define how often views refresh.
+Monitor view staleness as a metric.
+
+\section{Read models}
+CQRS uses separate read models and write models.
+Read models are often eventually consistent.
+Use CQRS only when complexity is justified by scale.
+
+\section{Pagination consistency}
+Pagination can surface inconsistent results.
+Cursor pagination reduces drift across pages.
+Document whether pagination is stable or eventually consistent.
+
+\section{Example outbox flow}
+\begin{lstlisting}[language=YAML]
+outbox:
+  write: "transaction writes event row"
+  publish: "worker reads and sends event"
+  mark: "event marked delivered"
+\end{lstlisting}
+
+\section{Consistency in APIs}
+APIs should document consistency guarantees.
+If a field is eventually consistent, say so.
+Consistency documentation reduces support load.
+
+\section{Write amplification}
+Strong consistency can increase write amplification.
+Extra writes affect throughput and latency.
+Measure the cost before enforcing stricter consistency.
+
+\section{Linearizability}
+Linearizability provides a strong guarantee that operations appear instantaneous.
+It simplifies reasoning but can add latency.
+Use it for critical invariants such as payments and permissions.
+
+\section{Causal ordering}
+Causal ordering ensures related events are seen in order.
+It is useful for collaboration features and feeds.
+Causal ordering can be implemented with session tokens.
+
+\section{Version vectors}
+Version vectors track causality across replicas.
+They are more complex than single version numbers.
+Use them when you need conflict detection across replicas.
+
+\section{Consistency in caches}
+Caches can violate consistency even when the database is strong.
+Invalidate caches on writes or use write-through caches.
+Monitor cache hit rate and staleness.
+
+\section{Example cache policy}
+\begin{lstlisting}[language=YAML]
+cache_policy:
+  write_through: true
+  ttl_seconds: 30
+  stale_ok_seconds: 5
+\end{lstlisting}
+
+\section{Two-phase commit}
+Two-phase commit provides atomicity across systems.
+It is complex and can block when participants fail.
+Use it only when the business requires strict atomicity.
+
+\section{Sagas versus 2PC}
+Sagas are easier to scale but are eventually consistent.
+2PC is strongly consistent but less resilient.
+Choose based on failure tolerance and business risk.
+
+\section{Consistency guarantees table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Guarantee & Typical use \\
+\midrule
+Linearizable & payments, permissions \\
+Read your writes & user settings \\
+Eventual & analytics, notifications \\
+\bottomrule
+\end{tabularx}
+
+\section{Case study: search lag}
+A user updates a title but search results lag for 30 seconds.
+Document the lag and add a manual refresh option.
+If lag is unacceptable, prioritize index update paths.
+
+\section{Conflict resolution strategies}
+Conflict resolution must be explicit.
+Common strategies include last-write-wins and merge functions.
+The chosen strategy should be documented and tested.
+
+\section{Conflict resolution table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Strategy & Tradeoff \\
+\midrule
+Last-write-wins & simple, can lose updates \\
+Merge & preserves intent, more complex \\
+Reject & safe, requires client retry \\
+\bottomrule
+\end{tabularx}
+
+\section{Distributed locks}
+Distributed locks enforce exclusivity.
+They can improve consistency but add latency and failure modes.
+Use locks for short critical sections only.
+
+\section{Freshness metrics}
+Expose data freshness as a metric.
+Freshness tells you how stale the system is.
+Staleness above a threshold should trigger alerts.
+
+\section{Example freshness metric}
+\begin{lstlisting}[language=YAML]
+freshness:
+  metric: "index_lag_seconds"
+  target: 30
+\end{lstlisting}
+
+\section{Case study: dual writes}
+Two systems are updated in parallel and drift over time.
+Introduce an outbox and replayable events.
+The outbox becomes the source of truth for synchronization.
+
+\section{Replication topologies}
+Single-leader replication favors strong writes.
+Multi-leader replication improves availability but increases conflicts.
+Choose the topology that matches your consistency needs.
+
+\section{Lag-based routing}
+If replica lag exceeds a threshold, route reads to primaries.
+Lag-based routing improves read-your-writes behavior.
+Expose lag metrics to operators.
+
+\section{Consistency in batch jobs}
+Batch jobs may read stale data.
+Document the expected lag for batch outputs.
+If lag is too high, tighten data refresh policies.
+
+\section{Consistency testing strategies}
+Use concurrent test runs to detect race conditions.
+Test with artificial delays to expose hidden ordering issues.
+Consistency bugs often only appear under load.
+
+\section{Example replication config}
+\begin{lstlisting}[language=YAML]
+replication:
+  mode: "single_leader"
+  replicas: 3
+  lag_alert_seconds: 5
+\end{lstlisting}
+
+\section{Write fences}
+Write fences protect against stale leaders.
+They ensure only the current leader can commit writes.
+Fences reduce split-brain inconsistencies.
+
+\section{Client tokens}
+Client tokens can encode session consistency requirements.
+Tokens allow clients to request stronger reads when needed.
+They are useful for read-your-writes without global consistency.
+
+\section{Consistency in pagination}
+Pagination should be consistent across pages.
+Cursor pagination is more stable than offset pagination.
+If consistency is weak, communicate it in API docs.
+
+\section{Read barriers}
+Read barriers ensure readers observe recent writes.
+They can be implemented with session tokens or cache bypass.
+Read barriers improve user experience for critical paths.
+
+\section{Consistency in analytics}
+Analytics pipelines are often eventually consistent.
+Communicate expected delay to stakeholders.
+If analytics drives user-facing features, tighten the pipeline.
+
+\section{Staleness budgets}
+Define a staleness budget per data type.
+If staleness exceeds the budget, raise an alert.
+Budgets align expectations with system behavior.
+
+\section{User-visible consistency}
+User-facing features should prefer stronger consistency.
+If a delay is acceptable, communicate it explicitly.
+Hidden inconsistency feels like a bug.
+
+\begin{checklistbox}{Checklist: consistency}
 \begin{itemize}[nosep]
-  \item a coordinator
-  \item compensating actions
-  \item durable state for the workflow
+  \item Use transactions for critical state.
+  \item Document eventual consistency delays.
+  \item Avoid long-running locks.
 \end{itemize}
+\end{checklistbox}

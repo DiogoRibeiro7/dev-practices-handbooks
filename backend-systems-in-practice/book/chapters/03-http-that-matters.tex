@@ -1,41 +1,405 @@
 \chapter{HTTP that matters}
 
-HTTP is a transport protocol, but it shapes your system.
-Small decisions here affect caching, retries, and client behaviour.
+HTTP is the protocol your backend speaks.
+You do not need every feature, but you need the fundamentals.
 
-\section{Methods and idempotency}
-Idempotency matters for retries.
+\section{Methods and semantics}
+Use methods for intent:
 \begin{itemize}[nosep]
-  \item \code{GET} should be safe and idempotent
-  \item \code{PUT} should be idempotent
-  \item \code{POST} is often not idempotent unless you add an idempotency key
+  \item \code{GET} for reads
+  \item \code{POST} for creation
+  \item \code{PATCH} for partial updates
+  \item \code{DELETE} for removal
 \end{itemize}
 
 \section{Status codes}
-Status codes are a control surface for clients:
+Status codes are signals to clients and monitoring.
+Use them consistently.
+
 \begin{itemize}[nosep]
-  \item \code{200} OK with a response body
-  \item \code{201} Created for resource creation
-  \item \code{204} No Content for successful actions without a body
-  \item \code{400} validation errors
+  \item \code{200} success
+  \item \code{201} created
+  \item \code{400} validation error
   \item \code{401} unauthenticated
   \item \code{403} unauthorized
-  \item \code{404} resource not found
-  \item \code{409} conflict (e.g., uniqueness)
-  \item \code{429} rate limited
-  \item \code{5xx} server faults
+  \item \code{404} not found
+  \item \code{409} conflict
+  \item \code{500} unexpected error
 \end{itemize}
 
-\section{Headers that pay rent}
+\section{Status code mapping}
+Write down a mapping table.
+Keep it consistent across endpoints:
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Code & Typical meaning \\
+\midrule
+200 & Successful read or update \\
+201 & Resource created successfully \\
+202 & Accepted for background processing \\
+204 & Successful response with no body \\
+400 & Validation or parsing error \\
+401 & Authentication missing or invalid \\
+403 & Authenticated but not allowed \\
+404 & Resource not found \\
+409 & Conflict with existing data \\
+429 & Rate limit exceeded \\
+500 & Unhandled server error \\
+\bottomrule
+\end{tabularx}
+
+\section{Idempotency}
+Writes should be safe to retry.
+Use idempotency keys for payment and job creation endpoints.
+
+\section{Headers that matter}
+Headers carry important semantics:
 \begin{itemize}[nosep]
-  \item \code{Content-Type}
-  \item \code{Authorization}
-  \item \code{ETag} / \code{If-None-Match} for caching
+  \item \code{Content-Type} for payload format
+  \item \code{Accept} for response negotiation
+  \item \code{Authorization} for authentication
   \item \code{Idempotency-Key} for safe retries
-  \item \code{X-Request-Id} (or a standard correlation header) for tracing
 \end{itemize}
 
-\begin{patternbox}{Pattern: stable error format}
-Define one error format and never deviate.
-Clients will depend on it more than you expect.
-\end{patternbox}
+\section{Idempotency in practice}
+Store the request hash and response for a short period.
+If the same key appears again, return the stored response.
+
+\begin{lstlisting}[language=JSON]
+{
+  "idempotency_key": "req_9c6",
+  "status": "stored",
+  "expires_in_seconds": 86400
+}
+\end{lstlisting}
+
+\section{Pagination}
+Never return unbounded lists.
+Choose cursor-based pagination for large datasets.
+
+\begin{lstlisting}[language=JSON]
+{
+  "items": [
+    {"id": "task_123", "title": "Write docs"}
+  ],
+  "next_cursor": "task_123"
+}
+\end{lstlisting}
+
+\section{Caching headers}
+Set caching headers for read-heavy endpoints.
+Use \code{ETag} or \code{Last-Modified} to reduce bandwidth.
+
+\section{Content negotiation}
+Support at least JSON and make it explicit.
+Reject unexpected content types with a clear error.
+
+\section{Safe and unsafe methods}
+Clients and proxies treat methods differently.
+Ensure \code{GET} is safe and idempotent, and use \code{POST} for non-idempotent writes.
+
+\section{Streaming responses}
+If results are large, consider streaming or chunked responses.
+This keeps memory usage stable and improves time to first byte.
+
+\section{Request size limits}
+Set request size limits to protect memory and avoid abuse.
+Document those limits for clients.
+
+\section{Problem details}
+Consider using a standard error envelope or problem details format.
+Consistency is more important than the specific shape.
+
+\section{Error response example}
+\begin{lstlisting}[language=JSON]
+{
+  "error": {
+    "code": "validation_error",
+    "message": "title is required",
+    "field": "title"
+  }
+}
+\end{lstlisting}
+
+\section{Request body size}
+Set a maximum request body size.
+Large bodies can exhaust memory and slow downstream systems.
+
+\section{Client retry behavior}
+Document which endpoints are safe to retry.
+If a client retries non-idempotent requests, you will get duplicate data.
+
+\section{Caching strategy}
+Use \code{Cache-Control} to define shared and private caching.
+If responses contain user-specific data, avoid shared caches.
+
+\section{Content type versioning}
+If you need versioning, consider vendor media types.
+It is more explicit than path-based versioning and does not change URLs.
+
+\section{Conditional requests}
+Use conditional requests to avoid sending full responses when data has not changed.
+If the client presents an \code{If-None-Match} value and the resource is unchanged,
+return \code{304 Not Modified}.
+
+\section{ETag example}
+\begin{lstlisting}[language=JSON]
+{
+  "etag": "task_123:v7",
+  "last_modified": "2026-02-18T10:00:00Z"
+}
+\end{lstlisting}
+
+\section{Rate limiting}
+Expose rate limits via headers so clients can behave responsibly:
+\begin{itemize}[nosep]
+  \item \code{X-RateLimit-Limit}
+  \item \code{X-RateLimit-Remaining}
+  \item \code{X-RateLimit-Reset}
+\end{itemize}
+
+\section{Retry-After}
+When returning \code{429} or \code{503}, include \code{Retry-After}.
+This helps clients back off and prevents thundering herds.
+
+\section{Timeouts}
+Clients should not wait forever.
+Publish expected timeouts for critical endpoints and enforce them on the server.
+
+\section{Compression}
+Enable gzip or brotli for large responses.
+Compression reduces bandwidth and often improves tail latency.
+
+\section{Correlation identifiers}
+Include a request id in every response and log.
+This enables fast incident debugging and request tracing.
+
+\section{Example request}
+\begin{lstlisting}[language=Bash]
+curl -i https://api.example.com/tasks \
+  -H "Authorization: Bearer <token>" \
+  -H "Accept: application/json"
+\end{lstlisting}
+
+\section{Example response}
+\begin{lstlisting}[language=JSON]
+{
+  "items": [
+    {"id": "task_123", "title": "Write docs"}
+  ],
+  "next_cursor": "task_123"
+}
+\end{lstlisting}
+
+\section{Health and readiness endpoints}
+Expose simple health checks for load balancers and deployment systems.
+Keep them fast and side-effect free.
+
+\section{Batch endpoints}
+Batch endpoints can reduce request overhead but increase complexity.
+Use them only when the latency or cost savings are meaningful.
+
+\section{CORS}
+If browsers call your API directly, configure CORS explicitly.
+Avoid broad wildcards for production systems.
+
+\section{Security headers}
+Security headers like \code{Strict-Transport-Security} and \code{X-Content-Type-Options}
+reduce attack surface for browser-based clients.
+
+\section{Authentication patterns}
+Be explicit about how clients authenticate:
+\begin{itemize}[nosep]
+  \item short-lived bearer tokens for user-facing clients
+  \item long-lived API keys for server-to-server calls
+  \item mTLS for highly sensitive internal services
+\end{itemize}
+
+Each pattern implies different rotation and monitoring requirements.
+
+\section{Authorization errors}
+Distinguish between unauthenticated and unauthorized.
+Return \code{401} when authentication is missing or invalid, and \code{403} when the user is authenticated but not allowed.
+This improves client behavior and audit clarity.
+
+\section{Request validation}
+Validate at the edge and return structured errors.
+Reject unknown fields if you want a strict contract.
+If you allow unknown fields, document that explicitly and ignore them safely.
+
+\section{Partial responses}
+Large responses can be expensive to produce and transmit.
+Allow clients to request a subset of fields, and default to a safe, stable set.
+This keeps the API responsive as resources grow.
+
+\section{Webhooks and callbacks}
+Webhooks are part of the HTTP surface area.
+Treat them as public endpoints:
+\begin{itemize}[nosep]
+  \item sign webhook payloads
+  \item include a request id for retries
+  \item document the retry strategy and time window
+\end{itemize}
+
+\section{Long-running work}
+If work takes more than a few seconds, return \code{202 Accepted} with a job id.
+Expose a \code{GET /jobs/:id} endpoint so clients can poll.
+
+\section{Error budget for clients}
+Client behavior is part of reliability.
+Publish clear guidance:
+\begin{itemize}[nosep]
+  \item which endpoints are safe to retry
+  \item the maximum recommended retry window
+  \item how to detect throttling
+\end{itemize}
+
+\section{Input size and pagination limits}
+Define maximum page size and request body size.
+When a client exceeds limits, respond with \code{400} and explain the constraint.
+
+\section{Conditional request example}
+Clients can avoid full responses using conditional requests:
+\begin{lstlisting}[language=Bash]
+curl -i https://api.example.com/tasks/task_123 \
+  -H "If-None-Match: \"task_123:v7\""
+\end{lstlisting}
+
+If the resource is unchanged, the server returns \code{304} with no body.
+
+\section{ETag and If-Match for writes}
+Use \code{If-Match} to prevent lost updates.
+If a client sends a stale ETag, return \code{412 Precondition Failed}.
+This is a clean way to protect concurrent updates.
+
+\section{File uploads}
+If you accept files, document limits and formats.
+Large uploads should use multipart uploads or pre-signed URLs to keep the API responsive.
+
+\section{HTTP caching workflow}
+For read-heavy endpoints, caching should be part of the workflow:
+\begin{itemize}[nosep]
+  \item server returns \code{ETag} and \code{Cache-Control}
+  \item client revalidates with \code{If-None-Match}
+  \item server returns \code{304} if unchanged
+\end{itemize}
+
+This reduces bandwidth and avoids unnecessary processing.
+
+\section{Problem details with metadata}
+If you use a problem details format, include a stable error code and a trace id.
+This makes it easier to correlate client failures with server logs.
+
+\section{Header budget}
+Headers are not free.
+Large headers increase latency and can exceed gateway limits.
+Keep custom headers minimal and document those that matter.
+
+\section{Response shape stability}
+Clients depend on response shape.
+Avoid changing data types or omitting fields for existing endpoints.
+If you need a new representation, introduce a new field or a new endpoint.
+
+\section{Cache-Control directives}
+Make caching explicit with \code{Cache-Control}:
+\begin{itemize}[nosep]
+  \item \code{max-age} for browser and client caches
+  \item \code{s-maxage} for shared caches
+  \item \code{private} for user-specific responses
+\end{itemize}
+
+\section{HTTP response example}
+An explicit response makes behavior visible to clients:
+\begin{lstlisting}[language=Bash]
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: private, max-age=30
+ETag: "task_123:v7"
+X-Request-Id: req_9c6
+
+{"id":"task_123","title":"Write docs","status":"open"}
+\end{lstlisting}
+
+\section{Cookies and sessions}
+If you use cookies, set \code{HttpOnly} and \code{Secure} flags.
+Consider \code{SameSite=Lax} or \code{Strict} to reduce CSRF exposure.
+Even token-based APIs should document how cookies are handled.
+
+\section{Redirects}
+Avoid redirects for API endpoints.
+They confuse clients and complicate retries.
+If you must redirect, use \code{307} or \code{308} to preserve method semantics.
+
+\section{Method safety matrix}
+Document which methods are safe and idempotent.
+This guides client retries and caching:
+\begin{tabularx}{\textwidth}{@{}lXX@{}}
+\toprule
+Method & Safe & Idempotent \\
+\midrule
+GET & yes & yes \\
+POST & no & no \\
+PUT & no & yes \\
+PATCH & no & depends on semantics \\
+DELETE & no & yes (if defined that way) \\
+\bottomrule
+\end{tabularx}
+
+\section{Content negotiation example}
+If you support multiple formats, show a concrete example:
+\begin{lstlisting}[language=Bash]
+curl -i https://api.example.com/tasks/task_123 \
+  -H "Accept: application/json"
+\end{lstlisting}
+
+If a client requests an unsupported format, return \code{406 Not Acceptable}.
+
+\section{Link headers for pagination}
+Link headers can make pagination easier for clients:
+\begin{lstlisting}[language=Bash]
+Link: <https://api.example.com/tasks?cursor=task_123>; rel="next"
+\end{lstlisting}
+
+If you use Link headers, keep them consistent with the response body.
+
+\section{Range requests}
+For large downloads, support \code{Range} when it makes sense.
+This allows clients to resume transfers without re-downloading the entire file.
+
+\section{HTTP error response example}
+When errors happen, include headers and a structured body:
+\begin{lstlisting}[language=Bash]
+HTTP/1.1 422 Unprocessable Entity
+Content-Type: application/json
+X-Request-Id: req_42
+
+{"error":{"code":"validation_error","message":"title is required","field":"title"}}
+\end{lstlisting}
+
+\section{Throttling strategy}
+Rate limits should be predictable.
+Document the limits per endpoint or per client type.
+If you use dynamic limits, return them via headers so clients can adapt.
+
+\section{Batch request example}
+Batch endpoints should document partial failures clearly.
+An example batch response:
+\begin{lstlisting}[language=JSON]
+{
+  "results": [
+    {"id": "task_1", "status": "created"},
+    {"id": null, "status": "error", "error": "validation_error"}
+  ]
+}
+\end{lstlisting}
+
+If you allow batch requests, define how you handle retries for partial success.
+
+\begin{checklistbox}{Checklist: HTTP}
+\begin{itemize}[nosep]
+  \item Use methods for intent.
+  \item Pick status codes and stick to them.
+  \item Add pagination before you need it.
+\end{itemize}
+\end{checklistbox}

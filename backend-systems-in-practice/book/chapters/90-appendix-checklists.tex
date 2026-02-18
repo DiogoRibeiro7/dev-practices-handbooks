@@ -1,37 +1,29 @@
-\chapter{Checklists}
+\chapter{Appendix: checklists}
 
-This appendix is meant to be used.
-Copy sections into your repository docs.
-
-\section{API checklist}
+\section{API design checklist}
 \begin{itemize}[nosep]
-  \item consistent pagination
-  \item stable error format
-  \item idempotency for retryable operations
-  \item clear authn/authz rules
-  \item rate limiting strategy
+  \item Resource names are nouns.
+  \item Errors use a consistent shape.
+  \item Pagination is defined.
 \end{itemize}
 
-\section{Database checklist}
+\section{Data modeling checklist}
 \begin{itemize}[nosep]
-  \item constraints for invariants
-  \item indexes aligned with queries
-  \item migrations measured and reversible where possible
-  \item connection pooling monitored
+  \item Constraints enforce integrity.
+  \item Indexes match query patterns.
+  \item Migrations are reversible.
 \end{itemize}
 
 \section{Operations checklist}
 \begin{itemize}[nosep]
-  \item structured logs with request ids
-  \item latency and error dashboards
-  \item alerts tied to SLOs
-  \item runbooks and on-call ownership
+  \item Alerts are actionable.
+  \item Runbooks exist for top incidents.
+  \item Deployments are automated.
 \end{itemize}
 
 \section{Security checklist}
 \begin{itemize}[nosep]
-  \item secrets not in code or logs
-  \item least privilege access controls
-  \item dependency scanning
-  \item input validation at the boundary
+  \item Input is validated.
+  \item Secrets are rotated.
+  \item Dependencies are patched.
 \end{itemize}

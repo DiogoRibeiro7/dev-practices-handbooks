@@ -1,36 +1,71 @@
-\chapter{Artifacts and reports}
+\chapter{Artifacts}
 
-Artifacts are files you upload from a workflow run.
-They are useful for debugging and for distributing build outputs.
+Artifacts are files you want to keep after a job finishes.
+They are ideal for reports, binaries, and diagnostic outputs.
 
-\section{Upload artifacts}
+\section{Uploading artifacts}
 \begin{lstlisting}[language=YAML]
-- name: Run tests
-  run: |
-    mkdir -p reports
-    echo "example" > reports/test.txt
-
-- name: Upload reports
+- name: Upload test report
   uses: actions/upload-artifact@v4
   with:
-    name: test-reports
-    path: reports/
+    name: junit-report
+    path: reports/junit.xml
+    retention-days: 7
 \end{lstlisting}
 
-\section{When to use artifacts}
+\section{Downloading artifacts}
+Artifacts can be downloaded by later jobs in the same workflow.
+
+\begin{lstlisting}[language=YAML]
+- name: Download report
+  uses: actions/download-artifact@v4
+  with:
+    name: junit-report
+\end{lstlisting}
+
+\section{Artifacts from matrices}
+Matrix jobs upload multiple artifacts with unique names.
+Include the matrix value in the artifact name.
+
+\begin{lstlisting}[language=YAML]
+- name: Upload build
+  uses: actions/upload-artifact@v4
+  with:
+    name: build-${{ matrix.os }}
+    path: dist/
+\end{lstlisting}
+
+\section{Retention and cost}
+Set retention to the shortest window that still enables debugging.
+Large artifacts increase storage and download time.
+
+\begin{warningbox}{Warning: artifacts are not secrets}
+Artifacts are stored by GitHub and accessible to anyone with access to the run.
+Do not upload secrets or credentials.
+\end{warningbox}
+
+\section{Artifact design heuristics}
+Artifacts should be explicit and minimal:
 \begin{itemize}[nosep]
-  \item Test reports and logs for failures
-  \item Coverage outputs
-  \item Build binaries from PRs
-  \item Generated documentation previews
+  \item name them by purpose and scope
+  \item keep retention short for large files
+  \item avoid uploading the entire workspace
 \end{itemize}
 
-\section{Artifact discipline}
-Artifacts are not a cache.
-They are not a package registry.
-Keep them scoped and short-lived.
+\section{Artifacts vs releases}
+Artifacts are temporary and tied to a run.
+Releases are durable and public-facing.
+Use artifacts for debugging and staging, and releases for distribution.
 
-\begin{patternbox}{Pattern: attach artifacts only on failure}
-Upload logs and debug bundles only when the job fails.
-It keeps runs clean and cheap.
-\end{patternbox}
+\section{Compression and size}
+Compress large artifacts before upload when possible.
+Large files slow down downloads and can degrade developer feedback loops.
+
+\begin{checklistbox}{Checklist: artifacts}
+\begin{itemize}[nosep]
+  \item Upload only what you need to keep.
+  \item Use meaningful names.
+  \item Keep retention short for large files.
+  \item Never store secrets in artifacts.
+\end{itemize}
+\end{checklistbox}

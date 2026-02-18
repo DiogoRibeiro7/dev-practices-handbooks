@@ -6,10 +6,11 @@ Filters decide when it should \emph{not} run.
 \section{Core triggers}
 \begin{itemize}[nosep]
   \item \code{push}
-  \item \code{pull_request}
-  \item \code{workflow_dispatch} (manual)
+  \item \code{pull\_request}
+  \item \code{workflow\_dispatch} (manual)
   \item \code{schedule} (cron)
-  \item \code{workflow_call} (reusable workflows)
+  \item \code{workflow\_call} (reusable workflows)
+  \item \code{workflow\_run} (after another workflow)
 \end{itemize}
 
 \section{Branch and path filters}
@@ -18,16 +19,29 @@ Run only when it matters.
 \begin{lstlisting}[language=YAML]
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "release/*"]
     paths:
       - "src/**"
       - ".github/workflows/**"
+    paths-ignore:
+      - "docs/**"
+\end{lstlisting}
+
+\section{Tag filters}
+Tags are useful for release workflows.
+
+\begin{lstlisting}[language=YAML]
+on:
+  push:
+    tags:
+      - "v*.*.*"
 \end{lstlisting}
 
 \section{PR triggers: common pitfalls}
 \begin{itemize}[nosep]
-  \item \code{pull_request} runs on PR events, not on merge commits.
-  \item Use \code{pull_request_target} carefully; it runs with base repo privileges.
+  \item \code{pull\_request} runs on PR events, not on merge commits.
+  \item Use \code{pull\_request\_target} carefully; it runs with base repo privileges.
+  \item Avoid running untrusted code with write permissions.
 \end{itemize}
 
 \begin{warningbox}{Warning: pull\_request\_target}
@@ -46,4 +60,53 @@ on:
         description: "Target environment"
         required: true
         default: "staging"
+      dry_run:
+        description: "Skip deployment"
+        required: false
+        default: "true"
 \end{lstlisting}
+
+\section{Scheduled workflows}
+Use \code{schedule} for nightly builds and audits.
+Remember that schedules are not guaranteed to run at the exact minute.
+
+\begin{lstlisting}[language=YAML]
+on:
+  schedule:
+    - cron: "0 2 * * 1-5"
+\end{lstlisting}
+
+\section{Workflow chaining}
+Sometimes you want a deployment after tests complete.
+\code{workflow\_run} provides a safe, explicit chain.
+
+\begin{lstlisting}[language=YAML]
+on:
+  workflow_run:
+    workflows: ["CI (lint + test)"]
+    types: [completed]
+\end{lstlisting}
+
+\section{Trigger choice heuristics}
+Pick the smallest trigger that matches your intent:
+\begin{itemize}[nosep]
+  \item Use \code{pull\_request} for quality gates.
+  \item Use \code{push} for branch builds and releases.
+  \item Use \code{workflow\_dispatch} for risky operations.
+\end{itemize}
+
+\section{Event types}
+Some triggers support multiple event types.
+If you only care about a subset, declare them explicitly to avoid unexpected runs.
+
+\section{PR vs push}
+Use \code{pull\_request} to validate unmerged code and \code{push} to validate merges.
+This prevents double work and ensures the merge commit is validated on \code{main}.
+
+\begin{checklistbox}{Checklist: triggers}
+\begin{itemize}[nosep]
+  \item Be explicit about branches, paths, and tags.
+  \item Use manual inputs for risky operations.
+  \item Prefer \code{workflow\_run} to implicit cross-workflow coupling.
+\end{itemize}
+\end{checklistbox}

@@ -1,54 +1,119 @@
 \chapter{Jobs and steps}
 
-A workflow is a set of jobs.
-Jobs can run in parallel unless you connect them with \code{needs}.
+Jobs are the unit of parallelism.
+Steps are the unit of execution inside a job.
 
 \section{Job dependencies}
+Jobs run in parallel by default.
+Use \code{needs} to enforce ordering and pass outputs.
+
 \begin{lstlisting}[language=YAML]
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: echo "tests"
-
   build:
     runs-on: ubuntu-latest
-    needs: [test]
     steps:
-      - uses: actions/checkout@v4
-      - run: echo "build"
+      - run: ./scripts/build
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - run: ./scripts/test
 \end{lstlisting}
 
-\section{Environment variables}
-There are two layers:
-\begin{itemize}[nosep]
-  \item \code{env:} at workflow/job/step level
-  \item exported variables inside a shell (step-local unless written to \code{GITHUB_ENV})
-\end{itemize}
+\section{Job outputs}
+Use outputs to pass data across jobs without recomputation.
 
 \begin{lstlisting}[language=YAML]
-- name: Export env for later steps
-  run: |
-    echo "APP_MODE=ci" >> "$GITHUB_ENV"
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.value }}
+    steps:
+      - id: tag
+        run: echo "value=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
-- name: Use env
-  run: echo "mode=$APP_MODE"
+  deploy:
+    runs-on: ubuntu-latest
+    needs: meta
+    steps:
+      - run: echo "Deploying ${{ needs.meta.outputs.image_tag }}"
 \end{lstlisting}
 
-\section{Timeouts and retries}
-Add timeouts where you can.
-Avoid hidden infinite waits.
+\section{Steps and shells}
+Each \code{run} step uses a shell.
+On Linux and macOS, it is \code{bash} by default.
+On Windows, it is PowerShell.
+Declare a different shell if you need one.
+
+\begin{lstlisting}[language=YAML]
+- name: Use bash on Windows
+  shell: bash
+  run: ./scripts/build
+\end{lstlisting}
+
+\section{Working directory and environment}
+Use \code{working-directory} and \code{env} to keep commands clean.
+
+\begin{lstlisting}[language=YAML]
+- name: Run backend tests
+  working-directory: services/api
+  env:
+    NODE_ENV: test
+  run: npm test
+\end{lstlisting}
+
+\section{Services}
+Service containers are useful for databases or queues.
+They run alongside your job.
 
 \begin{lstlisting}[language=YAML]
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+    steps:
+      - run: ./scripts/test
 \end{lstlisting}
 
-\begin{patternbox}{Pattern: separate setup from execution}
-One step installs dependencies.
-Another step runs tests.
-It makes failures easier to locate and caching easier to reason about.
-\end{patternbox}
+\section{Timeouts and resilience}
+Use timeouts to avoid hanging workflows.
+Use \code{continue-on-error} only for experimental steps.
+
+\begin{lstlisting}[language=YAML]
+- name: Optional lints
+  continue-on-error: true
+  run: ./scripts/lint-extra
+\end{lstlisting}
+
+\section{Job design heuristics}
+Good jobs are short and explicit:
+\begin{itemize}[nosep]
+  \item One purpose per job.
+  \item One toolchain per job.
+  \item Prefer artifacts over shared state.
+\end{itemize}
+
+\section{When to split a job}
+Split a job when you need isolation, different permissions, or different runners.
+Keep steps together when they share a working directory and toolchain.
+
+\section{Retries and flakiness}
+If a step is flaky, fix the root cause first.
+If you must retry, do it in a script so the workflow remains simple and explicit.
+
+\begin{checklistbox}{Checklist: jobs and steps}
+\begin{itemize}[nosep]
+  \item Keep jobs focused and composable.
+  \item Use \code{needs} instead of ad-hoc ordering.
+  \item Prefer outputs over recomputing values.
+  \item Set timeouts for long-running jobs.
+\end{itemize}
+\end{checklistbox}

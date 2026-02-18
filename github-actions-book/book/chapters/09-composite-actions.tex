@@ -1,56 +1,73 @@
 \chapter{Composite actions}
 
-Composite actions let you package a repeatable sequence of steps.
-They live inside the repository (or another repo) and are versioned like code.
+Composite actions bundle multiple steps into a reusable action.
+They live in your repository under \code{.github/actions/}.
 
-\section{A minimal composite action}
-Create \code{.github/actions/setup-python-poetry/action.yml} in a repo when you implement it.
-This chapter focuses on the structure.
+\section{When to use composite actions}
+Use them when you repeat the same steps across multiple workflows.
+If the logic is very specific to one repo, a composite action is lighter than a reusable workflow.
+
+\section{Action structure}
+A composite action requires an \code{action.yml} with inputs and steps.
 
 \begin{lstlisting}[language=YAML]
-name: "Setup Python + Poetry"
-description: "Install Python and Poetry, then install dependencies"
+name: "setup tooling"
+description: "Install tools used across workflows"
 inputs:
-  python-version:
-    description: "Python version"
+  node-version:
     required: true
-
+    default: "20"
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-node@v4
       with:
-        python-version: ${{ inputs.python-version }}
-
-    - name: Install Poetry
+        node-version: ${{ inputs.node-version }}
+    - run: npm ci
       shell: bash
-      run: |
-        python -m pip install --upgrade pip
-        pip install poetry
-
-    - name: Install deps
-      shell: bash
-      run: |
-        poetry install --no-interaction
 \end{lstlisting}
 
-\section{Calling a composite action}
+\section{Using a composite action}
 \begin{lstlisting}[language=YAML]
-- uses: ./.github/actions/setup-python-poetry
+- uses: ./.github/actions/setup-tooling
   with:
-    python-version: "3.12"
+    node-version: "20"
 \end{lstlisting}
 
-\begin{warningbox}{Warning: shells and working directories}
-Composite actions do not inherit a shell by default in a portable way.
-Set \code{shell: bash} explicitly.
-Be explicit about paths and working directories.
-\end{warningbox}
+\section{Inputs and outputs}
+Composite actions can expose outputs just like workflow steps.
+Use them to pass versions or paths back to the caller.
+
+\begin{lstlisting}[language=YAML]
+outputs:
+  cache-hit:
+    value: ${{ steps.cache.outputs.cache-hit }}
+\end{lstlisting}
+
+\section{Limitations}
+\begin{itemize}[nosep]
+  \item Composite actions cannot define jobs or services.
+  \item They run inside the caller job, so they share its permissions.
+  \item Secrets must be passed as inputs explicitly.
+\end{itemize}
+
+\section{Versioning}
+Tag composite actions when they are used across repositories.
+If they are used only in one repo, keep them on the default branch and version by commit.
+
+\section{Documentation}
+Add a short README next to the action with inputs and outputs.
+This makes it easier to reuse without reading the YAML.
+
+\begin{patternbox}{Pattern: keep composite actions small}
+A composite action should fit on one screen.
+If it grows into multiple jobs or environments, use a reusable workflow.
+\end{patternbox}
 
 \begin{checklistbox}{Checklist: composite actions}
 \begin{itemize}[nosep]
-  \item Keep them small and composable.
-  \item Expose stable inputs; avoid leaking internal assumptions.
-  \item Document expected side effects (files created, env vars set).
+  \item Make inputs explicit and validated.
+  \item Keep the action deterministic.
+  \item Prefer a composite action over copy-paste.
 \end{itemize}
 \end{checklistbox}

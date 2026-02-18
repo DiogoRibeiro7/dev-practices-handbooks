@@ -1,37 +1,67 @@
 \chapter{Debugging workflows}
 
-Debugging Actions is mostly about reducing ambiguity.
+Debugging CI is about making the failure reproducible and visible.
+Start by reducing the workflow to the smallest failing case.
 
-\section{Step summaries}
-Write structured output to the step summary.
+\section{Use step logs}
+Logs are the primary debugging tool.
+Group logs to keep output readable.
 
 \begin{lstlisting}[language=YAML]
-- name: Summary
+- name: Build
   run: |
-    {
-      echo "## Build summary"
-      echo ""
-      echo "- Ref: ${{ github.ref }}"
-      echo "- SHA: ${{ github.sha }}"
-    } >> "$GITHUB_STEP_SUMMARY"
+    echo "::group::Build output"
+    ./scripts/build
+    echo "::endgroup::"
 \end{lstlisting}
 
-\section{Make failures obvious}
-\begin{itemize}[nosep]
-  \item Name steps clearly.
-  \item Print tool versions.
-  \item Use \code{set -euo pipefail} in bash scripts.
-\end{itemize}
+\section{Enable debug logging}
+GitHub supports two debug flags.
+Set them as repository secrets or workflow env vars.
 
-\section{Re-run strategy}
-If failures are flaky:
-\begin{itemize}[nosep]
-  \item identify what is nondeterministic (network, mirrors, timeouts)
-  \item add retries only around the unstable part
-  \item add timeouts so hangs become failures
-\end{itemize}
+\begin{lstlisting}[language=YAML]
+env:
+  ACTIONS_STEP_DEBUG: true
+  ACTIONS_RUNNER_DEBUG: true
+\end{lstlisting}
 
-\begin{warningbox}{Warning: retries hide real failures}
-Retries are sometimes necessary, but they can turn real issues into noise.
-Prefer fixing the underlying instability.
-\end{warningbox}
+\section{Rerun jobs}
+Rerun failed jobs from the Actions UI.
+This saves time when failures are flaky or transient.
+
+\section{Collect diagnostics}
+When a failure is intermittent, capture extra artifacts.
+
+\begin{lstlisting}[language=YAML]
+- name: Upload logs
+  if: ${{ failure() }}
+  uses: actions/upload-artifact@v4
+  with:
+    name: debug-logs
+    path: logs/
+\end{lstlisting}
+
+\section{Local reproduction}
+Reproduce failures locally with the same script the workflow runs.
+If you cannot run it locally, move more logic into scripts until you can.
+
+\section{Workflow isolation}
+Create a minimal workflow that runs only the failing job.
+This reduces noise and isolates the root cause faster.
+
+\section{Manual debug runs}
+Add a \code{workflow\_dispatch} entry to run a workflow with specific inputs.
+This is useful when you need to debug with a particular branch or parameter set.
+
+\section{Artifacts on failure}
+If a job fails intermittently, upload logs or state only on failure.
+This keeps successful runs clean while preserving enough detail to investigate.
+
+\begin{checklistbox}{Checklist: debugging}
+\begin{itemize}[nosep]
+  \item Make the failing step minimal.
+  \item Increase logging only when needed.
+  \item Capture diagnostics on failure.
+  \item Reproduce locally with the same scripts.
+\end{itemize}
+\end{checklistbox}

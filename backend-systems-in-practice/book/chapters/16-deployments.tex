@@ -1,32 +1,28 @@
 \chapter{Deployments}
 
-Deployment is where code meets reality.
+Deployments should be repeatable and low risk.
+If a deploy requires heroics, the system is too fragile.
 
-\section{Deployment styles}
+\section{Deployment strategy}
+Choose a strategy that fits your traffic and risk profile.
+Blue-green and canary deploys reduce blast radius.
+
+\section{Migrations}
+Run migrations separately from application rollouts.
+Use backward-compatible schema changes.
+
+\section{Rollback}
+Rollbacks should be safe and fast.
+Keep previous versions ready to redeploy.
+
+\section{Configuration}
+Keep configuration external to the code.
+Use environment variables or a config service.
+
+\begin{checklistbox}{Checklist: deployments}
 \begin{itemize}[nosep]
-  \item rolling
-  \item blue/green
-  \item canary
+  \item Automate deploys.
+  \item Separate migrations from rollouts.
+  \item Practice rollbacks.
 \end{itemize}
-
-\section{Schema migrations}
-Treat schema migrations as part of release design.
-Prefer expand-and-contract:
-\begin{enumerate}[nosep]
-  \item add new schema elements (expand)
-  \item deploy code that supports both old and new
-  \item migrate data
-  \item remove old schema elements (contract)
-\end{enumerate}
-
-\begin{warningbox}{Warning: locks}
-Large migrations can lock tables.
-Measure impact in staging and schedule carefully.
-\end{warningbox}
-
-\section{Health checks}
-Define:
-\begin{itemize}[nosep]
-  \item liveness: process is alive
-  \item readiness: process can serve traffic
-\end{itemize}
+\end{checklistbox}

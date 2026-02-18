@@ -1,28 +1,91 @@
-\chapter{Expression cheatsheet}
+\chapter{Expression reference}
 
-This appendix is intentionally short.
-The point is recall, not completeness.
+This appendix lists the most common contexts and functions.
+It is not exhaustive, but it is enough for everyday workflows.
 
-\section{Common comparisons}
-\begin{lstlisting}[language=YAML]
-if: ${{ github.ref == 'refs/heads/main' }}
-if: ${{ github.event_name == 'pull_request' }}
-if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-\end{lstlisting}
+\section{Contexts}
+\begin{itemize}[nosep]
+  \item \code{github}: repo, ref, actor, event payload
+  \item \code{env}: environment variables
+  \item \code{inputs}: inputs to workflows and actions
+  \item \code{secrets}: encrypted secrets
+  \item \code{steps}: step outputs and conclusions
+  \item \code{jobs}: job outputs
+  \item \code{runner}: runner metadata
+  \item \code{matrix}: matrix values
+  \item \code{strategy}: strategy configuration
+\end{itemize}
 
 \section{Useful functions}
 \begin{itemize}[nosep]
-  \item \code{hashFiles('**/poetry.lock')}
-  \item \code{contains(string, 'x')}
-  \item \code{startsWith(string, 'prefix')}
-  \item \code{endsWith(string, 'suffix')}
-  \item \code{toJSON(obj)} and \code{fromJSON(str)}
+  \item \code{success()} / \code{failure()} / \code{cancelled()}
+  \item \code{always()}
+  \item \code{contains(a, b)}
+  \item \code{startsWith(a, b)} / \code{endsWith(a, b)}
+  \item \code{format(fmt, ...)}
+  \item \code{join(list, sep)}
+  \item \code{toJSON(obj)} / \code{fromJSON(str)}
+  \item \code{hashFiles(path)}
 \end{itemize}
 
-\section{Job status helpers}
+\section{Common string patterns}
+Use \code{format} for building readable strings:
 \begin{lstlisting}[language=YAML]
-if: ${{ always() }}
-if: ${{ failure() }}
-if: ${{ success() }}
-if: ${{ cancelled() }}
+run: echo "${{ format('build-{0}-{1}', github.sha, runner.os) }}"
 \end{lstlisting}
+
+\section{Condition examples}
+\begin{lstlisting}[language=YAML]
+if: ${{ github.event_name == 'pull_request' }}
+if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+if: ${{ failure() && github.ref == 'refs/heads/main' }}
+if: ${{ always() && (cancelled() || failure()) }}
+\end{lstlisting}
+
+\section{Matrix access}
+Matrix values are accessed through \code{matrix}.
+\begin{lstlisting}[language=YAML]
+- run: echo "Running on ${{ matrix.os }}"
+\end{lstlisting}
+
+\section{Job outputs}
+Job outputs are available through \code{needs}.
+\begin{lstlisting}[language=YAML]
+- run: echo "Artifact is ${{ needs.build.outputs.artifact_name }}"
+\end{lstlisting}
+
+\section{Troubleshooting matrix}
+\begin{tabularx}{\textwidth}{@{}lXl@{}}
+\toprule
+Symptom & Likely cause & Fix \\
+\midrule
+Workflow does not run & Trigger does not match branch or paths & Check \code{on} filters and branch names \\
+Step skipped & \code{if} condition evaluated to false & Log the inputs and simplify conditions \\
+Secret is empty & Secret not set in repo or environment & Verify secret name and environment scope \\
+Cache miss & Key changed or restore key too narrow & Use lockfile hash and a broad restore key \\
+\bottomrule
+\end{tabularx}
+
+\section{Permission reference}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Permission & Typical use \\
+\midrule
+\code{contents: read} & Checkout code and read repository data \\
+\code{contents: write} & Create releases or push tags \\
+\code{pull-requests: write} & Comment or label pull requests \\
+\code{id-token: write} & OIDC authentication with cloud providers \\
+\bottomrule
+\end{tabularx}
+
+\section{Debugging expressions}
+When conditions behave unexpectedly, log the values you compare.
+Prefer printing explicit context values instead of entire payloads.
+
+\begin{checklistbox}{Checklist: expressions}
+\begin{itemize}[nosep]
+  \item Keep conditions short.
+  \item Avoid complex logic in YAML.
+  \item Prefer scripts for heavy logic.
+\end{itemize}
+\end{checklistbox}

@@ -1,31 +1,50 @@
-\chapter{Supply chain and hardening}
+\chapter{Supply chain security}
 
-CI systems build and publish artifacts.
-That is supply chain by definition.
+Your workflow depends on actions and packages you did not write.
+Supply chain security is about minimizing that risk.
 
-\section{Pin dependencies}
-There are two layers:
+\section{Pin actions}
+Use tags for convenience, but prefer commit SHAs for sensitive workflows.
+
+\begin{lstlisting}[language=YAML]
+- uses: actions/checkout@v4
+# safer but more maintenance:
+# - uses: actions/checkout@<commit-sha>
+\end{lstlisting}
+
+\section{Limit permissions}
+Most workflows only need \code{contents: read}.
+Give write permissions to a single job, not the whole workflow.
+
+\section{Dependency scanning}
+Automate updates with tools like Dependabot.
+Treat action updates like dependency updates: review and test them.
+
+\section{Restrict network access}
+Self-hosted runners should use network policies and secrets isolation.
+Avoid running untrusted pull requests on self-hosted runners.
+
+\section{Provenance and attestations}
+For critical releases, generate provenance or build attestations.
+This improves traceability and strengthens the supply chain story.
+
+\section{Action allowlists}
+If your organization supports action allowlists, use them.
+Restricting which actions can run reduces the attack surface.
+
+\section{Update cadence}
+Pin actions, but keep them updated.
+Schedule dependency updates and review them like code changes.
+
+\begin{warningbox}{Warning: third-party actions}
+Every external action is a new dependency.
+Only use actions you trust, and keep them updated.
+\end{warningbox}
+
+\begin{checklistbox}{Checklist: supply chain}
 \begin{itemize}[nosep]
-  \item Actions you \code{uses:}
-  \item Dependencies inside your builds (npm/pip/etc.)
+  \item Pin critical actions.
+  \item Minimize permissions and secrets exposure.
+  \item Separate untrusted PRs from privileged workflows.
 \end{itemize}
-
-Pin actions to major versions at minimum.
-Pin to SHAs in strict environments.
-
-\section{Provenance mindset}
-If a workflow can publish, it is a high-trust path.
-Protect it.
-
-\begin{patternbox}{Pattern: split CI from release}
-Run CI on PRs with minimal permissions.
-Run releases on tags with strict protections and approvals.
-\end{patternbox}
-
-\section{Common controls}
-\begin{itemize}[nosep]
-  \item Branch protection and required checks
-  \item CODEOWNERS for \code{.github/workflows/}
-  \item Review requirements for environments
-  \item Dependency scanning and alerts
-\end{itemize}
+\end{checklistbox}

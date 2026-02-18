@@ -1,39 +1,98 @@
 \chapter{The mental model}
 
-Before YAML details, you need the model.
+GitHub Actions is built on a small set of concepts.
+If you understand these, everything else becomes configuration.
 
-\section{Key terms}
-\begin{itemize}[nosep]
-  \item \textbf{Event}: something happened (push, pull request, schedule, manual).
-  \item \textbf{Workflow}: a YAML file under \code{.github/workflows/}.
-  \item \textbf{Job}: runs on a runner (VM). Jobs can run in parallel.
-  \item \textbf{Step}: a single action or shell command.
-  \item \textbf{Action}: reusable unit. It can be JavaScript, Docker, or composite.
-  \item \textbf{Runner}: the environment. Hosted or self-hosted.
-\end{itemize}
+\section{Events and workflows}
+An \emph{event} happens in the repository: a push, a pull request, a tag, or a schedule.
+A \emph{workflow} declares which events it listens to and what jobs to run.
 
-\section{How execution really feels}
-A workflow run is a directed graph of jobs.
-Within a job, steps run sequentially.
-Each job starts from a clean environment (unless self-hosted and you keep state, which you should avoid).
-
-\begin{patternbox}{Pattern: treat workflows as code}
-\begin{itemize}[nosep]
-  \item Store scripts in the repository.
-  \item Version your internal actions.
-  \item Write tests for scripts that a workflow calls.
-  \item Use code review for YAML changes.
-\end{itemize}
+\begin{patternbox}{Pattern: start from the event}
+Describe the event first, then design the workflow around it.
+When the event is clear, jobs and steps follow naturally.
 \end{patternbox}
 
-\section{The three surfaces}
-You write automation across three surfaces:
-\begin{enumerate}[nosep]
-  \item \textbf{Workflow YAML} (orchestration)
-  \item \textbf{Scripts} (business logic)
-  \item \textbf{Actions} (reusable glue)
-\end{enumerate}
+\section{Jobs and steps}
+A workflow runs one or more \emph{jobs}.
+Each job runs on its own runner and is made of sequential \emph{steps}.
+Jobs run in parallel by default unless you declare dependencies with \code{needs}.
 
-If you put business logic in YAML, you will regret it.
-Keep YAML for orchestration.
-Keep logic in scripts or actions.
+\begin{lstlisting}[language=YAML]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./scripts/build
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - run: ./scripts/test
+\end{lstlisting}
+
+\section{Runners}
+A runner is the machine that executes your job.
+GitHub-hosted runners are ephemeral; each job starts on a clean VM.
+Self-hosted runners are long-lived and must be secured and maintained.
+
+\section{Contexts and expressions}
+Expressions read data from \emph{contexts} like \code{github}, \code{inputs}, or \code{secrets}.
+They are written as \code{\$\{\{ ... \}\}} and evaluated by the workflow engine.
+
+\section{Environment variables and outputs}
+Steps can read and write environment variables, and can publish outputs.
+Outputs are the cleanest way to pass data across steps or jobs.
+
+\begin{lstlisting}[language=YAML]
+steps:
+  - name: Compute version
+    id: meta
+    run: echo "version=1.2.3" >> "$GITHUB_OUTPUT"
+
+  - name: Use version
+    run: echo "Using ${{ steps.meta.outputs.version }}"
+\end{lstlisting}
+
+\section{Artifacts}
+Artifacts are files produced by a job that you want to keep.
+They are stored by GitHub and can be downloaded later.
+Use artifacts for test reports, build outputs, and deployment packages.
+
+\section{Concurrency and cancellation}
+Large repositories need guardrails.
+Use concurrency groups to avoid running the same workflow twice for the same branch.
+
+\begin{lstlisting}[language=YAML]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+\end{lstlisting}
+
+\section{Putting it together}
+Think of a workflow as a thin controller:
+\begin{itemize}[nosep]
+  \item inputs come from events and contexts
+  \item steps call scripts or actions
+  \item outputs are artifacts or job outputs
+\end{itemize}
+
+\section{State and isolation}
+Each job starts on a clean machine.
+Assume nothing persists between jobs unless you use artifacts or caches.
+This is why moving logic into scripts and storing outputs explicitly matters.
+
+\section{Event payload as input}
+The event payload is just data.
+Treat it like configuration that drives a workflow, not as business logic.
+If you need branching behavior, prefer small conditional steps over large, hidden logic.
+
+\begin{checklistbox}{Checklist: mental model}
+\begin{itemize}[nosep]
+  \item Events select workflows.
+  \item Workflows run jobs.
+  \item Jobs run steps on runners.
+  \item Outputs connect steps and jobs.
+  \item Artifacts persist files outside the runner.
+\end{itemize}
+\end{checklistbox}

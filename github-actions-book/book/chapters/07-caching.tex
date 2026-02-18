@@ -1,47 +1,77 @@
 \chapter{Caching}
 
-Caching is the main lever for speed.
-It also introduces correctness risks if you cache the wrong things.
+Caching trades storage for speed.
+A good cache key is specific enough to be correct and broad enough to be reused.
+
+\section{Cache basics}
+The cache is keyed by a string and optionally restored by prefix.
+Caches are scoped to a repository and branch.
+
+\begin{lstlisting}[language=YAML]
+- name: Cache dependencies
+  uses: actions/cache@v4
+  with:
+    path: ~/.cache/pip
+    key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+    restore-keys: |
+      pip-${{ runner.os }}-
+\end{lstlisting}
 
 \section{What to cache}
-Cache build inputs, not outputs.
-Examples:
 \begin{itemize}[nosep]
-  \item dependency downloads (\code{pip}, \code{poetry}, \code{yarn})
-  \item build tool caches (Gradle, Cargo)
+  \item Package manager caches (pip, npm, yarn, maven)
+  \item Build tool caches (gradle, bazel, turbo)
+  \item Test data that is expensive to download
 \end{itemize}
 
-\section{Cache with setup actions}
-Many setup actions support caching directly.
+\section{What not to cache}
+\begin{itemize}[nosep]
+  \item Secrets or credentials
+  \item Build outputs meant for deployment (use artifacts instead)
+  \item Anything that changes without a reliable key
+\end{itemize}
+
+\section{Built-in caching}
+Some setup actions provide caching out of the box.
+Use them when available.
 
 \begin{lstlisting}[language=YAML]
 - uses: actions/setup-node@v4
   with:
     node-version: "20"
-    cache: "yarn"
+    cache: "npm"
 \end{lstlisting}
 
-\section{Cache keys}
-Keys should change when dependencies change.
-The simplest reliable approach is hashing lockfiles.
+\section{Cache invalidation}
+Change the cache key when the dependency graph changes.
+Use lockfiles to make the key deterministic.
 
-\begin{lstlisting}[language=YAML]
-- uses: actions/cache@v4
-  with:
-    path: |
-      ~/.cache/pip
-    key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
-\end{lstlisting}
+\begin{patternbox}{Pattern: hash the lockfile}
+Hashing \code{package-lock.json} or \code{poetry.lock} is a reliable key.
+Avoid hashing all source files unless you want frequent cache misses.
+\end{patternbox}
 
-\begin{warningbox}{Warning: caching virtual environments}
-Caching whole virtualenv folders often causes subtle corruption across runner images.
-Prefer caching download directories and rebuilding environments.
-\end{warningbox}
+\section{Layered caches}
+Use multiple caches when a toolchain has independent layers.
+For example, cache both package dependencies and build tool caches separately.
 
-\begin{checklistbox}{Checklist: safe caching}
+\section{Measuring cache value}
+If cache hits do not save meaningful time, remove the cache.
+Caching adds complexity and can hide problems when dependencies are corrupt.
+
+\section{Cache scope}
+Caches are scoped to the repository and branch.
+Do not assume caches are shared across forks or unrelated branches.
+
+\section{Warm caches}
+Run a scheduled workflow to keep caches warm for rarely updated repos.
+This helps new contributors avoid slow first builds.
+
+\begin{checklistbox}{Checklist: caching}
 \begin{itemize}[nosep]
-  \item Cache by lockfile hash.
-  \item Keep caches OS-specific.
-  \item Prefer restoring caches as an optimization, not a requirement.
+  \item Define cache keys with lockfiles.
+  \item Use restore keys to avoid cold starts.
+  \item Cache dependencies, not build outputs.
+  \item Validate that caches actually save time.
 \end{itemize}
 \end{checklistbox}

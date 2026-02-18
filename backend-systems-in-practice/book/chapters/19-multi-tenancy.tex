@@ -1,27 +1,31 @@
 \chapter{Multi-tenancy}
 
-Multi-tenancy is a product choice and a risk model.
+Multi-tenant systems serve multiple customers from one codebase.
+The design choice is how much isolation each tenant receives.
 
 \section{Isolation models}
 \begin{itemize}[nosep]
-  \item shared database, shared schema, tenant id column
-  \item shared database, schema per tenant
-  \item database per tenant
+  \item shared database, shared schema
+  \item shared database, separate schema
+  \item separate databases per tenant
 \end{itemize}
 
-\section{Security and correctness}
-Tenant isolation must be enforced in the data access layer.
-Avoid relying on application code scattered across endpoints.
+\section{Tenant identification}
+Every request should carry a tenant identifier.
+Never infer tenant from user data alone.
 
-\begin{patternbox}{Pattern: tenant scoping in queries}
-Inject tenant scope as part of query building.
-Make it hard to run an unscoped query by accident.
-\end{patternbox}
+\section{Data access rules}
+Enforce tenant scoping in every query.
+Prefer database-level row security when possible.
 
-\section{Operational considerations}
-Multi-tenant systems need:
+\section{Noisy neighbors}
+Large tenants can degrade others.
+Use quotas and rate limits to protect shared resources.
+
+\begin{checklistbox}{Checklist: multi-tenancy}
 \begin{itemize}[nosep]
-  \item per-tenant rate limits
-  \item per-tenant quotas
-  \item noisy neighbour controls
+  \item Decide isolation level early.
+  \item Enforce tenant scoping everywhere.
+  \item Protect against noisy neighbors.
 \end{itemize}
+\end{checklistbox}

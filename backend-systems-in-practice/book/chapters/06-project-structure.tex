@@ -1,26 +1,400 @@
 \chapter{Project structure}
 
-A good structure makes behaviour easy to find.
-It also makes testing and refactoring safer.
+Structure determines how fast engineers can navigate and change code.
+A good structure makes boundaries obvious.
 
 \section{Layers}
-A practical layering for services:
+A practical backend has clear layers:
 \begin{itemize}[nosep]
-  \item \textbf{HTTP layer}: routing, auth, validation, request/response mapping
-  \item \textbf{Domain}: business rules and use cases
-  \item \textbf{Data access}: repositories/queries
-  \item \textbf{Integration}: external services, queues, email, payment
+  \item API and transport
+  \item business logic
+  \item data access
+  \item integrations
 \end{itemize}
 
-\begin{patternbox}{Pattern: pure domain logic}
-Domain code should not import the web framework.
-It should accept typed inputs and return typed outputs.
+\section{Example layout}
+\begin{lstlisting}[language=YAML]
+api/
+  handlers/
+  routes/
+core/
+  services/
+  domain/
+infra/
+  db/
+  cache/
+  queue/
+\end{lstlisting}
+
+\section{Dependency direction}
+Dependencies should point inward.
+Infrastructure depends on core, not the other way around.
+
+\begin{patternbox}{Pattern: keep frameworks at the edge}
+Frameworks change frequently.
+Your core logic should not.
 \end{patternbox}
 
-\section{Configuration}
-Configuration should:
+\section{Boundaries and ownership}
+Structure should reflect ownership.
+If a team owns a domain, give it a clear module or package.
+Ownership makes reviews faster and prevents accidental cross-cutting changes.
+
+\section{Package by feature}
+Layered structures are common, but feature-based packages can scale better.
+For example, a \code{tasks/} module can own its handlers, services, and data access.
+Pick one approach and apply it consistently.
+
+\section{Public versus internal code}
+Not every package should be imported everywhere.
+Mark internal packages and keep their APIs narrow.
+This reduces accidental coupling and keeps refactors small.
+
+\section{Dependency rules}
+Define explicit dependency rules to keep boundaries stable.
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Layer & Allowed dependencies \\
+\midrule
+API & core services, validation, serializers \\
+Core & domain models, interfaces \\
+Infra & databases, caches, external clients \\
+\bottomrule
+\end{tabularx}
+
+\section{Configuration layout}
+Configuration should be centralized and validated.
+Keep config parsing in one place and pass typed config to other modules.
+Avoid reading environment variables throughout the codebase.
+
+\section{Migrations and data access}
+Keep database migrations close to the data access layer.
+If schema changes are scattered, they become unreviewable.
+
+\section{Testing layout}
+Mirror your code structure in tests.
+This makes coverage gaps visible and keeps tests discoverable.
+Separate fast unit tests from slower integration tests.
+
+\section{Example test layout}
+\begin{lstlisting}[language=YAML]
+tests/
+  unit/
+    tasks/
+    projects/
+  integration/
+    api/
+    db/
+\end{lstlisting}
+
+\section{API boundaries}
+Expose a small public API from each module.
+If a module needs internal helpers, keep them private.
+This limits the blast radius of changes.
+
+\section{Shared libraries}
+Shared libraries are useful but dangerous.
+Only extract a library when multiple teams truly depend on it.
+Otherwise, prefer duplication over premature abstraction.
+
+\section{Monorepo and multi-repo}
+Monorepos simplify refactors and dependency updates.
+Multi-repos can improve isolation but slow coordinated changes.
+Pick the model that matches your team size and release workflow.
+
+\section{Build and tooling}
+Tooling should be fast and deterministic.
+Include a single build entry point and a single test entry point.
+If engineers need to guess the right command, the structure is failing.
+
+\section{Documentation placement}
+Place small docs next to the code they describe.
+An architecture overview belongs at the root, but module docs belong inside modules.
+This keeps docs current as code changes.
+
+\section{Interfaces and ports}
+Define interfaces at the core boundary.
+Infrastructure implements those interfaces, not the other way around.
+This keeps the core testable and independent of frameworks.
+
+\section{Wiring and composition}
+Centralize wiring in one place.
+If dependency injection is scattered, tracing the call graph becomes painful.
+Create a single composition root that instantiates services and adapters.
+
+\section{Configuration by environment}
+Keep environment-specific configuration separate from defaults.
+Validate configuration at startup and fail fast with clear errors.
+Avoid ad-hoc \code{if env == prod} checks in business code.
+
+\section{Module boundaries}
+Each module should have clear entry points.
+If a module exposes ten entry points, it is too porous.
+Define a small public API and keep the rest private.
+
+\section{Domain model placement}
+Keep domain models in the core layer.
+If the domain model lives in the API or data layer, it will be distorted by frameworks.
+The domain model should be reusable across transports and integrations.
+
+\section{Example service interface}
+\begin{lstlisting}[language=Python]
+class TaskService:
+    def create_task(self, project_id, title, user_id):
+        ...
+\end{lstlisting}
+
+\section{Example adapter}
+\begin{lstlisting}[language=Python]
+class SqlTaskRepository:
+    def create(self, task):
+        ...
+\end{lstlisting}
+
+\section{Runtime boundaries}
+If you have background workers, treat them as first-class modules.
+Do not hide workers in the API service.
+Separate deployments reduce risk and make scaling easier.
+
+\section{Configuration for workers}
+Workers often need different settings.
+Keep worker-specific configuration in separate files or sections.
+This avoids accidental use of API-specific settings in background jobs.
+
+\section{Code ownership and reviews}
+Use ownership files to route reviews automatically.
+Ownership clarifies who can approve changes in critical modules.
+This is especially valuable in monorepos.
+
+\section{Directory naming}
+Use names that describe purpose, not technology.
+\code{billing/} is clearer than \code{stripe/}.
+If you change providers, the module name should still make sense.
+
+\section{Avoiding shared state}
+Global state and singletons make tests brittle.
+Prefer explicit dependency passing.
+If you must use globals, isolate them behind clear interfaces.
+
+\section{Dependency graph checks}
+Use automated checks to enforce dependency rules.
+Static analysis or build-time rules can prevent accidental coupling.
+Manual policing does not scale.
+
+\section{Example module layout}
+\begin{lstlisting}[language=YAML]
+tasks/
+  api/
+  domain/
+  services/
+  repo/
+  tests/
+\end{lstlisting}
+
+\section{Monorepo tooling}
+If you use a monorepo, invest in tooling:
 \begin{itemize}[nosep]
-  \item come from environment variables
-  \item be validated at startup
-  \item be observable (log the config shape, not secrets)
+  \item fast incremental builds
+  \item targeted test runs
+  \item dependency graph visualization
 \end{itemize}
+
+\section{Release boundaries}
+Some modules need slower release cycles.
+Make those boundaries explicit so you can deploy safely.
+If everything releases together, risk increases.
+
+\section{What good structure optimizes for}
+Structure is not a style preference.
+It optimizes for change speed, risk isolation, and developer cognition.
+If you can answer \emph{where does this change belong} in under a minute, you are winning.
+
+\section{Evolution stages}
+Early projects can be flat because everything changes together.
+Mid-stage systems need boundaries as teams grow.
+At scale, boundaries become contracts with explicit owners, versioning, and release controls.
+Revisit structure at each growth stage rather than locking in the first layout forever.
+
+\section{Bounded context mapping}
+Not all domains belong in the same module.
+Use bounded contexts to map which concepts share language and data.
+Cross-context data should flow through explicit interfaces rather than implicit imports.
+
+\section{Module size thresholds}
+Set a rough size ceiling to trigger a split.
+For example, if a module exceeds 10 to 15 public entry points, it may be too broad.
+The threshold is not strict, but it creates a conversation before the module becomes a monolith.
+
+\section{API versioning layout}
+If you support multiple API versions, reflect that in the structure.
+Keep \code{v1/} and \code{v2/} handlers separate while sharing core logic.
+Avoid duplicating entire stacks; route version differences to thin adapter layers.
+
+\section{Cross-cutting concerns}
+Logging, metrics, tracing, and feature flags are cross-cutting.
+Centralize their setup in a shared infrastructure module.
+Avoid sprinkling ad-hoc initialization throughout feature modules.
+
+\section{Feature flags}
+Keep flags in a dedicated package with typed accessors.
+Do not read flag values directly from the SDK in every handler.
+This keeps behavior changes observable and testable.
+
+\section{Configuration hierarchy}
+Establish a clear order: defaults, environment overrides, secrets.
+Document the hierarchy and validate it on startup.
+If configuration is ambiguous, runtime behavior becomes guesswork.
+
+\section{Data contracts and schemas}
+If you exchange JSON or events, store schemas in a stable location.
+Schema folders provide a source of truth for validation and evolution.
+Treat schema changes as code changes with reviews and tests.
+
+\section{Operational tooling}
+Many systems need CLI or admin tooling.
+Keep these in \code{tools/} or \code{admin/} rather than hiding them inside API packages.
+Clear placement makes audits and access control easier.
+
+\section{Deployment topology}
+Structure should mirror how services deploy.
+If you deploy a worker separately, keep it in its own module with a clear entry point.
+Shared code can live in \code{lib/}, but deployment boundaries must remain explicit.
+
+\section{Dependency inversion in practice}
+Interfaces belong in the core, implementations in infrastructure.
+Avoid the temptation to place interfaces with their implementations.
+This single decision keeps tests fast and makes swapping providers practical.
+
+\section{Decision logs}
+Architecture decisions live in a lightweight \code{docs/adr/} folder.
+A short decision log explains why the structure is the way it is.
+This reduces repeated debates and clarifies tradeoffs for new engineers.
+
+\section{Onboarding path}
+New engineers should have a path through the repo.
+Provide a \code{README} in each major module with its purpose and entry points.
+Onboarding time is a direct measure of structural clarity.
+
+\section{Structural refactors}
+Refactors are easier with checkpoints.
+Plan a migration path and move code in small steps.
+Large structural changes without checkpoints often stall and get reverted.
+
+\section{Enforcement tooling}
+Automate structure rules.
+Use static analysis to prevent forbidden imports.
+If rules are manual, they will eventually be ignored.
+
+\section{Example dependency rule config}
+\begin{lstlisting}[language=YAML]
+rules:
+  core:
+    allow:
+      - core
+      - domain
+  api:
+    allow:
+      - core
+      - validation
+  infra:
+    allow:
+      - core
+      - infra
+\end{lstlisting}
+
+\section{Case study: split a growing module}
+A \code{billing/} module grows into a catch-all for invoices, payments, and tax.
+Split into \code{invoices/}, \code{payments/}, and \code{tax/} with explicit interfaces.
+Add a thin \code{billing/} façade for cross-module orchestration.
+The split reduces coupling and lets teams deploy changes independently.
+
+\section{Ownership matrix}
+Ownership should be explicit and easy to find.
+Keep a simple ownership matrix for modules and services.
+It makes review routing and incident response faster.
+
+\section{Example ownership table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Module & Owner team \\
+\midrule
+tasks & productivity-platform \\
+billing & revenue-systems \\
+notifications & messaging-foundations \\
+\bottomrule
+\end{tabularx}
+
+\section{README templates}
+Module READMEs should follow a common template.
+Consistency reduces onboarding time and clarifies boundaries.
+
+\section{Example module README}
+\begin{lstlisting}[language=YAML]
+module: tasks
+purpose: task lifecycle and assignment
+entry_points:
+  - api/handlers.py
+  - services/task_service.py
+dependencies:
+  - core/identity
+  - infra/queue
+owner: productivity-platform
+\end{lstlisting}
+
+\section{Versioned modules}
+Large domains sometimes need versioned APIs internally.
+Keep versioned modules side by side rather than deeply nested.
+Deprecation is easier when old versions are isolated.
+
+\section{Shared schema registry}
+If you publish events, use a shared schema registry folder.
+Keep schemas close to the publisher and replicate to consumers.
+Schema reviews are part of code review, not an afterthought.
+
+\section{Build targets}
+Structure should reflect build targets.
+If you build a worker and an API, keep distinct entry points and build files.
+Avoid a single build target that hides multiple services.
+
+\section{Testing pyramid alignment}
+The code layout should align with the testing pyramid.
+Fast unit tests live with core logic.
+Integration tests mirror API and data access structure.
+End-to-end tests sit at the top and target deployed boundaries.
+
+\section{Migration plan for structure changes}
+When you restructure, define a migration plan with checkpoints.
+Move one module at a time and keep API compatibility.
+Track the plan in a short document so the team stays aligned.
+
+\section{Anti-patterns}
+Watch for these structural smells:
+\begin{itemize}[nosep]
+  \item circular dependencies between domains
+  \item modules that expose too many entry points
+  \item infrastructure leaking into core logic
+\end{itemize}
+
+\section{Pattern: facade modules}
+Facade modules help you expose a stable surface.
+They hide internal reorganization while keeping callers stable.
+Use facades when refactors are frequent.
+
+\section{Pattern: replaceable adapters}
+Keep adapters thin and replaceable.
+If an adapter becomes complex, it is usually mixing business logic.
+Move logic into the core and keep adapters focused on translation.
+
+\section{Lifecycle of a new module}
+Start with a narrow scope and a single entry point.
+Add explicit dependencies and owners.
+As the module grows, add tests, docs, and release notes.
+
+\begin{checklistbox}{Checklist: project structure}
+\begin{itemize}[nosep]
+  \item Make layers explicit.
+  \item Keep core logic framework-agnostic.
+  \item Limit cross-layer imports.
+\end{itemize}
+\end{checklistbox}

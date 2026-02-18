@@ -1,30 +1,29 @@
 \chapter{Event-driven systems}
 
-Events can decouple services.
-They can also hide complexity.
+Event-driven systems decouple producers and consumers.
+They can scale well, but they require discipline in schema and delivery guarantees.
 
-\section{When events help}
+\section{Events and commands}
+Events describe something that happened.
+Commands request something to happen.
+Keep them distinct.
+
+\section{Schemas}
+Define event schemas and version them.
+Use a schema registry if you have multiple consumers.
+
+\section{Ordering and duplication}
+Assume events can arrive out of order and more than once.
+Design handlers to be idempotent.
+
+\section{Backpressure}
+Consumers must handle overload gracefully.
+Use queue limits and retry policies.
+
+\begin{checklistbox}{Checklist: event-driven}
 \begin{itemize}[nosep]
-  \item multiple consumers of the same business fact
-  \item asynchronous workflows
-  \item audit and replay requirements
+  \item Version event schemas.
+  \item Design idempotent consumers.
+  \item Expect reordering and duplication.
 \end{itemize}
-
-\section{When events hurt}
-\begin{itemize}[nosep]
-  \item low maturity observability
-  \item unclear ownership of event schemas
-  \item strong consistency requirements
-\end{itemize}
-
-\section{Event schemas}
-Treat event schemas like APIs.
-Version them.
-Document them.
-Test them.
-
-\begin{warningbox}{Warning: ``just add an event''}
-Adding events is easy.
-Operating an event-driven system is the hard part.
-Budget for tooling, tracing, and replay.
-\end{warningbox}
+\end{checklistbox}

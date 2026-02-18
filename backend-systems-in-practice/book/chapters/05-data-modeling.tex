@@ -1,40 +1,412 @@
 \chapter{Data modeling}
 
-Your database schema is an interface.
-Treat it with the same care as an API.
+Data is the backend's most important interface.
+Schema decisions are long-lived and difficult to change.
+
+\section{Entities and relationships}
+Start with the core entities and how they relate.
+Use a small number of tables with clear ownership.
 
 \section{Constraints}
-Constraints prevent data drift.
-Prefer database constraints for invariants:
-\begin{itemize}[nosep]
-  \item \code{NOT NULL} for required fields
-  \item \code{UNIQUE} for natural keys
-  \item foreign keys where they help integrity
-\end{itemize}
+Use database constraints for uniqueness and referential integrity.
+Do not rely solely on application checks.
 
-\section{Indexes}
-Indexes are a performance feature and a cost.
-Index what you query.
-Do not index what you do not query.
+\section{Constraint examples}
+Constraints encode invariants directly in the database.
+\begin{lstlisting}[language=SQL]
+ALTER TABLE tasks
+  ADD CONSTRAINT tasks_status_check
+  CHECK (status IN ('open', 'in_progress', 'done'));
+\end{lstlisting}
 
 \begin{lstlisting}[language=SQL]
 CREATE TABLE tasks (
-  id            BIGSERIAL PRIMARY KEY,
-  project_id    BIGINT NOT NULL,
-  title         TEXT NOT NULL,
-  status        TEXT NOT NULL,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL
 );
-
-CREATE INDEX idx_tasks_project_created
-ON tasks (project_id, created_at DESC);
 \end{lstlisting}
 
-\begin{warningbox}{Warning: migrations are production code}
-Treat migrations like code that can fail.
-Make them safe to run twice, and measure how long they take.
-\end{warningbox}
+\section{Indexes}
+Indexes are a performance contract.
+Add indexes for your query patterns, not for every column.
 
-\section{Denormalization}
-Denormalize only when it removes real cost.
-Make denormalization explicit, with a job that keeps it consistent.
+\section{Normalization and denormalization}
+Normalize to reduce duplication and ensure correctness.
+Denormalize when read performance is more important than write complexity.
+
+\section{Data ownership}
+Each table should have a clear owner in the domain model.
+Ownership determines which service or module is allowed to write the data.
+
+\section{Query patterns}
+Design the schema around the queries you will actually run.
+If you regularly filter tasks by project and status, index both fields.
+
+\section{Example query patterns}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Query & Suggested index \\
+\midrule
+List tasks by project and status & (\code{project\_id}, \code{status}, \code{created\_at}) \\
+Fetch task by id & (id) \\
+List recent activity by task & (\code{task\_id}, \code{created\_at}) \\
+\bottomrule
+\end{tabularx}
+
+\section{Migrations}
+Schema changes should be backward compatible.
+Add columns before you use them, and remove them later.
+
+\section{Migration example}
+\begin{lstlisting}[language=SQL]
+BEGIN;
+ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 0;
+CREATE INDEX idx_tasks_project_status ON tasks(project_id, status);
+COMMIT;
+\end{lstlisting}
+
+\section{Soft deletes}
+Soft deletes keep history but complicate queries.
+If you need history, consider an audit table instead of a \code{deleted} flag everywhere.
+
+\section{Audit trails}
+Write audit logs for critical actions like permissions changes and deletions.
+These logs are essential for debugging and compliance.
+
+\section{Data retention}
+Not all data should live forever.
+Define retention policies for logs, activity, and temporary data.
+
+\section{Backfills}
+If you add a new column, you may need to backfill old data.
+Plan backfills as separate jobs so they do not block user-facing requests.
+
+\section{Transactions and isolation}
+Use transactions to keep multi-step changes consistent.
+Keep them short and avoid long-running queries inside a transaction.
+
+\section{Read replicas}
+Read replicas improve scale but introduce replication lag.
+If you require read-after-write behavior, read from the primary.
+
+\section{Explain plans}
+Use query explain plans to understand performance.
+Add indexes only when they improve the actual query plan.
+
+\section{Integrity checks}
+Schedule periodic integrity checks to catch data drift.
+These are especially important after large migrations or backfills.
+
+\section{Write amplification}
+Denormalization and heavy indexing increase write cost.
+Measure write latency before adding more indexes.
+
+\section{Schema evolution}
+Use additive changes first, then migrate clients, then remove old fields.
+This minimizes downtime and unexpected client failures.
+
+\section{Partitioning}
+Partitioning can keep large tables manageable.
+Choose a partition key that matches query patterns, such as project id or date.
+
+\section{Backups and recovery}
+Backups are part of the data model.
+If you cannot restore data reliably, your model is not production-ready.
+
+\section{Data locality}
+Place data close to the services that use it most.
+Cross-region reads add latency and can create consistency surprises.
+
+\section{Case study: activity log growth}
+Activity logs grow faster than core entities.
+If you store them in the same table as tasks, reads and writes will slow down.
+A dedicated activity table with time-based partitioning keeps growth manageable.
+
+\section{Data validation at rest}
+Use constraints and types to prevent invalid data from being stored.
+If your database supports it, use check constraints for enums and ranges.
+
+\section{Null handling}
+Nulls are easy to add and hard to reason about.
+Define when null is allowed and what it means.
+If a field is required for business logic, make it \code{NOT NULL}.
+
+\section{Data lifecycle and classification}
+Not all data is equally sensitive.
+Classify fields early:
+\begin{itemize}[nosep]
+  \item public metadata (project name)
+  \item internal operational data (status transitions)
+  \item sensitive data (user identifiers, billing details)
+\end{itemize}
+
+Classification drives encryption, access controls, and retention.
+
+\section{Hot and cold data}
+Separate hot data from cold data to keep critical queries fast.
+For example, keep active tasks in a primary table and archive completed tasks.
+This keeps indexes small and improves cache hit rates.
+
+\section{Reference data}
+Some data changes rarely, such as status codes or categories.
+Model it as reference tables and enforce foreign keys.
+This reduces duplication and keeps validation consistent.
+
+\section{Sharding criteria}
+If the system grows, sharding may be necessary.
+Pick a key that keeps related data together, such as project id.
+Avoid sharding on fields that cause cross-shard queries for core workflows.
+
+\section{Event tables}
+Event tables store a log of changes instead of only the current state.
+They are useful for audits and analytics.
+If you use event tables, plan retention and compaction to control size.
+
+\section{Change data capture}
+Some systems need real-time streams of data changes.
+Use change data capture or an outbox to publish changes to other services.
+This keeps integration logic out of the primary request path.
+
+\section{Precision and types}
+Choose data types that match the domain:
+\begin{itemize}[nosep]
+  \item use \code{DECIMAL} for money
+  \item use \code{TIMESTAMP WITH TIME ZONE} for time
+  \item avoid free-text for enums
+\end{itemize}
+
+\section{Testing with realistic data}
+Synthetic data that is too small hides problems.
+Keep a staging dataset that reflects production volume and skew.
+This helps validate query plans and migration timing.
+
+\section{Hotspot avoidance}
+Some keys receive a disproportionate amount of traffic.
+If a single project or user dominates traffic, you can create hotspots.
+Mitigate hotspots with sharding, caching, or dedicated queues.
+
+\section{Index maintenance}
+Indexes speed reads but slow writes.
+Periodically review unused or low-value indexes.
+Drop indexes that no longer align with real query patterns.
+
+\section{Data fixes and runbooks}
+Production data will need fixes.
+Write a runbook for safe data changes:
+\begin{itemize}[nosep]
+  \item define the scope and affected records
+  \item run changes in small batches
+  \item verify metrics and constraints after the change
+\end{itemize}
+
+\section{PII and compliance}
+Personally identifiable information requires special handling.
+Apply stricter access controls and limit exposure in logs.
+If you must delete user data, plan for hard deletes or anonymization.
+
+\section{Analytics schema}
+Operational schemas are not always ideal for analytics.
+Use a separate analytics schema or warehouse for reporting.
+This protects the primary database from heavy reporting queries.
+
+\section{Time-series data}
+Time-series data like metrics and events grows quickly.
+Use time-based partitioning and retention policies.
+Avoid mixing long-term time-series data with transactional tables.
+
+\section{Foreign keys and deletes}
+Define delete behavior explicitly.
+Use \code{ON DELETE RESTRICT} for critical data and \code{ON DELETE CASCADE} only when safe.
+Unexpected cascades can delete far more data than intended.
+
+\section{Version columns}
+Version columns make data changes traceable.
+They support optimistic locking and conflict detection.
+If you update a record, increment its version and record the timestamp.
+
+\section{Multi-tenant schemas}
+For multi-tenant data, choose a strategy early:
+\begin{itemize}[nosep]
+  \item shared tables with a \code{tenant\_id} column
+  \item separate schemas per tenant
+  \item separate databases for large tenants
+\end{itemize}
+
+Each strategy changes operational complexity and isolation.
+
+\section{Data quality monitoring}
+Data quality is an operational metric.
+Track null rates, duplicate keys, and constraint violations.
+If you do not measure data quality, it will regress silently.
+
+\section{Archival strategy}
+Define what happens when data ages out.
+Archive to cheaper storage or delete after the retention window.
+Make the archival process visible and reversible.
+
+\section{Access patterns and tooling}
+The way you access data shapes the schema.
+If you use an ORM, understand its query patterns and add indexes accordingly.
+If you write raw SQL, standardize queries and avoid ad-hoc joins.
+
+\section{Partitioning example}
+Partitioning is only useful when it matches access patterns.
+For a task system, time-based partitioning is common for activity logs:
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Table & Partition key \\
+\midrule
+activity\_log & month by created\_at \\
+tasks & project\_id or created\_at \\
+\bottomrule
+\end{tabularx}
+
+\section{RPO and RTO}
+Backups should meet business objectives.
+Define recovery point objective (RPO) and recovery time objective (RTO) per dataset.
+If you cannot meet them, adjust either the tooling or the expectations.
+
+\section{Materialized views}
+If you need expensive aggregates, consider materialized views.
+They trade storage and refresh complexity for faster reads.
+Document refresh schedules and acceptable staleness.
+
+\section{Data governance}
+Define who can change schema, who can access production data, and how audits are performed.
+Governance should be lightweight but explicit to avoid accidental exposure.
+
+\section{Schema documentation}
+Schema docs should live near the code.
+At minimum, document table purpose, key fields, and ownership.
+Good documentation speeds onboarding and reduces misuses.
+
+\section{Backfill plan example}
+Backfills should be treated like data migrations:
+\begin{itemize}[nosep]
+  \item add the new column with a default
+  \item deploy code that reads both old and new fields
+  \item run a backfill in batches with progress tracking
+  \item validate counts and constraints
+  \item remove the old field after verification
+\end{itemize}
+
+\section{Migration phases}
+Large migrations work best in explicit phases:
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Phase & Goal \\
+\midrule
+Prepare & add schema changes and deploy dual-read code \\
+Backfill & migrate existing records in controlled batches \\
+Cutover & switch writers to the new schema \\
+Cleanup & remove deprecated fields and indexes \\
+\bottomrule
+\end{tabularx}
+
+\section{Validation queries}
+After a migration, verify the data with simple queries:
+\begin{lstlisting}[language=SQL]
+SELECT COUNT(*) FROM tasks WHERE priority IS NULL;
+SELECT COUNT(*) FROM tasks WHERE project_id IS NULL;
+SELECT status, COUNT(*) FROM tasks GROUP BY status;
+\end{lstlisting}
+
+\section{Sampling for checks}
+Full scans can be expensive.
+Use sampling for daily checks and full scans for scheduled audits.
+Make the sampling strategy part of the runbook.
+
+\section{Indexing case study}
+Assume most reads are \code{GET /tasks?project=id}.
+An index on \code{project\_id} is required, but adding \code{status} can improve filtering.
+Measure the query plan before and after to confirm the index is used.
+
+\section{Retention and purge jobs}
+Retention is not just a policy, it is a job.
+Schedule purge jobs and track their runtime and impact.
+If a purge job takes hours, it will compete with production traffic.
+
+\section{Data drift monitoring}
+Data can drift after migrations and backfills.
+Monitor for drift with periodic checks:
+\begin{itemize}[nosep]
+  \item compare counts between old and new columns
+  \item validate enums against reference tables
+  \item sample rows for manual verification
+\end{itemize}
+
+\section{Schema example}
+Keeping schema examples in the book makes the discussion concrete:
+\begin{lstlisting}[language=SQL]
+CREATE TABLE projects (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE tasks (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL
+);
+\end{lstlisting}
+
+\section{Index and query example}
+Indexes should map directly to hot queries:
+\begin{lstlisting}[language=SQL]
+CREATE INDEX idx_tasks_project_status
+ON tasks(project_id, status, created_at);
+
+SELECT id, title
+FROM tasks
+WHERE project_id = 'proj_7' AND status = 'open'
+ORDER BY created_at DESC
+LIMIT 50;
+\end{lstlisting}
+
+\section{Audit table example}
+Audit tables preserve history without bloating primary tables:
+\begin{lstlisting}[language=SQL]
+CREATE TABLE task_audit (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  action TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL
+);
+\end{lstlisting}
+
+\section{Data dictionary example}
+A short data dictionary clarifies meaning and ownership:
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Field & Meaning \\
+\midrule
+projects.owner\_id & user who owns the project \\
+tasks.status & lifecycle state of a task \\
+tasks.created\_at & time the task was created \\
+task\_audit.action & action performed on the task \\
+task\_audit.actor\_id & user who performed the action \\
+\bottomrule
+\end{tabularx}
+
+\begin{patternbox}{Pattern: model change as an interface change}
+If a schema change breaks clients, treat it like a breaking API change.
+\end{patternbox}
+
+\begin{checklistbox}{Checklist: data modeling}
+\begin{itemize}[nosep]
+  \item Use constraints for integrity.
+  \item Index the queries you actually run.
+  \item Migrate in small, reversible steps.
+\end{itemize}
+\end{checklistbox}

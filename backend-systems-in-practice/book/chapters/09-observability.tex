@@ -1,35 +1,398 @@
 \chapter{Observability}
 
-If you cannot see the system, you cannot operate it.
+You cannot operate what you cannot see.
+Observability is the difference between guessing and knowing.
 
 \section{Logs}
-Logs should be structured.
-Include:
-\begin{itemize}[nosep]
-  \item timestamp
-  \item level
-  \item request id / trace id
-  \item route name
-  \item user id (if applicable)
-  \item duration
-\end{itemize}
+Logs are for detailed events and debugging.
+Use structured logs with stable fields.
 
 \section{Metrics}
-A minimal set:
+Metrics summarize system health.
+Track rate, errors, and duration for each endpoint.
+
+\section{Tracing}
+Distributed traces show where time is spent across services.
+Use tracing to find the true bottleneck.
+
+\section{Dashboards}
+Dashboards should answer specific questions:
 \begin{itemize}[nosep]
-  \item request rate
-  \item error rate
-  \item latency percentiles
-  \item saturation (CPU, memory, DB connections)
+  \item Is the system up?
+  \item Is it fast enough?
+  \item Are errors increasing?
 \end{itemize}
 
-\section{Traces}
-Traces connect services.
-They answer: where did the time go?
-Always propagate correlation ids.
-
-\begin{patternbox}{Pattern: one dashboard per service}
-A service should have a default dashboard that any engineer can use.
-Put it in the repo.
-Treat it as code.
+\begin{patternbox}{Pattern: instrument the edge}
+Instrument request entry and exit points.
+This gives you complete coverage of the user-facing path.
 \end{patternbox}
+
+\section{Structured log example}
+Structured logs should use stable keys:
+\begin{lstlisting}[language=JSON]
+{
+  "level": "info",
+  "request_id": "req_42",
+  "user_id": "user_7",
+  "endpoint": "POST /projects/:id/tasks",
+  "status": 201,
+  "latency_ms": 84
+}
+\end{lstlisting}
+
+\section{RED and USE}
+The RED method tracks Rate, Errors, Duration.
+The USE method tracks Utilization, Saturation, Errors.
+Use RED for request paths and USE for system resources.
+
+\section{SLIs and SLOs}
+Define a small set of service level indicators.
+Latency p95 and availability are common starting points.
+SLOs are targets, not guarantees.
+
+\section{Tracing context}
+Tracing requires consistent context propagation.
+Include a request id in every log and response.
+Ensure background jobs carry the same trace context.
+
+\section{Sampling}
+Trace sampling reduces overhead but can hide tail issues.
+Use adaptive sampling to capture slow requests.
+Keep error traces at a higher sampling rate.
+
+\section{Alert design}
+Alerts should map to user impact.
+Avoid alerting on internal metrics without context.
+If an alert does not trigger an action, remove it.
+
+\section{Dashboard layers}
+Create dashboards at three levels:
+\begin{itemize}[nosep]
+  \item service overview for on-call
+  \item endpoint detail for debugging
+  \item dependency health for incident response
+\end{itemize}
+
+\section{Log retention}
+Logs have cost and compliance implications.
+Define retention policies and restrict access to sensitive logs.
+
+\section{Incident timeline}
+Observability is about time.
+When incidents happen, you need to see the sequence of events.
+Ensure logs, metrics, and traces share timestamps and identifiers.
+
+\section{Error budgets}
+Error budgets are the currency of reliability.
+If you burn the budget, pause feature work and focus on stability.
+This keeps operational work aligned with product priorities.
+
+\section{Examples of SLIs}
+Common SLIs include:
+\begin{itemize}[nosep]
+  \item availability of \code{GET /tasks}
+  \item p95 latency for \code{POST /tasks}
+  \item background job success rate
+\end{itemize}
+
+\section{Instrumentation coverage}
+Coverage should include all critical paths:
+\begin{itemize}[nosep]
+  \item API request entry and exit
+  \item database queries
+  \item external API calls
+  \item queue publish and consume
+\end{itemize}
+
+\section{Metrics naming}
+Use consistent metric names and labels.
+Avoid high-cardinality labels like user id.
+High cardinality makes metrics expensive and hard to query.
+
+\section{Example metrics}
+\begin{lstlisting}[language=JSON]
+{
+  "metric": "http_request_duration_ms",
+  "labels": {"route": "/tasks", "method": "GET"},
+  "value": 42
+}
+\end{lstlisting}
+
+\section{Trace-to-log correlation}
+Traces are most useful when linked to logs.
+Include trace and span ids in log fields.
+This allows fast navigation from a trace to the exact log lines.
+
+\section{Golden signals}
+Use the four golden signals:
+\begin{itemize}[nosep]
+  \item latency
+  \item traffic
+  \item errors
+  \item saturation
+\end{itemize}
+
+\section{Alert fatigue}
+Too many alerts reduce response quality.
+Review alerts monthly and delete those that do not trigger action.
+
+\section{Runbooks}
+Every alert should link to a runbook.
+Runbooks should include diagnosis steps and mitigation actions.
+If a runbook is missing, the alert is incomplete.
+
+\section{Log levels}
+Define when to use \code{debug}, \code{info}, \code{warn}, and \code{error}.
+If everything is an error, nothing is.
+Consistent levels help reduce noise and improve incident triage.
+
+\section{Log hygiene}
+Logs should be concise and actionable.
+Avoid dumping entire request bodies.
+Redact secrets and personal data before logging.
+
+\section{Correlation ids}
+Use a single correlation id per request across services.
+Return it in responses so support can ask for it.
+Correlation ids turn vague bug reports into precise searches.
+
+\section{Metrics types}
+Use counters for rates, gauges for current values, and histograms for latency.
+Histograms are essential for p95 and p99 calculations.
+Avoid averaging latency, which hides tail behavior.
+
+\section{Histogram buckets}
+Pick buckets that match user expectations.
+If user timeouts are at 2s, ensure your histogram has buckets around 500ms, 1s, and 2s.
+Bad buckets make SLOs hard to interpret.
+
+\section{Trace span design}
+Create spans for key operations: handler, database, external calls.
+Do not create a span for every function.
+Span design is about clarity, not completeness.
+
+\section{Context propagation}
+Propagate trace context through queues and background jobs.
+If you drop context, traces become useless at service boundaries.
+Ensure context flows through async code paths.
+
+\section{Metrics cardinality}
+Cardinality can break your metrics system.
+Avoid labels like user id, order id, or request id.
+If you must label by tenant, limit the number of tenants in metrics.
+
+\section{Exemplars}
+Exemplars link metrics to trace samples.
+They help you jump from a p99 spike to a real trace.
+Use exemplars on latency and error metrics.
+
+\section{Synthetics}
+Synthetic probes catch issues before users do.
+Run a small set of critical flows on a schedule.
+Treat synthetic failures as early warnings, not as noise.
+
+\section{Real user monitoring}
+RUM captures client latency and failures.
+Client metrics can reveal DNS and network issues that servers cannot see.
+If you have a frontend, RUM is a complement to server metrics.
+
+\section{Queue and worker metrics}
+Background jobs need their own visibility.
+Track queue depth, job latency, and retries.
+Alert on growing backlog rather than individual job failures.
+
+\section{Dependency monitoring}
+External dependencies should have their own health metrics.
+Track error rates and latency for each dependency separately.
+This helps you avoid blaming the wrong subsystem.
+
+\section{Alert severity}
+Define severity levels and expected response times.
+Severity 1 should map to user impact and page on-call.
+Severity 3 can be ticketed for later investigation.
+
+\section{On-call handoff}
+Shift changes should include a brief operational summary.
+Outstanding alerts and known risks should be documented.
+Handoffs reduce repeated work and missed context.
+
+\section{Incident review}
+Every major incident should produce a timeline and a corrective action list.
+Use observability data to validate the timeline.
+Review what was missing in metrics or logs and add it.
+
+\section{Example alert rule}
+\begin{lstlisting}[language=YAML]
+alert: HighErrorRate
+expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+for: 10m
+labels:
+  severity: "sev2"
+annotations:
+  summary: "High 5xx error rate"
+\end{lstlisting}
+
+\section{Observability maturity}
+Start with logs and metrics.
+Add tracing once you have a stable logging and metrics baseline.
+Avoid over-investing in tracing before you know what you need to trace.
+
+\section{Cost management}
+Observability is not free.
+Set budgets for log volume, metric cardinality, and trace sampling.
+Cost controls prevent future rollbacks of visibility.
+
+\section{Time synchronization}
+All observability depends on accurate time.
+Ensure systems use synchronized clocks.
+Without time sync, cross-service timelines are misleading.
+
+\section{Service maps}
+Service maps show dependencies and call paths.
+They are most useful when tied to real traffic data.
+Keep maps updated or they quickly become stale.
+
+\section{Health checks}
+Expose simple health checks for readiness and liveness.
+Readiness should verify dependencies, liveness should be minimal.
+Use health checks in deploy pipelines and orchestration systems.
+
+\section{SLO documentation}
+Document SLOs alongside the metrics that power them.
+SLO docs should include the query and the owner.
+SLOs without owners are just numbers.
+
+\section{Example SLO document}
+\begin{lstlisting}[language=YAML]
+slo: "task_create_availability"
+target: 99.9
+window: 30d
+metric: "http_requests_total"
+filter: "route=/tasks method=POST status=2xx"
+owner: "productivity-platform"
+\end{lstlisting}
+
+\section{Sampling strategy}
+Sampling should reflect business importance.
+For critical endpoints, sample at a higher rate.
+For low-value endpoints, sample aggressively to reduce cost.
+
+\section{Sampling table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Endpoint class & Sampling rate \\
+\midrule
+Checkout and billing & 50\% \\
+Core CRUD & 10\% \\
+Background jobs & 5\% \\
+\bottomrule
+\end{tabularx}
+
+\section{Event logging}
+Events such as user signups and payments deserve dedicated logs.
+Event logs are different from debug logs and should be structured.
+Treat events as data, not just text.
+
+\section{Data retention tiers}
+Not all logs need the same retention.
+Keep high-value security logs longer than debug logs.
+Tiered retention reduces cost without losing critical evidence.
+
+\section{Privacy and compliance}
+Observability data can contain personal information.
+Define what must be redacted at the source.
+Compliance requirements should drive retention and access controls.
+
+\section{Chaos drills}
+Use drills to test observability, not just reliability.
+If a failure occurs and you cannot see it, instrumentation is insufficient.
+Drills reveal blind spots before real incidents do.
+
+\section{Observability reviews}
+Review observability alongside feature reviews.
+Ask which metrics, logs, and traces should be added for new features.
+This keeps instrumentation aligned with product changes.
+
+\section{Debugging workflow}
+Start with dashboards, then traces, then logs.
+A consistent workflow reduces time to resolution.
+Document the workflow so new on-call engineers can follow it.
+
+\section{Log sampling}
+High-volume services may need log sampling.
+Sample only low-value logs and keep error logs unsampled.
+If you sample, include the sampling rate in log metadata.
+
+\section{Instrumentation backlog}
+Track missing instrumentation in a backlog.
+Close the loop after incidents by adding the missing signals.
+Instrumentation work should be planned, not ad hoc.
+
+\section{Release gates}
+Set a release gate that checks key SLOs.
+If error budgets are exhausted, delay the release.
+Release gates tie observability to operational decisions.
+
+\section{Alert tuning loop}
+Alerts should be tuned after incidents.
+If an alert fired without action, adjust or remove it.
+Alert tuning is continuous, not a one-time task.
+
+\section{Dashboard ownership}
+Every dashboard should have an owner.
+Without owners, dashboards become stale quickly.
+Ownership keeps metrics accurate and relevant.
+
+\section{Burn rate alerts}
+Use burn rate alerts for SLOs.
+Burn rates detect fast and slow budget consumption.
+This prevents surprises at the end of the SLO window.
+
+\section{Log search practices}
+Standardize log search queries for common incidents.
+Store shared queries in runbooks.
+This reduces time to diagnose recurring issues.
+
+\section{Exemplar-driven debugging}
+If you use exemplars, document how to jump from a metric spike to a trace.
+Exemplar workflows save time during high-pressure incidents.
+Teach this workflow in on-call training.
+
+\section{Metric naming conventions}
+Use a consistent naming scheme for metrics.
+Include the unit in the name, such as \code{\_seconds} or \code{\_bytes}.
+Consistent naming reduces confusion across teams.
+
+\section{SLI calculation example}
+\begin{lstlisting}[language=YAML]
+sli:
+  name: "task_create_availability"
+  good_events: "http_requests_total{route=/tasks,method=POST,status=2xx}"
+  total_events: "http_requests_total{route=/tasks,method=POST}"
+\end{lstlisting}
+
+\section{Error budget policy}
+Define what happens when the error budget is depleted.
+Common actions include slowing releases or focusing on reliability work.
+Policy clarity prevents debates during incidents.
+
+\section{Playbook template}
+\begin{lstlisting}[language=YAML]
+playbook:
+  alert: "HighErrorRate"
+  first_checks:
+    - "check recent deploys"
+    - "inspect dependency latency"
+  mitigations:
+    - "rollback"
+    - "disable feature flag"
+\end{lstlisting}
+
+\begin{checklistbox}{Checklist: observability}
+\begin{itemize}[nosep]
+  \item Log with stable fields.
+  \item Measure latency and error rates.
+  \item Add traces for critical flows.
+\end{itemize}
+\end{checklistbox}

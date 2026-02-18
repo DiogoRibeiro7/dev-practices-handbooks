@@ -1,6 +1,7 @@
 \chapter{Reference templates}
 
 These are minimal templates you can copy into real repositories.
+Keep them small and move logic into \code{scripts/}.
 
 \section{Python CI template}
 \begin{lstlisting}[language=YAML]
@@ -95,4 +96,127 @@ jobs:
         with:
           name: release-dist
           path: dist/
+\end{lstlisting}
+
+\section{Reusable workflow template}
+\begin{lstlisting}[language=YAML]
+name: Shared CI
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        required: true
+        type: string
+    secrets:
+      npm_token:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+      - run: npm ci
+      - run: npm test
+        env:
+          NPM_TOKEN: ${{ secrets.npm_token }}
+\end{lstlisting}
+
+\section{Docker build template}
+\begin{lstlisting}[language=YAML]
+name: Build container
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: |
+          docker build -t ghcr.io/org/app:${GITHUB_SHA} .
+      - name: Push image
+        run: |
+          echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker push ghcr.io/org/app:${GITHUB_SHA}
+\end{lstlisting}
+
+\section{Scheduled maintenance template}
+\begin{lstlisting}[language=YAML]
+name: Nightly maintenance
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/cleanup
+\end{lstlisting}
+
+\section{Matrix test template}
+\begin{lstlisting}[language=YAML]
+name: CI (matrix)
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: ["18", "20"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test
+\end{lstlisting}
+
+\section{Monorepo path-filter template}
+\begin{lstlisting}[language=YAML]
+name: CI (monorepo)
+
+on:
+  pull_request:
+    paths:
+      - "services/api/**"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./services/api/scripts/test
 \end{lstlisting}

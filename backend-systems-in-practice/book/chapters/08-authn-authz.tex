@@ -1,32 +1,403 @@
 \chapter{Authentication and authorization}
 
-Authentication answers ``who are you?''.
-Authorization answers ``what are you allowed to do?''.
+Authn proves who a user is.
+Authz decides what they are allowed to do.
+Mixing them creates security gaps.
 
 \section{Authentication}
-Common approaches:
+Common strategies include sessions, API keys, and JWTs.
+Pick one and document its lifecycle and rotation policy.
+
+\section{Authorization}
+Authorization should be explicit and testable.
+Use roles or permissions and keep them small.
+
+\section{Resource ownership}
+Many systems can model access as ownership or membership.
+Capture it in the data model and enforce it at the boundary.
+
+\section{Service-to-service auth}
+Use short-lived tokens and mutual TLS when possible.
+Avoid long-lived static keys.
+
+\begin{warningbox}{Warning: auth in the UI is not enough}
+Never rely on frontend checks to enforce permissions.
+Always enforce authorization on the server.
+\end{warningbox}
+
+\section{Token lifecycle}
+Tokens should be short-lived and rotated regularly.
+If you use refresh tokens, store them securely and revoke them on logout.
+Document token expiration and refresh behavior for clients.
+
+\section{Session management}
+Session-based auth requires careful cookie settings.
+Use \code{HttpOnly}, \code{Secure}, and appropriate \code{SameSite} values.
+Invalidate sessions on password resets or suspicious activity.
+
+\section{Claims and scopes}
+JWT claims should be minimal and stable.
+Scopes are easier to reason about than complex roles.
+Keep a mapping table between scopes and allowed actions.
+
+\section{RBAC and ABAC}
+Role-based access control (RBAC) is easy to operate.
+Attribute-based access control (ABAC) is more flexible but harder to test.
+Choose the simplest model that meets your needs.
+
+\section{Resource checks}
+Authorization should happen before expensive work.
+Check ownership or membership before you query large datasets.
+This reduces data leakage and improves performance.
+
+\section{Service identity}
+Treat service identities like users.
+Each service should have its own identity and permissions.
+Do not share credentials across services.
+
+\section{Audit trails}
+Record authentication and authorization events.
+Audit logs help you answer who accessed what and when.
+Keep audit logs immutable and protected.
+
+\section{Key rotation}
+Keys and secrets should rotate regularly.
+Build rotation into the system so it is routine, not an emergency.
+If rotation requires downtime, the design is fragile.
+
+\section{Example policy table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Action & Required scope \\
+\midrule
+Read tasks & \code{tasks:read} \\
+Create tasks & \code{tasks:write} \\
+Delete tasks & \code{tasks:admin} \\
+\bottomrule
+\end{tabularx}
+
+\section{Error responses}
+Return \code{401} for missing or invalid credentials.
+Return \code{403} for valid credentials without permission.
+Do not leak resource existence in authorization errors.
+
+\section{Password storage}
+If you store passwords, never store them in plain text.
+Use modern hashing algorithms and a strong cost factor.
+Rotate hashing parameters when industry guidance changes.
+
+\section{MFA and step-up auth}
+Some actions need stronger authentication.
+Use step-up authentication for sensitive operations like deletions and billing changes.
+This reduces the impact of stolen tokens.
+
+\section{Delegated access}
+If users authorize third-party access, use explicit scopes and expiry.
+OAuth-style flows are common for this scenario.
+Always allow users to revoke access.
+
+\section{API keys}
+API keys should be scoped and revocable.
+Avoid user-level keys for server-to-server traffic.
+Log key usage so you can detect abuse.
+
+\section{Rate limiting}
+Auth endpoints are high-value targets.
+Apply stricter rate limits to login and token refresh endpoints.
+Return clear errors and do not leak which part failed.
+
+\section{Policy evaluation}
+Authorization checks should be centralized.
+If each endpoint rolls its own policy, rules will drift.
+Consider a policy engine when rules become complex.
+
+\section{Admin actions}
+Admin operations need extra logging and review.
+Require elevated scopes and generate audit events.
+If admin actions are not tracked, incidents are inevitable.
+
+\section{Service auth example}
+\begin{lstlisting}[language=JSON]
+{
+  "service_id": "billing-worker",
+  "scopes": ["tasks:read", "tasks:write"],
+  "issued_at": "2026-02-18T10:00:00Z"
+}
+\end{lstlisting}
+
+\section{Secret storage}
+Store secrets in a dedicated secret manager.
+Do not store secrets in code repositories or environment files.
+Access should be limited to the services that need them.
+
+\section{Threat model}
+List the threats you care about:
 \begin{itemize}[nosep]
-  \item sessions (cookies)
-  \item bearer tokens (JWT or opaque tokens)
-  \item API keys (service-to-service)
+  \item credential stuffing
+  \item token replay
+  \item privilege escalation
+  \item insider access
 \end{itemize}
 
-\section{Authorization models}
+The threat model guides which controls you implement first.
+
+\section{Identity proofing}
+Not all users are equal risk.
+For high-risk flows, add identity proofing such as verified email or phone.
+For enterprise accounts, consider domain verification before granting admin access.
+
+\section{Account lifecycle}
+Accounts have states: active, locked, disabled, deleted.
+Define how each state affects authentication and authorization decisions.
+State transitions should be auditable and reversible where possible.
+
+\section{Password resets}
+Reset tokens should be short-lived and single use.
+Do not reveal whether an email exists in the system.
+Send reset alerts and require re-authentication after password changes.
+
+\section{Session binding}
+Bind sessions to device or IP when risk warrants it.
+If the context changes significantly, require re-authentication.
+This mitigates stolen session cookies.
+
+\section{Token revocation}
+Short-lived tokens reduce risk, but revocation still matters.
+Maintain a revocation list for compromised tokens.
+If you cannot revoke, shorten expiry and rely on rotation.
+
+\section{Scope design}
+Keep scopes small and action-oriented.
+Avoid scopes that combine read and write unless necessary.
+Document scope usage with examples so clients can request the minimal set.
+
+\section{Fine-grained checks}
+Role checks alone are not sufficient for multi-tenant systems.
+Combine role checks with resource ownership checks.
+This avoids privilege escalation within the same role.
+
+\section{Policy composition}
+Complex policies should be composed, not duplicated.
+Create reusable policy functions like \code{can\_manage\_project}.
+Composition keeps policy logic consistent across endpoints.
+
+\section{Authorization at the data layer}
+Defense in depth is valuable.
+If possible, enforce row-level security or data filters in the database.
+This reduces the risk of missing checks in the application layer.
+
+\section{User impersonation}
+Support impersonation only with strict controls.
+Require explicit justification and log every impersonation action.
+Impersonation sessions should have short expiry.
+
+\section{Audit log structure}
+Audit logs should include actor, action, resource, and outcome.
+Use immutable storage or write-once retention when required.
+Include correlation ids so incidents can be traced end-to-end.
+
+\section{Key management}
+Separate keys by environment and purpose.
+Use asymmetric keys for tokens when possible.
+Rotate keys on a schedule and on incident response triggers.
+
+\section{Secret sprawl}
+Track where secrets are used.
+Rotate and prune secrets that are no longer referenced.
+Secret sprawl is a hidden security risk.
+
+\section{Service identity onboarding}
+Provision service identities using automation, not manual steps.
+Automated provisioning reduces mistakes and missing permissions.
+Store service identity metadata with owners and expiry dates.
+
+\section{Security testing}
+Add tests for authorization boundaries.
+Use negative tests that assert access is denied.
+Security tests should run in CI, not just as manual checks.
+
+\section{Auth error responses}
+Return errors that are informative without leaking sensitive details.
+Avoid differences between invalid user and invalid password responses.
+Keep response times consistent to reduce timing attacks.
+
+\section{Example policy evaluation flow}
+\begin{lstlisting}[language=Python]
+def authorize(user, action, resource):
+    if not user.is_authenticated:
+        return "unauthenticated"
+    if not has_scope(user, action):
+        return "forbidden"
+    if not owns_resource(user, resource):
+        return "forbidden"
+    return "ok"
+\end{lstlisting}
+
+\section{Incident response}
+Document how to revoke access quickly.
+Predefine emergency procedures for compromised keys or accounts.
+Fast response reduces the blast radius of auth failures.
+
+\section{Single sign-on}
+Enterprise users often require SSO.
+Support SAML or OIDC flows with clear documentation.
+Test SSO flows in staging with real identity providers.
+
+\section{Provisioning and deprovisioning}
+User provisioning should be automated when possible.
+Deprovisioning must be fast and reliable.
+If a user leaves, access should be revoked across all services.
+
+\section{Access reviews}
+Periodic access reviews catch permission creep.
+Review roles and scopes for privileged users.
+Automate review reports to reduce manual work.
+
+\section{Device trust}
+Some systems require trusted devices.
+Bind sessions to devices and require re-approval when devices change.
+Device trust helps reduce account takeover risk.
+
+\section{Consent and transparency}
+When access is delegated, capture consent with timestamps.
+Let users review and revoke consent in a self-service UI.
+Consent history helps with compliance and user trust.
+
+\section{Token format stability}
+Changing token formats can break clients.
+If you must change them, version tokens explicitly.
+Provide a clear migration window for old tokens.
+
+\section{JWT headers and key ids}
+Include a key id so verifiers can select the right public key.
+Rotate keys and publish a key set endpoint.
+Avoid manual key distribution.
+
+\section{mTLS for internal traffic}
+Mutual TLS provides strong service identity.
+It can reduce the need for API keys in internal networks.
+Use automation for certificate rotation.
+
+\section{Authorization caching}
+Authorization checks can be cached for short windows.
+Cache only when permissions change infrequently.
+Invalidate caches on role changes to avoid stale access.
+
+\section{Auth metrics}
+Track login success rates, token refresh errors, and authorization denials.
+These metrics reveal attacks and misconfigurations.
+Alert on unusual spikes in failed auth attempts.
+
+\section{Policy drift}
+As systems evolve, policy logic drifts.
+Keep policy tests in a dedicated suite.
+If policy logic changes, update the policy documentation too.
+
+\section{Example access review checklist}
 \begin{itemize}[nosep]
-  \item RBAC: roles and permissions
-  \item ABAC: attributes and policies
-  \item resource-based: ownership and ACLs
+  \item review admin users
+  \item review service account scopes
+  \item remove unused API keys
+  \item confirm MFA enrollment for privileged roles
 \end{itemize}
 
-\begin{patternbox}{Pattern: enforce authorization at the use-case boundary}
-Authorization checks should happen before side effects.
-Do not rely on client behaviour.
-\end{patternbox}
+\section{Tenant isolation}
+Multi-tenant systems require strict tenant isolation.
+Always include tenant checks in authorization rules.
+Treat missing tenant checks as security bugs.
 
-\section{Multi-service auth}
-If services call services, you need:
+\section{Account lockout}
+Lockouts can stop credential stuffing but can also be abused.
+Use progressive delays and risk scoring.
+Allow lockout recovery with verified identity.
+
+\section{MFA recovery}
+Provide recovery codes for MFA.
+Recovery codes should be single-use and revocable.
+Encourage users to rotate recovery codes after use.
+
+\section{Session limits}
+Limit concurrent sessions for sensitive accounts.
+Expose session management in user settings.
+Let users revoke sessions from a trusted device.
+
+\section{Policy as code}
+Represent policies in code with tests and code review.
+Policy changes should follow the same deployment process as other code.
+Avoid editing policy rules directly in production.
+
+\section{Credential stuffing defense}
+Use IP reputation, rate limits, and breached password detection.
+Combine signals rather than relying on a single control.
+This reduces both false positives and false negatives.
+
+\section{Example auth metrics}
+\begin{lstlisting}[language=YAML]
+metrics:
+  login_success_rate: 0.98
+  token_refresh_failures: 12
+  authz_denied_rate: 0.03
+\end{lstlisting}
+
+\section{Tenant admin boundaries}
+Tenant admins should be limited to their tenant.
+Cross-tenant access should require a separate global role.
+This prevents accidental lateral access.
+
+\section{SCIM provisioning}
+SCIM enables automated user lifecycle management.
+If you support SCIM, test both create and deprovision flows.
+Ensure SCIM actions trigger the same audit logs as manual changes.
+
+\section{API access versus user access}
+Service API access often needs different policies than user access.
+Separate scopes for machine traffic and human traffic.
+This reduces the risk of over-privileged service accounts.
+
+\section{Session timeout policy}
+Define idle and absolute timeouts for sessions.
+Idle timeouts reduce exposure for unattended sessions.
+Absolute timeouts prevent indefinite session lifetimes.
+
+\section{Key rotation playbook}
+Publish a rotation playbook with clear steps and owners.
+Practice rotations to avoid surprises during incidents.
+Rotation should be a routine operation, not an emergency.
+
+\section{Break-glass access}
+Emergency access should be rare and controlled.
+Use a separate break-glass role with short-lived access.
+Every break-glass action should create an audit event.
+
+\section{Just-in-time access}
+Grant elevated permissions only when needed.
+Just-in-time access reduces the risk of persistent over-privilege.
+Automate expiry and notify owners when access is granted.
+
+\section{Session anomaly detection}
+Detect unusual login patterns such as impossible travel.
+Flag anomalies for re-authentication or step-up checks.
+Anomaly detection reduces account takeover risk.
+
+\section{Security headers}
+Set security headers to protect session cookies and tokens.
+Use \code{Strict-Transport-Security}, \code{Content-Security-Policy}, and \code{X-Content-Type-Options}.
+Headers are part of the auth surface, not just frontend hygiene.
+
+\section{Example conditional policy}
+\begin{lstlisting}[language=YAML]
+policy:
+  action: "export_data"
+  require:
+    - scope: "data:export"
+    - mfa: true
+    - business_hours: true
+\end{lstlisting}
+
+\begin{checklistbox}{Checklist: auth}
 \begin{itemize}[nosep]
-  \item identity between services
-  \item scoped permissions
-  \item token rotation or short-lived tokens
+  \item Separate authentication and authorization.
+  \item Keep permissions minimal and explicit.
+  \item Rotate credentials regularly.
 \end{itemize}
+\end{checklistbox}

@@ -1,29 +1,423 @@
 \chapter{Reliability}
 
-Reliability is engineering for failure.
+Reliability is about the system behaving well under stress.
+It is a product feature, not just an operational concern.
 
 \section{Timeouts}
-Every network call should have a timeout.
-Every request should have a budget.
+Every network call must have a timeout.
+No timeout means a slow failure becomes an outage.
+
+\section{Retries}
+Retries can help or hurt.
+Only retry on safe operations and use exponential backoff.
 
 \section{Circuit breakers}
-If a dependency is failing, stop calling it for a while.
-Return a degraded response if possible.
+Circuit breakers prevent repeated failures from cascading.
+Open the circuit when a dependency becomes unreliable.
+
+\section{Bulkheads}
+Isolate critical resources so one component cannot starve another.
+Use separate connection pools or worker queues.
+
+\section{Graceful degradation}
+When dependencies fail, degrade gracefully.
+Serve cached data or reduced functionality.
+Degradation keeps the core user path working.
+
+\section{Error budgets}
+Reliability goals should be measurable.
+Define an error budget and track consumption.
+If the budget is burned, slow releases and fix reliability gaps.
+
+\section{Health checks}
+Use liveness and readiness checks.
+Readiness should verify critical dependencies.
+Liveness should be minimal to avoid restart loops.
+
+\section{Load shedding}
+When overload hits, shed low-value traffic first.
+Return fast errors for non-critical endpoints.
+Load shedding prevents total collapse.
 
 \section{Rate limiting}
-Rate limits protect the service.
-They also protect downstream dependencies.
+Rate limits protect the system from spikes.
+Use per-user and per-tenant limits when appropriate.
+Expose limits in responses to support client backoff.
 
-\begin{patternbox}{Pattern: protect your dependencies}
-Many outages are caused by a healthy service overwhelming an unhealthy dependency.
-Backpressure is a feature.
-\end{patternbox}
+\section{Fallbacks}
+Fallbacks are precomputed or cached responses.
+Use fallbacks for non-critical data.
+Document when a fallback is acceptable.
 
-\section{SLOs}
-Define service-level objectives:
+\section{Redundancy}
+Single points of failure kill reliability.
+Use redundant instances and multiple availability zones.
+Redundancy should include databases and caches, not just stateless services.
+
+\section{Disaster recovery}
+Disaster recovery requires tested runbooks.
+Backups are useless without restore drills.
+Define RTO and RPO targets and measure them.
+
+\section{Change management}
+Most incidents come from changes.
+Use canaries and progressive rollouts.
+Rollback should be fast and rehearsed.
+
+\section{Incident response}
+Incident response needs clear roles.
+Define incident commander, communications, and operations roles.
+Practice incident response with game days.
+
+\section{Post-incident reviews}
+Post-incident reviews focus on learning, not blame.
+Track corrective actions and verify completion.
+Reliability improves only when fixes are implemented.
+
+\section{Reliability metrics}
+Track service availability, error rates, and latency.
+Use SLOs to measure user impact.
+Metrics should be tied to alerts with clear actions.
+
+\section{Example reliability targets}
+\begin{tabularx}{\textwidth}{@{}lXr@{}}
+\toprule
+Service & SLO & Target \\
+\midrule
+Task API & availability & 99.9\% \\
+Billing API & availability & 99.95\% \\
+Worker queue & job success rate & 99.5\% \\
+\bottomrule
+\end{tabularx}
+
+\section{Chaos testing}
+Chaos tests reveal hidden dependencies.
+Run controlled failure scenarios in staging.
+Use chaos tests to validate runbooks and alerts.
+
+\section{Capacity management}
+Reliability depends on headroom.
+Keep enough capacity to handle spikes.
+Capacity reviews should happen regularly.
+
+\section{Example circuit breaker config}
+\begin{lstlisting}[language=YAML]
+circuit_breaker:
+  failure_threshold: 0.2
+  window_seconds: 60
+  open_seconds: 30
+\end{lstlisting}
+
+\section{Timeout budgets}
+Timeouts should align with latency budgets.
+If a dependency times out after your SLO, it is too slow.
+Timeouts should be short and explicit.
+
+\section{Retry budgets}
+Retries increase load and latency.
+Define a retry budget so a spike does not overload dependencies.
+Retry budgets are a key part of resilience engineering.
+
+\section{Dependency isolation}
+Critical dependencies should be isolated with bulkheads.
+Non-critical dependencies should fail open when possible.
+Isolation prevents cascading failures.
+
+\section{Multi-region failover}
+Failover should be automatic and tested.
+DNS or traffic management must support fast switching.
+Regular failover drills reduce surprises.
+
+\section{Data durability}
+Durability is part of reliability.
+Use backups with verified restore procedures.
+Measure backup success and restore time.
+
+\section{Service ownership}
+Reliability requires clear ownership.
+Every service should have an on-call owner.
+Ownership clarifies who responds during incidents.
+
+\section{Monitoring maturity}
+Start with core signals: latency, errors, saturation.
+Add traces once logs and metrics are stable.
+Instrumentation gaps should be tracked like bugs.
+
+\section{Runbook example}
+\begin{lstlisting}[language=YAML]
+runbook:
+  alert: "HighErrorRate"
+  steps:
+    - "check recent deploys"
+    - "inspect dependency latency"
+    - "rollback if needed"
+\end{lstlisting}
+
+\section{Failure mode catalog}
+Maintain a catalog of known failure modes.
+Document mitigations and detection signals.
+This reduces time to diagnose repeat incidents.
+
+\section{Reliability reviews}
+Review reliability after major changes.
+Confirm SLO impact and capacity headroom.
+Reliability reviews prevent regressions.
+
+\section{Dependency SLOs}
+Dependencies need their own SLOs.
+Track dependency error rates and latency.
+If a dependency breaks its SLO, adjust retry and fallback behavior.
+
+\section{Graceful degradation levels}
+Define degradation levels to simplify incident response.
+Each level should describe what features are disabled.
+This prevents ad-hoc decisions under pressure.
+
+\section{Degradation table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Level & Behavior \\
+\midrule
+Level 0 & full functionality \\
+Level 1 & disable non-critical features \\
+Level 2 & serve cached data only \\
+\bottomrule
+\end{tabularx}
+
+\section{Saturation signals}
+Saturation includes CPU, memory, and queue depth.
+Saturation signals are the earliest warning signs.
+Alert on sustained saturation, not short spikes.
+
+\section{Progressive delivery}
+Rollouts should be progressive and reversible.
+Use feature flags and staged rollouts.
+Progressive delivery reduces incident blast radius.
+
+\section{Synthetic monitoring}
+Synthetic probes detect failures before users do.
+Run key user flows on a schedule.
+Treat synthetic alerts as early warnings.
+
+\section{User-facing status}
+Status pages build trust during incidents.
+Update status pages with honest timelines.
+User communication is part of reliability.
+
+\section{Example rollout policy}
+\begin{lstlisting}[language=YAML]
+rollout:
+  canary_percent: 5
+  soak_minutes: 30
+  expand_percent: 25
+\end{lstlisting}
+
+\section{Hedged requests}
+Hedged requests send a second request when the first is slow.
+They reduce tail latency at the cost of extra load.
+Use them only for idempotent requests.
+
+\section{Queue resilience}
+Queues can buffer spikes but also hide issues.
+Monitor queue age and failure rate.
+If queues grow without bound, you are falling behind.
+
+\section{Feature flags}
+Feature flags enable rapid rollback.
+Keep flags short-lived and documented.
+Stale flags increase complexity and risk.
+
+\section{Operational readiness}
+Before launch, confirm runbooks and alerts exist.
+Run a game day for major features.
+Operational readiness reduces incidents after launch.
+
+\section{Resilience scorecard}
+Use a scorecard to track resilience practices.
+Scorecards highlight gaps and drive improvements.
+
+\section{Example resilience scorecard}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Practice & Status \\
+\midrule
+Timeouts on all deps & implemented \\
+Retries with jitter & implemented \\
+Runbooks per alert & partial \\
+\bottomrule
+\end{tabularx}
+
+\section{Alert quality}
+Alert quality is more important than quantity.
+If an alert does not drive action, remove it.
+Review alerts after each incident.
+
+\section{Client timeouts}
+Client timeouts must be shorter than server timeouts.
+If clients wait longer, they retry and amplify load.
+Set timeouts explicitly in SDKs.
+
+\section{Dependency mapping}
+Map critical dependencies for each service.
+Dependency maps inform incident response.
+Keep maps updated as systems evolve.
+
+\section{Error budget policy}
+Define actions when error budgets are spent.
+Examples include feature freezes and reliability sprints.
+Policies reduce debate during incidents.
+
+\section{Example error budget policy}
+\begin{lstlisting}[language=YAML]
+policy:
+  budget_burned: "pause feature releases"
+  owner: "reliability"
+\end{lstlisting}
+
+\section{Incident communications}
+Clear communication reduces confusion.
+Provide incident updates on a schedule.
+Use a template so updates stay consistent.
+
+\section{Example incident update}
+\begin{lstlisting}[language=YAML]
+update:
+  time: "10:30 UTC"
+  impact: "increased latency"
+  mitigation: "rolled back deploy"
+\end{lstlisting}
+
+\section{Failure modes}
+Document common failure modes and mitigations.
+If a failure repeats, add it to the catalog.
+This shortens future recovery times.
+
+\section{Failure mode table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Failure & Mitigation \\
+\midrule
+DB saturation & shed load, scale replicas \\
+Cache outage & bypass cache, reduce load \\
+Queue backlog & scale workers, slow producers \\
+\bottomrule
+\end{tabularx}
+
+\section{Capacity headroom}
+Maintain headroom to handle spikes.
+Headroom targets should be documented and monitored.
+Running at 100\% capacity is a reliability risk.
+
+\section{Autoscaling policies}
+Autoscaling should be based on meaningful signals.
+CPU alone is insufficient for queue-heavy systems.
+Use queue depth and latency metrics for autoscaling.
+
+\section{Traffic shaping}
+Traffic shaping can smooth bursts.
+Use token buckets for high-traffic endpoints.
+Shaping reduces sudden load on dependencies.
+
+\section{Postmortem template}
+\begin{lstlisting}[language=YAML]
+postmortem:
+  summary: "what happened"
+  impact: "user impact"
+  root_cause: "primary cause"
+  actions:
+    - "short-term fix"
+    - "long-term fix"
+\end{lstlisting}
+
+\section{SLO dashboards}
+SLO dashboards should show current error budget burn.
+Dashboards make reliability status visible to everyone.
+Include links to runbooks and recent incidents.
+
+\section{Dependency budgets}
+Each dependency should have a latency and error budget.
+Budgets help teams decide when to fail open or fail closed.
+If a dependency exceeds its budget, degrade gracefully.
+
+\section{Queue drain procedures}
+Queues should be drained during maintenance.
+Drain procedures prevent job loss during deployments.
+Document drain steps in runbooks.
+
+\section{Resilient client behavior}
+Clients should retry safely with backoff.
+Expose retry guidance in error responses.
+Good client behavior reduces load during incidents.
+
+\section{Latency budgets for dependencies}
+Each dependency should have a latency budget.
+Budgets enforce timeouts and fallback behavior.
+Without budgets, slow dependencies silently erode reliability.
+
+\section{Reliability guardrails}
+Guardrails prevent risky changes from shipping.
+Examples include SLO checks and mandatory canaries.
+Guardrails reduce accidental regressions.
+
+\section{Backpressure}
+Backpressure keeps producers from overwhelming consumers.
+Use bounded queues and explicit rejection when capacity is full.
+If you cannot reject, you will eventually fail elsewhere.
+
+\section{Cold start risk}
+Cold starts increase latency and error rates.
+Pre-warm caches and keep a minimum instance baseline.
+Measure cold start impact in performance tests.
+
+\section{Maintenance windows}
+Plan maintenance windows for disruptive work.
+Communicate clearly and use them sparingly.
+Maintenance windows reduce surprise outages.
+
+\section{Reliability debt}
+Reliability debt accumulates when shortcuts are taken.
+Track debt like bugs with owners and deadlines.
+Ignoring debt increases the probability of major incidents.
+
+\section{User impact mapping}
+Map critical user journeys to system dependencies.
+Use this map to prioritize alerts and SLOs.
+Impact mapping keeps focus on what users feel.
+
+\section{Stateful service resilience}
+Stateful systems need extra care during failover.
+Practice leader election and data rehydration in drills.
+Failover plans should cover data integrity, not just uptime.
+
+\section{Escalation policy}
+Define clear escalation paths for incidents.
+Escalate based on impact and time without mitigation.
+Policies reduce confusion during high-severity events.
+
+\section{Detection latency}
+Reliability is limited by how fast you detect issues.
+Measure time to detect and time to mitigate.
+Short detection latency reduces user impact.
+
+\section{Failure injection}
+Failure injection tests real-world behavior.
+Inject timeouts, errors, and latency into dependencies.
+Use these tests to validate fallbacks and alerts.
+
+\section{Reliability and cost}
+Over-provisioning buys reliability but costs money.
+Use error budgets to balance cost and risk.
+The right balance depends on user expectations.
+
+\section{On-call handoff}
+On-call handoff should include current incidents and risks.
+Handoffs reduce repeated work and missed context.
+Document the handoff in a shared log.
+
+\begin{checklistbox}{Checklist: reliability}
 \begin{itemize}[nosep]
-  \item availability
-  \item latency
-  \item correctness (where measurable)
+  \item Time out all dependency calls.
+  \item Retry only idempotent operations.
+  \item Use circuit breakers for flaky dependencies.
 \end{itemize}
-Then decide what error budget means for releases.
+\end{checklistbox}

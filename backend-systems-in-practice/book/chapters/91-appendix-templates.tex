@@ -1,54 +1,39 @@
-\chapter{Templates}
+\chapter{Appendix: templates}
 
-These templates are intentionally small.
-They are a starting point, not a framework.
-
-\section{OpenAPI fragment (conceptual)}
-\begin{lstlisting}[language=YAML]
-openapi: 3.0.0
-info:
-  title: Task API
-  version: 1.0.0
-paths:
-  /projects:
-    get:
-      summary: List projects
-      responses:
-        "200":
-          description: OK
-\end{lstlisting}
-
-\section{Error response template}
+\section{Standard error response}
 \begin{lstlisting}[language=JSON]
 {
   "error": {
-    "code": "SOME_CODE",
-    "message": "Human readable message",
-    "details": []
-  },
-  "request_id": "01H..."
+    "code": "validation_error",
+    "message": "title is required",
+    "field": "title"
+  }
+}
+\end{lstlisting}
+
+\section{Pagination response}
+\begin{lstlisting}[language=JSON]
+{
+  "items": [
+    {"id": "task_123", "title": "Write docs"}
+  ],
+  "next_cursor": "task_123"
 }
 \end{lstlisting}
 
 \section{SQL migration template}
 \begin{lstlisting}[language=SQL]
--- 2026-02-17_add_tasks_table.sql
-CREATE TABLE tasks (
-  id BIGSERIAL PRIMARY KEY,
-  project_id BIGINT NOT NULL,
-  title TEXT NOT NULL,
-  status TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX idx_tasks_project_created
-ON tasks (project_id, created_at DESC);
+BEGIN;
+ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 0;
+CREATE INDEX idx_tasks_project_id ON tasks(project_id);
+COMMIT;
 \end{lstlisting}
 
-\section{Bash healthcheck snippet}
-\begin{lstlisting}[language=Bash]
-set -euo pipefail
-
-curl -fsS http://localhost:8080/healthz > /dev/null
-echo "ok"
+\section{Health check endpoint}
+\begin{lstlisting}[language=JSON]
+{
+  "status": "ok",
+  "version": "1.2.3",
+  "uptime_seconds": 12345
+}
 \end{lstlisting}

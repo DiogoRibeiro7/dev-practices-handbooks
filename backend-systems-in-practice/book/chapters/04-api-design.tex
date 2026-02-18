@@ -1,37 +1,413 @@
 \chapter{API design}
 
-API design is about change.
-You want to add features without breaking existing clients.
+APIs are contracts.
+Small design mistakes compound when clients and services depend on them.
 
-\section{Resource modeling}
-Model resources as nouns:
-\begin{itemize}[nosep]
-  \item \code{/projects}
-  \item \code{/projects/\{projectId\}/tasks}
-  \item \code{/tasks/\{taskId\}}
-\end{itemize}
+\section{Resources and nouns}
+Model resources as nouns and actions as methods.
+Avoid verb-heavy endpoints like \code{/createTask}.
 
-Use actions sparingly, usually for workflows:
-\code{/tasks/\{taskId\}/complete}.
+\section{Stable identifiers}
+Use opaque, stable identifiers that do not leak internal state.
+Do not overload identifiers with business meaning.
 
-\section{Pagination}
-Avoid returning unbounded collections.
-Pick one pagination scheme and apply it everywhere.
+\section{Naming conventions}
+Use consistent naming across resources and fields.
+Prefer snake case in JSON fields if your ecosystem expects it, or camel case if that is standard.
+Do not mix conventions within the same API.
 
-Offset pagination is simple but can be unstable under concurrent writes.
-Cursor pagination is harder but more stable.
-
-\begin{patternbox}{Pattern: cursor pagination for high-write collections}
-For activity logs and events, cursor pagination prevents duplicates and missing items under load.
-\end{patternbox}
+\section{Nested resources}
+Nested routes express ownership, but can become deep and repetitive.
+Prefer one level of nesting and expose flat endpoints for cross-resource queries.
 
 \section{Versioning}
-Prefer backwards-compatible changes:
+Prefer backward-compatible changes and additive fields.
+Use versioning when you must break clients.
+
+\section{Versioning strategies}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Strategy & Tradeoff \\
+\midrule
+URI versioning & Easy to see, but splits clients across versions \\
+Header versioning & Cleaner URLs, harder to debug \\
+Query versioning & Simple but often abused \\
+\bottomrule
+\end{tabularx}
+
+\section{Deprecation}
+Deprecation is a process, not a flag.
+Announce, measure usage, provide a migration path, and remove after a clear deadline.
+
+\section{Error format}
+Define one error shape across the API.
+
+\begin{lstlisting}[language=JSON]
+{
+  "error": {
+    "code": "validation_error",
+    "message": "title is required",
+    "field": "title"
+  }
+}
+\end{lstlisting}
+
+\section{Field naming}
+Pick a naming convention and apply it everywhere.
+If you use \code{created\_at} in one response, do not return \code{createdAt} in another.
+
+\section{Filtering}
+Filtering should be predictable and composable.
+Use query parameters like \code{status=open} and \code{owner\_id=user\_7}.
+
+\section{Expandable fields}
+If a resource is large, allow clients to expand specific fields.
+This avoids repeated follow-up requests while keeping defaults small.
+
+\section{Partial responses}
+For large collections, support selecting specific fields.
+This reduces bandwidth and keeps responses stable under load.
+
+\section{Idempotent creates}
+If clients retry creates, accept an idempotency key.
+Return the same resource if the create already succeeded.
+
+\section{Pagination and filtering}
+Use query parameters for filtering and sorting.
+Keep pagination consistent across endpoints.
+
+\section{Pagination example}
+\begin{lstlisting}[language=JSON]
+{
+  "items": [
+    {"id": "task_123", "title": "Write docs"}
+  ],
+  "next_cursor": "task_123"
+}
+\end{lstlisting}
+
+\section{Filtering example}
+\begin{lstlisting}[language=JSON]
+{
+  "filters": {
+    "status": "open",
+    "owner_id": "user_7"
+  }
+}
+\end{lstlisting}
+
+\section{Sorting}
+Expose explicit sort fields and directions.
+If sorting changes the meaning of pagination, use stable cursor-based pagination.
+
+\section{Partial updates}
+Define whether \code{PATCH} is merge semantics or JSON Patch.
+Keep it consistent across endpoints.
+
+\section{Long-running operations}
+If an operation takes longer than a few seconds, return a job resource.
+Clients should poll the job status instead of holding the request open.
+
+\section{Job example}
+\begin{lstlisting}[language=JSON]
+{
+  "job_id": "job_98",
+  "status": "running",
+  "result_url": "/jobs/job_98"
+}
+\end{lstlisting}
+
+\section{Resource lifecycle}
+Define lifecycle events for each resource.
+For tasks: created, updated, completed, archived.
+Ensure the API exposes timestamps for these transitions.
+
+\section{Documentation}
+Great APIs have short and accurate docs.
+Document the request and response shape, error codes, and examples.
+
+\section{Compatibility testing}
+If multiple teams depend on your API, add contract tests.
+They catch breaking changes before they reach production.
+
+\section{Endpoint naming rules}
+Keep endpoint names simple and stable:
 \begin{itemize}[nosep]
-  \item add new fields, do not rename existing fields
-  \item keep defaults stable
-  \item do not change meanings silently
+  \item plural nouns for collections
+  \item singular nouns for specific resources
+  \item avoid verbs in paths
 \end{itemize}
 
-If you must break compatibility, version explicitly.
-Keep the number of versions small.
+\section{Change policy}
+Document how breaking changes are handled.
+Common policies include a 90-day deprecation window and a migration guide.
+
+\section{Search endpoints}
+Search is different from filtering.
+Expose a dedicated search endpoint when you need text search or relevance ranking.
+
+\section{Bulk operations}
+Bulk endpoints reduce round trips but increase complexity.
+If you add bulk operations, make error handling explicit and predictable.
+
+\section{Response envelopes}
+If you wrap responses in an envelope, keep it consistent for all endpoints.
+Do not mix raw and wrapped responses.
+
+\section{Field validation}
+Define validation rules once and reuse them across endpoints.
+If you allow partial updates, validate only the provided fields but keep invariants.
+
+\section{Pagination pitfalls}
+Offset pagination is easy but unstable for changing datasets.
+Cursor pagination is stable and scales better for large collections.
+
+\section{Search response shape}
+Search responses should include result counts and cursors when possible.
+If counts are expensive, expose approximate counts explicitly.
+
+\section{Actions and commands}
+Some operations are not clean CRUD.
+For actions like \code{/tasks/:id/complete}, prefer \code{POST} to an action subresource.
+Keep the action names consistent and document the side effects.
+
+\section{Write semantics}
+Make the write semantics explicit so clients do not guess.
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Method & Semantics \\
+\midrule
+PUT & Replace the full resource representation \\
+PATCH & Apply a partial update with stable merge rules \\
+POST & Create a new resource or trigger an action \\
+\bottomrule
+\end{tabularx}
+
+\section{Default limits}
+Pick default limits that protect the service:
+\begin{itemize}[nosep]
+  \item default page size, for example 50 items
+  \item maximum page size, for example 200 items
+  \item maximum payload size for create and update
+\end{itemize}
+
+If defaults are not stated, clients will assume the largest possible responses.
+
+\section{Authorization scopes}
+Define scopes or roles at the API level.
+For example, a user may read tasks but not update them.
+Document the scope requirements per endpoint and return consistent errors.
+
+\section{Client SDKs and examples}
+If the API is consumed by many teams, offer a small SDK or client library.
+Even a thin wrapper helps standardize pagination, retries, and error handling.
+Keep the SDK minimal and generated from the API contract when possible.
+
+\section{Backward-compatible changes}
+These changes are safe:
+\begin{itemize}[nosep]
+  \item adding a new field
+  \item adding a new endpoint
+  \item adding an optional query parameter
+\end{itemize}
+
+These changes are breaking:
+\begin{itemize}[nosep]
+  \item renaming fields
+  \item changing field types
+  \item changing pagination strategy
+\end{itemize}
+
+\section{OpenAPI as a contract}
+An OpenAPI specification is a living contract.
+Use it to generate documentation, validate requests, and drive tests.
+Keep the spec in version control next to the code.
+
+\section{Public versus internal APIs}
+Public APIs need more stability and stricter compatibility guarantees.
+Internal APIs can evolve faster, but they still need clear ownership.
+Document which endpoints are public and which are internal only.
+
+\section{Changelog and announcements}
+APIs need a changelog.
+Record additive changes, deprecations, and removals.
+Even a short Markdown changelog reduces surprise for clients.
+
+\section{Deprecation headers}
+When an endpoint is deprecated, return a warning header and a link to the replacement.
+This helps clients discover changes without reading every announcement.
+
+\section{Error code taxonomy}
+Define a small, stable set of error codes.
+Avoid per-endpoint custom codes unless truly necessary.
+Clients should be able to handle errors generically.
+
+\section{Consistency across resources}
+The same concept should look the same everywhere.
+If \code{status} is an enum for tasks, do not expose it as a free-text field elsewhere.
+Consistency reduces client complexity and mistakes.
+
+\section{Response examples}
+Include at least one example request and response per endpoint.
+Examples are the fastest way for clients to integrate correctly.
+
+\section{API review workflow}
+Before a new API launches, run a short review:
+\begin{itemize}[nosep]
+  \item check naming and resource shape
+  \item validate pagination and limits
+  \item confirm error codes and edge cases
+  \item verify backward compatibility
+\end{itemize}
+
+\section{Design workshop}
+A short design workshop saves weeks of refactors.
+Gather the backend and client teams and walk through:
+\begin{itemize}[nosep]
+  \item the primary user flows
+  \item the minimal set of resources
+  \item error cases and retries
+  \item expected growth and versioning needs
+\end{itemize}
+
+Document the decisions and turn them into a contract.
+
+\section{Contract testing loop}
+Contract tests should run in CI and staging.
+If a contract test fails, block the deploy until the change is reviewed.
+This forces breaking changes to be explicit.
+
+\section{API governance}
+Governance does not mean bureaucracy.
+It means a small set of rules that keep the API coherent:
+\begin{itemize}[nosep]
+  \item a single owner for each endpoint
+  \item a consistent error schema
+  \item a known deprecation process
+\end{itemize}
+
+\section{Client migration strategy}
+When you must break compatibility, plan migration:
+\begin{itemize}[nosep]
+  \item announce the change and timeline
+  \item provide a compatibility layer or adapter
+  \item track adoption by client
+  \item remove the old path on the announced date
+\end{itemize}
+
+\section{Field evolution playbook}
+Fields evolve more often than endpoints.
+Use a playbook to keep changes safe:
+\begin{itemize}[nosep]
+  \item add the new field and document it
+  \item deploy clients that read the new field
+  \item update writers to populate the new field
+  \item deprecate and remove the old field
+\end{itemize}
+
+\section{API metrics}
+Track API usage and error rates by endpoint and by client.
+Metrics reveal which endpoints are critical and which can be changed safely.
+Expose the top endpoints in a dashboard.
+
+\section{Client types}
+Different clients have different constraints.
+Design with those constraints in mind:
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Client & Constraint \\
+\midrule
+Mobile app & limited bandwidth, frequent retries \\
+Browser & CORS and cookie behavior \\
+Server-to-server & high throughput, strict SLAs \\
+\bottomrule
+\end{tabularx}
+
+\section{Discovery and navigation}
+Provide stable entry points for clients.
+If you expose a root endpoint or API index, keep it backward compatible.
+This reduces the risk of hard-coded URLs in clients.
+
+\section{Case study: mobile client constraints}
+Mobile clients retry more often due to unreliable networks.
+They also cache aggressively to reduce bandwidth.
+Design endpoints so retries are safe and responses are cacheable.
+If the API is not retry-safe, mobile clients will create duplicate data.
+
+\section{SDK versioning}
+If you publish a client SDK, version it separately from the API.
+The SDK should track breaking changes and provide deprecation warnings.
+This helps clients update without surprises.
+
+\section{Error handling examples}
+Provide example error payloads for common failures:
+\begin{itemize}[nosep]
+  \item validation errors with field-level details
+  \item authorization failures with a stable error code
+  \item rate limit responses with retry hints
+\end{itemize}
+
+\section{Caching in API design}
+Caching is a design decision.
+If you expect heavy reads, include ETag and cache headers in the contract.
+Document cache lifetimes so clients can rely on them.
+
+\section{Case study: breaking change rollout}
+Suppose you need to replace \code{status} with a richer object.
+The safe approach is a staged rollout:
+\begin{itemize}[nosep]
+  \item add a new \code{status\_details} field
+  \item update clients to read both fields
+  \item backfill and populate the new field on write
+  \item deprecate \code{status} after all clients migrate
+\end{itemize}
+
+This avoids hard breaks and gives clients a clear path forward.
+
+\section{Compatibility testing example}
+Contract tests can be simple:
+\begin{itemize}[nosep]
+  \item verify required fields in responses
+  \item check status codes for error conditions
+  \item ensure pagination fields are present
+\end{itemize}
+
+\begin{warningbox}{Warning: breaking changes by accident}
+Renaming a field or changing its type is a breaking change.
+If you are unsure, add a new field and deprecate the old one.
+\end{warningbox}
+
+\section{Example resource representation}
+\begin{lstlisting}[language=JSON]
+{
+  "id": "task_123",
+  "project_id": "proj_7",
+  "title": "Write docs",
+  "status": "open",
+  "created_at": "2026-02-18T10:00:00Z",
+  "updated_at": "2026-02-18T12:00:00Z"
+}
+\end{lstlisting}
+
+\section{Review checklist}
+Before releasing a new endpoint, review:
+\begin{itemize}[nosep]
+  \item status codes and error shapes
+  \item pagination and limits
+  \item authentication and authorization requirements
+  \item backward compatibility with existing clients
+\end{itemize}
+\begin{patternbox}{Pattern: add fields, do not change meaning}
+If you need new behavior, add a field instead of changing an existing one.
+This keeps old clients working.
+\end{patternbox}
+
+\begin{checklistbox}{Checklist: API design}
+\begin{itemize}[nosep]
+  \item Use nouns for resources.
+  \item Keep identifiers stable.
+  \item Standardize error responses.
+\end{itemize}
+\end{checklistbox}

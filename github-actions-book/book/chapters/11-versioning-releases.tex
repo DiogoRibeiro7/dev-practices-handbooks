@@ -1,40 +1,84 @@
 \chapter{Versioning and releases}
 
-If your automation is important, it needs versioning discipline.
+Release automation is only reliable if your versioning strategy is clear.
+Decide how versions are produced and how artifacts are published.
 
-\section{Pinning actions}
-Use stable versions:
+\section{Semantic versioning}
+Use \code{MAJOR.MINOR.PATCH} where:
 \begin{itemize}[nosep]
-  \item \code{actions/checkout@v4}
-  \item \code{actions/setup-node@v4}
+  \item MAJOR breaks compatibility
+  \item MINOR adds features
+  \item PATCH fixes bugs
 \end{itemize}
 
-For high-security environments, pin to commit SHA.
-It is less convenient, but more predictable.
-
-\section{Release workflows}
-A typical release workflow:
-\begin{enumerate}[nosep]
-  \item runs on tags
-  \item builds artifacts
-  \item publishes to a registry (or creates a GitHub Release)
-\end{enumerate}
+\section{Tag-driven releases}
+Tagging a commit is the simplest way to trigger a release pipeline.
 
 \begin{lstlisting}[language=YAML]
+name: Release
+
 on:
   push:
     tags:
       - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
 \end{lstlisting}
 
-\section{Changelogs}
-Changelogs make automation safer to upgrade.
-Even a short changelog is better than none.
+\section{Release branches}
+For long-lived products, you may need maintenance branches.
+Keep release workflows identical across branches and use tags to signal releases.
 
-\begin{checklistbox}{Checklist: release hygiene}
+\section{Changelogs}
+Generate changelogs as part of the release.
+Use commit conventions or labels to make automation reliable.
+
+\section{Manual releases}
+A manual release is still automation.
+Use \code{workflow\_dispatch} inputs to select version, environment, and dry-run.
+
+\begin{lstlisting}[language=YAML]
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version"
+        required: true
+      dry_run:
+        description: "Skip publish"
+        required: false
+        default: "true"
+\end{lstlisting}
+
+\section{Release promotion}
+Promote the same artifact from staging to production instead of rebuilding.
+This keeps releases reproducible and easier to audit.
+
+\section{Signing and provenance}
+If you ship binaries, consider signing them.
+Use attestations or provenance to prove where and how the build was produced.
+
+\begin{patternbox}{Pattern: release is a workflow, not a human checklist}
+If you can ship by running \code{workflow\_dispatch} and selecting a version,
+you can ship on Friday with confidence.
+\end{patternbox}
+
+\begin{checklistbox}{Checklist: releases}
 \begin{itemize}[nosep]
-  \item Tag releases.
-  \item Keep a changelog.
-  \item Avoid silent breaking changes in reusable workflows.
+  \item Tag releases with a consistent prefix.
+  \item Store build outputs as artifacts.
+  \item Keep release scripts in \code{scripts/}.
 \end{itemize}
 \end{checklistbox}

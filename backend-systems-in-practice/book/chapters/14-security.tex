@@ -1,30 +1,398 @@
 \chapter{Security}
 
-Security is not a checklist.
-It is a system property.
+Security is a default path, not a checklist at the end.
+Small gaps in input handling or permissions become large incidents.
 
-\section{Common risks}
-\begin{itemize}[nosep]
-  \item injection (SQL, command, template)
-  \item broken access control
-  \item leaked secrets
-  \item insecure deserialization
-  \item dependency vulnerabilities
-\end{itemize}
+\section{Input handling}
+Validate and sanitize input at the boundary.
+Never pass raw input to SQL or shell commands.
 
-\section{Secrets management}
-Secrets should:
-\begin{itemize}[nosep]
-  \item not be stored in code
-  \item be scoped and rotated
-  \item be accessible only where needed
-\end{itemize}
+\section{Secrets}
+Store secrets in a dedicated manager.
+Rotate regularly and audit access.
 
-\begin{warningbox}{Warning: logging sensitive data}
-Logs are often more widely accessible than databases.
-Do not log tokens, passwords, or personal data.
+\section{Dependencies}
+Track third-party dependencies and patch regularly.
+Use allowlists for critical integrations.
+
+\section{Rate limiting}
+Rate limits protect your system and reduce abuse.
+Apply limits per user and per IP when needed.
+
+\begin{warningbox}{Warning: avoid security by obscurity}
+Hidden endpoints are not secure endpoints.
+Enforce authentication and authorization everywhere.
 \end{warningbox}
 
-\section{Transport security}
-TLS should be default.
-Pin down cipher suites and enforce HTTPS at the edge.
+\section{Threat modeling}
+Threat modeling identifies the highest risk areas.
+Start with data flows and trust boundaries.
+Prioritize fixes based on impact and likelihood.
+
+\section{Least privilege}
+Grant the minimal permissions necessary.
+Use scoped roles for services and users.
+Review permissions regularly to prevent privilege creep.
+
+\section{Encryption in transit}
+Use TLS for all service-to-service and client traffic.
+Do not allow plaintext connections in production.
+Rotate certificates regularly.
+
+\section{Encryption at rest}
+Encrypt sensitive data at rest.
+Manage keys in a dedicated key management system.
+Access to decryption keys should be tightly controlled.
+
+\section{Security headers}
+Set standard security headers for web traffic.
+Use \code{Strict-Transport-Security}.\\
+Use \code{Content-Security-Policy}.\\
+Headers reduce common browser-based attacks.
+
+\section{Dependency scanning}
+Automate dependency scans in CI.
+Prioritize patching critical vulnerabilities.
+Track exceptions and enforce expiration dates.
+
+\section{Secrets management}
+Secrets should never be stored in code.
+Use a secrets manager with audit logs.
+Rotate secrets on a schedule and on employee departure.
+
+\section{Audit logging}
+Audit logs capture security-relevant events.
+Store audit logs in immutable storage.
+Access to audit logs should be limited and monitored.
+
+\section{Data classification}
+Classify data as public, internal, confidential, or restricted.
+Controls should vary based on classification.
+Document how each class should be stored and accessed.
+
+\section{Common attack vectors}
+Plan for common vectors:
+\begin{itemize}[nosep]
+  \item SQL injection
+  \item cross-site scripting
+  \item SSRF
+  \item credential stuffing
+\end{itemize}
+Controls should map to these known risks.
+
+\section{Example security controls}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Risk & Control \\
+\midrule
+SQL injection & parameterized queries \\
+Credential stuffing & rate limiting and MFA \\
+SSRF & egress allowlists \\
+\bottomrule
+\end{tabularx}
+
+\section{Security testing}
+Add security tests for critical flows.
+Use static analysis and dependency scanning.
+Penetration tests are useful for mature systems.
+
+\section{Incident response}
+Define how to respond to security incidents.
+Include communication plans and regulatory notifications.
+Practice incident response regularly.
+
+\section{Key rotation}
+Rotate keys on a schedule and when incidents occur.
+Automate rotation to reduce human error.
+Monitor for failed rotation attempts.
+
+\section{Secure defaults}
+Default settings should be secure.
+Opt-in to risky behavior rather than opt-out.
+Secure defaults reduce accidental exposure.
+
+\section{Authentication hardening}
+Harden authentication with MFA and strong password policies.
+Detect credential stuffing and apply rate limits.
+Log and alert on unusual login patterns.
+
+\section{Authorization boundaries}
+Authorization checks must enforce tenant boundaries.
+Use centralized policy evaluation when rules become complex.
+Authorization errors should not leak resource existence.
+
+\section{Input validation}
+Validation prevents injection and unexpected behavior.
+Use allowlists for critical inputs.
+Reject input that cannot be parsed safely.
+
+\section{Secure logging}
+Logs should exclude secrets and personal data.
+Use structured logging and redaction.
+Audit access to sensitive logs.
+
+\section{Data retention and deletion}
+Define data retention policies by data class.
+Implement deletion workflows that truly remove data.
+Retention policies support compliance and privacy.
+
+\section{Security reviews}
+High-risk changes should go through security review.
+Review threat models and mitigations.
+Security reviews reduce blind spots in critical flows.
+
+\section{Example security checklist}
+\begin{itemize}[nosep]
+  \item MFA required for privileged roles
+  \item secrets stored in a manager
+  \item dependency scans in CI
+  \item audit logs enabled
+\end{itemize}
+
+\section{Secure SDLC}
+Security should be part of the development lifecycle.
+Add security checks to CI and code review.
+Security gates prevent risky changes from reaching production.
+
+\section{Supply chain security}
+Software supply chains are common attack vectors.
+Verify dependencies and pin versions.
+Use signed artifacts when possible.
+
+\section{Container and host security}
+Harden containers with minimal base images.
+Run services as non-root users.
+Apply host-level hardening and monitoring.
+
+\section{Network segmentation}
+Segment networks by trust level.
+Limit east-west traffic to required services.
+Segmentation reduces lateral movement during incidents.
+
+\section{WAF and edge protections}
+Web application firewalls can block common attacks.
+Edge protections should include rate limiting and bot detection.
+Use them as defense in depth, not as the only control.
+
+\section{Secrets rotation plan}
+Define who owns secret rotation and when it happens.
+Rotation should be automated and logged.
+Test rotation in staging before production.
+
+\section{Example secret rotation}
+\begin{lstlisting}[language=YAML]
+rotation:
+  secret: "db_password"
+  cadence_days: 90
+  owner: "platform"
+\end{lstlisting}
+
+\section{Data access auditing}
+Audit access to sensitive data.
+Access reviews should be periodic.
+Auditability is key for compliance and incident response.
+
+\section{CSRF protection}
+CSRF protection is required for browser-based sessions.
+Use anti-CSRF tokens and same-site cookies.
+CSRF controls are part of the auth surface.
+
+\section{SSRF protection}
+SSRF attacks can reach internal services.
+Use egress allowlists and validate URLs.
+Block access to metadata endpoints.
+
+\section{Input encoding}
+Encode output for the correct context.
+HTML, JSON, and SQL each require different handling.
+Output encoding is as important as input validation.
+
+\section{Vulnerability management}
+Track vulnerabilities and patch timelines.
+Define SLAs for critical vulnerabilities.
+Report patch status to stakeholders.
+
+\section{Incident response runbook}
+\begin{lstlisting}[language=YAML]
+incident:
+  detect: "alert or report"
+  triage: "confirm scope"
+  contain: "revoke access"
+  eradicate: "patch and rotate keys"
+  recover: "restore services"
+\end{lstlisting}
+
+\section{Security monitoring}
+Monitor for anomalous access and data exfiltration.
+Use alerts for spikes in failed logins.
+Security monitoring should be continuous.
+
+\section{Data classification table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Class & Example data \\
+\midrule
+Public & marketing pages \\
+Internal & internal docs \\
+Confidential & customer emails \\
+Restricted & payment details \\
+\bottomrule
+\end{tabularx}
+
+\section{IAM policy example}
+\begin{lstlisting}[language=JSON]
+{
+  "action": "read",
+  "resource": "billing_invoices",
+  "conditions": {"tenant_id": "tenant_7"}
+}
+\end{lstlisting}
+
+\section{Data minimization}
+Collect only the data you need.
+Minimization reduces risk and compliance burden.
+Review data collection regularly.
+
+\section{Secure deletion}
+Deletion should remove data and backups when required.
+Document how deletion propagates across systems.
+Secure deletion is part of privacy compliance.
+
+\section{Security training}
+Engineers should receive periodic security training.
+Training reduces common mistakes in code and configuration.
+Security knowledge decays without reinforcement.
+
+\section{Secure configuration}
+Misconfiguration is a leading cause of incidents.
+Use configuration validation and policy checks.
+Keep defaults locked down in production.
+
+\section{Access reviews}
+Access reviews should be periodic and documented.
+Remove access that is no longer needed.
+Access reviews reduce long-term exposure.
+
+\section{Security metrics}
+Track a small set of security metrics:
+\begin{itemize}[nosep]
+  \item failed login rate
+  \item privileged access changes
+  \item secrets rotation age
+\end{itemize}
+Metrics make security posture measurable.
+
+\section{Example security event}
+\begin{lstlisting}[language=JSON]
+{
+  "event": "privileged_access_granted",
+  "actor": "user_7",
+  "scope": "admin",
+  "timestamp": "2026-02-18T12:00:00Z"
+}
+\end{lstlisting}
+
+\section{Data residency}
+Some data must stay within specific regions.
+Document residency requirements and enforce them.
+Residency violations can be compliance incidents.
+
+\section{Secure backups}
+Backups should be encrypted and access controlled.
+Test backup restores regularly.
+Backups are part of your security surface.
+
+\section{Key management}
+Keys should be separated by environment and purpose.
+Use a dedicated key management system.
+Audit key access and rotation events.
+
+\section{Security reviews for changes}
+High-risk changes should require an explicit security review.
+Track security review approvals in code review tools.
+Security reviews reduce surprise regressions.
+
+\section{Configuration drift}
+Configuration drift can open security gaps.
+Use configuration as code and policy checks.
+Drift detection should alert on unauthorized changes.
+
+\section{Secure defaults checklist}
+\begin{itemize}[nosep]
+  \item deny by default for network access
+  \item MFA required for privileged roles
+  \item encryption enabled at rest
+\end{itemize}
+
+\section{Secrets sprawl}
+Secrets sprawl happens when credentials are copied across services.
+Track secrets inventory and owners.
+Reduce sprawl by centralizing secret access.
+
+\section{Security posture reviews}
+Perform periodic security posture reviews.
+Review logging, access, and patch status.
+Posture reviews surface slow-moving risks.
+
+\section{Patch cadence}
+Define a patch cadence for critical dependencies.
+Automate updates where possible.
+Delayed patches are a leading incident cause.
+
+\section{Session management}
+Session tokens should be short-lived and rotated on privilege changes.
+Invalidate sessions on logout and security events.
+Session design is part of the authentication surface.
+
+\section{Password storage}
+Store passwords with a strong adaptive hash and unique salts.
+Never log or transmit passwords in plaintext.
+Password storage errors are permanent incidents.
+
+\section{Token handling}
+Treat access tokens as secrets with strict scope.
+Use short expiry and refresh tokens for long-lived sessions.
+Log token usage anomalies and revoke quickly.
+
+\section{File upload security}
+Validate file types and sizes at the edge.
+Store uploads in isolated buckets with least privilege access.
+Scan uploads for malware before processing.
+
+\section{CORS policy}
+CORS should be explicit and minimal.
+Avoid wildcard origins for authenticated endpoints.
+Document allowed origins and review regularly.
+
+\section{Third-party risk}
+Vendors can introduce security and compliance risk.
+Review vendor security posture and data handling.
+Terminate access when contracts end.
+
+\section{Secrets in CI}
+CI systems are a high-risk secrets target.
+Use short-lived tokens and restrict build permissions.
+Rotate build credentials regularly.
+
+\section{Security champions}
+Security champions create local expertise in teams.
+They review changes and raise security issues early.
+Champions improve the speed of security fixes.
+
+\section{Security SLAs}
+Define response SLAs for security findings.
+Critical issues should have fast remediation targets.
+SLAs ensure security work does not stall.
+
+\section{Audit readiness}
+Prepare evidence for audits continuously.
+Keep policy docs, logs, and approvals organized.
+Audit readiness reduces disruption during compliance reviews.
+
+\begin{checklistbox}{Checklist: security}
+\begin{itemize}[nosep]
+  \item Validate all input.
+  \item Rotate secrets and audit access.
+  \item Patch dependencies and libraries.
+\end{itemize}
+\end{checklistbox}

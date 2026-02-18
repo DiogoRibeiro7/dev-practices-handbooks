@@ -1,36 +1,414 @@
-\chapter{A backend mental model}
+\chapter{The backend mental model}
 
-A backend is a set of components:
-\begin{itemize}[nosep]
-  \item \textbf{Edge}: load balancer, gateway, TLS termination
-  \item \textbf{Service}: request handlers and business logic
-  \item \textbf{Data}: databases and caches
-  \item \textbf{Async}: queues and background workers
-  \item \textbf{Observability}: logs, metrics, traces
-\end{itemize}
+Backends are systems, not just code.
+A request enters the system, touches data and dependencies, and returns a response.
+If you can describe that flow, you can reason about correctness and performance.
 
 \section{Request lifecycle}
-A good lifecycle is consistent across endpoints:
-\begin{enumerate}[nosep]
-  \item authenticate the caller
-  \item authorize the action
-  \item validate inputs
-  \item apply business rules
-  \item read/write data
-  \item return a stable response shape
-\end{enumerate}
-
-\begin{warningbox}{Warning: mixing concerns}
-When authorization and validation happen inside business logic, you will duplicate checks.
-Put them in the request pipeline, then keep core logic framework-agnostic.
-\end{warningbox}
-
-\section{State and side effects}
-Most complexity is state and side effects:
+A typical request passes through:
 \begin{itemize}[nosep]
-  \item a database write is a side effect
-  \item sending emails is a side effect
-  \item charging a payment method is a side effect
+  \item authentication and authorization
+  \item validation and parsing
+  \item business logic
+  \item data access
+  \item response shaping
 \end{itemize}
 
-Backend engineering is controlling these side effects.
+\section{A concrete flow}
+Consider \code{POST /projects/:id/tasks}.
+A clean flow looks like this:
+\begin{itemize}[nosep]
+  \item authenticate the user
+  \item validate the input payload
+  \item check project membership
+  \item write the task in a transaction
+  \item emit an activity event
+  \item return the task
+\end{itemize}
+
+\section{State and side effects}
+State changes should be explicit and traceable.
+Prefer to write state once per request, and keep side effects idempotent.
+If you need multiple writes, use a transaction or an outbox.
+
+\section{Dependencies}
+Most production bugs come from dependencies: databases, caches, queues, external APIs.
+Treat each dependency as a failure domain with its own latency and error modes.
+
+\begin{patternbox}{Pattern: map the critical path}
+List every dependency touched by a request.
+That list is the true performance budget.
+\end{patternbox}
+
+\section{Failure modes}
+Every request can fail due to:
+\begin{itemize}[nosep]
+  \item invalid input
+  \item missing data
+  \item timeouts
+  \item partial failures in dependencies
+\end{itemize}
+
+\section{Backpressure}
+A backend must protect itself under load.
+Use queues, rate limits, and admission control to avoid collapse.
+If you accept all traffic, you risk a full outage.
+
+\section{Concurrency}
+Concurrency is where many bugs hide.
+Decide where you allow concurrent writes and how you resolve conflicts.
+Use unique constraints and transactions to make those decisions explicit.
+
+\section{A dependency budget}
+Every dependency consumes part of your latency budget.
+If the total exceeds the budget, you will miss SLOs regardless of code quality.
+
+\begin{tabularx}{\textwidth}{@{}lXr@{}}
+\toprule
+Dependency & Purpose & Budget (ms) \\
+\midrule
+Primary database & Read/write project and task data & 40 \\
+Cache & Read hot project metadata & 5 \\
+Queue & Enqueue activity log event & 10 \\
+External auth & Token validation & 30 \\
+\bottomrule
+\end{tabularx}
+
+\section{State machines}
+Many backend entities are state machines.
+Make the allowed transitions explicit and validate them on write.
+For tasks, a simple state machine might be:
+\begin{itemize}[nosep]
+  \item open $\rightarrow$ in-progress
+  \item in-progress $\rightarrow$ done
+  \item done $\rightarrow$ archived
+\end{itemize}
+
+\section{Idempotency}
+Retried requests are normal in distributed systems.
+Use idempotency keys for create operations and store the result for a short period.
+
+\section{Idempotency key example}
+\begin{lstlisting}[language=JSON]
+{
+  "key": "req_42",
+  "resource_id": "task_123",
+  "stored_at": "2026-02-18T10:00:00Z"
+}
+\end{lstlisting}
+
+\section{Timeouts and deadlines}
+Set timeouts on outbound calls and use a request deadline budget.
+If a request has 200 ms, do not allow any dependency to consume more than its share.
+
+\section{Synchronous vs asynchronous work}
+Do synchronous work only when the user needs it immediately.
+Move expensive work into background jobs and return a job id.
+This keeps the request path fast and predictable.
+
+\section{Data consistency boundaries}
+Define which reads must be strongly consistent and which can be eventually consistent.
+The boundary should be based on user expectations, not on convenience.
+
+\section{Failure taxonomy}
+Classify failures so you can respond consistently:
+\begin{itemize}[nosep]
+  \item user errors (bad input, missing permissions)
+  \item dependency errors (timeouts, 5xx from upstreams)
+  \item internal errors (bugs, invariants broken)
+\end{itemize}
+
+\section{Recoverability}
+If a dependency fails, decide whether to fail the request or degrade gracefully.
+Write down fallback behavior in code and in runbooks.
+
+\section{Load and saturation}
+When systems saturate, latency spikes and queues grow.
+Detect saturation early with queue depth, connection pool usage, and CPU load.
+
+\section{Cache strategy}
+Caches are part of the system model.
+Decide which reads are cacheable, how long entries live, and how to invalidate them.
+Stale cache data is a correctness risk, not just a performance issue.
+
+\section{Command and query separation}
+Writes are commands and reads are queries.
+Keep the write path strict and validated; keep the read path optimized and predictable.
+
+\section{Failure budget example}
+If your SLO is 99.9 percent, you have about 43 minutes of error budget per month.
+Spend that budget intentionally and avoid burning it on avoidable failures.
+
+\begin{warningbox}{Warning: hidden dependencies}
+Any dependency not in your critical path list will surprise you during incidents.
+Make the dependency list explicit and keep it updated.
+\end{warningbox}
+
+\section{Deployment as part of the model}
+Deployments are another source of change.
+Design so that old and new versions can coexist during a rollout.
+
+\section{Read path vs write path}
+The read path is usually optimized for latency.
+The write path is optimized for correctness and durability.
+Do not treat them as identical; they have different constraints.
+
+\section{Invariants}
+Invariants are rules that must always hold.
+For example: a task must belong to exactly one project.
+Enforce invariants in the database and in the core domain model.
+
+\section{Race conditions}
+Two requests can arrive at the same time and both appear valid.
+Use unique constraints or compare-and-swap updates to prevent double writes.
+
+\section{Optimistic locking}
+Optimistic locking prevents lost updates without heavy locks.
+Store a version field and reject updates that use stale versions.
+
+\begin{lstlisting}[language=SQL]
+UPDATE tasks
+SET title = 'New title', version = version + 1
+WHERE id = 'task_123' AND version = 7;
+\end{lstlisting}
+
+\section{Critical path example}
+For \code{POST /projects/:id/tasks}, a critical path might be:
+\begin{itemize}[nosep]
+  \item authenticate user (external auth)
+  \item validate payload (local)
+  \item write task (database)
+  \item enqueue activity (queue)
+\end{itemize}
+
+\section{Outbox pattern}
+If you need to publish an event after a transaction, use an outbox table.
+Write the event in the same transaction and publish it asynchronously.
+
+\section{Sagas and orchestration}
+Cross-service workflows require orchestration.
+Use sagas to coordinate multiple steps and compensate on failure.
+
+\section{Graceful degradation}
+Not all failures should cause full errors.
+If the activity queue is down, you may still want to create the task and log a warning.
+
+\section{Observability targets}
+Instrument at the edge and at dependency boundaries.
+You need to see total latency, dependency latency, and error rates separately.
+
+\section{Request timeline}
+A useful mental model is a timeline of a request:
+\begin{itemize}[nosep]
+  \item 0--10 ms: auth and validation
+  \item 10--60 ms: database reads and writes
+  \item 60--80 ms: cache or queue writes
+  \item 80--100 ms: response building
+\end{itemize}
+
+\section{Consistency ladder}
+Not all reads need the same guarantees.
+Define a ladder from strong consistency to eventual consistency and document it.
+
+\section{Coordination patterns}
+When you must coordinate across services, choose a pattern:
+\begin{itemize}[nosep]
+  \item synchronous calls for tight coupling
+  \item asynchronous events for loose coupling
+  \item sagas for multi-step workflows
+\end{itemize}
+
+\section{Replay and recovery}
+If a message or event is lost, you need a way to replay it.
+Store durable logs or build replay endpoints for critical workflows.
+
+\section{Observability as feedback}
+Observability turns unknown failures into known issues.
+If you do not measure, you will regress silently.
+
+\section{Incident example}
+A slow dependency can turn into a system outage.
+Imagine external auth latency rising from 30 ms to 500 ms.
+If you have no timeout, every request queues until the service collapses.
+With timeouts and backpressure, you degrade gracefully and recover quickly.
+
+\section{SLOs and error budgets}
+SLOs translate reliability into a number.
+Error budgets help teams decide when to ship features versus stability work.
+
+\section{State and isolation}
+Each request should be safe to retry.
+If a request is not idempotent, protect it with keys or unique constraints.
+
+\section{Queueing and asynchronous guarantees}
+Queues change the model: a request may succeed while work continues later.
+Define the guarantees explicitly:
+\begin{itemize}[nosep]
+  \item at-least-once delivery for activity logs
+  \item ordering within a single task or project
+  \item maximum delay before processing
+\end{itemize}
+
+If you cannot state the guarantee, clients cannot reason about correctness.
+
+\section{Timeouts, retries, and budgets}
+Retries without bounds amplify failure.
+Tie retries to a budget and only retry when it is safe.
+
+\begin{tabularx}{\textwidth}{@{}lXr@{}}
+\toprule
+Layer & Retry policy & Max attempts \\
+\midrule
+Client $\rightarrow$ API & retry on 429/503 with jitter & 2 \\
+API $\rightarrow$ database & no retries, fail fast & 1 \\
+API $\rightarrow$ external auth & retry on timeout & 2 \\
+\bottomrule
+\end{tabularx}
+
+\section{Burst handling}
+Most backends see bursts, not smooth traffic.
+Use a combination of rate limits, queues, and autoscaling.
+The goal is to keep the critical path stable while the backlog absorbs spikes.
+
+\section{Freshness and staleness}
+Some data can be stale without harming the user.
+Explicitly decide freshness targets:
+\begin{itemize}[nosep]
+  \item project metadata: 5 minutes
+  \item task list: 30 seconds
+  \item activity log: eventually consistent
+\end{itemize}
+
+\section{Multi-tenant boundaries}
+If the system is multi-tenant, isolation is part of the model.
+Define how you prevent cross-tenant reads, writes, and noisy-neighbor effects.
+This drives indexing, rate limits, and partitioning choices.
+
+\section{Batch versus online}
+Batch jobs can consume the same data as online APIs.
+Keep them separate in the model so batch work does not starve online traffic.
+Schedule heavy batch work during low-traffic windows and cap its throughput.
+
+\section{Traffic classes}
+Not all traffic is equal.
+Separate traffic into classes:
+\begin{itemize}[nosep]
+  \item interactive requests with tight latency targets
+  \item background processing with looser deadlines
+  \item internal maintenance and backfills
+\end{itemize}
+
+This model informs priority queues and rate limits.
+
+\section{Backpressure signals}
+Backpressure is more than rate limiting.
+Expose explicit signals when the system is saturated.
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Signal & Meaning \\
+\midrule
+HTTP 429 & client should retry with backoff \\
+HTTP 503 & service is overloaded or dependency is down \\
+Queue depth & downstream processing is lagging \\
+\bottomrule
+\end{tabularx}
+
+\section{Jittered retries}
+When clients retry at the same time, spikes get worse.
+Add jitter to retries so they spread out.
+This small change can prevent cascading failures.
+
+\section{Request cancellation}
+If a client disconnects, the server should stop doing work.
+Support cancellation in long-running handlers and background jobs.
+This prevents wasted compute and reduces tail latency.
+
+\section{Single-writer principle}
+When possible, enforce a single writer per entity.
+This reduces contention and simplifies reasoning about state.
+If multiple writers are necessary, centralize conflict resolution.
+
+\section{Latency budget worked example}
+Assume a 200 ms p95 target for \code{POST /projects/:id/tasks}.
+Break the budget down explicitly and hold each component accountable.
+
+\begin{tabularx}{\textwidth}{@{}lXr@{}}
+\toprule
+Component & Notes & Budget (ms) \\
+\midrule
+Auth check & local cache plus token validation & 20 \\
+Validation & JSON parsing and schema checks & 10 \\
+Database write & insert task and update counters & 60 \\
+Queue publish & enqueue activity event & 20 \\
+Response & render and serialize JSON & 15 \\
+Buffer & headroom for variability & 75 \\
+\bottomrule
+\end{tabularx}
+
+If a component consistently exceeds its budget, the whole SLO fails.
+
+\section{Tracing as a model}
+Tracing is not just for debugging.
+It validates your mental model by showing where time is spent.
+Use traces to verify critical path assumptions and identify hidden dependencies.
+
+\section{Capacity planning}
+Plan capacity with a simple envelope:
+\begin{itemize}[nosep]
+  \item peak requests per second
+  \item expected data growth per month
+  \item worst-case dependency latency
+\end{itemize}
+
+This does not need to be perfect, but it must be explicit.
+
+\section{Dependency matrix}
+Make a small matrix of which endpoints call which dependencies.
+This highlights the blast radius of a failing service.
+
+\begin{tabularx}{\textwidth}{@{}lXXX@{}}
+\toprule
+Endpoint & Database & Cache & External auth \\
+\midrule
+GET /projects & read & read & validate \\
+POST /projects & write & none & validate \\
+POST /projects/:id/tasks & write & read & validate \\
+\bottomrule
+\end{tabularx}
+
+\section{Queue sizing}
+Queues hide latency but do not remove it.
+Estimate queue growth during peak traffic and validate that consumers can catch up.
+If the queue does not drain within a business day, you will create operational debt.
+
+\section{Retry budgets per dependency}
+Not every dependency deserves retries.
+Define a retry budget per dependency to avoid runaway load.
+If a dependency is down, fail fast and degrade gracefully.
+
+\section{Case study: timeout cascade}
+Imagine the database latency doubles during peak traffic.
+Without timeouts, every request piles up and the thread pool saturates.
+With timeouts and queue limits, the system sheds load and recovers.
+
+The mental model here is simple: you must protect the core dependency.
+Slow is not the same as down, but it can be more dangerous.
+
+\section{Saturation checklist}
+When latency rises, check the saturation signals:
+\begin{itemize}[nosep]
+  \item request queue depth
+  \item database connection pool usage
+  \item CPU and memory pressure
+  \item dependency timeouts and retries
+\end{itemize}
+
+\begin{checklistbox}{Checklist: mental model}
+\begin{itemize}[nosep]
+  \item Know the request lifecycle.
+  \item Identify dependencies and their failure modes.
+  \item Make state changes explicit and reversible.
+  \item Add backpressure before you need it.
+\end{itemize}
+\end{checklistbox}

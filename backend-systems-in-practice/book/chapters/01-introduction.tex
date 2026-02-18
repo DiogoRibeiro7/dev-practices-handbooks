@@ -23,7 +23,427 @@ A backend is in good shape when:
   \item operations are boring
 \end{itemize}
 
+\section{Scope and non-goals}
+This book focuses on production systems: APIs, data, and operations.
+It does not cover UI concerns or low-level kernel tuning.
+If you keep the system simple and observable, most hard problems become manageable.
+
+\section{A minimal API surface}
+A reasonable starting API for the Task system:
+\begin{itemize}[nosep]
+  \item \code{GET /projects}
+  \item \code{POST /projects}
+  \item \code{GET /projects/:id}
+  \item \code{POST /projects/:id/tasks}
+  \item \code{PATCH /tasks/:id}
+  \item \code{GET /tasks?project=:id}
+\end{itemize}
+
+\section{Quality attributes}
+Backends are judged by qualities, not just features.
+These attributes are the baseline for production systems.
+
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+Attribute & What it means in practice \\
+\midrule
+Reliability & Requests succeed or fail predictably, with safe retries \\
+Performance & Latency stays within a known budget at peak load \\
+Security & Access is controlled, secrets are protected, audit trails exist \\
+Scalability & Capacity grows without redesigning the entire system \\
+Maintainability & Changes are small, testable, and reversible \\
+\bottomrule
+\end{tabularx}
+
+\section{The operating model}
+Every backend is an operations system.
+If you cannot deploy, observe, and recover safely, features do not matter.
+Make operational tasks part of the design:
+\begin{itemize}[nosep]
+  \item define health checks and readiness signals
+  \item track error budgets and latency budgets
+  \item build runbooks for common failures
+\end{itemize}
+
+\section{A small data model}
+The Task system is intentionally small:
+\begin{itemize}[nosep]
+  \item \textbf{Project}: id, name, owner
+  \item \textbf{Task}: id, project id, title, status, due date
+  \item \textbf{Activity}: id, task id, action, timestamp
+\end{itemize}
+
+This is enough to discuss ownership, filtering, pagination, and background work.
+
+\section{Change as the primary constraint}
+The hardest part of backend work is change.
+You will add fields, remove endpoints, move data, and split services.
+A good backend is one where these changes are possible without large rewrites.
+
 \begin{patternbox}{Pattern: treat interfaces as products}
 The API is not a technical detail.
 It is a contract with clients, future developers, and your operations team.
 \end{patternbox}
+
+\section{Common failure modes}
+Teams often fall into the same traps:
+\begin{itemize}[nosep]
+  \item business logic hidden in controllers and frameworks
+  \item inconsistent error formats across endpoints
+  \item databases without constraints or indexes
+  \item no measurable latency or error budgets
+  \item ad-hoc security rules
+\end{itemize}
+
+\section{Working style}
+This book assumes you work in small, focused changes:
+\begin{itemize}[nosep]
+  \item keep endpoints small and composable
+  \item move complex logic into services
+  \item test the critical path first
+  \item monitor before you optimize
+\end{itemize}
+
+\section{Who this is for}
+This is for engineers who ship and operate backends:
+\begin{itemize}[nosep]
+  \item product teams running APIs in production
+  \item platform teams enabling internal services
+  \item engineers migrating from prototypes to durable systems
+\end{itemize}
+
+\section{System boundaries}
+Backends are not just servers.
+They include storage, queues, caches, and the tooling around them.
+Draw a boundary around what you own and what you depend on.
+Every dependency outside that boundary needs monitoring and a fallback plan.
+
+\section{A sample request}
+A common request in the Task API is creating a task.
+The response is intentionally simple:
+
+\begin{lstlisting}[language=JSON]
+{
+  "id": "task_123",
+  "project_id": "proj_7",
+  "title": "Write docs",
+  "status": "open",
+  "created_at": "2026-02-18T10:00:00Z"
+}
+\end{lstlisting}
+
+\section{Operational baseline}
+Every backend should define a baseline operational posture:
+\begin{itemize}[nosep]
+  \item health checks and readiness endpoints
+  \item log correlation identifiers
+  \item a dashboard for latency, errors, and traffic
+  \item alerts tied to user-visible symptoms
+\end{itemize}
+
+\section{Documentation artifacts}
+Keep lightweight documentation close to the code:
+\begin{itemize}[nosep]
+  \item an API reference or OpenAPI spec
+  \item runbooks for the top three incidents
+  \item a short architecture overview for new engineers
+\end{itemize}
+
+\section{What a backend is responsible for}
+Backends are responsible for more than serving HTTP:
+\begin{itemize}[nosep]
+  \item enforcing business rules consistently
+  \item safeguarding data integrity
+  \item managing concurrency and coordination
+  \item providing stable contracts to clients
+  \item operating safely under load
+\end{itemize}
+
+\section{How backends fail in practice}
+Backends usually fail slowly before they fail completely.
+Latency creeps up, error rates climb, and on-call becomes reactive.
+If you monitor latency, errors, and saturation, you can intervene early.
+
+\section{A short architecture sketch}
+The Task API can be implemented with a simple architecture:
+\begin{itemize}[nosep]
+  \item an API service for HTTP requests
+  \item a relational database for tasks and projects
+  \item a queue for activity events and background jobs
+  \item a cache for hot reads
+\end{itemize}
+
+\section{Development lifecycle}
+Production systems require a lifecycle:
+\begin{itemize}[nosep]
+  \item local development with realistic data
+  \item staged environments for integration tests
+  \item production deploys with rollback paths
+  \item post-deploy monitoring and validation
+\end{itemize}
+
+\section{Tradeoffs are expected}
+There is no perfect design.
+You choose tradeoffs based on expected load, team size, and product risk.
+Make those tradeoffs explicit and document them.
+
+\section{From prototype to product}
+Most backends start as a prototype.
+The difference between prototype and product is the ability to change safely.
+Add constraints, monitoring, and tests before you add more endpoints.
+
+\section{Operational constraints}
+Production systems operate under constraints:
+\begin{itemize}[nosep]
+  \item limited error budgets
+  \item fixed database capacity
+  \item on-call fatigue
+  \item unpredictable traffic patterns
+\end{itemize}
+
+\section{Interfaces beyond HTTP}
+Your backend interfaces include more than HTTP endpoints.
+Database schemas, queues, and background job payloads are also contracts.
+Treat those contracts with the same care as API endpoints.
+
+\section{Release quality gates}
+Define a minimal set of gates before each deploy:
+\begin{itemize}[nosep]
+  \item unit and integration tests
+  \item database migration checks
+  \item smoke tests on staging
+  \item rollback validation
+\end{itemize}
+
+\section{Who depends on you}
+Clients are not just user interfaces.
+They include other services, data pipelines, and internal tooling.
+The more dependents you have, the more you need stable interfaces.
+
+\section{Reference workflow}
+A minimal workflow for backend changes:
+\begin{itemize}[nosep]
+  \item write or update the API contract
+  \item implement the change in the service layer
+  \item add tests for the critical path
+  \item update migrations and run locally
+  \item deploy to staging and validate metrics
+\end{itemize}
+
+\section{Baseline metrics}
+Start with a small, stable set of metrics:
+\begin{itemize}[nosep]
+  \item request rate per endpoint
+  \item error rate per endpoint
+  \item latency p50, p95, p99
+  \item database query latency
+  \item queue depth for background work
+\end{itemize}
+
+\section{Developer experience}
+If the development loop is slow, engineers will skip tests and avoid refactors.
+Invest in a fast local setup, representative test data, and deterministic tooling.
+
+\section{Case study: growth without chaos}
+The Task API starts with a single service and a single database.
+As usage grows, new requirements appear: search, analytics, and integrations.
+If the API contract and data model are stable, these changes are incremental.
+If they are ad-hoc, every new feature becomes a migration project.
+
+The lesson is simple: design for change early.
+The first version does not need to be perfect, but it must be consistent.
+
+\section{Configuration and environments}
+Backends live in multiple environments: local, staging, and production.
+Configuration must be external to code and validated on startup.
+If a service cannot start without configuration, fail fast and clearly.
+
+\section{Feature flags}
+Feature flags are a safe way to roll out risky changes.
+They allow you to test in production with a small subset of traffic.
+Use flags sparingly and remove them after the rollout.
+
+\section{Data contracts}
+Data is a contract just like the API.
+When you add or change a field, you are changing the contract.
+Document those changes and plan migrations explicitly.
+
+\section{Incident response}
+Expect incidents and rehearse your response.
+A good incident response includes:
+\begin{itemize}[nosep]
+  \item clear ownership and on-call rotation
+  \item runbooks for top failure modes
+  \item post-incident reviews with action items
+\end{itemize}
+
+\section{Scaling the team}
+As teams grow, communication becomes the bottleneck.
+Stable interfaces, clear ownership, and shared standards keep teams aligned.
+
+\section{Operational posture}
+A stable backend has a known operational posture.
+That posture includes how you deploy, how you observe, and how you recover.
+If these are undocumented, the system will only be safe in the heads of a few engineers.
+
+\section{Production constraints you cannot ignore}
+Every production system has constraints that shape design:
+\begin{itemize}[nosep]
+  \item limited database connections
+  \item external API rate limits
+  \item on-call hours and handoff processes
+  \item compliance and audit requirements
+\end{itemize}
+
+\section{API evolution mindset}
+Assume the API will evolve continuously.
+Design so that adding fields and new endpoints is routine.
+Treat breaking changes as exceptional events with a clear process.
+
+\section{Example ownership map}
+Ownership keeps change safe.
+A simple ownership map for the Task system might be:
+\begin{itemize}[nosep]
+  \item Projects: core backend team
+  \item Tasks: core backend team
+  \item Activity logs: platform team
+  \item Search and analytics: data team
+\end{itemize}
+
+\section{Release reliability}
+Reliability is not just runtime behavior.
+It includes the release process: how you migrate data, roll out changes, and rollback.
+If releases are unsafe, production will be unsafe too.
+
+\section{Assumptions and load profile}
+Every backend makes assumptions about scale and shape of traffic.
+Write them down, even if they are rough:
+\begin{itemize}[nosep]
+  \item expected requests per second at peak
+  \item typical request sizes and response sizes
+  \item daily batch windows or traffic spikes
+  \item read-to-write ratio for core endpoints
+\end{itemize}
+
+These assumptions guide indexing, caching, and capacity planning.
+When they change, the system needs to change with them.
+
+\section{Security baseline}
+Security is part of the contract.
+A minimal baseline includes:
+\begin{itemize}[nosep]
+  \item explicit authentication and authorization checks
+  \item secrets managed outside the codebase
+  \item encrypted transport and sensitive data handling
+  \item an audit trail for sensitive operations
+\end{itemize}
+
+If these are implicit, they will be inconsistent.
+
+\section{Cost awareness}
+Cost is a constraint like latency and availability.
+Small decisions compound into large bills.
+Start with a simple discipline:
+\begin{itemize}[nosep]
+  \item know the cost drivers (database, queue, storage, egress)
+  \item track usage at the service level
+  \item set budgets for non-critical workloads
+\end{itemize}
+
+\section{Dependency management}
+Every backend depends on other systems.
+Make those dependencies explicit:
+\begin{itemize}[nosep]
+  \item document upstream and downstream services
+  \item define timeouts and retry policies per dependency
+  \item record the expected availability and failure modes
+\end{itemize}
+
+\section{Architecture decisions}
+Some choices are durable: database, messaging system, schema strategy.
+Capture them in short Architecture Decision Records.
+The goal is not documentation volume, but traceability:
+future engineers should see why a decision was made.
+
+\section{Readiness review}
+Before calling a system production-ready, ask:
+\begin{itemize}[nosep]
+  \item Can we deploy without downtime?
+  \item Can we restore data from backup?
+  \item Do we know our p95 latency for key endpoints?
+  \item Can we detect a silent failure within minutes?
+\end{itemize}
+
+\section{Operational drills}
+Backups are only real after a restore.
+Run at least one restore drill per quarter and record the outcome.
+Treat drills as a feature: a backend that cannot be restored is incomplete.
+
+\section{Service catalog}
+As your system grows, keep a service catalog.
+It should list owners, on-call rotations, dependencies, and critical endpoints.
+This prevents knowledge from living only in people's heads.
+
+\section{Risk register}
+Every backend has known risks.
+Capture the top three risks and update them as the system changes:
+\begin{itemize}[nosep]
+  \item single database instance
+  \item weak observability for background jobs
+  \item ad-hoc access to production data
+\end{itemize}
+
+\section{Definition of done}
+Feature work is not done until it is safe to operate.
+A minimal definition of done includes:
+\begin{itemize}[nosep]
+  \item tests for the critical path
+  \item metrics and dashboards updated
+  \item runbook notes for new failure modes
+\end{itemize}
+
+\section{When to split services}
+Splitting too early adds complexity.
+Split when a domain is stable, owned by another team, and scaling needs are clear.
+If those conditions are not met, a well-structured modular monolith is safer.
+
+\section{Operating principles}
+Good backends follow a small set of principles:
+\begin{itemize}[nosep]
+  \item keep the critical path short
+  \item prefer explicit contracts over implicit behavior
+  \item make failures visible before they become outages
+  \item optimize for reversible change
+\end{itemize}
+
+If a design violates these principles, it will be expensive to operate later.
+
+\section{Stakeholder alignment}
+Backend work impacts product, data, and operations.
+Align early on:
+\begin{itemize}[nosep]
+  \item data ownership and access policies
+  \item SLA expectations from clients and partners
+  \item maintenance windows and on-call coverage
+\end{itemize}
+
+Alignment is not paperwork; it prevents future incidents.
+
+\section{Example release plan}
+A simple release plan for a risky change:
+\begin{itemize}[nosep]
+  \item ship a backward-compatible schema change
+  \item deploy code that reads old and new data
+  \item backfill existing records
+  \item enable the new behavior behind a feature flag
+  \item remove the old field after a full rollout
+\end{itemize}
+
+\begin{checklistbox}{Checklist: starting point}
+\begin{itemize}[nosep]
+  \item Define the core resources and their identifiers.
+  \item Decide how errors will be represented.
+  \item Write the simplest endpoints that cover the use cases.
+  \item Create a baseline dashboard for latency and errors.
+\end{itemize}
+\end{checklistbox}

@@ -1,49 +1,97 @@
-\chapter{Matrix builds}
+\chapter{Matrix strategies}
 
-Matrix builds let you test across versions and OS.
-They can also waste compute if you let them grow without discipline.
+Matrix jobs run the same job across multiple configurations.
+They are ideal for OS, language versions, or test shards.
 
 \section{A basic matrix}
 \begin{lstlisting}[language=YAML]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ["18", "20"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: python --version
+          node-version: ${{ matrix.node }}
+      - run: npm test
 \end{lstlisting}
 
 \section{Include and exclude}
-Use \code{include} for special cases.
+Use \code{include} for one-off combinations and \code{exclude} for invalid ones.
 
 \begin{lstlisting}[language=YAML]
 strategy:
   matrix:
-    os: [ubuntu-latest, macos-latest]
-    python-version: ["3.11", "3.12"]
+    os: [ubuntu-latest, windows-latest]
+    python: ["3.11", "3.12"]
     include:
       - os: ubuntu-latest
-        python-version: "3.12"
-        extra-checks: true
+        python: "3.12"
+        experimental: true
+    exclude:
+      - os: windows-latest
+        python: "3.12"
 \end{lstlisting}
 
-\section{Matrix patterns}
-\begin{patternbox}{Pattern: one “full” job, others “cheap”}
-Run expensive checks once (coverage, integration, packaging).
-Run fast checks in the matrix.
-\end{patternbox}
+\section{Allowing experimental failures}
+Mark experimental runs as optional with \code{continue-on-error}.
 
-\begin{checklistbox}{Checklist: control matrix costs}
+\begin{lstlisting}[language=YAML]
+- name: Run tests
+  continue-on-error: ${{ matrix.experimental || false }}
+  run: ./scripts/test
+\end{lstlisting}
+
+\section{Controlling parallelism}
+Large matrices can overwhelm runners.
+Use \code{max-parallel} to limit concurrency.
+
+\begin{lstlisting}[language=YAML]
+strategy:
+  fail-fast: false
+  max-parallel: 4
+  matrix:
+    shard: [1, 2, 3, 4, 5, 6, 7, 8]
+\end{lstlisting}
+
+\section{Dynamic matrices}
+You can generate a matrix from a previous step and parse it with \code{fromJSON}.
+This keeps the matrix small and relevant.
+
+\begin{lstlisting}[language=YAML]
+- id: plan
+  run: echo 'matrix={"service":["api","web"]}' >> "$GITHUB_OUTPUT"
+
+strategy:
+  matrix: ${{ fromJSON(steps.plan.outputs.matrix) }}
+\end{lstlisting}
+
+\section{Matrix design heuristics}
+A matrix should represent real product dimensions.
+Avoid adding variants just because they are easy to add.
+
 \begin{itemize}[nosep]
-  \item Avoid unnecessary OS combinations.
-  \item Turn off \code{fail-fast} only when you need full results.
-  \item Keep matrix logic readable; if it grows, extract to reusable workflows.
+  \item Use matrices for compatibility validation.
+  \item Use shards for speed, not correctness.
+  \item Keep a default job for the most common case.
+\end{itemize}
+
+\section{Fail-fast tradeoffs}
+Fail-fast is good for quick feedback but hides the full failure surface.
+Disable it when you need complete signal across all variants.
+
+\section{Artifacts per variant}
+If each variant builds a binary, upload artifacts with the matrix values in the name.
+This avoids collisions and makes debugging easier.
+
+\begin{checklistbox}{Checklist: matrix}
+\begin{itemize}[nosep]
+  \item Use matrices for the smallest set of meaningful variants.
+  \item Avoid multiplying dimensions without a strong reason.
+  \item Mark experimental variants explicitly.
 \end{itemize}
 \end{checklistbox}

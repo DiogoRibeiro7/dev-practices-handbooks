@@ -1,29 +1,414 @@
 \chapter{Background work}
 
-Background jobs handle tasks that should not block a request.
+Background jobs move slow or unreliable work out of the request path.
+Use them for emails, reports, and heavy processing.
 
-Examples:
+\section{Queues and workers}
+A queue decouples producers from consumers.
+Workers pull jobs and retry failures.
+
+\section{Retries}
+Retries should be bounded and idempotent.
+Always include a backoff strategy to avoid overload.
+
+\section{Dead letter queues}
+A dead letter queue captures jobs that consistently fail.
+It is the safest place to debug without blocking the main system.
+
+\section{Job idempotency}
+Use a job key so the same job can run twice without harm.
+This is critical during deploys and retries.
+
+\section{When to use background work}
+Background jobs are best for work that is slow, unreliable, or can be delayed.
+Do not move user-critical work to a queue just to avoid fixing latency.
+If the user expects immediate results, keep a synchronous path.
+
+\section{Queue types}
+Queues come in multiple forms:
 \begin{itemize}[nosep]
-  \item sending emails
-  \item generating exports
-  \item synchronizing external systems
-  \item rebuilding search indexes
+  \item FIFO queues for ordered processing
+  \item standard queues for throughput
+  \item delayed queues for scheduled retries
+\end{itemize}
+Pick the queue type that matches ordering and latency requirements.
+
+\section{At-least-once delivery}
+Most queues deliver at least once.
+Your job handlers must tolerate duplicates.
+Idempotency is non-negotiable in this model.
+
+\section{Visibility timeouts}
+Visibility timeouts define how long a job is locked by a worker.
+If the timeout is too short, jobs run twice.
+If it is too long, failed jobs block progress.
+
+\section{Retry policy}
+Retries should be explicit and bounded.
+Use exponential backoff with jitter.
+A typical retry policy uses 3 to 5 attempts with increasing delays.
+
+\section{Retry schedule example}
+\begin{lstlisting}[language=YAML]
+retry_policy:
+  max_attempts: 5
+  backoff_seconds: [5, 30, 120, 300, 900]
+  jitter: true
+\end{lstlisting}
+
+\section{Dead letter handling}
+Dead letter queues should be monitored.
+Define a process for triage, not just storage.
+Automate replays when safe, and require manual review for risky jobs.
+
+\section{Poison pill jobs}
+Some jobs fail because of data corruption or invalid state.
+These should be marked as poison pills and quarantined.
+Do not retry forever; it wastes capacity.
+
+\section{Job payload design}
+Keep payloads small and explicit.
+Include identifiers, not entire objects.
+Large payloads increase queue cost and reduce flexibility.
+
+\section{Priority queues}
+Not all jobs are equal.
+Use priorities to keep user-facing work ahead of batch processing.
+If you mix priorities, document the policy clearly.
+
+\section{Scheduling and cron}
+Scheduled work should be expressed as recurring jobs.
+Use a dedicated scheduler rather than ad-hoc timers.
+Schedulers should support idempotent retries like any other job.
+
+\section{Rate limiting jobs}
+External APIs often impose rate limits.
+Use token buckets or per-provider queues to avoid throttling.
+Rate limiting inside the worker prevents accidental abuse.
+
+\section{Concurrency control}
+Workers should bound concurrency per job type.
+A single job class can starve others if not controlled.
+Use separate queues or worker pools when necessary.
+
+\section{Ordering requirements}
+If order matters, use FIFO queues and deduplication keys.
+Ordering reduces throughput, so only require it when needed.
+Document which jobs require ordering.
+
+\section{Idempotency keys}
+Store idempotency keys with a short TTL.
+Keys must cover all side effects of the job.
+If a retry happens, reusing the key should result in a no-op.
+
+\section{Example job record}
+\begin{lstlisting}[language=JSON]
+{
+  "job_id": "job_123",
+  "type": "send_email",
+  "payload": {"user_id": "user_7"},
+  "idempotency_key": "email_user_7_welcome",
+  "attempt": 2
+}
+\end{lstlisting}
+
+\section{Backpressure}
+If the queue grows too fast, slow down producers.
+Backpressure keeps the system stable during spikes.
+Expose queue depth as a metric to producers.
+
+\section{Scaling workers}
+Scale workers based on queue depth and processing time.
+Fast jobs need more workers than slow jobs.
+Autoscaling should consider both backlog and throughput.
+
+\section{Job timeouts}
+Set execution timeouts for jobs.
+If a job exceeds its timeout, fail it and retry if safe.
+Timeouts prevent long-running jobs from blocking workers.
+
+\section{Cancellation}
+Some jobs should be cancelable.
+Support cancellation by checking a cancel flag at safe points.
+Cancellation is valuable for user-driven actions.
+
+\section{Bulk processing}
+Bulk jobs should process in chunks.
+Chunking allows partial progress and easier retries.
+Track progress and resume from the last successful chunk.
+
+\section{Observability for jobs}
+Record job metrics:
+\begin{itemize}[nosep]
+  \item queue depth
+  \item job latency
+  \item failure rate
+  \item retries per job
+\end{itemize}
+These metrics reveal saturation and stability issues.
+
+\section{Example job metrics}
+\begin{lstlisting}[language=YAML]
+metrics:
+  queue_depth: 1200
+  job_latency_p95_ms: 800
+  retry_rate: 0.07
+\end{lstlisting}
+
+\section{Security considerations}
+Jobs often handle sensitive data.
+Do not log full payloads.
+Use scoped credentials for workers and rotate them regularly.
+
+\section{Consistency with the request path}
+Background jobs should not bypass business rules.
+Reuse core domain logic where possible.
+If background logic diverges, data corruption is likely.
+
+\section{Job lifecycle}
+Jobs should have clear states: queued, running, succeeded, failed.
+Persist state transitions for debugging and audits.
+State visibility makes operations predictable.
+
+\section{Leasing and locks}
+Workers should acquire a lease when they start a job.
+Leases prevent multiple workers from running the same job.
+If a worker dies, the lease expires and the job can be retried.
+
+\section{Exactly-once illusion}
+Exactly-once processing is rare in practice.
+Aim for at-least-once with idempotency.
+If you need exactly-once outcomes, use deduplication and idempotent writes.
+
+\section{Deduplication storage}
+Deduplication keys need storage.
+Use a small table or cache keyed by idempotency key.
+Set TTLs based on retry windows and business rules.
+
+\section{Payload versioning}
+Job payloads evolve.
+Include a \code{payload\_version} field and handle old versions.
+Versioning prevents deploys from breaking queued jobs.
+
+\section{Schema validation}
+Validate job payloads before enqueueing.
+Reject invalid jobs early to avoid poisoned queues.
+Schema validation should be shared between producers and consumers.
+
+\section{Job state table}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+State & Meaning \\
+\midrule
+queued & waiting to be processed \\
+running & currently being handled \\
+failed & exceeded retry policy \\
+succeeded & completed without error \\
+\bottomrule
+\end{tabularx}
+
+\section{Fanout and chaining}
+Fanout jobs create multiple downstream jobs.
+Chaining jobs ensures a sequence of dependent steps.
+Both patterns need clear error handling and rollbacks.
+
+\section{Workflow orchestration}
+Complex workflows benefit from orchestration.
+Use a workflow engine if you need stateful retries and branching.
+Ad-hoc workflows grow fragile quickly.
+
+\section{Backfills}
+Backfills are large background jobs that rebuild data.
+Run backfills in controlled batches to avoid overload.
+Track progress and support pause and resume.
+
+\section{Reprocessing policy}
+Sometimes you need to replay jobs after bugs.
+Store enough metadata to reprocess safely.
+Document which job types can be replayed.
+
+\section{Priority inversion}
+Priority queues can suffer inversion.
+If low-priority work blocks high-priority jobs, split queues.
+Separate worker pools reduce interference.
+
+\section{Job sharding}
+Shard heavy jobs by tenant or region.
+Sharding improves parallelism and reduces contention.
+Shards should align with data locality when possible.
+
+\section{Storage considerations}
+Job queues are not long-term storage.
+If you need long retention, persist job metadata elsewhere.
+Queues should be treated as transient buffers.
+
+\section{Operational tooling}
+Operators need tools to inspect and requeue jobs.
+Provide a safe admin interface for job operations.
+Manual fixes should be logged and auditable.
+
+\section{Example job admin actions}
+\begin{lstlisting}[language=YAML]
+admin_actions:
+  - replay_job
+  - cancel_job
+  - move_to_dlq
+\end{lstlisting}
+
+\section{Job SLAs}
+Background work still has latency expectations.
+Define an SLA for job completion.
+If jobs exceed the SLA, it should trigger investigation.
+
+\section{Job latency tracking}
+Track end-to-end job latency from enqueue to completion.
+Separate queue wait time from processing time.
+This helps determine whether the bottleneck is capacity or code.
+
+\section{Multi-tenant fairness}
+Large tenants can monopolize queues.
+Use per-tenant rate limits or weighted queues.
+Fairness prevents smaller tenants from being starved.
+
+\section{Routing by job type}
+Separate queues by job type when workloads differ.
+CPU-bound and IO-bound jobs should not share the same pool.
+Routing simplifies tuning and scaling.
+
+\section{Blue/green for workers}
+Worker deploys can cause job failures.
+Use blue/green or rolling deploys for worker fleets.
+Drain jobs before terminating instances when possible.
+
+\section{Graceful shutdown}
+Workers should finish the current job before shutting down.
+Respect the visibility timeout and release leases cleanly.
+Abrupt termination causes retries and duplicates.
+
+\section{Poison pill workflow}
+Define a workflow for poison pills:
+\begin{itemize}[nosep]
+  \item quarantine the job
+  \item inspect payload and logs
+  \item patch data or logic
+  \item replay safely
 \end{itemize}
 
-\section{Queues and retries}
-Retries need:
+\section{Example job router}
+\begin{lstlisting}[language=Python]
+def route(job):
+    if job.type in {"send_email", "send_sms"}:
+        return "notifications"
+    if job.type in {"generate_report"}:
+        return "reports"
+    return "default"
+\end{lstlisting}
+
+\section{Backfill safety}
+Backfills should be resumable.
+Store checkpoints after each batch.
+If a backfill fails, resume rather than restarting.
+
+\section{Costs and limits}
+Queues and workers have cost profiles.
+Track cost per job type.
+Cost visibility helps prioritize optimizations.
+
+\section{Side effects}
+Jobs often trigger side effects like emails or external API calls.
+Design side effects to be idempotent or safe to repeat.
+If the side effect is not idempotent, store a side-effect record first.
+
+\section{Checkpointing}
+Long-running jobs should checkpoint progress.
+Checkpointing allows retries to resume rather than restart.
+Store checkpoints in durable storage.
+
+\section{Batch windowing}
+Batch processing benefits from windowing.
+A small window reduces latency, a large window reduces overhead.
+Choose a window size based on user expectations.
+
+\section{Dedupe windows}
+Deduplication should have a window.
+A short window reduces storage cost but allows rare duplicates.
+A long window increases cost but improves safety.
+
+\section{Example dedupe record}
+\begin{lstlisting}[language=JSON]
+{
+  "idempotency_key": "email_user_7_welcome",
+  "created_at": "2026-02-18T10:00:00Z",
+  "expires_at": "2026-02-25T10:00:00Z"
+}
+\end{lstlisting}
+
+\section{Alerts for queues}
+Alert on queue depth and job age.
+Queue depth indicates capacity issues.
+Job age indicates latency and SLA risk.
+
+\section{Example queue alert}
+\begin{lstlisting}[language=YAML]
+alert: QueueDepthHigh
+expr: queue_depth > 5000
+for: 10m
+labels:
+  severity: "sev2"
+\end{lstlisting}
+
+\section{Job SLAs table}
+\begin{tabularx}{\textwidth}{@{}lXr@{}}
+\toprule
+Job type & Purpose & SLA (min) \\
+\midrule
+send\_email & user notifications & 5 \\
+generate\_report & analytics export & 30 \\
+reindex\_search & rebuild index & 120 \\
+\bottomrule
+\end{tabularx}
+
+\section{Payload size}
+Large payloads slow queues and increase cost.
+Compress payloads only when necessary.
+Prefer storing large objects in a database and referencing them by id.
+
+\section{Job testing}
+Background jobs should have unit and integration tests.
+Test idempotency and retry behavior explicitly.
+Jobs are part of your production surface and deserve the same rigor.
+
+\section{Schema registry}
+If you have many job types, use a schema registry.
+Schema registry helps validate payloads across teams.
+It prevents breaking changes to job contracts.
+
+\section{Reconciliation jobs}
+Reconciliation jobs fix drift between systems.
+Run them on a schedule and log corrections.
+Reconciliation reduces long-term data inconsistency.
+
+\section{Outbox-driven jobs}
+Use outbox tables to trigger background work reliably.
+The outbox ensures jobs are not lost during failures.
+Outbox-driven jobs reduce dual-write risks.
+
+\section{Partitioning queues}
+Partition queues by key for fairness.
+Partitions allow parallelism without losing ordering.
+Choose partition keys based on tenant or resource id.
+
+\section{Example partition config}
+\begin{lstlisting}[language=YAML]
+queue:
+  partitions: 8
+  partition_key: "tenant_id"
+\end{lstlisting}
+
+\begin{checklistbox}{Checklist: background work}
 \begin{itemize}[nosep]
-  \item exponential backoff
-  \item jitter
-  \item a maximum attempt count
-  \item a dead-letter queue
+  \item Keep jobs idempotent.
+  \item Use retries with backoff.
+  \item Monitor queue depth.
 \end{itemize}
-
-\begin{warningbox}{Warning: poison messages}
-Some messages always fail.
-Without a DLQ, they can block progress and inflate costs.
-\end{warningbox}
-
-\section{Idempotency}
-Workers should be idempotent.
-Assume the same job can be delivered more than once.
+\end{checklistbox}
